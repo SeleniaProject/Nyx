@@ -13,9 +13,11 @@ pub mod compliance;
 
 pub use config::NyxConfig;
 pub use config::PushProvider;
+pub use config::MultipathConfig;
 pub use error::NyxError;
 pub use error::NyxResult;
 pub use types::NodeId;
+pub use types::PathId;
 #[cfg(target_os = "linux")]
 pub use sandbox::install_seccomp;
 #[cfg(target_os = "openbsd")]

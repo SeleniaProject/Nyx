@@ -210,10 +210,22 @@ impl ControlService {
         let event_system = Arc::new(EventSystem::new());
         info!("Event system initialized");
         
-        // Initialize cMix controller
+        // Initialize cMix controller based on configuration
         info!("Initializing cMix controller...");
-        let cmix_controller = Arc::new(Mutex::new(CmixController::default()));
-        info!("cMix controller initialized");
+        let cmix_controller = Arc::new(Mutex::new(
+            match config.mix.mode {
+                nyx_core::config::MixMode::Cmix => {
+                    info!("Initializing cMix in VDF mode with batch_size={}, delay={}ms", 
+                          config.mix.batch_size, config.mix.vdf_delay_ms);
+                    CmixController::new(config.mix.batch_size, config.mix.vdf_delay_ms)
+                }
+                nyx_core::config::MixMode::Standard => {
+                    info!("Initializing cMix in standard mode with default settings");
+                    CmixController::default()
+                }
+            }
+        ));
+        info!("cMix controller initialized in {:?} mode", config.mix.mode);
         
         // Initialize layer manager for full protocol stack integration
         info!("Initializing layer manager...");

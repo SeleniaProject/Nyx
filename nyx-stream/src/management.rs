@@ -118,6 +118,91 @@ pub struct SettingsFrame {
     pub settings: Vec<Setting>,
 }
 
+/// Standard SETTINGS parameter IDs as defined in Nyx Protocol v1.0
+/// 
+/// These settings are exchanged during connection establishment to negotiate
+/// protocol capabilities and requirements between peers.
+pub mod setting_ids {
+    /// Maximum frame size that can be processed (bytes)
+    pub const MAX_FRAME_SIZE: u16 = 0x0001;
+    
+    /// Flow control window size (bytes)  
+    pub const FLOW_WINDOW_SIZE: u16 = 0x0002;
+    
+    /// Maximum number of concurrent streams
+    pub const MAX_CONCURRENT_STREAMS: u16 = 0x0003;
+    
+    /// Multipath support enabled (0=disabled, 1=enabled)
+    pub const MULTIPATH_ENABLED: u16 = 0x0004;
+    
+    /// Post-quantum cryptography mode (0=hybrid, 1=pq-only)
+    pub const PQ_MODE: u16 = 0x0005;
+    
+    /// Plugin support capabilities 
+    /// - Value is a bitmask indicating supported plugin framework features
+    /// - Bit 0: Basic plugin frame processing  
+    /// - Bit 1: Dynamic plugin loading
+    /// - Bit 2: Sandboxed plugin execution
+    /// - Bit 3-31: Reserved for future use
+    pub const PLUGIN_SUPPORT: u16 = 0x0010;
+    
+    /// Required plugin list (encoded as CBOR array of plugin IDs)
+    /// - This setting carries a CBOR-encoded array of u32 plugin IDs
+    /// - All listed plugins MUST be supported by the peer
+    /// - Connection MUST be closed with ERR_UNSUPPORTED_CAP if any required plugin is unavailable
+    pub const PLUGIN_REQUIRED: u16 = 0x0011;
+    
+    /// Optional plugin list (encoded as CBOR array of plugin IDs)  
+    /// - This setting carries a CBOR-encoded array of u32 plugin IDs
+    /// - These plugins are preferred but not mandatory
+    /// - Peer should enable these plugins if available
+    pub const PLUGIN_OPTIONAL: u16 = 0x0012;
+    
+    /// Plugin security policy (bitmask)
+    /// - Bit 0: Require signature verification for loaded plugins
+    /// - Bit 1: Enable plugin network access
+    /// - Bit 2: Enable plugin filesystem access
+    /// - Bit 3: Enable plugin IPC with other plugins
+    /// - Bit 4-31: Reserved
+    pub const PLUGIN_SECURITY_POLICY: u16 = 0x0013;
+}
+
+/// Plugin support capability flags for PLUGIN_SUPPORT setting
+pub mod plugin_support_flags {
+    /// Basic plugin frame processing (Type 0x50-0x5F)
+    pub const BASIC_FRAMES: u32 = 0x0001;
+    
+    /// Dynamic plugin loading from external modules
+    pub const DYNAMIC_LOADING: u32 = 0x0002;
+    
+    /// Sandboxed plugin execution environment  
+    pub const SANDBOXED_EXECUTION: u32 = 0x0004;
+    
+    /// Plugin-to-plugin IPC communication
+    pub const INTER_PLUGIN_IPC: u32 = 0x0008;
+    
+    /// Plugin persistence and state management
+    pub const PLUGIN_PERSISTENCE: u32 = 0x0010;
+}
+
+/// Plugin security policy flags for PLUGIN_SECURITY_POLICY setting
+pub mod plugin_security_flags {
+    /// Require cryptographic signature verification for all plugins
+    pub const REQUIRE_SIGNATURES: u32 = 0x0001;
+    
+    /// Allow plugins to access network resources
+    pub const ALLOW_NETWORK: u32 = 0x0002;
+    
+    /// Allow plugins to access filesystem
+    pub const ALLOW_FILESYSTEM: u32 = 0x0004;
+    
+    /// Allow plugins to communicate with each other via IPC
+    pub const ALLOW_INTER_PLUGIN_IPC: u32 = 0x0008;
+    
+    /// Allow plugins to spawn external processes
+    pub const ALLOW_PROCESS_SPAWN: u32 = 0x0010;
+}
+
 /// Build SETTINGS payload (concatenated TLVs).
 pub fn build_settings_frame(settings: &[Setting]) -> Vec<u8> {
     let mut v: Vec<u8> = Vec::with_capacity(settings.len() * 6);
@@ -149,4 +234,108 @@ pub fn build_close_unsupported_cap(cap_id: u32) -> Vec<u8> {
     let mut reason = Vec::with_capacity(4);
     reason.extend_from_slice(&cap_id.to_be_bytes());
     build_close_frame(ERR_UNSUPPORTED_CAP, &reason)
+}
+
+/// Helper functions for plugin-related SETTINGS processing
+#[cfg(feature = "plugin")]
+pub mod plugin_settings {
+    use super::*;
+    use serde_cbor;
+    
+    /// Encode a list of plugin IDs as CBOR for PLUGIN_REQUIRED/PLUGIN_OPTIONAL settings
+    pub fn encode_plugin_list(plugin_ids: &[u32]) -> Vec<u8> {
+        serde_cbor::to_vec(&plugin_ids).unwrap_or_else(|_| Vec::new())
+    }
+    
+    /// Decode CBOR plugin list from SETTINGS value
+    pub fn decode_plugin_list(cbor_data: &[u8]) -> Result<Vec<u32>, String> {
+        serde_cbor::from_slice::<Vec<u32>>(cbor_data)
+            .map_err(|e| format!("CBOR decode error: {}", e))
+    }
+    
+    /// Create SETTINGS frame advertising required plugins
+    pub fn build_plugin_required_setting(plugin_ids: &[u32]) -> Setting {
+        Setting {
+            id: setting_ids::PLUGIN_REQUIRED,
+            value: {
+                // For SETTINGS, we store the CBOR length in the value field
+                // The actual CBOR data is carried in an extended SETTINGS format
+                // or separate negotiation mechanism. For now, we use a simplified approach
+                // where the value field contains the count of required plugins.
+                plugin_ids.len() as u32
+            }
+        }
+    }
+    
+    /// Create SETTINGS frame advertising plugin support capabilities
+    pub fn build_plugin_support_setting(capabilities: u32) -> Setting {
+        Setting {
+            id: setting_ids::PLUGIN_SUPPORT,
+            value: capabilities,
+        }
+    }
+    
+    /// Create SETTINGS frame advertising plugin security policy
+    pub fn build_plugin_security_setting(policy: u32) -> Setting {
+        Setting {
+            id: setting_ids::PLUGIN_SECURITY_POLICY,
+            value: policy,
+        }
+    }
+    
+    /// Extract plugin-related settings from a SETTINGS frame
+    pub fn extract_plugin_settings(frame: &SettingsFrame) -> PluginSettingsInfo {
+        let mut info = PluginSettingsInfo::default();
+        
+        for setting in &frame.settings {
+            match setting.id {
+                setting_ids::PLUGIN_SUPPORT => {
+                    info.support_flags = setting.value;
+                }
+                setting_ids::PLUGIN_REQUIRED => {
+                    info.required_plugin_count = setting.value;
+                }
+                setting_ids::PLUGIN_OPTIONAL => {
+                    info.optional_plugin_count = setting.value;
+                }
+                setting_ids::PLUGIN_SECURITY_POLICY => {
+                    info.security_policy = setting.value;
+                }
+                _ => {} // Ignore non-plugin settings
+            }
+        }
+        
+        info
+    }
+    
+    /// Information extracted from plugin-related SETTINGS
+    #[derive(Debug, Clone, Default)]
+    pub struct PluginSettingsInfo {
+        pub support_flags: u32,
+        pub required_plugin_count: u32,
+        pub optional_plugin_count: u32,
+        pub security_policy: u32,
+    }
+    
+    impl PluginSettingsInfo {
+        /// Check if peer supports basic plugin frame processing
+        pub fn supports_plugin_frames(&self) -> bool {
+            self.support_flags & super::plugin_support_flags::BASIC_FRAMES != 0
+        }
+        
+        /// Check if peer supports dynamic plugin loading
+        pub fn supports_dynamic_loading(&self) -> bool {
+            self.support_flags & super::plugin_support_flags::DYNAMIC_LOADING != 0
+        }
+        
+        /// Check if peer requires plugin signature verification
+        pub fn requires_signatures(&self) -> bool {
+            self.security_policy & super::plugin_security_flags::REQUIRE_SIGNATURES != 0
+        }
+        
+        /// Check if peer allows plugin network access
+        pub fn allows_network_access(&self) -> bool {
+            self.security_policy & super::plugin_security_flags::ALLOW_NETWORK != 0
+        }
+    }
 } 

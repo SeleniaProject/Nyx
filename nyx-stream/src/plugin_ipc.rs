@@ -17,7 +17,7 @@ use tracing::{debug, error};
 #[cfg(unix)]
 use tokio::net::{UnixStream, UnixListener};
 #[cfg(windows)]
-use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient, NamedPipeServer};
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions};
 
 const MAX_FRAME: usize = 16 * 1024; // plugins exchange small control messages
 
@@ -54,7 +54,8 @@ pub async fn spawn_ipc_server(id: &str) -> std::io::Result<(PluginIpcTx, PluginI
 #[cfg(windows)]
 pub async fn spawn_ipc_server(id: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
     let pipe_name = format!("\\\\.\\pipe\\nyx-ipc-{}", id);
-    let server = NamedPipeServer::create(&pipe_name)?;
+    let builder = ServerOptions::new();
+    let server = builder.create(&pipe_name)?;
     let stream = server.connect().await?;
     setup_stream(stream).await
 }
@@ -72,34 +73,55 @@ pub async fn connect_client(pipe: &str) -> std::io::Result<(PluginIpcTx, PluginI
     setup_stream(stream).await
 }
 
+#[cfg(not(any(unix, windows)))]
+pub async fn spawn_ipc_server(_id: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "IPC not supported on this platform",
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+pub async fn connect_client(_path: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "IPC not supported on this platform",
+    ))
+}
+
 /// Internal helper converting a duplex stream into length-prefixed mpsc pair.
-async fn setup_stream<T>(mut stream: T) -> std::io::Result<(PluginIpcTx, PluginIpcRx)>
+async fn setup_stream<T>(stream: T) -> std::io::Result<(PluginIpcTx, PluginIpcRx)>
 where
     T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static,
 {
     let (tx_out, mut rx_out) = mpsc::channel::<Vec<u8>>(32);
     let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(32);
 
+    // Split the stream for concurrent access
+    let (read_half, write_half) = tokio::io::split(stream);
+
     // TX task
     tokio::spawn(async move {
+        let mut write_half = write_half;
         while let Some(buf) = rx_out.recv().await {
             if buf.len() > MAX_FRAME { continue; }
             let mut len_buf = [0u8; 4];
             len_buf.as_mut().put_u32(buf.len() as u32);
-            if stream.write_all(&len_buf).await.is_err() { break; }
-            if stream.write_all(&buf).await.is_err() { break; }
+            if write_half.write_all(&len_buf).await.is_err() { break; }
+            if write_half.write_all(&buf).await.is_err() { break; }
         }
     });
 
     // RX task
     tokio::spawn(async move {
+        let mut read_half = read_half;
         let mut len_buf = [0u8; 4];
         loop {
-            if stream.read_exact(&mut len_buf).await.is_err() { break; }
+            if read_half.read_exact(&mut len_buf).await.is_err() { break; }
             let len = u32::from_be_bytes(len_buf) as usize;
             if len == 0 || len > MAX_FRAME { break; }
             let mut data = vec![0u8; len];
-            if stream.read_exact(&mut data).await.is_err() { break; }
+            if read_half.read_exact(&mut data).await.is_err() { break; }
             if tx_in.send(data).await.is_err() { break; }
         }
         debug!("plugin ipc closed");

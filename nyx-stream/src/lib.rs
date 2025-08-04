@@ -21,6 +21,16 @@ pub mod resource_manager;
 pub mod plugin;
 #[cfg(feature = "plugin")]
 mod plugin_ipc;
+#[cfg(feature = "plugin")]
+pub mod plugin_frame;
+#[cfg(feature = "plugin")]
+pub mod plugin_handshake;
+#[cfg(feature = "plugin")]
+pub mod plugin_dispatch;
+
+#[cfg(test)]
+#[cfg(feature = "plugin")]
+mod plugin_integration_test;
 #[cfg(feature = "dynamic_plugin")]
 #[cfg_attr(target_os = "linux",   path = "plugin_sandbox.rs")]
 #[cfg_attr(target_os = "windows", path = "plugin_sandbox_windows.rs")]
@@ -42,6 +52,9 @@ pub use cap_negotiator::perform_cap_negotiation;
 mod mpr;
 #[cfg(feature = "mpr_experimental")]
 pub use mpr::MprDispatcher;
+
+// Multipath Data Plane (v1.0新機能)
+pub mod multipath;
 
 pub use frame::{FrameHeader, parse_header, parse_header_ext, FLAG_HAS_PATH_ID};
 pub use builder::build_header;
@@ -66,6 +79,11 @@ pub use error_handler::{StreamErrorHandler, ErrorContext, ErrorCategory, ErrorSe
 pub use resource_manager::{ResourceManager, ResourceInfo, ResourceType, ResourceError, ResourceLimits, ResourceStats};
 #[cfg(feature = "plugin")]
 pub use plugin::PluginHeader;
+#[cfg(feature = "plugin")]
+pub use plugin_frame::{PluginFrameProcessor, PluginFrameResult, PluginFrameError, ParsedPluginFrame, 
+                      build_plugin_frame, validate_plugin_frame_type, PLUGIN_FRAME_TYPE_MIN, PLUGIN_FRAME_TYPE_MAX};
+#[cfg(feature = "plugin")]
+pub use plugin_handshake::{PluginHandshakeCoordinator, PluginHandshakeResult, PluginHandshakeError};
 #[cfg(feature = "plugin")]
 pub use plugin_registry::{PluginRegistry, PluginInfo, Permission};
 #[cfg(feature = "plugin")]
@@ -95,9 +113,6 @@ pub use scheduler::WeightedRrScheduler;
 pub mod hpke_rekey;
 #[cfg(feature = "hpke")]
 pub use hpke_rekey::{RekeyFrame, build_rekey_frame, parse_rekey_frame, seal_for_rekey, open_rekey};
-
-#[cfg(feature = "plugin")]
-pub mod plugin_dispatch;
 
 #[cfg(test)]
 mod tests;

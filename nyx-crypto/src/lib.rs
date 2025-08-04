@@ -14,6 +14,10 @@ pub mod noise;
 pub mod kdf;
 #[cfg(feature = "kyber")]
 pub use noise::kyber;
+#[cfg(feature = "hybrid")]
+pub mod hybrid;
+#[cfg(feature = "hybrid")]
+pub use hybrid::PqAlgorithm;
 pub mod aead;
 pub mod keystore;
 #[cfg(feature = "hpke")]

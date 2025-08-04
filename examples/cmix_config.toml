@@ -1,0 +1,44 @@
+# NyxNet Configuration Example with cMix Mode
+# This configuration demonstrates how to enable cMix integration v1.0
+
+# Basic node configuration
+node_id = "auto"  # Generate random node ID
+log_level = "info"
+listen_port = 43300
+
+# Mix routing configuration - cMix mode with VDF
+[mix]
+# Enable cMix mode with verifiable delay function
+mode = "cmix"
+
+# Batch processing configuration
+batch_size = 100        # Process packets in batches of 100 (as per v1.0 spec)
+vdf_delay_ms = 100      # VDF delay of 100ms for verifiable timing
+
+# Cover traffic configuration
+cover_traffic_rate = 10.0    # Generate 10 cover packets per second
+adaptive_cover = true        # Adjust rate based on network utilization
+target_utilization = 0.4     # Target network utilization 40% (range 0.2-0.6)
+
+# Multipath configuration (compatible with cMix)
+[multipath]
+enabled = true
+max_paths = 4
+min_hops = 3
+max_hops = 7
+reorder_timeout_ms = 100
+weight_method = "inverse_rtt"
+
+# Optional push notification support
+# [push]
+# type = "fcm"
+# server_key = "your_fcm_server_key_here"
+
+# For Apple Push Notification Service:
+# [push]
+# type = "apns"
+# team_id = "YOUR_TEAM_ID"
+# key_id = "YOUR_KEY_ID"
+# key_p8 = """-----BEGIN PRIVATE KEY-----
+# YOUR_PRIVATE_KEY_CONTENT_HERE
+# -----END PRIVATE KEY-----"""

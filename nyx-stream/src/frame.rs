@@ -7,6 +7,21 @@ use nom::{bytes::complete::take, number::complete::u8, IResult};
 /// extension described in the design document §14.
 pub const FLAG_HAS_PATH_ID: u8 = 0x20; // 0b100000
 
+// Plugin Frame Types (0x50-0x5F reserved for plugins)
+pub const FRAME_TYPE_PLUGIN_START: u8 = 0x50;
+pub const FRAME_TYPE_PLUGIN_END: u8 = 0x5F;
+
+// Specific Plugin Frame Types
+pub const FRAME_TYPE_PLUGIN_HANDSHAKE: u8 = 0x50;
+pub const FRAME_TYPE_PLUGIN_DATA: u8 = 0x51;
+pub const FRAME_TYPE_PLUGIN_CONTROL: u8 = 0x52;
+pub const FRAME_TYPE_PLUGIN_ERROR: u8 = 0x53;
+
+/// Check if frame type is in plugin range
+pub fn is_plugin_frame(frame_type: u8) -> bool {
+    frame_type >= FRAME_TYPE_PLUGIN_START && frame_type <= FRAME_TYPE_PLUGIN_END
+}
+
 /// Parsed header including optional `path_id`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParsedHeader {

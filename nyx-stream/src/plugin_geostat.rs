@@ -31,27 +31,34 @@ pub struct GeoStat {
 impl GeoStat {
     /// Build a Plugin Frame containing this geolocation sample.
     /// Returns raw bytes ready to be inserted after Nyx base header.
-    pub fn build_frame(&self) -> Vec<u8> {
-        let data = serde_cbor::to_vec(self).expect("cbor encode");
+    pub fn build_frame(&self) -> Result<Vec<u8>, String> {
+        let data = serde_cbor::to_vec(self).map_err(|e| e.to_string())?;
         let hdr = PluginHeader { id: GEO_PLUGIN_ID, flags: 0, data: &data };
-        hdr.encode()
+        hdr.encode().map_err(|e| e.to_string())
     }
 
     /// Decode from plugin payload data slice.
-    pub fn parse_frame(bytes: &[u8]) -> Result<Self, serde_cbor::Error> {
-        let hdr = PluginHeader::decode(bytes)?;
-        serde_cbor::from_slice(hdr.data)
+    pub fn parse_frame(bytes: &[u8]) -> Result<Self, String> {
+        let hdr = PluginHeader::decode(bytes).map_err(|e| e.to_string())?;
+        serde_cbor::from_slice(hdr.data).map_err(|e| e.to_string())
     }
 }
 
 /// Return the [`PluginInfo`] metadata required during registration.
 #[must_use]
 pub fn plugin_info() -> PluginInfo {
+    use std::collections::HashMap;
+    
     PluginInfo {
         id: GEO_PLUGIN_ID,
         name: "GeoStat".into(),
-        version: Version::new(1, 0, 0),
-        permissions: Permission::ACCESS_GEO,
+        version: "1.0.0".into(),
+        author: "Nyx Team".into(),
+        description: "Geographic location statistics plugin".into(),
+        config_schema: HashMap::new(),
+        required: false,
+        supported_frames: vec![0x50, 0x51], // Plugin handshake and data frames
+        permissions: vec![Permission::ACCESS_GEO],
     }
 }
 

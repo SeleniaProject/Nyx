@@ -10,6 +10,7 @@ use tokio::sync::watch;
 use notify::{RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher, Event, EventKind};
 
 use crate::NyxError;
+use crate::types::{MIN_HOPS, MAX_HOPS};
 
 /// Push notification provider configuration used for Low Power Mode wake-up.
 #[derive(Debug, Clone, Deserialize)]
@@ -24,6 +25,140 @@ pub enum PushProvider {
         /// Raw contents of the `.p8` private key (BEGIN PRIVATE KEY ...).
         key_p8: String,
     },
+}
+
+/// Multipath data plane configuration for Nyx Protocol v1.0
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct MultipathConfig {
+    /// Enable multipath data plane
+    pub enabled: bool,
+    
+    /// Maximum number of concurrent paths (1-8)
+    pub max_paths: usize,
+    
+    /// Minimum number of hops for dynamic routing (3-7)  
+    pub min_hops: u8,
+    
+    /// Maximum number of hops for dynamic routing (3-7)
+    pub max_hops: u8,
+    
+    /// Reordering buffer timeout in milliseconds
+    pub reorder_timeout_ms: u32,
+    
+    /// Weight calculation method for round-robin scheduling
+    pub weight_method: WeightMethod,
+}
+
+/// Method for calculating path weights in multipath round-robin scheduling
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeightMethod {
+    /// Weight = 1 / RTT (inverse RTT weighting)
+    InverseRtt,
+    /// Equal weight for all paths
+    Equal,
+    /// Custom weight values
+    Custom(Vec<u8>),
+}
+
+/// Mix routing mode configuration for Nyx Protocol v1.0
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct MixConfig {
+    /// Mix routing mode: standard, cmix (default: standard)
+    pub mode: MixMode,
+    
+    /// Batch size for cMix mode (default: 100)
+    pub batch_size: usize,
+    
+    /// VDF delay in milliseconds for cMix mode (default: 100)
+    pub vdf_delay_ms: u64,
+    
+    /// Cover traffic generation rate (packets per second)
+    pub cover_traffic_rate: f64,
+    
+    /// Adaptive cover traffic (adjust based on utilization)
+    pub adaptive_cover: bool,
+    
+    /// Target utilization for adaptive cover traffic (0.2-0.6)
+    pub target_utilization: f64,
+}
+
+/// Mix routing modes supported by Nyx Protocol v1.0
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MixMode {
+    /// Standard mix routing with fixed delay
+    Standard,
+    /// cMix with verifiable delay function (VDF)
+    Cmix,
+}
+
+impl Default for MixConfig {
+    fn default() -> Self {
+        Self {
+            mode: MixMode::Standard,
+            batch_size: 100,
+            vdf_delay_ms: 100,
+            cover_traffic_rate: 10.0,
+            adaptive_cover: true,
+            target_utilization: 0.4,
+        }
+    }
+}
+
+impl Default for MultipathConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_paths: 4,
+            min_hops: MIN_HOPS,
+            max_hops: MAX_HOPS,
+            reorder_timeout_ms: 100, // RTT diff + jitter * 2
+            weight_method: WeightMethod::InverseRtt,
+        }
+    }
+}
+
+impl MultipathConfig {
+    /// Get health check interval as Duration (default 5 seconds)
+    pub fn health_check_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
+    }
+
+    /// Get hop adjustment interval as Duration (default 30 seconds)
+    pub fn hop_adjustment_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(30)
+    }
+
+    /// Get reorder timeout as Duration
+    pub fn reorder_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.reorder_timeout_ms as u64)
+    }
+
+    /// Check if dynamic hop count is enabled (default true)
+    pub fn dynamic_hop_count(&self) -> bool {
+        true
+    }
+
+    /// Calculate weight based on RTT using the configured method
+    pub fn calculate_weight(&self, rtt: std::time::Duration) -> u32 {
+        match self.weight_method {
+            WeightMethod::InverseRtt => {
+                let rtt_ms = rtt.as_millis() as f64;
+                if rtt_ms > 0.0 {
+                    (1000.0 / rtt_ms) as u32
+                } else {
+                    1000 // Very high weight for very low RTT
+                }
+            }
+            WeightMethod::Equal => 10, // Equal weight for all paths
+            WeightMethod::Custom(ref weights) => {
+                weights.first().copied().unwrap_or(10) as u32
+            }
+        }
+    }
 }
 
 /// Primary configuration structure shared across Nyx components.
@@ -42,6 +177,12 @@ pub struct NyxConfig {
 
     /// Optional push notification provider (FCM / APNS). When `None`, push support is disabled.
     pub push: Option<PushProvider>,
+
+    /// Multipath configuration
+    pub multipath: MultipathConfig,
+    
+    /// Mix routing configuration
+    pub mix: MixConfig,
 }
 
 impl Default for NyxConfig {
@@ -51,6 +192,8 @@ impl Default for NyxConfig {
             log_level: Some("info".to_string()),
             listen_port: default_listen_port(),
             push: None,
+            multipath: MultipathConfig::default(),
+            mix: MixConfig::default(),
         }
     }
 }
