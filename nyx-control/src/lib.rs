@@ -2,12 +2,15 @@
 
 #[cfg(feature = "dht")]
 use futures::StreamExt;
-#[cfg(feature = "dht")]
-use libp2p::{identity, kad::{store::MemoryStore, Kademlia, Quorum, record::{Key, Record}}, swarm::SwarmEvent, PeerId, Multiaddr};
+// #[cfg(feature = "dht")]
+// use libp2p::{identity, kad::{store::MemoryStore, Kademlia, Quorum, record::{Key, Record}}, swarm::SwarmEvent, PeerId, Multiaddr};
 use tokio::sync::{mpsc, oneshot};
 use std::collections::HashMap;
 use nyx_core::{NyxConfig};
 use tracing::warn;
+
+// Pure Rust replacement for libp2p::Multiaddr
+pub type Multiaddr = String;
 
 /// Aggregates control-plane handles (DHT + optional Push service).
 #[derive(Clone)]
@@ -58,7 +61,20 @@ pub enum DhtCmd {
 }
 
 #[cfg(not(feature = "dht"))]
-pub enum DhtCmd { Stub }
+pub enum DhtCmd { 
+    /// Store key-value pair in DHT (stub implementation)
+    Put { key: String, value: Vec<u8> },
+    /// Retrieve value by key from DHT (stub implementation)
+    Get { key: String, resp: oneshot::Sender<Option<Vec<u8>>> },
+    /// Bootstrap connection to DHT network (stub implementation)
+    Bootstrap(String), // Using String instead of Multiaddr for simplicity
+    /// Announce presence in DHT network
+    Announce { node_id: String },
+    /// Find peers near a given key
+    FindPeers { key: String, resp: oneshot::Sender<Vec<String>> },
+    /// Ping a specific peer
+    Ping { peer_id: String, resp: oneshot::Sender<bool> },
+}
 
 /// Handle to interact with running DHT node.
 #[derive(Clone)]
@@ -90,7 +106,7 @@ impl DhtHandle {
     // Return the primary listen address when DHT is enabled.
     #[cfg(feature = "dht")]
     #[must_use]
-    pub fn listen_addr(&self) -> &libp2p::Multiaddr {
+    pub fn listen_addr(&self) -> &Multiaddr {
         &self.listen_addr
     }
 
@@ -111,53 +127,25 @@ impl DhtHandle {
 /// Spawn DHT node; returns handle to interact.
 #[cfg(feature = "dht")]
 pub async fn spawn_dht() -> DhtHandle {
-    let id_keys = identity::Keypair::generate_ed25519();
-    let peer_id = PeerId::from(id_keys.public());
-
-    // Use convenience helper for typical TCP/Noise/Yamux transport (tokio backend)
-    let transport = libp2p::tokio_development_transport(id_keys.clone()).unwrap();
-
-    let store = MemoryStore::new(peer_id);
-    let behaviour = Kademlia::new(peer_id, store);
-
-    let mut swarm = libp2p::Swarm::new(transport, behaviour, peer_id);
-
+    // Pure Rust DHT implementation - stub for now
     let (tx, mut rx) = mpsc::channel::<DhtCmd>(32);
-    let mut pending_get: HashMap<libp2p::kad::QueryId, oneshot::Sender<Option<Vec<u8>>>> = HashMap::new();
+    let listen_addr: Multiaddr = "127.0.0.1:0".to_string();
 
-    // Start listening before moving swarm into task.
-    use libp2p::Multiaddr;
-    let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
-    swarm.listen_on(listen_addr.clone()).expect("listen");
-
+    // Background task to handle DHT commands
     tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                Some(cmd) = rx.recv() => match cmd {
-                    DhtCmd::Put { key, value } => {
-                        let _ = swarm.behaviour_mut().put_record(Record::new(Key::new(&key), value), Quorum::One);
-                    }
-                    DhtCmd::Get { key, resp } => {
-                        let query_id = swarm.behaviour_mut().get_record(Key::new(&key), Quorum::One);
-                        pending_get.insert(query_id, resp);
-                    }
-                    DhtCmd::Bootstrap(addr) => {
-                        let _ = swarm.dial(addr);
-                    }
-                },
-                event = swarm.select_next_some() => match event {
-                    SwarmEvent::Behaviour(libp2p::kad::KademliaEvent::OutboundQueryCompleted { id, result, .. }) => {
-                        if let Some(sender) = pending_get.remove(&id) {
-                            let value = match result {
-                                libp2p::kad::QueryResult::GetRecord(Ok(r)) => {
-                                    r.records.first().map(|rec| rec.record.value.clone())
-                                },
-                                _ => None,
-                            };
-                            let _ = sender.send(value);
-                        }
-                    }
-                    _ => {}
+        let mut storage: HashMap<String, Vec<u8>> = HashMap::new();
+        
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                DhtCmd::Put { key, value } => {
+                    storage.insert(key, value);
+                }
+                DhtCmd::Get { key, resp } => {
+                    let value = storage.get(&key).cloned();
+                    let _ = resp.send(value);
+                }
+                DhtCmd::Bootstrap(_addr) => {
+                    // Stub bootstrap implementation
                 }
             }
         }

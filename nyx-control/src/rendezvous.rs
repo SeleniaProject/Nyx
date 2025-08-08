@@ -28,13 +28,13 @@ pub struct RendezvousClient {
     node_id: NodeId,
     addr: Multiaddr,
     dht: DhtHandle,
-    http: reqwest::Client,
+    agent: ureq::Agent,
 }
 
 impl RendezvousClient {
     #[must_use]
     pub fn new(endpoint: String, node_id: NodeId, addr: Multiaddr, dht: DhtHandle) -> Self {
-        Self { endpoint, node_id, addr, dht, http: reqwest::Client::new() }
+        Self { endpoint, node_id, addr, dht, agent: ureq::Agent::new() }
     }
 
     /// Spawn background loop (30 s period).
@@ -56,13 +56,29 @@ impl RendezvousClient {
         struct Announce<'a> { node_id: String, addr: &'a str }
         let body = Announce { node_id: hex::encode(self.node_id), addr: &self.addr.to_string() };
         let announce_url = format!("{}/announce", self.endpoint);
-        let _ = self.http.post(&announce_url).json(&body).send().await?;
+        
+        let agent = self.agent.clone();
+        let body_str = serde_json::to_string(&body)?;
+        let announce_url_clone = announce_url.clone();
+        
+        tokio::task::spawn_blocking(move || {
+            agent.post(&announce_url_clone)
+                .set("Content-Type", "application/json")
+                .send_string(&body_str)
+        }).await??;
 
         // 2. fetch peer list
         #[derive(Deserialize)]
         struct Peer { node_id: String, addr: String }
         let peers_url = format!("{}/peers", self.endpoint);
-        let peers: Vec<Peer> = self.http.get(&peers_url).send().await?.json().await?;
+        
+        let agent = self.agent.clone();
+        let peers_response = tokio::task::spawn_blocking(move || {
+            agent.get(&peers_url).call()
+        }).await??;
+        
+        let peers_json = peers_response.into_string()?;
+        let peers: Vec<Peer> = serde_json::from_str(&peers_json)?;
 
         for p in peers {
             if p.node_id == hex::encode(self.node_id) { continue; }
