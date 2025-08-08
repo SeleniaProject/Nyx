@@ -13,8 +13,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Serialize, Deserialize};
-use serde_cbor;
-use semver::Version;
+use std::io::Cursor;
 use super::{PluginHeader, PluginInfo, Permission};
 
 /// Assigned plugin ID (0x47454F53 = 'GEOS').
@@ -32,15 +31,17 @@ impl GeoStat {
     /// Build a Plugin Frame containing this geolocation sample.
     /// Returns raw bytes ready to be inserted after Nyx base header.
     pub fn build_frame(&self) -> Result<Vec<u8>, String> {
-        let data = serde_cbor::to_vec(self).map_err(|e| e.to_string())?;
-        let hdr = PluginHeader { id: GEO_PLUGIN_ID, flags: 0, data: &data };
+        let mut data = Vec::new();
+        ciborium::ser::into_writer(self, &mut data).map_err(|e| e.to_string())?;
+        let hdr = PluginHeader { id: GEO_PLUGIN_ID, flags: 0, data };
         hdr.encode().map_err(|e| e.to_string())
     }
 
     /// Decode from plugin payload data slice.
     pub fn parse_frame(bytes: &[u8]) -> Result<Self, String> {
         let hdr = PluginHeader::decode(bytes).map_err(|e| e.to_string())?;
-        serde_cbor::from_slice(hdr.data).map_err(|e| e.to_string())
+        let mut cursor = Cursor::new(&hdr.data[..]);
+        ciborium::de::from_reader(&mut cursor).map_err(|e| e.to_string())
     }
 }
 

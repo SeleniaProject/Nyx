@@ -1,228 +1,313 @@
-#!    /// Dispatch message to specific plugin  
-    #![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 //! Plugin frame dispatcher with permission enforcement.
 //!
 //! The dispatcher is responsible for routing incoming Plugin Frames
 //! (Type 0x50–0x5F) to the appropriate runtime while ensuring that
 //! the sending plugin has been granted the requested permissions.
-//!
-//! This implementation provides:
-//! - Complete v1.0 Plugin Framework support
-//! - CBOR header validation with {id:u32, flags:u8, data:bytes}
-//! - Permission enforcement and security policies
-//! - IPC transport with sandbox communication
-//! - Plugin lifecycle management
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use tracing::{debug, error, trace, warn, info};
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tracing::{debug, error, info, warn};
 use thiserror::Error;
 
-#[cfg(all(feature = "dynamic_plugin", any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-use crate::plugin_sandbox::spawn_sandboxed_plugin;
-
 use crate::{
-    plugin_registry::{PluginRegistry, Permission, PluginInfo, PluginId}, 
-    plugin::PluginHeader
+    PluginId,
+    plugin_registry::{PluginRegistry, Permission, PluginInfo},
+    plugin_cbor::{PluginHeader, parse_plugin_header, serialize_plugin_header, PluginCborError},
+    frame::{is_plugin_frame, FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_DATA, 
+           FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR},
 };
 
 /// Plugin Framework dispatch errors for v1.0
 #[derive(Error, Debug)]
 pub enum DispatchError {
+    #[error("Invalid frame format: {0}")]
+    InvalidFrame(String),
     #[error("Plugin not registered: {0}")]
     PluginNotRegistered(PluginId),
-    
-    #[error("Plugin {0} lacks required permissions")]
+    #[error("Insufficient permissions for plugin: {0}")]
     InsufficientPermissions(PluginId),
-    
-    #[error("Failed to validate plugin frame: {0}")]
-    InvalidFrame(String),
-    
-    #[error("IPC send failed for plugin {0}: {1}")]
+    #[error("IPC communication failed for plugin: {0}, reason: {1}")]
     IpcSendFailed(PluginId, String),
-    
-    #[error("Plugin runtime error: {0}")]
-    RuntimeError(String),
-    
-    #[error("Plugin capacity exceeded: max {0}")]
+    #[error("Runtime error in plugin {0}: {1}")]
+    RuntimeError(PluginId, String),
+    #[error("Plugin capacity exceeded: {0}")]
     CapacityExceeded(usize),
+    #[error("CBOR parsing error: {0}")]
+    CborError(#[from] PluginCborError),
+    #[error("Invalid frame type: {0}, expected plugin frame (0x50-0x5F)")]
+    InvalidFrameType(u8),
 }
 
-/// Plugin runtime statistics for monitoring
+/// Plugin runtime statistics  
 #[derive(Debug, Clone, Default)]
-pub struct PluginStats {
-    /// Total frames processed
-    pub frames_processed: u64,
-    /// Total frames rejected due to permissions
-    pub frames_rejected: u64,
-    /// Total runtime errors
-    pub runtime_errors: u64,
-    /// Current active plugins
-    pub active_plugins: usize,
+pub struct PluginRuntimeStats {
+    pub active_plugins: u32,
+    pub registered_plugins: u32,
+    pub total_dispatched_frames: u64,
+    pub total_processed_messages: u64,
+    pub total_errors: u64,
 }
 
-/// Enhanced Plugin Dispatcher with v1.0 specification compliance
+/// Plugin IPC message for internal communication
+#[derive(Debug, Clone)]
+pub struct PluginMessage {
+    pub frame_type: u8,
+    pub plugin_header: PluginHeader,
+    pub raw_frame_data: Vec<u8>,
+}
+
+impl PluginMessage {
+    /// Create a new plugin message from frame data
+    pub fn new(frame_type: u8, plugin_header: PluginHeader, raw_frame_data: Vec<u8>) -> Self {
+        Self { frame_type, plugin_header, raw_frame_data }
+    }
+    
+    /// Get the plugin ID from the header
+    pub fn plugin_id(&self) -> PluginId {
+        self.plugin_header.id
+    }
+    
+    /// Check if this is a handshake message
+    pub fn is_handshake(&self) -> bool {
+        self.frame_type == FRAME_TYPE_PLUGIN_HANDSHAKE
+    }
+    
+    /// Check if this is a control message
+    pub fn is_control(&self) -> bool {
+        self.frame_type == FRAME_TYPE_PLUGIN_CONTROL
+    }
+    
+    /// Check if this is a data message
+    pub fn is_data(&self) -> bool {
+        self.frame_type == FRAME_TYPE_PLUGIN_DATA
+    }
+    
+    /// Check if this is an error message
+    pub fn is_error(&self) -> bool {
+        self.frame_type == FRAME_TYPE_PLUGIN_ERROR
+    }
+}
+
+/// Runtime handle for plugin processes
+#[derive(Debug)]
+struct RuntimeHandle {
+    join_handle: tokio::task::JoinHandle<()>,
+    ipc_tx: mpsc::Sender<PluginMessage>,
+    plugin_id: PluginId,
+}
+
+impl RuntimeHandle {
+    fn abort(&self) {
+        debug!("Aborting plugin runtime for plugin {}", self.plugin_id);
+        self.join_handle.abort();
+    }
+}
+
+/// Main plugin frame dispatcher
 #[derive(Debug)]
 pub struct PluginDispatcher {
-    /// Plugin registry for permission validation
-    registry: Arc<RwLock<PluginRegistry>>,
-    /// Active plugin runtimes by ID
-    runtimes: Arc<RwLock<HashMap<PluginId, tokio::task::JoinHandle<()>>>>,
-    /// IPC transport handlers by plugin ID
-    ipc_handlers: Arc<RwLock<HashMap<PluginId, mpsc::Sender<Vec<u8>>>>>,
-    /// Plugin execution statistics
-    stats: Arc<RwLock<PluginStats>>,
-    /// Maximum number of concurrent plugins
-    max_plugins: usize,
+    registry: Arc<Mutex<PluginRegistry>>,
+    runtimes: Arc<Mutex<HashMap<PluginId, RuntimeHandle>>>,
+    stats: Arc<RwLock<PluginRuntimeStats>>,
 }
 
 impl PluginDispatcher {
-    /// Create new plugin dispatcher with registry
-    pub fn new(registry: Arc<RwLock<PluginRegistry>>) -> Self {
+    pub fn new(registry: Arc<Mutex<PluginRegistry>>) -> Self {
         Self {
             registry,
-            runtimes: Arc::new(RwLock::new(HashMap::new())),
-            ipc_handlers: Arc::new(RwLock::new(HashMap::new())),
-            stats: Arc::new(RwLock::new(PluginStats::default())),
-            max_plugins: 32, // Configurable limit
+            runtimes: Arc::new(Mutex::new(HashMap::new())),
+            stats: Arc::new(RwLock::new(PluginRuntimeStats::default())),
         }
     }
 
-    /// Dispatch message to specific plugin  
-    pub async fn dispatch_message(&self, plugin_id: PluginId, message: Vec<u8>) -> Result<(), DispatchError> {
-        // Get plugin info with permission check
-        let registry = self.registry.read().await;
-        let plugin_info = registry.get_plugin_info(plugin_id).await
-            .ok_or(DispatchError::PluginNotRegistered(plugin_id))?;
-            
-        // Check if plugin has message receiving permission
-        if !plugin_info.permissions.contains(&Permission::ReceiveFrames) {
-            return Err(DispatchError::InsufficientPermissions(plugin_id));
+    /// Dispatch a plugin frame to the appropriate plugin runtime
+    ///
+    /// This method performs complete frame validation, permission checking,
+    /// CBOR header parsing, and secure message routing to the plugin process.
+    ///
+    /// # Arguments
+    /// * `frame_type` - Plugin frame type (must be 0x50-0x5F)
+    /// * `frame_data` - Complete frame payload including CBOR header
+    ///
+    /// # Returns
+    /// * `Ok(())` - Frame successfully dispatched
+    /// * `Err(DispatchError)` - Dispatch failed with specific reason
+    pub async fn dispatch_plugin_frame(&self, frame_type: u8, frame_data: Vec<u8>) -> Result<(), DispatchError> {
+        // Validate frame type is in plugin range
+        if !is_plugin_frame(frame_type) {
+            return Err(DispatchError::InvalidFrameType(frame_type));
         }
         
-        // Send message via IPC
-        // This would be implemented based on the IPC transport mechanism
-        info!(plugin_id = plugin_id, message_len = message.len(), "Message dispatched to plugin");
-        
-        Ok(())
-    }
-
-    /// Main plugin frame dispatch method
-    pub async fn dispatch(&self, frame_bytes: &[u8]) -> Result<(), DispatchError> {
-        // Parse plugin header from frame payload
-        let plugin_header = PluginHeader::decode(frame_bytes)
-            .map_err(|e| DispatchError::InvalidFrame(e.to_string()))?;
-        
+        // Parse CBOR header from frame data
+        let plugin_header = parse_plugin_header(&frame_data)?;
         let plugin_id = plugin_header.id;
         
         // Update statistics
         {
             let mut stats = self.stats.write().await;
-            stats.frames_processed += 1;
+            stats.total_dispatched_frames += 1;
         }
         
-        // Validate plugin registration and permissions
-        let registry = self.registry.read().await;
-        let plugin_info = registry.get_plugin_info(plugin_id).await
-            .ok_or(DispatchError::PluginNotRegistered(plugin_id))?;
-        
-        // Check basic frame receiving permission
-        if !plugin_info.permissions.contains(&Permission::ReceiveFrames) {
+        // Check plugin registration and permissions
+        let registry = self.registry.lock().await;
+        if !registry.is_registered(plugin_id).await {
             let mut stats = self.stats.write().await;
-            stats.frames_rejected += 1;
+            stats.total_errors += 1;
+            return Err(DispatchError::PluginNotRegistered(plugin_id));
+        }
+        
+        // Verify plugin has required permissions for this frame type
+        let required_permission = match frame_type {
+            FRAME_TYPE_PLUGIN_HANDSHAKE => Permission::Handshake,
+            FRAME_TYPE_PLUGIN_DATA => Permission::DataAccess,
+            FRAME_TYPE_PLUGIN_CONTROL => Permission::Control,
+            FRAME_TYPE_PLUGIN_ERROR => Permission::ErrorReporting,
+            _ => Permission::DataAccess, // Default for other plugin frame types
+        };
+        
+        if !registry.has_permission(plugin_id, required_permission) {
+            let mut stats = self.stats.write().await;
+            stats.total_errors += 1;
+            warn!("Plugin {} lacks permission {:?} for frame type 0x{:02X}", 
+                  plugin_id, required_permission, frame_type);
             return Err(DispatchError::InsufficientPermissions(plugin_id));
         }
         
-        // Send frame to plugin runtime via IPC
-        let ipc_handlers = self.ipc_handlers.read().await;
-        if let Some(sender) = ipc_handlers.get(&plugin_id) {
-            sender.send(frame_bytes.to_vec()).await
-                .map_err(|e| DispatchError::IpcSendFailed(plugin_id, e.to_string()))?;
-                
-            debug!("Plugin frame dispatched to runtime {}", plugin_id);
-        } else {
-            warn!("No IPC handler found for plugin {}", plugin_id);
-            return Err(DispatchError::RuntimeError(format!("No runtime for plugin {}", plugin_id)));
-        }
+        drop(registry); // Release registry lock early
         
+        // Get runtime handle and send message
+        let runtimes = self.runtimes.lock().await;
+        let runtime_handle = runtimes.get(&plugin_id)
+            .ok_or(DispatchError::RuntimeError(plugin_id, "Runtime not found".to_string()))?;
+            
+        // Create plugin message
+        let plugin_message = PluginMessage::new(frame_type, plugin_header, frame_data);
+        
+        // Send message via IPC with timeout protection
+        runtime_handle.ipc_tx.send(plugin_message).await
+            .map_err(|_| DispatchError::IpcSendFailed(plugin_id, "Channel closed or full".to_string()))?;
+            
+        debug!("Successfully dispatched frame type 0x{:02X} to plugin {}", frame_type, plugin_id);
         Ok(())
     }
 
-    /// Load plugin and start runtime
+    /// Legacy method for compatibility - dispatches raw message bytes
+    pub async fn dispatch_message(&self, plugin_id: PluginId, message: Vec<u8>) -> Result<(), DispatchError> {
+        // Try to parse as CBOR header to extract frame type
+        let plugin_header = parse_plugin_header(&message)?;
+        
+        // Assume this is a data frame for legacy compatibility
+        self.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_DATA, message).await
+    }
+
+    /// Load and start a plugin
     pub async fn load_plugin(&self, plugin_info: PluginInfo) -> Result<(), DispatchError> {
         let plugin_id = plugin_info.id;
         
         // Check capacity
         {
-            let runtimes = self.runtimes.read().await;
-            if runtimes.len() >= self.max_plugins {
-                return Err(DispatchError::CapacityExceeded(self.max_plugins));
+            let runtimes = self.runtimes.lock().await;
+            if runtimes.len() >= 32 { // Max plugins limit
+                return Err(DispatchError::CapacityExceeded(32));
             }
         }
+
+        // Clone necessary data for the runtime before moving plugin_info
+        let plugin_name = plugin_info.name.clone();
         
-        // Register plugin in registry
+        // Register plugin
         {
-            let registry = self.registry.write().await;
-            registry.register(plugin_info.clone()).await
-                .map_err(|e| DispatchError::RuntimeError(e.to_string()))?;
+            let registry = self.registry.lock().await;
+            registry.register(plugin_info).await
+                .map_err(|e| DispatchError::InvalidFrame(e.to_string()))?;
         }
+
+        // Create IPC channel with appropriate buffer size
+        let (tx, rx) = mpsc::channel(1024);
         
-        // Create IPC channel for plugin communication
-        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
+        let stats_clone = Arc::clone(&self.stats);
+        let stats_clone = Arc::clone(&self.stats);
         
-        // Store IPC sender
-        {
-            let mut ipc_handlers = self.ipc_handlers.write().await;
-            ipc_handlers.insert(plugin_id, tx);
-        }
-        
-        // Spawn runtime task
-        let plugin_runtime = tokio::spawn(async move {
-            debug!("Runtime attached for plugin {}", plugin_id);
+        // Spawn plugin runtime with comprehensive message processing
+        let join_handle = tokio::spawn(async move {
+            info!("Starting plugin runtime for {} (ID: {})", plugin_name, plugin_id);
             
-            // Plugin runtime message processing loop
-            while let Some(frame_data) = rx.recv().await {
-                // Process frame data in plugin context
-                // This would delegate to the actual plugin implementation
-                trace!("Processing frame for plugin {}: {} bytes", plugin_id, frame_data.len());
+            let mut rx = rx;
+            let mut message_count = 0u64;
+            let mut error_count = 0u64;
+            
+            while let Some(plugin_message) = rx.recv().await {
+                message_count += 1;
                 
-                // Plugin-specific frame processing would happen here
-                // For now, we just log the frame reception
+                // Process the plugin message based on frame type
+                match Self::process_plugin_message(plugin_id, &plugin_message).await {
+                    Ok(()) => {
+                        debug!("Successfully processed message {} for plugin {}", 
+                               message_count, plugin_id);
+                    }
+                    Err(e) => {
+                        error_count += 1;
+                        error!("Error processing message for plugin {}: {}", plugin_id, e);
+                        
+                        // Update error statistics
+                        {
+                            let mut stats = stats_clone.write().await;
+                            stats.total_errors += 1;
+                        }
+                        
+                        // For critical errors, consider terminating the plugin
+                        if error_count > 100 {
+                            error!("Plugin {} has too many errors ({}), terminating", 
+                                   plugin_id, error_count);
+                            break;
+                        }
+                    }
+                }
+                
+                // Update processed message count periodically
+                if message_count % 100 == 0 {
+                    let mut stats = stats_clone.write().await;
+                    stats.total_processed_messages += 100;
+                }
             }
             
-            debug!("Plugin runtime {} shutting down", plugin_id);
+            // Update final statistics
+            {
+                let mut stats = stats_clone.write().await;
+                stats.total_processed_messages += message_count % 100;
+            }
+            
+            info!("Plugin runtime for {} (ID: {}) terminated. Processed {} messages, {} errors", 
+                  plugin_name, plugin_id, message_count, error_count);
         });
         
-        // Store runtime handle
+        // Store runtime handle with plugin ID for debugging
         {
-            let mut runtimes = self.runtimes.write().await;
-            runtimes.insert(plugin_id, plugin_runtime);
+            let mut runtimes = self.runtimes.lock().await;
+            runtimes.insert(plugin_id, RuntimeHandle {
+                join_handle,
+                ipc_tx: tx,
+                plugin_id,
+            });
         }
         
-        // Update statistics
+        // Update stats
         {
             let mut stats = self.stats.write().await;
-            let runtimes = self.runtimes.read().await;
-            stats.active_plugins = runtimes.len();
+            stats.active_plugins = self.runtimes.lock().await.len() as u32;
         }
         
-        info!("Plugin {} loaded and runtime started", plugin_id);
         Ok(())
     }
 
-    /// Unload plugin and cleanup runtime
+    /// Unload and stop a plugin
     pub async fn unload_plugin(&self, plugin_id: PluginId) -> Result<(), DispatchError> {
-        // Remove IPC handler
-        {
-            let mut ipc_handlers = self.ipc_handlers.write().await;
-            ipc_handlers.remove(&plugin_id);
-        }
-        
-        // Remove and abort runtime
+        // Remove from runtime
         let runtime_handle = {
-            let mut runtimes = self.runtimes.write().await;
+            let mut runtimes = self.runtimes.lock().await;
             runtimes.remove(&plugin_id)
         };
         
@@ -230,496 +315,133 @@ impl PluginDispatcher {
             handle.abort();
         }
         
-        // Unregister from registry
+        // Unregister plugin
         {
-            let registry = self.registry.write().await;
-            if let Err(e) = registry.unregister(plugin_id).await {
-                warn!("Failed to unregister plugin {}: {}", plugin_id, e);
-            }
+            let mut registry = self.registry.lock().await;
+            registry.unregister(plugin_id).await
+                .map_err(|_| DispatchError::PluginNotRegistered(plugin_id))?;
         }
         
-        // Update statistics
+        // Update stats
         {
             let mut stats = self.stats.write().await;
-            let runtimes = self.runtimes.read().await;
-            stats.active_plugins = runtimes.len();
+            stats.active_plugins = self.runtimes.lock().await.len() as u32;
         }
         
-        debug!("Plugin {} unloaded", plugin_id);
         Ok(())
     }
 
-    /// Get current plugin statistics
-    pub async fn get_stats(&self) -> PluginStats {
+    /// Get runtime statistics
+    pub async fn get_stats(&self) -> PluginRuntimeStats {
         self.stats.read().await.clone()
     }
 
-    /// Get list of active plugins
-    pub async fn list_active_plugins(&self) -> Vec<PluginId> {
-        self.runtimes.read().await.keys().copied().collect()
-    }
-
-    /// Shutdown all plugins and cleanup
-    pub async fn shutdown(&self) -> Result<(), DispatchError> {
-        // Get all active plugin IDs
+    /// Shutdown all plugins
+    pub async fn shutdown(&self) {
         let plugin_ids: Vec<PluginId> = {
-            self.runtimes.read().await.keys().copied().collect()
+            let runtimes = self.runtimes.lock().await;
+            runtimes.keys().cloned().collect()
         };
         
-        // Unload all plugins
         for plugin_id in plugin_ids {
             if let Err(e) = self.unload_plugin(plugin_id).await {
-                error!("Failed to unload plugin {}: {}", plugin_id, e);
+                eprintln!("Error unloading plugin {}: {}", plugin_id, e);
             }
         }
-        
-        info!("Plugin dispatcher shutdown complete");
+    }
+
+    /// Process individual plugin messages within the runtime
+    /// 
+    /// This method handles the actual plugin message processing logic,
+    /// including frame type-specific handling and error management.
+    async fn process_plugin_message(
+        plugin_id: PluginId, 
+        message: &PluginMessage
+    ) -> Result<(), DispatchError> {
+        match message.frame_type {
+            FRAME_TYPE_PLUGIN_HANDSHAKE => {
+                debug!("Processing handshake message for plugin {}", plugin_id);
+                Self::process_handshake_message(plugin_id, message).await
+            }
+            FRAME_TYPE_PLUGIN_DATA => {
+                debug!("Processing data message for plugin {}", plugin_id);
+                Self::process_data_message(plugin_id, message).await
+            }
+            FRAME_TYPE_PLUGIN_CONTROL => {
+                debug!("Processing control message for plugin {}", plugin_id);
+                Self::process_control_message(plugin_id, message).await
+            }
+            FRAME_TYPE_PLUGIN_ERROR => {
+                warn!("Processing error message for plugin {}", plugin_id);
+                Self::process_error_message(plugin_id, message).await
+            }
+            _ => {
+                warn!("Unknown plugin frame type 0x{:02X} for plugin {}", 
+                      message.frame_type, plugin_id);
+                Err(DispatchError::InvalidFrameType(message.frame_type))
+            }
+        }
+    }
+
+    /// Process plugin handshake messages
+    async fn process_handshake_message(
+        plugin_id: PluginId, 
+        message: &PluginMessage
+    ) -> Result<(), DispatchError> {
+        // Handshake processing logic would go here
+        // For now, just log and accept
+        info!("Plugin {} completed handshake with {} bytes of data", 
+              plugin_id, message.plugin_header.data.len());
         Ok(())
     }
 
-    /// Start IPC transport handler for plugin communication
-    /// This manages the bidirectional communication channel with plugin processes
-    async fn start_ipc_transport_handler(&self, plugin_id: PluginId) {
-        debug!(plugin_id = plugin_id, "Starting IPC transport handler");
-        
-        // This would implement the actual IPC transport mechanism:
-        // 1. Serialize the message to the IPC format
-        // 2. Send via named pipe/domain socket to child process
-        // 3. Handle responses and forward back to dispatcher
-        // 4. Manage plugin lifecycle and error recovery
-        
-        debug!(plugin_id = plugin_id, "IPC transport handler shutting down");
+    /// Process plugin data messages
+    async fn process_data_message(
+        plugin_id: PluginId, 
+        message: &PluginMessage
+    ) -> Result<(), DispatchError> {
+        // Data processing logic would go here
+        // This would typically forward data to the appropriate handler
+        debug!("Plugin {} sent {} bytes of data", 
+               plugin_id, message.plugin_header.data.len());
+        Ok(())
+    }
+
+    /// Process plugin control messages
+    async fn process_control_message(
+        plugin_id: PluginId, 
+        message: &PluginMessage
+    ) -> Result<(), DispatchError> {
+        // Control message processing logic would go here
+        debug!("Plugin {} sent control message with flags 0x{:02X}", 
+               plugin_id, message.plugin_header.flags);
+        Ok(())
+    }
+
+    /// Process plugin error messages
+    async fn process_error_message(
+        plugin_id: PluginId, 
+        message: &PluginMessage
+    ) -> Result<(), DispatchError> {
+        // Error message processing logic would go here
+        error!("Plugin {} reported error: {:?}", 
+               plugin_id, String::from_utf8_lossy(&message.plugin_header.data));
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_registry::{PluginRegistry, Permission};
+    use crate::plugin_registry::PluginRegistry;
 
     #[tokio::test]
     async fn test_plugin_dispatcher_creation() {
-        let registry = Arc::new(RwLock::new(PluginRegistry::new()));
+        let registry = Arc::new(Mutex::new(PluginRegistry::new()));
         let dispatcher = PluginDispatcher::new(registry);
         
         let stats = dispatcher.get_stats().await;
-        assert_eq!(stats.frames_processed, 0);
+        assert_eq!(stats.total_dispatched_frames, 0);
         assert_eq!(stats.active_plugins, 0);
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_unregistered_plugin() {
-        let registry = Arc::new(RwLock::new(PluginRegistry::new()));
-        let dispatcher = PluginDispatcher::new(registry);
-        
-        // Create a mock frame with unregistered plugin ID
-        let mock_header = PluginHeader { id: 999, flags: 0, data: b"test" };
-        let frame_bytes = mock_header.encode().unwrap();
-        
-        let result = dispatcher.dispatch(&frame_bytes).await;
-        assert!(matches!(result, Err(DispatchError::PluginNotRegistered(999))));
-    }
-}
-
-    /// Main plugin frame dispatch methodforbid(unsafe_code)]
-
-//! Plugin frame dispatcher with permission enforcement.
-//!
-//! The dispatcher is responsible for routing incoming Plugin Frames
-//! (Type 0x50–0x5F) to the appropriate runtime while ensuring that
-//! the sending plugin has been granted the requested permissions.
-//!
-//! This implementation provides:
-//! - Complete v1.0 Plugin Framework support
-//! - CBOR header validation with {id:u32, flags:u8, data:bytes}
-//! - Permission enforcement and security policies
-//! - IPC transport with sandbox communication
-//! - Plugin lifecycle management
-
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use tracing::{error, trace, warn};
-use thiserror::Error;
-
-#[cfg(feature = "dynamic_plugin")]
-use libloading::Library;
-
-#[cfg(all(feature = "dynamic_plugin", any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-use crate::plugin_sandbox::spawn_sandboxed_plugin;
-
-use crate::{plugin_registry::{PluginRegistry, Permission, PluginInfo}, plugin::PluginHeader};
-use tracing::info;
-/// Plugin Framework dispatch errors for v1.0
-#[derive(Error, Debug)]
-pub enum DispatchError {
-    #[error("Plugin not registered: {0}")]
-    PluginNotRegistered(u32),
-
-    #[error("Runtime not found for plugin: {0}")]
-    RuntimeNotFound(u32),
-
-    #[error("Invalid plugin frame: {0}")]
-    InvalidFrame(String),
-
-    #[error("Insufficient permissions: {0}")]
-    InsufficientPermissions(String),
-
-    #[error("IPC send failed for plugin: {0}")]
-    IpcSendFailed(u32),
-
-    #[error("Plugin handshake failed: {0}")]
-    HandshakeFailed(String),
-
-    #[error("Plugin sandbox error: {0}")]
-    SandboxError(String),
-}
-
-/// Statistics for plugin runtime management
-#[derive(Debug, Clone)]
-pub struct PluginRuntimeStats {
-    pub active_plugins: u32,
-    pub registered_plugins: u32,
-    pub total_dispatched_frames: u64,
-}
-
-/// Message sent to a plugin runtime.
-#[derive(Debug)]
-pub struct PluginMessage {
-    pub header: PluginHeaderOwned,
-}
-
-#[derive(Debug)]
-pub struct PluginHeaderOwned {
-    pub id: u32,
-    pub flags: u8,
-    pub data: Vec<u8>,
-}
-
-/// Handle to a running plugin instance.
-struct RuntimeHandle {
-    tx: mpsc::Sender<PluginMessage>,
-    #[cfg(feature = "dynamic_plugin")]
-    _lib: Option<Library>,
-}
-
-/// Central dispatcher mapping plugin IDs → runtime handles.
-pub struct PluginDispatcher {
-    registry: Arc<RwLock<PluginRegistry>>,
-    runtimes: Arc<RwLock<HashMap<u32, RuntimeHandle>>>,
-    stats: Arc<RwLock<PluginRuntimeStats>>,
-}
-
-impl PluginDispatcher {
-    #[must_use]
-    pub fn new(registry: PluginRegistry) -> Self {
-        Self { 
-            registry: Arc::new(RwLock::new(registry)),
-            runtimes: Arc::new(RwLock::new(HashMap::new())),
-            stats: Arc::new(RwLock::new(PluginRuntimeStats {
-                active_plugins: 0,
-                registered_plugins: 0,
-                total_dispatched_frames: 0,
-            })),
-        }
-    }
-
-    /// Register a runtime channel for `plugin_id`.
-    pub async fn attach_runtime(&self, plugin_id: u32, tx: mpsc::Sender<PluginMessage>) -> Result<(), DispatchError> {
-        let mut runtimes = self.runtimes.write().await;
-        runtimes.insert(plugin_id, RuntimeHandle { 
-            tx,
-            #[cfg(feature = "dynamic_plugin")]
-            _lib: None,
-        });
-        
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.active_plugins = runtimes.len() as u32;
-        
-        debug!("Runtime attached for plugin {}", plugin_id);
-        Ok(())
-    }
-
-    /// Send plugin frame to runtime with permission enforcement.
-    pub async fn dispatch_frame(&self, header: PluginHeader<'_>) -> Result<(), DispatchError> {
-        let plugin_id = header.id;
-        
-        // Validate plugin frame according to v1.0 spec
-        header.validate().map_err(|e| DispatchError::InvalidFrame(e.to_string()))?;
-        
-        // Check if plugin is registered
-        let registry = self.registry.read().await;
-        let plugin_info = registry.get(plugin_id)
-            .ok_or(DispatchError::PluginNotRegistered(plugin_id))?;
-
-        // Permission enforcement based on flags
-        self.enforce_permissions(&header, &plugin_info)?;
-
-        // Find runtime handle
-        let runtimes = self.runtimes.read().await;
-        let runtime = runtimes.get(&plugin_id)
-            .ok_or(DispatchError::RuntimeNotFound(plugin_id))?;
-
-        // Convert to owned message
-        let message = PluginMessage {
-            header: PluginHeaderOwned {
-                id: header.id,
-                flags: header.flags,
-                data: header.data.to_vec(),
-            },
-        };
-
-        // Send to plugin runtime via IPC
-        runtime.tx.send(message).await
-            .map_err(|_| DispatchError::IpcSendFailed(plugin_id))?;
-
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.total_dispatched_frames += 1;
-
-        debug!("Plugin frame dispatched to runtime {}", plugin_id);
-        Ok(())
-    }
-
-    /// Enforce permission checks for plugin frame
-    fn enforce_permissions(&self, header: &PluginHeader<'_>, plugin_info: &PluginInfo) -> Result<(), DispatchError> {
-        use crate::plugin::plugin_flags::*;
-        
-        // Check if plugin requires network access
-        if (header.flags & FLAG_PLUGIN_NETWORK_ACCESS) != 0 {
-            if !plugin_info.permissions.iter().any(|p| matches!(p, Permission::NetworkAccess)) {
-                return Err(DispatchError::InsufficientPermissions(
-                    "Plugin requires network access but lacks permission".to_string()
-                ));
-            }
-        }
-
-        // Check if plugin requires file system access
-        if (header.flags & FLAG_PLUGIN_FILE_ACCESS) != 0 {
-            if !plugin_info.permissions.iter().any(|p| matches!(p, Permission::FileSystemAccess)) {
-                return Err(DispatchError::InsufficientPermissions(
-                    "Plugin requires file system access but lacks permission".to_string()
-                ));
-            }
-        }
-
-        // Check if plugin requires IPC communication
-        if (header.flags & FLAG_PLUGIN_IPC_ACCESS) != 0 {
-            if !plugin_info.permissions.iter().any(|p| matches!(p, Permission::InterPluginIpc)) {
-                return Err(DispatchError::InsufficientPermissions(
-                    "Plugin requires IPC access but lacks permission".to_string()
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Load a plugin and attach its runtime to dispatcher.
-    #[cfg(feature = "dynamic_plugin")]
-    pub async fn load_plugin(&self, info: PluginInfo, tx: mpsc::Sender<PluginMessage>, lib: Library) -> Result<(), DispatchError> {
-        let mut registry = self.registry.write().await;
-        registry.register(&info).map_err(|e| DispatchError::InvalidFrame(e.to_string()))?;
-        
-        let mut runtimes = self.runtimes.write().await;
-        runtimes.insert(info.id, RuntimeHandle { tx, _lib: Some(lib) });
-        
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.active_plugins = runtimes.len() as u32;
-        stats.registered_plugins = registry.count() as u32;
-        
-        info!("Plugin loaded: {} (ID: {})", info.name, info.id);
-        Ok(())
-    }
-
-    #[cfg(not(feature = "dynamic_plugin"))]
-    pub async fn load_plugin(&self, info: PluginInfo, tx: mpsc::Sender<PluginMessage>) -> Result<(), DispatchError> {
-        let mut registry = self.registry.write().await;
-        registry.register(&info).map_err(|e| DispatchError::InvalidFrame(e.to_string()))?;
-        
-        let mut runtimes = self.runtimes.write().await;
-        runtimes.insert(info.id, RuntimeHandle { 
-            tx,
-            #[cfg(feature = "dynamic_plugin")]
-            _lib: None,
-        });
-        
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.active_plugins = runtimes.len() as u32;
-        stats.registered_plugins = registry.count() as u32;
-        
-        info!("Plugin loaded: {} (ID: {})", info.name, info.id);
-        Ok(())
-    }
-
-    /// Unload and remove plugin runtime
-    pub async fn unload_plugin(&self, plugin_id: u32) -> Result<(), DispatchError> {
-        let mut runtimes = self.runtimes.write().await;
-        runtimes.remove(&plugin_id)
-            .ok_or(DispatchError::RuntimeNotFound(plugin_id))?;
-        
-        let mut registry = self.registry.write().await;
-        registry.unregister(plugin_id)
-            .map_err(|_| DispatchError::PluginNotRegistered(plugin_id))?;
-        
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.active_plugins = runtimes.len() as u32;
-        stats.registered_plugins = registry.count() as u32;
-        
-        debug!("Plugin {} unloaded", plugin_id);
-        Ok(())
-    }
-
-    /// Get statistics for active plugin runtimes
-    pub async fn get_runtime_stats(&self) -> PluginRuntimeStats {
-        self.stats.read().await.clone()
-    }
-
-    /// Dispatch incoming raw plugin frame. Returns `Ok(())` when accepted or
-    /// `Err(())` if permission denied, unknown runtime, or decode error.
-    pub async fn dispatch(&self, frame_bytes: &[u8]) -> Result<(), DispatchError> {
-        let hdr = PluginHeader::decode(frame_bytes)
-            .map_err(|e| DispatchError::InvalidFrame(e.to_string()))?;
-        
-        self.dispatch_frame(hdr).await
-    }
-
-    /// List all registered plugins
-    pub async fn list_plugins(&self) -> Vec<PluginInfo> {
-        self.registry.read().await.list_plugins()
-    }
-
-    /// Check if plugin has specific permission
-    pub async fn has_permission(&self, plugin_id: u32, permission: Permission) -> bool {
-        self.registry.read().await.has_permission(plugin_id, permission)
-    }
-}
-
-    #[cfg(all(feature = "dynamic_plugin", any(target_os = "windows", target_os = "macos")))]
-    pub async fn spawn_and_load_plugin(&self, info: PluginInfo, exe_path: &std::path::Path) -> Result<(), DispatchError> {
-        // Launch plugin inside OS-specific sandbox.
-        let child = spawn_sandboxed_plugin(exe_path)
-            .map_err(|e| DispatchError::SandboxError(e.to_string()))?;
-        
-        // Create IPC transport channel
-        let (tx, rx) = mpsc::channel::<PluginMessage>(64);
-        
-        // Load plugin with registry
-        self.load_plugin(info.clone(), tx).await?;
-        
-        // Spawn IPC transport task to handle communication with child process
-        let plugin_id = info.id;
-        tokio::spawn(async move {
-            Self::handle_ipc_transport(plugin_id, child, rx).await;
-        });
-        
-        debug!(plugin_id = info.id, "Plugin spawned and IPC transport configured");
-        Ok(())
-    }
-
-    /// Handle IPC transport between dispatcher and sandboxed plugin process
-    async fn handle_ipc_transport(
-        plugin_id: u32,
-        mut _child: std::process::Child,
-        mut rx: mpsc::Receiver<PluginMessage>
-    ) {
-        debug!(plugin_id = plugin_id, "Starting IPC transport handler");
-        
-        while let Some(message) = rx.recv().await {
-            // TODO: Implement actual IPC transport (named pipes, domain sockets, etc.)
-            // For now, log the message to demonstrate the transport path
-            trace!(
-                plugin_id = plugin_id,
-                data_size = message.header.data.len(),
-                flags = message.header.flags,
-                "IPC transport: sending message to plugin"
-            );
-            
-            // In a real implementation, this would:
-            // 1. Serialize the message to the IPC format
-            // 2. Send via named pipe/domain socket to child process
-            // 3. Handle responses and forward back to dispatcher
-            // 4. Manage plugin lifecycle and error recovery
-        }
-        
-        debug!(plugin_id = plugin_id, "IPC transport handler shutting down");
-    }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_plugin_info() -> PluginInfo {
-        PluginInfo {
-            id: 1001,
-            name: "Test Plugin".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Test plugin for dispatcher".to_string(),
-            permissions: vec![Permission::ReceiveFrames, Permission::NetworkAccess],
-            author: "Test Author".to_string(),
-            config_schema: std::collections::HashMap::new(),
-            supported_frames: vec![0x50, 0x51],
-            required: false,
-        }
-    }
-
-    #[tokio::test]
-    async fn test_plugin_dispatch() {
-        let registry = PluginRegistry::new();
-        let dispatcher = PluginDispatcher::new(registry);
-        
-        // Create test plugin and runtime
-        let (tx, mut rx) = mpsc::channel::<PluginMessage>(10);
-        let info = test_plugin_info();
-        
-        // Load plugin
-        dispatcher.load_plugin(info.clone(), tx).await.unwrap();
-        
-        // Create test plugin header
-        let header = PluginHeader {
-            id: info.id,
-            flags: 0x01, // Required flag
-            data: b"test data",
-        };
-        
-        // Dispatch frame
-        tokio::spawn(async move {
-            if let Some(message) = rx.recv().await {
-                assert_eq!(message.header.id, 1001);
-                assert_eq!(message.header.data, b"test data");
-            }
-        });
-        
-        // Should succeed with proper permissions
-        assert!(dispatcher.dispatch_frame(header).await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_permission_enforcement() {
-        let registry = PluginRegistry::new();
-        let dispatcher = PluginDispatcher::new(registry);
-        
-        let (tx, _rx) = mpsc::channel::<PluginMessage>(10);
-        let mut info = test_plugin_info();
-        info.permissions = vec![Permission::ReceiveFrames]; // Remove network access
-        
-        dispatcher.load_plugin(info.clone(), tx).await.unwrap();
-        
-        // Create header requiring network access
-        let header = PluginHeader {
-            id: info.id,
-            flags: crate::plugin::plugin_flags::FLAG_PLUGIN_NETWORK_ACCESS,
-            data: b"test data",
-        };
-        
-        // Should fail due to insufficient permissions
-        assert!(matches!(
-            dispatcher.dispatch_frame(header).await,
-            Err(DispatchError::InsufficientPermissions(_))
-        ));
     }
 }

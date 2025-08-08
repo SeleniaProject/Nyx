@@ -23,6 +23,14 @@ pub type PluginId = u32;
 pub enum Permission {
     /// Basic frame receiving capability
     ReceiveFrames,
+    /// Plugin handshake capability
+    Handshake,
+    /// Data access and processing capability
+    DataAccess,
+    /// Control command capability
+    Control,
+    /// Error reporting capability
+    ErrorReporting,
     /// Network access permission
     NetworkAccess,
     /// File system access permission
@@ -140,12 +148,12 @@ impl PluginRegistry {
 
     /// Get plugin information by ID
     pub async fn get_plugin_info(&self, plugin_id: PluginId) -> Option<PluginInfo> {
-        self.plugins.read().await.get(&plugin_id).cloned()
+        self.plugins.lock().unwrap().get(&plugin_id).cloned()
     }
 
-    /// Get plugin information by ID
-    pub async fn get_plugin_info(&self, plugin_id: PluginId) -> Option<PluginInfo> {
-        self.plugins.lock().unwrap().get(&plugin_id).cloned()
+    /// Check if plugin is registered
+    pub async fn is_registered(&self, plugin_id: PluginId) -> bool {
+        self.plugins.lock().unwrap().contains_key(&plugin_id)
     }
 
     /// Legacy sync get method  

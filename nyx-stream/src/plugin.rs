@@ -48,25 +48,28 @@ pub mod plugin_flags {
 
 /// CBOR header structure for plugin frames
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PluginHeader<'a> {
+pub struct PluginHeader {
     /// Plugin identifier (32-bit)
     pub id: u32,
     /// Plugin-specific flags (8-bit)
     pub flags: u8,
     /// Plugin payload data
     #[serde(with = "serde_bytes")]
-    pub data: &'a [u8],
+    pub data: Vec<u8>,
 }
 
-impl<'a> PluginHeader<'a> {
+impl PluginHeader {
     /// Encode plugin header to CBOR format
     pub fn encode(&self) -> Result<Vec<u8>, PluginError> {
-        serde_cbor::to_vec(self).map_err(|e| PluginError::SerializationError(e.to_string()))
+        let mut buffer = Vec::new();
+        ciborium::ser::into_writer(self, &mut buffer).map_err(|e| PluginError::SerializationError(e.to_string()))?;
+        Ok(buffer)
     }
 
     /// Decode plugin header from CBOR format
-    pub fn decode(bytes: &'a [u8]) -> Result<Self, PluginError> {
-        serde_cbor::from_slice(bytes).map_err(|e| PluginError::SerializationError(e.to_string()))
+    pub fn decode(bytes: &[u8]) -> Result<Self, PluginError> {
+        let mut cursor = std::io::Cursor::new(bytes);
+        ciborium::de::from_reader(&mut cursor).map_err(|e| PluginError::SerializationError(e.to_string()))
     }
 
     /// Validate plugin header structure and constraints
@@ -176,9 +179,10 @@ impl PluginFrame {
 
     /// Encode plugin frame to bytes
     pub fn encode(&self) -> Result<Vec<u8>, PluginError> {
-        let payload = serde_cbor::to_vec(self)
+        let mut buffer = Vec::new();
+        ciborium::into_writer(self, &mut buffer)
             .map_err(|e| PluginError::SerializationError(e.to_string()))?;
-        Ok(payload)
+        Ok(buffer)
     }
 
     /// Decode plugin frame from bytes  
@@ -189,7 +193,8 @@ impl PluginFrame {
             ));
         }
 
-        let frame: PluginFrame = serde_cbor::from_slice(payload)
+        let mut cursor = std::io::Cursor::new(payload);
+        let frame: PluginFrame = ciborium::from_reader(&mut cursor)
             .map_err(|e| PluginError::SerializationError(e.to_string()))?;
 
         // Verify frame type matches the decoded content
@@ -578,7 +583,7 @@ mod tests {
         let header = PluginHeader {
             id: 12345,
             flags: plugin_flags::FLAG_PLUGIN_REQUIRED,
-            data: b"test plugin data",
+            data: b"test plugin data".to_vec(),
         };
 
         let encoded = header.encode().expect("Failed to encode");
@@ -593,7 +598,7 @@ mod tests {
         let valid_header = PluginHeader {
             id: 1,
             flags: plugin_flags::FLAG_PLUGIN_OPTIONAL,
-            data: b"valid data",
+            data: b"valid data".to_vec(),
         };
         assert!(valid_header.validate().is_ok());
 
@@ -601,7 +606,7 @@ mod tests {
         let invalid_id = PluginHeader {
             id: 0,
             flags: 0,
-            data: b"data",
+            data: b"data".to_vec(),
         };
         assert!(invalid_id.validate().is_err());
 
@@ -609,7 +614,7 @@ mod tests {
         let invalid_flags = PluginHeader {
             id: 1,
             flags: plugin_flags::FLAG_PLUGIN_REQUIRED | plugin_flags::FLAG_PLUGIN_OPTIONAL,
-            data: b"data",
+            data: b"data".to_vec(),
         };
         assert!(invalid_flags.validate().is_err());
     }

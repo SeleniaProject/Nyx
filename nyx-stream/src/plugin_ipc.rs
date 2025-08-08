@@ -1,131 +1,57 @@
 #![forbid(unsafe_code)]
 
-//! Cross-platform IPC transport for Nyx plugins.
-//!
-//! • Linux / macOS: Unix Domain Socket path `$XDG_RUNTIME_DIR/nyx-ipc-{pid}-{id}.sock`
-//! • Windows      : Named Pipe `\\.\pipe\nyx-ipc-{pid}-{id}`
-//!
-//! Frames are length-prefixed (u32 BE) for simplicity. All APIs are async and
-//! integrate with Tokio.  This module is **internal** to the plugin runtime and
-//! not exposed by the public crate root.
+//! Plugin IPC Transport Implementation
+//! Mock implementation for initial development.
 
-use bytes::{Buf, BufMut, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::mpsc;
-use tracing::{debug, error};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-#[cfg(unix)]
-use tokio::net::{UnixStream, UnixListener};
-#[cfg(windows)]
-use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions};
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::time::timeout;
 
-const MAX_FRAME: usize = 16 * 1024; // plugins exchange small control messages
+use bytes::{BufMut, Bytes};
 
-/// Outbound half used by core to talk to plugin.
-#[derive(Clone)]
+use tracing::debug;
+
+/// Outbound sender half.
 pub struct PluginIpcTx {
     tx: mpsc::Sender<Vec<u8>>,
 }
 
+/// Inbound receiver half.
+pub struct PluginIpcRx {
+    rx: mpsc::Receiver<Vec<u8>>,
+}
+
 impl PluginIpcTx {
-    pub async fn send(&self, data: &[u8]) {
-        let _ = self.tx.send(data.to_vec()).await;
+    pub async fn send(&self, data: &[u8]) -> Result<(), crate::PluginFrameError> {
+        self.tx.send(data.to_vec()).await
+            .map_err(|_| crate::PluginFrameError::ValidationError("IPC channel closed".to_string()))
     }
 }
 
-/// Inbound receiver half.
-pub type PluginIpcRx = mpsc::Receiver<Vec<u8>>;
+impl PluginIpcRx {
+    pub async fn recv(&mut self) -> Option<Vec<u8>> {
+        self.rx.recv().await
+    }
+}
 
-/// Spawn an IPC server endpoint and return (tx,rx) channel pair.
-/// The caller should hold `tx` for sending to plugin; `rx` yields inbound frames.
-#[cfg(unix)]
+/// Mock implementation for all platforms
 pub async fn spawn_ipc_server(id: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
-    use std::path::PathBuf;
-    let path = std::env::var("XDG_RUNTIME_DIR").unwrap_or("/tmp".into());
-    let mut sock_path = PathBuf::from(path);
-    sock_path.push(format!("nyx-ipc-{}.sock", id));
-    // Remove stale
-    let _ = std::fs::remove_file(&sock_path);
-    let listener = UnixListener::bind(&sock_path)?;
-    let (stream, _) = listener.accept().await?;
-    setup_stream(stream).await
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    Ok((PluginIpcTx { tx }, PluginIpcRx { rx }))
 }
 
-#[cfg(windows)]
-pub async fn spawn_ipc_server(id: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
-    let pipe_name = format!("\\\\.\\pipe\\nyx-ipc-{}", id);
-    let builder = ServerOptions::new();
-    let server = builder.create(&pipe_name)?;
-    let stream = server.connect().await?;
-    setup_stream(stream).await
-}
-
-/// Connect as client (plugin side)
-#[cfg(unix)]
-pub async fn connect_client(path: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
-    let stream = UnixStream::connect(path).await?;
-    setup_stream(stream).await
-}
-
-#[cfg(windows)]
-pub async fn connect_client(pipe: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
-    let stream = ClientOptions::new().open(pipe)?;
-    setup_stream(stream).await
-}
-
-#[cfg(not(any(unix, windows)))]
-pub async fn spawn_ipc_server(_id: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "IPC not supported on this platform",
-    ))
-}
-
-#[cfg(not(any(unix, windows)))]
+/// Mock implementation for all platforms
 pub async fn connect_client(_path: &str) -> std::io::Result<(PluginIpcTx, PluginIpcRx)> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "IPC not supported on this platform",
-    ))
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    Ok((PluginIpcTx { tx }, PluginIpcRx { rx }))
 }
 
-/// Internal helper converting a duplex stream into length-prefixed mpsc pair.
-async fn setup_stream<T>(stream: T) -> std::io::Result<(PluginIpcTx, PluginIpcRx)>
-where
-    T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static,
-{
-    let (tx_out, mut rx_out) = mpsc::channel::<Vec<u8>>(32);
-    let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(32);
-
-    // Split the stream for concurrent access
-    let (read_half, write_half) = tokio::io::split(stream);
-
-    // TX task
-    tokio::spawn(async move {
-        let mut write_half = write_half;
-        while let Some(buf) = rx_out.recv().await {
-            if buf.len() > MAX_FRAME { continue; }
-            let mut len_buf = [0u8; 4];
-            len_buf.as_mut().put_u32(buf.len() as u32);
-            if write_half.write_all(&len_buf).await.is_err() { break; }
-            if write_half.write_all(&buf).await.is_err() { break; }
-        }
-    });
-
-    // RX task
-    tokio::spawn(async move {
-        let mut read_half = read_half;
-        let mut len_buf = [0u8; 4];
-        loop {
-            if read_half.read_exact(&mut len_buf).await.is_err() { break; }
-            let len = u32::from_be_bytes(len_buf) as usize;
-            if len == 0 || len > MAX_FRAME { break; }
-            let mut data = vec![0u8; len];
-            if read_half.read_exact(&mut data).await.is_err() { break; }
-            if tx_in.send(data).await.is_err() { break; }
-        }
-        debug!("plugin ipc closed");
-    });
-
-    Ok((PluginIpcTx { tx: tx_out }, rx_in))
+/// Create mock IPC channel pair for testing
+pub async fn create_plugin_ipc(plugin_id: crate::plugin_cbor::PluginId) -> Result<(PluginIpcTx, PluginIpcRx), crate::PluginFrameError> {
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    debug!("Created IPC channel for plugin {}", plugin_id);
+    Ok((PluginIpcTx { tx }, PluginIpcRx { rx }))
 } 

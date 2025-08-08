@@ -80,7 +80,7 @@ mod cbor_header_tests {
         let header = PluginHeader {
             id: 12345,
             flags: plugin_flags::FLAG_PLUGIN_REQUIRED | plugin_flags::FLAG_PLUGIN_ENCRYPTED,
-            data: test_data,
+            data: test_data.to_vec(),
         };
 
         // Test encoding
@@ -102,7 +102,7 @@ mod cbor_header_tests {
         let valid_header = PluginHeader {
             id: 1001,
             flags: plugin_flags::FLAG_PLUGIN_OPTIONAL,
-            data: b"valid payload",
+            data: b"valid payload".to_vec(),
         };
         assert!(valid_header.validate().is_ok());
 
@@ -110,7 +110,7 @@ mod cbor_header_tests {
         let invalid_id = PluginHeader {
             id: 0,
             flags: 0,
-            data: b"payload",
+            data: b"payload".to_vec(),
         };
         assert!(invalid_id.validate().is_err());
 
@@ -118,7 +118,7 @@ mod cbor_header_tests {
         let invalid_flags = PluginHeader {
             id: 1002,
             flags: plugin_flags::FLAG_PLUGIN_REQUIRED | plugin_flags::FLAG_PLUGIN_OPTIONAL,
-            data: b"payload",
+            data: b"payload".to_vec(),
         };
         assert!(invalid_flags.validate().is_err());
 
@@ -127,7 +127,7 @@ mod cbor_header_tests {
         let invalid_size = PluginHeader {
             id: 1003,
             flags: 0,
-            data: &large_payload,
+            data: large_payload,
         };
         assert!(invalid_size.validate().is_err());
 
@@ -139,7 +139,7 @@ mod cbor_header_tests {
         let header = PluginHeader {
             id: u32::MAX,
             flags: u8::MAX,
-            data: &[0xFF; 1000],
+            data: vec![0xFF; 1000],
         };
 
         let encoded = header.encode().expect("Failed to encode");
@@ -391,20 +391,22 @@ mod frame_processing_tests {
         registry.register_plugin(capability).expect("Failed to register plugin");
 
         // Test data frame processing
-        let data_payload = serde_cbor::to_vec(&PluginFrame::Data {
+        let mut data_payload = Vec::new();
+        ciborium::ser::into_writer(&PluginFrame::Data {
             plugin_id: 7001,
             payload: vec![1, 2, 3, 4, 5],
-        }).expect("Failed to serialize data frame");
+        }, &mut data_payload).expect("Failed to serialize data frame");
 
         let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_DATA, &data_payload).await;
         assert!(result.is_ok());
 
         // Test control frame processing
-        let control_payload = serde_cbor::to_vec(&PluginFrame::Control {
+        let mut control_payload = Vec::new();
+        ciborium::ser::into_writer(&PluginFrame::Control {
             plugin_id: 7001,
             command: "ping".to_string(),
             params: HashMap::new(),
-        }).expect("Failed to serialize control frame");
+        }, &mut control_payload).expect("Failed to serialize control frame");
 
         let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_CONTROL, &control_payload).await;
         assert!(result.is_ok());
@@ -426,10 +428,11 @@ mod frame_processing_tests {
         assert!(result.is_err());
 
         // Test unregistered plugin
-        let data_payload = serde_cbor::to_vec(&PluginFrame::Data {
+        let mut data_payload = Vec::new();
+        ciborium::ser::into_writer(&PluginFrame::Data {
             plugin_id: 9999, // Unregistered plugin
             payload: vec![1, 2, 3],
-        }).expect("Failed to serialize data frame");
+        }, &mut data_payload).expect("Failed to serialize data frame");
 
         let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_DATA, &data_payload).await;
         assert!(result.is_err());
@@ -442,7 +445,7 @@ mod frame_processing_tests {
 #[tokio::test]
 async fn run_plugin_framework_integration_tests() {
     println!("🚀 Running Plugin Framework v1.0 Integration Tests");
-    println!("=" .repeat(60));
+    println!("{}", "=".repeat(60));
 
     // All individual tests are run by the test framework
     // This is a summary test that exercises the complete flow
@@ -533,12 +536,12 @@ async fn run_plugin_framework_integration_tests() {
     // Error frames should still be processed successfully
     assert!(result.is_err()); // But return error due to error content
 
-    println!("=" .repeat(60));
+    println!("{}", "=".repeat(60));
     println!("✅ All Plugin Framework v1.0 tests completed successfully!");
     println!();
     println!("Features validated:");
     println!("  ✓ Frame Type 0x50-0x5F plugin reservation");
-    println!("  ✓ CBOR header {id:u32, flags:u8, data:bytes} parsing");
+    println!("  ✓ CBOR header {{id:u32, flags:u8, data:bytes}} parsing");
     println!("  ✓ SETTINGS PLUGIN_REQUIRED advertising");
     println!("  ✓ Plugin handshake mechanisms");
     println!("  ✓ Plugin registry and capability management");
