@@ -816,7 +816,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
 dependencies = [
  "ciborium-io",
- "half 2.6.0",
+ "half",
 ]
 
 [[package]]
@@ -1878,11 +1878,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi",
  "wasi 0.14.2+wasi-0.2.4",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1955,12 +1953,6 @@ dependencies = [
  "tokio-util",
  "tracing",
 ]
-
-[[package]]
-name = "half"
-version = "1.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
 
 [[package]]
 name = "half"
@@ -2902,12 +2894,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lru-slab"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
-
-[[package]]
 name = "malloc_buf"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3108,12 +3094,6 @@ dependencies = [
  "core2",
  "unsigned-varint",
 ]
-
-[[package]]
-name = "multimap"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
 name = "native-tls"
@@ -3363,7 +3343,6 @@ dependencies = [
  "prost 0.12.6",
  "prost-types",
  "regex",
- "reqwest",
  "serde",
  "serde_json",
  "sha2",
@@ -3373,10 +3352,10 @@ dependencies = [
  "tokio-stream",
  "tokio-test",
  "tokio-util",
- "tonic 0.10.2",
- "tonic-build",
  "tracing",
+ "ureq",
  "url",
+ "urlencoding",
  "uuid",
 ]
 
@@ -3426,12 +3405,12 @@ dependencies = [
  "pasetors",
  "protoc-bin-vendored",
  "rand 0.8.5",
- "reqwest",
  "schemars",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "ureq",
  "x25519-dalek",
 ]
 
@@ -3443,6 +3422,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "ciborium",
  "fcm",
  "fluent-bundle",
  "hex-literal",
@@ -3455,7 +3435,6 @@ dependencies = [
  "rand 0.8.5",
  "seccomp",
  "serde",
- "serde_cbor",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -3555,8 +3534,6 @@ dependencies = [
  "tokio-native-tls",
  "tokio-stream",
  "toml 0.8.23",
- "tonic 0.10.2",
- "tonic-build",
  "tracing",
  "tracing-subscriber",
  "trust-dns-resolver",
@@ -3583,6 +3560,7 @@ name = "nyx-mix"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.1",
+ "ciborium",
  "jsonschema",
  "lazy_static",
  "num-bigint",
@@ -3595,7 +3573,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_bytes",
- "serde_cbor",
  "sha2",
  "tokio",
  "tokio-stream",
@@ -3651,8 +3628,6 @@ dependencies = [
  "tokio-stream",
  "tokio-test",
  "toml 0.7.8",
- "tonic 0.10.2",
- "tonic-build",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -3679,6 +3654,7 @@ dependencies = [
  "bitflags 2.9.1",
  "bytes",
  "caps",
+ "ciborium",
  "criterion",
  "extrasafe",
  "fastrand",
@@ -3695,7 +3671,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_bytes",
- "serde_cbor",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -3715,21 +3690,19 @@ dependencies = [
  "hyper 0.14.32",
  "once_cell",
  "opentelemetry",
- "opentelemetry-otlp",
  "opentelemetry-prometheus",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "pprof",
  "prometheus",
- "reqwest",
  "serde",
  "tempfile",
  "tokio",
- "tonic 0.10.2",
  "tracing",
  "tracing-bunyan-formatter",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "ureq",
  "warp",
 ]
 
@@ -3746,9 +3719,7 @@ dependencies = [
  "nyx-mix",
  "nyx-stream",
  "once_cell",
- "quinn",
  "rand 0.8.5",
- "rcgen",
  "socket2",
  "tokio",
  "tracing",
@@ -3872,7 +3843,7 @@ dependencies = [
  "prost 0.11.9",
  "thiserror 1.0.69",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
 ]
 
 [[package]]
@@ -3897,7 +3868,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "prost 0.11.9",
- "tonic 0.9.2",
+ "tonic",
 ]
 
 [[package]]
@@ -4069,16 +4040,6 @@ dependencies = [
  "hmac",
  "password-hash",
  "sha2",
-]
-
-[[package]]
-name = "pem"
-version = "3.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38af38e8470ac9dee3ce1bae1af9c1671fffc44ddfd8bd1d0a3445bf349a8ef3"
-dependencies = [
- "base64 0.22.1",
- "serde",
 ]
 
 [[package]]
@@ -4351,16 +4312,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prettyplease"
-version = "0.2.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "061c1221631e079b26479d25bbf2275bfe5917ae8419cd7e34f13bfc2aa7539a"
-dependencies = [
- "proc-macro2",
- "syn 2.0.104",
-]
-
-[[package]]
 name = "primeorder"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4450,27 +4401,6 @@ checksum = "deb1435c188b76130da55f17a466d252ff7b1418b2ad3e037d127b94e3411f29"
 dependencies = [
  "bytes",
  "prost-derive 0.12.6",
-]
-
-[[package]]
-name = "prost-build"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
-dependencies = [
- "bytes",
- "heck",
- "itertools 0.11.0",
- "log",
- "multimap",
- "once_cell",
- "petgraph",
- "prettyplease",
- "prost 0.12.6",
- "prost-types",
- "regex",
- "syn 2.0.104",
- "tempfile",
 ]
 
 [[package]]
@@ -4631,59 +4561,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quinn"
-version = "0.11.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "626214629cda6781b6dc1d316ba307189c85ba657213ce642d9c77670f8202c8"
-dependencies = [
- "bytes",
- "cfg_aliases",
- "pin-project-lite",
- "quinn-proto",
- "quinn-udp",
- "rustc-hash 2.1.1",
- "socket2",
- "thiserror 2.0.12",
- "tokio",
- "tracing",
- "web-time 1.1.0",
-]
-
-[[package]]
-name = "quinn-proto"
-version = "0.11.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49df843a9161c85bb8aae55f101bc0bac8bcafd637a620d9122fd7e0b2f7422e"
-dependencies = [
- "bytes",
- "getrandom 0.3.3",
- "lru-slab",
- "rand 0.9.2",
- "ring",
- "rustc-hash 2.1.1",
- "rustls-pki-types",
- "slab",
- "thiserror 2.0.12",
- "tinyvec",
- "tracing",
- "web-time 1.1.0",
-]
-
-[[package]]
-name = "quinn-udp"
-version = "0.5.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcebb1209ee276352ef14ff8732e24cc2b02bbac986cd74a4c81bcb2f9881970"
-dependencies = [
- "cfg_aliases",
- "libc",
- "once_cell",
- "socket2",
- "tracing",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4818,19 +4695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rcgen"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
-dependencies = [
- "pem",
- "ring",
- "rustls-pki-types",
- "time",
- "yasna",
-]
-
-[[package]]
 name = "redb"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4958,12 +4822,10 @@ dependencies = [
  "system-configuration",
  "tokio",
  "tokio-native-tls",
- "tokio-util",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams",
  "web-sys",
  "winreg",
 ]
@@ -5193,7 +5055,6 @@ version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229a4a4c221013e7e1f1a043678c5cc39fe5171437c88fb47151a21e6f5b5c79"
 dependencies = [
- "web-time 1.1.0",
  "zeroize",
 ]
 
@@ -5395,16 +5256,6 @@ version = "0.11.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8437fd221bde2d4ca316d61b90e337e9e702b3820b87d63caa9ba6c02bd06d96"
 dependencies = [
- "serde",
-]
-
-[[package]]
-name = "serde_cbor"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bef2ebfde456fb76bbcf9f59315333decc4fda0b2b44b420243c11e0f5ec1f5"
-dependencies = [
- "half 1.8.3",
  "serde",
 ]
 
@@ -6110,46 +5961,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
-dependencies = [
- "async-stream",
- "async-trait",
- "axum 0.6.20",
- "base64 0.21.7",
- "bytes",
- "h2 0.3.27",
- "http 0.2.12",
- "http-body 0.4.6",
- "hyper 0.14.32",
- "hyper-timeout",
- "percent-encoding",
- "pin-project",
- "prost 0.12.6",
- "tokio",
- "tokio-stream",
- "tower 0.4.13",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic-build"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d021fc044c18582b9a2408cd0dd05b1596e3ecdb5c4df822bb0183545683889"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "prost-build",
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
 name = "tower"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6502,6 +6313,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ureq"
+version = "2.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
+dependencies = [
+ "base64 0.22.1",
+ "log",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "url"
 version = "2.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6713,19 +6538,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "wasm-streams"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
-dependencies = [
- "futures-util",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
@@ -7367,15 +7179,6 @@ dependencies = [
  "arraydeque",
  "encoding_rs",
  "hashlink",
-]
-
-[[package]]
-name = "yasna"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
-dependencies = [
- "time",
 ]
 
 [[package]]
