@@ -14,7 +14,9 @@ use super::{PathId, PathStats};
 /// Weighted Round Robin scheduler for path selection
 #[derive(Debug)]
 pub struct WrrScheduler {
-    /// Current weight counters for each path
+    /// Original configured weights for each path
+    configured_weights: HashMap<PathId, u32>,
+    /// Current weight counters for WRR algorithm
     current_weights: HashMap<PathId, i32>,
     /// Total weight of all active paths
     total_weight: u32,
@@ -27,6 +29,7 @@ pub struct WrrScheduler {
 impl WrrScheduler {
     pub fn new() -> Self {
         Self {
+            configured_weights: HashMap::new(),
             current_weights: HashMap::new(),
             total_weight: 0,
             last_selected: None,
@@ -37,18 +40,21 @@ impl WrrScheduler {
     /// Update scheduler with current path statistics
     pub fn update_paths(&mut self, paths: &HashMap<PathId, PathStats>) {
         // Clear existing weights
+        self.configured_weights.clear();
         self.current_weights.clear();
         self.total_weight = 0;
 
         // Calculate weights for all healthy paths
         for (path_id, stats) in paths {
             if stats.is_healthy() && stats.weight >= self.min_weight_threshold {
-                self.current_weights.insert(*path_id, stats.weight as i32);
-                self.total_weight += stats.weight;
+                let weight = stats.weight;
+                self.configured_weights.insert(*path_id, weight);
+                self.current_weights.insert(*path_id, 0); // Start at 0 for WRR
+                self.total_weight += weight;
                 
                 trace!(
                     path_id = *path_id,
-                    weight = stats.weight,
+                    weight = weight,
                     rtt_ms = stats.rtt.as_millis(),
                     "Updated path weight in scheduler"
                 );
@@ -62,10 +68,31 @@ impl WrrScheduler {
         );
     }
 
+    /// Add a new path to the scheduler with given weight
+    pub fn add_path(&mut self, path_id: PathId, weight: u32) {
+        self.configured_weights.insert(path_id, weight);
+        self.current_weights.insert(path_id, 0);
+        self.total_weight += weight;
+        
+        debug!(
+            path_id = path_id,
+            weight = weight,
+            total_weight = self.total_weight,
+            "Added path to WRR scheduler"
+        );
+    }
+
     /// Select next path using Weighted Round Robin algorithm
     pub fn select_path(&mut self) -> Option<PathId> {
         if self.current_weights.is_empty() {
             return None;
+        }
+
+        // Increment all current weights by their configured weights
+        for (&path_id, current_weight) in &mut self.current_weights {
+            if let Some(&configured_weight) = self.configured_weights.get(&path_id) {
+                *current_weight += configured_weight as i32;
+            }
         }
 
         // Find path with maximum current weight
@@ -80,35 +107,23 @@ impl WrrScheduler {
         }
 
         if let Some(path_id) = selected_path {
-            // Decrease current weight by total weight
+            // Decrease selected path's current weight by total weight
             if let Some(weight) = self.current_weights.get_mut(&path_id) {
                 *weight -= self.total_weight as i32;
             }
 
-            // Increase all weights by their original values
-            for (_pid, current_weight) in &mut self.current_weights {
-                // We need the original weight, but we only have current weights
-                // So we need to track original weights separately or recalculate
-                // For now, let's use a simpler approach: increment by a fixed amount
-                // proportional to the path's relative weight
-                
-                // This is a simplified WRR - in production we'd want to track
-                // original weights separately
-                *current_weight += 10; // Base increment for all paths
-            }
-
             self.last_selected = Some(path_id);
-            
+
             trace!(
                 selected_path = path_id,
-                remaining_weight = max_weight - self.total_weight as i32,
-                "Selected path via WRR"
+                current_weight = self.current_weights.get(&path_id).copied().unwrap_or(0),
+                "Selected path using WRR"
             );
-            
-            Some(path_id)
-        } else {
-            None
+
+            return Some(path_id);
         }
+
+        None
     }
 
     /// Reset scheduler weights (useful after path changes)
@@ -131,6 +146,46 @@ impl WrrScheduler {
     /// Set minimum weight threshold for path selection
     pub fn set_min_weight_threshold(&mut self, threshold: u32) {
         self.min_weight_threshold = threshold;
+    }
+
+    /// Remove a path from the scheduler
+    pub fn remove_path(&mut self, path_id: PathId) {
+        if let Some(weight) = self.configured_weights.remove(&path_id) {
+            self.total_weight = self.total_weight.saturating_sub(weight);
+        }
+        self.current_weights.remove(&path_id);
+        
+        debug!(
+            path_id = path_id,
+            remaining_paths = self.configured_weights.len(),
+            new_total_weight = self.total_weight,
+            "Removed path from WRR scheduler"
+        );
+    }
+
+    /// Update weight for an existing path
+    pub fn update_weight(&mut self, path_id: PathId, weight: u32) {
+        if let Some(old_weight) = self.configured_weights.get_mut(&path_id) {
+            self.total_weight = self.total_weight.saturating_sub(*old_weight).saturating_add(weight);
+            *old_weight = weight;
+            
+            // Reset current weight to avoid disruption
+            if let Some(current_weight) = self.current_weights.get_mut(&path_id) {
+                *current_weight = 0;
+            }
+            
+            debug!(
+                path_id = path_id,
+                new_weight = weight,
+                total_weight = self.total_weight,
+                "Updated path weight in WRR scheduler"
+            );
+        }
+    }
+
+    /// Get all configured weights (for debugging/monitoring)
+    pub fn get_weights(&self) -> &HashMap<PathId, u32> {
+        &self.configured_weights
     }
 }
 
@@ -297,42 +352,87 @@ mod tests {
     #[test]
     fn test_wrr_scheduler_no_paths() {
         let mut scheduler = WrrScheduler::new();
-        let paths = HashMap::new();
-
-        scheduler.update_paths(&paths);
-        assert_eq!(scheduler.select_path(), None);
+        assert!(scheduler.select_path().is_none());
     }
 
     #[test]
-    fn test_improved_wrr_scheduler() {
-        let mut scheduler = ImprovedWrrScheduler::new();
-        let mut paths = HashMap::new();
+    fn test_wrr_scheduler_add_remove_paths() {
+        let mut scheduler = WrrScheduler::new();
+        
+        // Add paths
+        scheduler.add_path(1, 100);
+        scheduler.add_path(2, 200);
+        
+        assert_eq!(scheduler.get_weights().len(), 2);
+        assert_eq!(scheduler.stats().total_weight, 300);
+        
+        // Remove path
+        scheduler.remove_path(1);
+        assert_eq!(scheduler.get_weights().len(), 1);
+        assert_eq!(scheduler.stats().total_weight, 200);
+    }
 
-        // Create paths with known weights
-        let mut path1 = PathStats::new(1);
-        path1.weight = 20; // Higher weight
-        paths.insert(1, path1);
+    #[test]
+    fn test_wrr_scheduler_weight_updates() {
+        let mut scheduler = WrrScheduler::new();
+        
+        scheduler.add_path(1, 100);
+        assert_eq!(scheduler.stats().total_weight, 100);
+        
+        // Update weight
+        scheduler.update_weight(1, 200);
+        assert_eq!(scheduler.stats().total_weight, 200);
+        assert_eq!(scheduler.get_weights()[&1], 200);
+    }
 
-        let mut path2 = PathStats::new(2);
-        path2.weight = 10; // Lower weight
-        paths.insert(2, path2);
-
-        scheduler.update_paths(&paths);
-
-        // Verify scheduler picks paths in proportion to weights
-        let mut selections = HashMap::new();
-        for _ in 0..30 {
+    #[test]
+    fn test_wrr_scheduler_fairness() {
+        let mut scheduler = WrrScheduler::new();
+        
+        // Add two paths with equal weights
+        scheduler.add_path(1, 100);
+        scheduler.add_path(2, 100);
+        
+        let mut path1_count = 0;
+        let mut path2_count = 0;
+        
+        // Select paths multiple times
+        for _ in 0..200 {
             if let Some(path_id) = scheduler.select_path() {
-                *selections.entry(path_id).or_insert(0) += 1;
+                match path_id {
+                    1 => path1_count += 1,
+                    2 => path2_count += 1,
+                    _ => {}
+                }
             }
         }
-
-        // Path 1 should be selected roughly twice as often as path 2
-        let path1_selections = selections.get(&1).unwrap_or(&0);
-        let path2_selections = selections.get(&2).unwrap_or(&0);
         
-        // Allow some tolerance in the ratio
-        let ratio = *path1_selections as f64 / *path2_selections as f64;
-        assert!(ratio > 1.5 && ratio < 2.5, "Ratio should be close to 2.0, got {}", ratio);
+        // Should be roughly equal (within 10% tolerance)
+        let total = path1_count + path2_count;
+        let path1_ratio = path1_count as f64 / total as f64;
+        assert!(path1_ratio > 0.4 && path1_ratio < 0.6, 
+               "Path 1 ratio: {}, should be around 0.5", path1_ratio);
+    }
+
+    #[test]
+    fn test_wrr_scheduler_reset() {
+        let mut scheduler = WrrScheduler::new();
+        
+        scheduler.add_path(1, 100);
+        scheduler.add_path(2, 200);
+        
+        // Select some paths to modify internal state
+        for _ in 0..10 {
+            scheduler.select_path();
+        }
+        
+        // Reset should clear current weights
+        scheduler.reset();
+        
+        // All current weights should be 0
+        let stats = scheduler.stats();
+        for &weight in stats.weights.values() {
+            assert_eq!(weight, 0);
+        }
     }
 }

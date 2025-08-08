@@ -161,11 +161,11 @@ impl SimplifiedMultipathIntegration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::multipath::MultipathConfig;
+    use nyx_core::config::MultipathConfig;
 
     #[tokio::test]
     async fn test_simplified_integration() {
-        use super::super::manager::MultipathConfig;
+        use nyx_core::config::MultipathConfig;
         
         let config = MultipathConfig::default();
         let manager = Arc::new(MultipathManager::new(config));
