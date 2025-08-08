@@ -61,8 +61,13 @@ impl InternalEventFilter {
             if let Some(event_data) = &event.event_data {
                 match event_data {
                     crate::proto::event::EventData::StreamEvent(stream_event) => {
-                        if !self.stream_ids.contains(&stream_event.stream_id) {
-                            return false;
+                        // Convert stream_id from String to u32 for comparison
+                        if let Ok(stream_id_u32) = stream_event.stream_id.parse::<u32>() {
+                            if !self.stream_ids.contains(&stream_id_u32) {
+                                return false;
+                            }
+                        } else {
+                            return false; // Invalid stream ID format
                         }
                     }
                     _ => return false, // Non-stream events don't match stream ID filters

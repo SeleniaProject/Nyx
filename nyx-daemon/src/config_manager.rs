@@ -221,9 +221,9 @@ impl ConfigManager {
                     // Create notification for this change
                     let notification = ConfigChangeNotification {
                         layer: self.determine_affected_layer(&key),
-                        setting: key,
-                        old_value,
-                        new_value: value,
+                        setting: key.clone(),
+                        old_value: old_value.clone(),
+                        new_value: value.clone(),
                         timestamp: SystemTime::now(),
                     };
                     notifications.push(notification);

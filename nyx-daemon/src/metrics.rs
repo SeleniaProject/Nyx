@@ -415,13 +415,20 @@ impl MetricsCollector {
             let current_pid = std::process::id();
             if let Some(process) = system.process(Pid::from(current_pid.try_into().unwrap_or(0))) {
                 Some(crate::proto::ResourceUsage {
+                    cpu_percent: process.cpu_usage() as f64,
+                    memory_bytes: process.memory() * 1024, // Convert from KB to bytes
                     memory_rss_bytes: process.memory() * 1024, // Convert from KB to bytes
                     memory_vms_bytes: process.virtual_memory() * 1024, // Convert from KB to bytes
-                    cpu_percent: process.cpu_usage() as f64,
-                    open_file_descriptors: 0, // Would need platform-specific implementation
-                    thread_count: 0, // Would need platform-specific implementation
+                    memory_percent: (process.memory() as f64 / (1024.0 * 1024.0 * 1024.0)) * 100.0, // Rough percentage
+                    disk_usage_bytes: 0, // Would need platform-specific implementation
+                    disk_total_bytes: 0, // Would need platform-specific implementation
+                    network_rx_bytes: self.bytes_received.load(Ordering::Relaxed),
+                    network_tx_bytes: self.bytes_sent.load(Ordering::Relaxed),
                     network_bytes_sent: self.bytes_sent.load(Ordering::Relaxed),
                     network_bytes_received: self.bytes_received.load(Ordering::Relaxed),
+                    file_descriptors: 0, // Would need platform-specific implementation
+                    open_file_descriptors: 0, // Would need platform-specific implementation
+                    thread_count: 0, // Would need platform-specific implementation
                 })
             } else {
                 None
