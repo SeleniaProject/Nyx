@@ -17,7 +17,6 @@ pub mod state;
 //pub mod async_stream;  // Disabled during debugging  
 pub mod error_handler;
 pub mod resource_manager;
-#[cfg(feature = "plugin")]
 pub mod plugin;
 #[cfg(feature = "plugin")]
 mod plugin_ipc;
@@ -27,6 +26,13 @@ pub mod plugin_frame;
 pub mod plugin_handshake;
 #[cfg(feature = "plugin")]
 pub mod plugin_dispatch;
+#[cfg(feature = "plugin")]
+pub mod plugin_cbor;
+#[cfg(feature = "plugin")]
+pub mod plugin_settings;
+#[cfg(test)]
+#[cfg(feature = "plugin")]
+mod plugin_cbor_tests;
 
 #[cfg(test)]
 #[cfg(feature = "plugin")]
@@ -83,9 +89,13 @@ pub use plugin::PluginHeader;
 pub use plugin_frame::{PluginFrameProcessor, PluginFrameResult, PluginFrameError, ParsedPluginFrame, 
                       build_plugin_frame, validate_plugin_frame_type, PLUGIN_FRAME_TYPE_MIN, PLUGIN_FRAME_TYPE_MAX};
 #[cfg(feature = "plugin")]
-pub use plugin_handshake::{PluginHandshakeCoordinator, PluginHandshakeResult, PluginHandshakeError};
+pub use plugin_handshake::{PluginHandshakeCoordinator, HandshakeResult, PluginHandshakeError};
 #[cfg(feature = "plugin")]
 pub use plugin_registry::{PluginRegistry, PluginInfo, Permission};
+#[cfg(feature = "plugin")]
+pub use plugin_cbor::{PluginHeader as CborPluginHeader, PluginId, PluginCborError, 
+                     parse_plugin_header, serialize_plugin_header, parse_plugin_header_bytes,
+                     MAX_PLUGIN_DATA_SIZE, MAX_CBOR_HEADER_SIZE};
 #[cfg(feature = "plugin")]
 pub use plugin_geostat::{GeoStat, GEO_PLUGIN_ID, plugin_info};
 

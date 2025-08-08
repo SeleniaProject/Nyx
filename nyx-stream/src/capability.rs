@@ -69,13 +69,16 @@ impl Capability {
 
 /// CBOR encode capability list.
 pub fn encode_caps(caps: &[Capability]) -> Vec<u8> {
-    // Convert to Vec to satisfy Sized bound in serde_cbor::to_vec.
-    serde_cbor::to_vec(&caps.to_vec()).expect("CBOR encode")
+    // Convert to Vec to satisfy Sized bound in ciborium serialization
+    let mut buffer = Vec::new();
+    ciborium::into_writer(&caps.to_vec(), &mut buffer).expect("CBOR encode");
+    buffer
 }
 
 /// CBOR decode capability list.
-pub fn decode_caps(buf: &[u8]) -> Result<Vec<Capability>, serde_cbor::Error> {
-    serde_cbor::from_slice(buf)
+pub fn decode_caps(buf: &[u8]) -> Result<Vec<Capability>, ciborium::de::Error<std::io::Error>> {
+    let mut cursor = std::io::Cursor::new(buf);
+    ciborium::from_reader(&mut cursor)
 }
 
 /// Negotiation result.

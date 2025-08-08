@@ -40,11 +40,15 @@ pub fn parse_header(input: &[u8]) -> IResult<&[u8], FrameHeader> {
     let (input, byte0) = u8(input)?;
     let (input, byte1) = u8(input)?;
     let (input, len_bytes) = take(2u8)(input)?; // length high & low
-    let byte0_type = byte0 >> 6;
-    let byte0_flags = byte0 & 0x3F;
-    let len_high = ((byte1 as u16) << 8) | (len_bytes[0] as u16);
-    let length = len_high & 0x3FFF; // 14 bits
-    Ok((input, FrameHeader { frame_type: byte0_type, flags: byte0_flags, length }))
+    
+    // byte0 = frame_type (2 bits) + flags (6 bits)  
+    let frame_type = byte0 >> 6;
+    let flags = byte0 & 0x3F;
+    
+    // Length from byte1 and len_bytes
+    let length = ((byte1 as u16) << 8) | (len_bytes[0] as u16);
+    
+    Ok((input, FrameHeader { frame_type, flags, length }))
 }
 
 /// Parse header and optional `PathID` if `FLAG_HAS_PATH_ID` bit set.

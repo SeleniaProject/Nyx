@@ -240,16 +240,19 @@ pub fn build_close_unsupported_cap(cap_id: u32) -> Vec<u8> {
 #[cfg(feature = "plugin")]
 pub mod plugin_settings {
     use super::*;
-    use serde_cbor;
+    use std::io::Cursor;
     
     /// Encode a list of plugin IDs as CBOR for PLUGIN_REQUIRED/PLUGIN_OPTIONAL settings
     pub fn encode_plugin_list(plugin_ids: &[u32]) -> Vec<u8> {
-        serde_cbor::to_vec(&plugin_ids).unwrap_or_else(|_| Vec::new())
+        let mut buffer = Vec::new();
+        ciborium::into_writer(plugin_ids, &mut buffer).unwrap_or_else(|_| Vec::new());
+        buffer
     }
     
     /// Decode CBOR plugin list from SETTINGS value
     pub fn decode_plugin_list(cbor_data: &[u8]) -> Result<Vec<u32>, String> {
-        serde_cbor::from_slice::<Vec<u32>>(cbor_data)
+        let mut cursor = Cursor::new(cbor_data);
+        ciborium::from_reader::<Vec<u32>, _>(&mut cursor)
             .map_err(|e| format!("CBOR decode error: {}", e))
     }
     

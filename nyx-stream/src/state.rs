@@ -27,6 +27,8 @@ struct SentSegment {
     offset: u32,
     len: usize,
     timestamp: Instant,
+    /// Cached segment data for retransmission
+    data: Vec<u8>,
 }
 
 /// Reassembly buffer entry.
@@ -78,7 +80,12 @@ impl Stream {
             data,
         };
         let bytes = crate::stream_frame::build_stream_frame(&frame);
-        self.sent.insert(self.send_offset, SentSegment { offset: self.send_offset, len: data.len(), timestamp: Instant::now() });
+        self.sent.insert(self.send_offset, SentSegment { 
+            offset: self.send_offset, 
+            len: data.len(), 
+            timestamp: Instant::now(),
+            data: data.to_vec(),
+        });
         self.send_offset += data.len() as u32;
         bytes
     }
@@ -145,13 +152,12 @@ impl Stream {
                 if let Some(orig) = self.sent.get_mut(&seg.offset) {
                     orig.timestamp = Instant::now();
                 }
-                // Build retransmission frame.
-                let fake_data = vec![0u8; seg.len]; // placeholder – application should cache.
+                // Build retransmission frame with cached data
                 let frame = crate::stream_frame::StreamFrame {
                     stream_id: self.id,
                     offset: seg.offset,
                     fin: false,
-                    data: &fake_data,
+                    data: &seg.data,
                 };
                 let _ = tx.send(crate::stream_frame::build_stream_frame(&frame)).await;
             }
