@@ -47,7 +47,7 @@ async fn test_end_to_end_plugin_communication() {
     let plugin_header = PluginHeader {
         id: 5001,
         flags: 0x01, // Basic operation flag
-        data: b"integration_test_data",
+        data: b"integration_test_data".to_vec(),
     };
     
     let test_payload = b"This is a comprehensive integration test payload";
@@ -173,7 +173,7 @@ async fn test_multi_plugin_frame_processing() {
         let plugin_header = PluginHeader {
             id: plugin_id,
             flags: 0x00,
-            data: format!("data_from_{}", plugin_id).as_bytes(),
+            data: format!("data_from_{}", plugin_id).as_bytes().to_vec(),
         };
         
         let payload = format!("payload_from_plugin_{}", plugin_id);
@@ -232,7 +232,7 @@ async fn test_plugin_error_recovery() {
     let unregistered_header = PluginHeader {
         id: 9999, // Not registered
         flags: 0x00,
-        data: b"unregistered",
+        data: b"unregistered".to_vec(),
     };
     
     let frame_bytes = build_plugin_frame(0x56, 0x00, None, &unregistered_header, b"payload")
@@ -248,7 +248,7 @@ async fn test_plugin_error_recovery() {
     let limited_header = PluginHeader {
         id: 7001,
         flags: 0x02, // Send flag (not permitted)
-        data: b"send_attempt",
+        data: b"send_attempt".to_vec(),
     };
     
     let frame_bytes = build_plugin_frame(0x57, 0x00, None, &limited_header, b"payload")
@@ -264,7 +264,7 @@ async fn test_plugin_error_recovery() {
     let valid_header = PluginHeader {
         id: 7001,
         flags: 0x00, // No special permissions needed
-        data: b"valid_operation",
+        data: b"valid_operation".to_vec(),
     };
     
     let frame_bytes = build_plugin_frame(0x58, 0x00, None, &valid_header, b"payload")
@@ -356,7 +356,7 @@ async fn test_concurrent_plugin_operations() {
             let plugin_header = PluginHeader {
                 id: 8001,
                 flags: 0x00,
-                data: format!("task_{}", task_id).as_bytes(),
+                data: format!("task_{}", task_id).as_bytes().to_vec(),
             };
             
             let payload = format!("concurrent_payload_{}", task_id);

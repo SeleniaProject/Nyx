@@ -66,19 +66,19 @@ async fn test_plugin_header_cbor_encoding() {
         PluginHeader {
             id: 1001,
             flags: 0x01,
-            data: b"",
+            data: b"".to_vec(),
         },
         // Header with control data
         PluginHeader {
             id: 2002,
             flags: 0x03,
-            data: b"control_data",
+            data: b"control_data".to_vec(),
         },
         // Header with larger payload
         PluginHeader {
             id: 99999,
             flags: 0xFF,
-            data: &vec![0xAA; 256],
+            data: vec![0xAA; 256],
         },
     ];
 
@@ -111,7 +111,7 @@ async fn test_plugin_frame_building_and_parsing() {
     let plugin_header = PluginHeader {
         id: 12345,
         flags: 0x01, // Required plugin
-        data: b"test_control_data",
+        data: b"test_control_data".to_vec(),
     };
 
     let payload = b"This is the plugin payload data";
@@ -151,7 +151,7 @@ async fn test_plugin_frame_size_limits() {
     let plugin_header = PluginHeader {
         id: 1001,
         flags: 0x00,
-        data: b"small",
+        data: b"small".to_vec(),
     };
 
     // Test maximum size limit
@@ -197,7 +197,7 @@ async fn test_plugin_permission_enforcement() {
     let plugin_header = PluginHeader {
         id: 3001,
         flags: 0x02, // Network access flag
-        data: b"network_request",
+        data: b"network_request".to_vec(),
     };
 
     let frame_bytes = build_plugin_frame(0x53, 0x00, None, &plugin_header, b"payload")
@@ -324,7 +324,7 @@ async fn test_plugin_frame_processing_telemetry() {
     let plugin_header = PluginHeader {
         id: 9999,
         flags: 0x00,
-        data: b"test",
+        data: b"test".to_vec(),
     };
 
     for i in 0..5 {
