@@ -326,10 +326,11 @@ impl StreamManager {
         info!("Opening new stream to target: {}", request.target_address);
         
         // Check if we've reached the maximum number of concurrent streams
-        if self.streams.len() >= self.config.max_concurrent_streams.try_into().unwrap_or(0) {
+        let max_streams: usize = self.config.max_concurrent_streams as usize;
+        if self.streams.len() >= max_streams {
             error!("Maximum concurrent streams reached: {}", self.config.max_concurrent_streams);
             return Ok(proto::StreamResponse {
-                stream_id: 0,
+                stream_id: "0".to_string(),
                 status: "error".to_string(),
                 target_address: request.target_address,
                 initial_stats: None,
@@ -347,7 +348,7 @@ impl StreamManager {
             Err(e) => {
                 error!("Invalid target address '{}': {}", request.target_address, e);
                 return Ok(proto::StreamResponse {
-                    stream_id,
+                    stream_id: stream_id.to_string(),
                     status: "error".to_string(),
                     target_address: request.target_address,
                     initial_stats: None,
@@ -435,8 +436,10 @@ impl StreamManager {
                 ("target_address".to_string(), request.target_address.clone()),
                 ("session_id".to_string(), hex::encode(session_id)),
             ].into_iter().collect(),
-            event_data: Some(proto::event::EventData::StreamEvent(proto::StreamEvent {
-                stream_id,
+            event_type: "stream_opened".to_string(),
+            data: HashMap::new(),
+            event_data: Some(proto::event::EventData::StreamEvent(proto::event::StreamEvent {
+                stream_id: stream_id.to_string(),
                 action: "opened".to_string(),
                 target_address: request.target_address.clone(),
                 stats: Some(self.build_stream_stats(&session).await),
@@ -454,7 +457,7 @@ impl StreamManager {
         info!("Stream {} opened successfully to {}", stream_id, request.target_address);
         
         Ok(proto::StreamResponse {
-            stream_id,
+            stream_id: stream_id.to_string(),
             status: "opened".to_string(),
             target_address: request.target_address,
             initial_stats: Some(initial_stats),
@@ -493,8 +496,10 @@ impl StreamManager {
                     ("bytes_sent".to_string(), session.bytes_sent.to_string()),
                     ("bytes_received".to_string(), session.bytes_received.to_string()),
                 ].into_iter().collect(),
-                event_data: Some(proto::event::EventData::StreamEvent(proto::StreamEvent {
-                    stream_id,
+                event_type: "stream_closed".to_string(),
+                data: HashMap::new(),
+                event_data: Some(proto::event::EventData::StreamEvent(proto::event::StreamEvent {
+                    stream_id: stream_id.to_string(),
                     action: "closed".to_string(),
                     target_address: "".to_string(),
                     stats: Some(self.build_stream_stats(&session).await),
@@ -694,7 +699,7 @@ impl StreamManager {
         let mut path_stats = Vec::new();
         for path in &session.paths {
             let path_stat = proto::StreamPathStats {
-                path_id: path.path_id,
+                path_id: path.path_id.clone(),
                 status: format!("{:?}", path.status).to_lowercase(),
                 rtt_ms: path.last_rtt.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
                 bandwidth_mbps: path.estimated_bandwidth,
@@ -702,6 +707,10 @@ impl StreamManager {
                 bytes_received: path.statistics.bytes_received.load(Ordering::Relaxed),
                 packet_count: path.statistics.packet_count.load(Ordering::Relaxed).try_into().unwrap_or(0),
                 success_rate: path.statistics.success_rate(),
+                latency_ms: path.last_rtt.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
+                bandwidth_bps: (path.estimated_bandwidth * 1_000_000.0) as f64,
+                packet_loss_rate: 1.0 - path.statistics.success_rate(),
+                reliability_score: path.statistics.success_rate(),
             };
             path_stats.push(path_stat);
         }
