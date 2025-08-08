@@ -20,7 +20,7 @@ pub enum NyxError {
 
     /// CBOR decode errors
     #[error("CBOR decode error: {0}")]
-    Cbor(#[from] serde_cbor::Error),
+    Cbor(#[from] ciborium::de::Error<std::io::Error>),
 
     /// Required capability not supported by local implementation
     #[error("Unsupported required capability {0}")]

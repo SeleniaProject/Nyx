@@ -30,7 +30,8 @@ impl Capability {
 /// Parse CBOR-encoded capability array.
 #[must_use]
 pub fn parse_cbor(data: &[u8]) -> NyxResult<Vec<Capability>> {
-    let caps: Vec<Capability> = serde_cbor::from_slice(data)?;
+    let mut cursor = std::io::Cursor::new(data);
+    let caps: Vec<Capability> = ciborium::de::from_reader(&mut cursor)?;
     Ok(caps)
 }
 
