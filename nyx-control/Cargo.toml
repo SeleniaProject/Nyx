@@ -27,7 +27,8 @@ jsonschema = "0.17"
 hex = "0.4"
 rand = "0.8"
 nyx-stream = { path = "../nyx-stream" }
-reqwest = { version = "0.11", default-features = false, features = ["json"] }
+# reqwest = { version = "0.11", default-features = false, features = ["json"] } # DISABLED: uses ring/openssl
+ureq = { version = "2.9", default-features = false, features = ["json"] } # Pure Rust HTTP client
 tracing = "0.1"
 anyhow = "1"
 # jsonwebtoken = "9"
@@ -36,10 +37,9 @@ pasetors = "0.6"
 chrono = { version = "0.4", features = ["std"] }
 
 [features]
-# Full DHT functionality requires libp2p.
-# dht = ["libp2p"]
-# default = ["dht"]
-default = []
+# Full DHT functionality - pure Rust implementation
+dht = []
+default = ["dht"]
 
 [dependencies.build-protoc]
 path = "../build-protoc"

@@ -20,8 +20,8 @@ async-trait = "0.1"
 nyx-core = { path = "../nyx-core" }
 nyx-mix = { path = "../nyx-mix" }
 nyx-stream = { path = "../nyx-stream" }
-quinn = { version = "0.11", default-features = false, features = ["runtime-tokio"], optional = true }
-rcgen = { version = "0.13", optional = true }
+# quinn = { version = "0.11", default-features = false, features = ["runtime-tokio"], optional = true } # DISABLED: depends on ring (C code)
+# rcgen = { version = "0.13", optional = true } # DISABLED: crypto dependency
 futures = "0.3"
 anyhow = "1"
 

@@ -12,7 +12,7 @@ prost-types = "0.12"
 tokio = { version = "1.37", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-tonic = { version = "0.10", default-features = false, features = ["transport", "prost", "codegen"] }
+# tonic = { version = "0.10", default-features = false, features = ["transport", "prost", "codegen"] } # DISABLED: uses ring/openssl
 tokio-stream = { version = "0.1", features = ["net"] }
 clap = { version = "4.0", features = ["derive"] }
 
@@ -120,4 +120,4 @@ native-tls = "0.2"  # Pure Rust TLS implementation
 tokio-native-tls = "0.3"
 
 [build-dependencies]
-tonic-build = "0.10" 
+# tonic-build = "0.10" # DISABLED: uses ring/openssl 

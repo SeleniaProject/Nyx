@@ -16,8 +16,8 @@ nyx-crypto = { path = "../nyx-crypto" }
 tokio = { version = "1.37", features = ["full"] }
 tokio-stream = "0.1"
 
-# gRPC client for daemon communication
-tonic = { version = "0.10", features = ["transport"] }
+# gRPC client for daemon communication - DISABLED: uses ring/openssl
+# tonic = { version = "0.10", features = ["transport"] }
 prost = "0.12"
 prost-types = "0.12"
 
@@ -56,7 +56,7 @@ fastrand = "2.0"
 tracing-subscriber = "0.3.19"
 
 [build-dependencies]
-tonic-build = "0.10"
+# tonic-build = "0.10" # DISABLED: uses ring/openssl
 
 [features]
 default = []
