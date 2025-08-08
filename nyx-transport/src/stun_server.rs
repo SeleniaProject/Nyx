@@ -45,7 +45,7 @@ pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
                     resp[4..8].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
                     resp[8..20].copy_from_slice(txid);
                     // XOR-MAPPED-ADDRESS attr at offset 20
-                    let mut idx = 20;
+                    let idx = 20;
                     resp[idx..idx+2].copy_from_slice(&XOR_MAPPED_ADDR.to_be_bytes());
                     resp[idx+2..idx+4].copy_from_slice(&8u16.to_be_bytes());
                     resp[idx+4] = 0; // reserved
