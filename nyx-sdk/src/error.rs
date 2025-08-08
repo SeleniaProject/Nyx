@@ -284,6 +284,14 @@ impl NyxError {
         }
     }
     
+    pub fn stream_error_str(message: impl Into<String>, stream_id: Option<String>) -> Self {
+        let stream_id_u32 = stream_id.and_then(|s| s.parse().ok());
+        Self::Stream {
+            message: message.into(),
+            stream_id: stream_id_u32,
+        }
+    }
+    
     pub fn network_error(message: impl Into<String>, endpoint: Option<String>) -> Self {
         Self::Network {
             message: message.into(),
@@ -330,6 +338,8 @@ impl NyxError {
 }
 
 // Convert from common error types
+// NOTE: Commented out tonic conversion - C/C++ dependency removed
+/*
 impl From<tonic::Status> for NyxError {
     fn from(status: tonic::Status) -> Self {
         // Comprehensive gRPC status code to NyxError mapping
@@ -419,6 +429,7 @@ impl From<tonic::transport::Error> for NyxError {
         Self::daemon_connection("Transport error", error)
     }
 }
+*/
 
 impl From<std::io::Error> for NyxError {
     fn from(error: std::io::Error) -> Self {

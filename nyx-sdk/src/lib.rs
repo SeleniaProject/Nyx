@@ -52,7 +52,7 @@ pub use error::{NyxError, NyxResult, ErrorKind, ErrorSeverity};
 pub use events::{NyxEvent, EventHandler, EventCallback};
 pub use retry::{RetryStrategy, RetryExecutor, CircuitBreaker, retry, retry_with_strategy};
 
-pub use proto::NyxControlClient;
+// pub use proto::NyxControlClient; // Removed: C/C++ dependency
 
 // Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
