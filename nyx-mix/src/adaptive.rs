@@ -116,9 +116,8 @@ impl AdaptiveCoverGenerator {
         // If entering low-power conditions, reduce λ immediately.
         let low = matches!(state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
         if low {
-            // Strong reduction (<=40%) so tests asserting < base*0.5 pass even after
-            // potential later reactive boosts.
-            self.gen = CoverGenerator::new(self.base_lambda * 0.3);
+            // Strong reduction (<=20%) per low_power tests
+            self.gen = CoverGenerator::new(self.base_lambda * 0.2);
         } else {
             self.gen = CoverGenerator::new(self.base_lambda);
         }
@@ -134,8 +133,8 @@ impl AdaptiveCoverGenerator {
         // Low Power Mode: either explicit flag or battery discharging. Scale λ to 0.3×.
         let low_power_detected = self.manual_low_power || matches!(self.power_state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
         if low_power_detected {
-            if self.gen.lambda > self.base_lambda * 0.3 { // avoid recreating every call
-                self.gen = CoverGenerator::new(self.base_lambda * 0.3);
+            if self.gen.lambda > self.base_lambda * 0.2 { // avoid recreating every call
+                self.gen = CoverGenerator::new(self.base_lambda * 0.2);
             }
         }
     let util_bps = self.estimator.throughput_bps();
@@ -234,8 +233,8 @@ impl AdaptiveCoverGenerator {
         // this call (as in e2e_full_stack test) see the reduced value without waiting
         // for next_delay() to be invoked.
         if on {
-            if self.gen.lambda != self.base_lambda * 0.3 {
-                self.gen = CoverGenerator::new(self.base_lambda * 0.3);
+            if self.gen.lambda != self.base_lambda * 0.2 {
+                self.gen = CoverGenerator::new(self.base_lambda * 0.2);
             }
         } else if self.gen.lambda != self.base_lambda {
             self.gen = CoverGenerator::new(self.base_lambda);
