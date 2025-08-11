@@ -42,6 +42,17 @@ bench-latency-p99 = 99百分位数: { $latency }
 bench-bandwidth = 带宽: { $rate }
 bench-error-rate = 错误率: { $rate }%
 
+# 旧版 gRPC 备份 CLI 的别名
+daemon_version = 版本: { $version }
+uptime = 运行时间: { $uptime }
+network_bytes_in = 入站流量: { $bytes_in }
+network_bytes_out = 出站流量: { $bytes_out }
+benchmark_target = 目标: { $target }
+benchmark_duration = 持续时间: { $duration }
+benchmark_connections = 连接数: { $connections }
+benchmark_payload_size = 负载大小: { $size }
+benchmark_p99_latency = 99百分位延迟: { $p99_latency }
+
 # 错误消息
 error-invalid-target = 无效的目标地址: { $target }
 error-daemon-connection = 连接守护进程失败: { $error }

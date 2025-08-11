@@ -42,6 +42,17 @@ bench-latency-p99 = 99th percentile: { $latency }
 bench-bandwidth = Bandwidth: { $rate }
 bench-error-rate = Error rate: { $rate }%
 
+# Aliases for legacy/gRPC backup CLI keys
+daemon_version = Version: { $version }
+uptime = Uptime: { $uptime }
+network_bytes_in = Traffic In: { $bytes_in }
+network_bytes_out = Traffic Out: { $bytes_out }
+benchmark_target = Target: { $target }
+benchmark_duration = Duration: { $duration }
+benchmark_connections = Connections: { $connections }
+benchmark_payload_size = Payload size: { $size }
+benchmark_p99_latency = 99th percentile latency: { $p99_latency }
+
 # Error messages
 error-invalid-target = Invalid target address: { $target }
 error-daemon-connection = Failed to connect to daemon: { $error }

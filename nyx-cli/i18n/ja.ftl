@@ -42,6 +42,17 @@ bench-latency-p99 = 99パーセンタイル: { $latency }
 bench-bandwidth = 帯域幅: { $rate }
 bench-error-rate = エラー率: { $rate }%
 
+# 旧gRPCバックアップCLI用エイリアス
+daemon_version = バージョン: { $version }
+uptime = 稼働時間: { $uptime }
+network_bytes_in = 受信トラフィック: { $bytes_in }
+network_bytes_out = 送信トラフィック: { $bytes_out }
+benchmark_target = ターゲット: { $target }
+benchmark_duration = 実行時間: { $duration }
+benchmark_connections = 接続数: { $connections }
+benchmark_payload_size = ペイロードサイズ: { $size }
+benchmark_p99_latency = 99パーセンタイルレイテンシ: { $p99_latency }
+
 # エラーメッセージ
 error-invalid-target = 無効なターゲットアドレス: { $target }
 error-daemon-connection = デーモンへの接続に失敗: { $error }
