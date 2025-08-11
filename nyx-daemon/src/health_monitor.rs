@@ -157,19 +157,16 @@ impl HealthMonitor {
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(1_073_741_824); // 1 GiB
 
-                let mut sys = sysinfo::System::new_all();
-                sys.refresh_all();
+                // sysinfo 0.30+ provides Disks API
+                let disks = sysinfo::Disks::new_with_refreshed_list();
 
                 // Aggregate across all writable disks; if none found, return degraded
                 let mut worst_percent: f64 = 100.0;
                 let mut worst_free: u64 = u64::MAX;
                 let mut checked_any = false;
 
-                for disk in sys.disks() {
-                    // Only consider disks that are not read-only
-                    if disk.is_removable() || disk.is_read_only() {
-                        continue;
-                    }
+                for disk in &disks {
+                    if disk.is_removable() || disk.is_read_only() { continue; }
                     checked_any = true;
                     let total = disk.total_space();
                     let available = disk.available_space();
