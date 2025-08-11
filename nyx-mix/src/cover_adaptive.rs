@@ -43,6 +43,10 @@ pub struct AdaptiveCoverConfig {
     pub time_based_adaptation: bool,
     /// Enable network condition adaptation
     pub network_adaptation: bool,
+    /// (Test/advanced) Override multiplier applied to base lambda before other scaling
+    pub manual_scale: Option<f64>,
+    /// Adaptation interval in milliseconds (default 1000, can be shortened for tests)
+    pub adaptation_interval_ms: u64,
 }
 
 impl Default for AdaptiveCoverConfig {
@@ -57,6 +61,8 @@ impl Default for AdaptiveCoverConfig {
             mobile_adaptation: true,
             time_based_adaptation: true,
             network_adaptation: true,
+            manual_scale: None,
+            adaptation_interval_ms: 1000,
         }
     }
 }
@@ -231,7 +237,7 @@ impl AdaptiveCoverGenerator {
         let stats = Arc::clone(&self.stats);
 
         tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(1));
+            let mut interval = interval(Duration::from_millis(config.read().await.adaptation_interval_ms));
 
             loop {
                 interval.tick().await;
@@ -247,7 +253,8 @@ impl AdaptiveCoverGenerator {
                 let time_scale = Self::calculate_time_scale(&cfg).await;
 
                 // Calculate new lambda
-                let target_lambda = cfg.base_lambda * power_scale * network_scale * time_scale;
+                let manual = cfg.manual_scale.unwrap_or(1.0);
+                let target_lambda = cfg.base_lambda * manual * power_scale * network_scale * time_scale;
                 let clamped_lambda = target_lambda.clamp(cfg.min_lambda, cfg.max_lambda);
 
                 // Apply adaptation speed
@@ -691,7 +698,7 @@ pub struct ScenarioResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::sleep;
+    
     use rand::thread_rng;
 
     #[tokio::test]
@@ -740,5 +747,39 @@ mod tests {
         let config = AdaptiveCoverConfig::default();
         let scale = AdaptiveCoverGenerator::calculate_time_scale(&config).await;
         assert!(scale > 0.0 && scale <= 1.2);
+    }
+
+    #[tokio::test]
+    async fn test_lambda_adaptation_with_manual_scale() {
+        // Fast adaptation config
+        let config = AdaptiveCoverConfig {
+            base_lambda: 4.0,
+            max_lambda: 10.0,
+            min_lambda: 0.1,
+            adaptation_speed: 1.0, // immediate move to target
+            manual_scale: Some(0.25), // target lambda initially 1.0
+            adaptation_interval_ms: 50,
+            mobile_adaptation: false,
+            time_based_adaptation: false,
+            network_adaptation: false,
+            ..AdaptiveCoverConfig::default()
+        };
+
+        let generator = AdaptiveCoverGenerator::new(config.clone());
+        generator.start().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(160)).await; // allow several cycles
+
+        let lambda1 = generator.current_lambda().await;
+        assert!((lambda1 - 1.0).abs() < 0.15, "lambda should adapt down to ~1.0, got {}", lambda1);
+
+        // Update config to increase scale
+        let mut new_cfg = config.clone();
+        new_cfg.manual_scale = Some(2.0); // target 8.0 but clamped by max 10.0
+        generator.update_config(new_cfg).await;
+        tokio::time::sleep(Duration::from_millis(160)).await;
+
+        let lambda2 = generator.current_lambda().await;
+        assert!(lambda2 > lambda1 + 0.5, "lambda should increase after manual_scale up ({} -> {})", lambda1, lambda2);
+        assert!(lambda2 <= 10.0);
     }
 } 

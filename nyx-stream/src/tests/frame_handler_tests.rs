@@ -1,5 +1,5 @@
 // TODO: Fix undefined Frame type - temporarily disabled
-#[cfg(disabled)]
+#[cfg(feature = "legacy_tests_disabled")]
 mod frame_handler_tests {
     use crate::frame::*;
     use bytes::Bytes;

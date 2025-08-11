@@ -167,7 +167,16 @@ impl Transport {
     }
 
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
-        self.pool.socket().local_addr()
+        let addr = self.pool.socket().local_addr()?;
+        // Windows などでは 0.0.0.0:PORT を宛先として送信できずテストが失敗するため、
+        // バインドアドレスが UNSPECIFIED の場合は loopback を返して到達可能にする。
+        // (本番利用では上位層で外向き IP を解決する想定。)
+        let mapped = match addr.ip() {
+            IpAddr::V4(v4) if v4.is_unspecified() => SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), addr.port()),
+            IpAddr::V6(v6) if v6.is_unspecified() => SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), addr.port()),
+            _ => addr,
+        };
+        Ok(mapped)
     }
 
     /// Return (and cache) local Teredo IPv6 address discovered via default server.
@@ -196,7 +205,8 @@ impl Transport {
             loop {
                 let delay: Duration = generator.next_delay();
                 sleep(delay).await;
-                tx_clone.send(target, &[]).await;
+                // Cover traffic send; errors are logged inside send path; ignore result
+                let _ = tx_clone.send(target, &[]).await;
             }
         });
     }

@@ -1,6 +1,7 @@
 use nyx_stream::{FrameHeader, build_header, parse_header, parse_header_ext};
 use nyx_stream::builder::build_header_ext;
 
+/// @spec 7. Extended Packet Format
 #[test]
 fn header_roundtrip() {
     let hdr = FrameHeader { frame_type: 1, flags: 0x2A, length: 0x30 };

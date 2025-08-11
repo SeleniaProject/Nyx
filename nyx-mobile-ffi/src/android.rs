@@ -384,7 +384,7 @@ use std::os::raw::c_int;
 
 #[cfg(not(target_os = "android"))]
 #[no_mangle]
-pub extern "C" fn android_init_jni(vm: *mut std::ffi::c_void, context: *mut std::ffi::c_void) -> c_int { 0 }
+pub extern "C" fn android_init_jni(_vm: *mut std::ffi::c_void, _context: *mut std::ffi::c_void) -> c_int { 0 }
 
 #[cfg(not(target_os = "android"))]
 #[no_mangle]

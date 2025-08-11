@@ -944,15 +944,18 @@ impl LayerManager {
             detail: format!("Layer {} status changed to {:?}", layer_name, status),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "info".to_string(),
+            event_type: "layer_status_changed".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("layer".to_string(), layer_name.to_string()),
                 ("status".to_string(), format!("{:?}", status)),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: layer_name.to_string(),
-                action: "status_change".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "layer_status_changed".to_string(),
                 message: format!("Status changed to {:?}", status),
-                details: std::collections::HashMap::new(),
+                severity: "info".to_string(),
+                component: layer_name.to_string(),
+                metadata: [("status".to_string(), format!("{:?}", status))].into_iter().collect(),
             })),
         };
         
@@ -1086,15 +1089,18 @@ impl LayerManager {
             detail: format!("Layer {} failed: {}", layer_name, error),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "error".to_string(),
+            event_type: "layer_failure".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("layer".to_string(), layer_name.to_string()),
                 ("error".to_string(), error.to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: layer_name.to_string(),
-                action: "failure".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "layer_failure".to_string(),
                 message: format!("Layer failed: {}", error),
-                details: std::collections::HashMap::new(),
+                severity: "error".to_string(),
+                component: layer_name.to_string(),
+                metadata: [("error".to_string(), error.to_string())].into_iter().collect(),
             })),
         };
         
@@ -1142,15 +1148,18 @@ impl LayerManager {
                     detail: format!("Layer {} restarted successfully", layer_name),
                     timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
                     severity: "info".to_string(),
+                    event_type: "restart_success".to_string(),
+                    data: std::collections::HashMap::new(),
                     attributes: [
                         ("layer".to_string(), layer_name.to_string()),
                         ("action".to_string(), "restart_success".to_string()),
                     ].into_iter().collect(),
-                    event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
+                    event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                        event_type: "restart_success".to_string(),
+                        message: "Layer restarted successfully".to_string(),
+                        severity: "info".to_string(),
                         component: layer_name.to_string(),
-                        action: "restart_success".to_string(),
-                        message: format!("Layer restarted successfully"),
-                        details: std::collections::HashMap::new(),
+                        metadata: [("action".to_string(), "restart_success".to_string())].into_iter().collect(),
                     })),
                 };
                 
@@ -1182,14 +1191,17 @@ impl LayerManager {
             detail: "Emergency shutdown initiated due to critical layer failure".to_string(),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "critical".to_string(),
+            event_type: "emergency_shutdown".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("action".to_string(), "emergency_shutdown".to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: "layer_manager".to_string(),
-                action: "emergency_shutdown".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "emergency_shutdown".to_string(),
                 message: "Critical layer failure triggered emergency shutdown".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "critical".to_string(),
+                component: "layer_manager".to_string(),
+                metadata: std::collections::HashMap::new(),
             })),
         };
         
@@ -1311,15 +1323,18 @@ impl LayerManager {
             detail: "System recovery completed".to_string(),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "info".to_string(),
+            event_type: "recovery_completed".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("action".to_string(), "recovery_completed".to_string()),
                 ("recovered_layers".to_string(), failed_layers.join(",").to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: "layer_manager".to_string(),
-                action: "recovery_completed".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "recovery_completed".to_string(),
                 message: "System recovery process completed".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "info".to_string(),
+                component: "layer_manager".to_string(),
+                metadata: [("recovered_layers".to_string(), failed_layers.join(","))].into_iter().collect(),
             })),
         };
         
@@ -1414,15 +1429,18 @@ impl LayerManager {
             detail: format!("Critical layer {} recovery failed - system may be unstable", layer_name),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "critical".to_string(),
+            event_type: "recovery_escalation".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("layer".to_string(), layer_name.to_string()),
                 ("action".to_string(), "recovery_escalation".to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: layer_name.to_string(),
-                action: "recovery_escalation".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "recovery_escalation".to_string(),
                 message: "Critical layer recovery failed".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "critical".to_string(),
+                component: layer_name.to_string(),
+                metadata: std::collections::HashMap::new(),
             })),
         };
         
@@ -1650,15 +1668,18 @@ impl LayerManager {
             detail: format!("Temporary service degradation: {}", affected_layers.join(", ")),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "warning".to_string(),
+            event_type: "temporary_degradation".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("action".to_string(), "temporary_degradation".to_string()),
                 ("affected_layers".to_string(), affected_layers.join(",").to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: "layer_manager".to_string(),
-                action: "temporary_degradation".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "temporary_degradation".to_string(),
                 message: "Service temporarily degraded during recovery".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "warning".to_string(),
+                component: "layer_manager".to_string(),
+                metadata: [("affected_layers".to_string(), affected_layers.join(","))].into_iter().collect(),
             })),
         };
         
@@ -1766,15 +1787,18 @@ impl LayerManager {
             detail: format!("Layer {} bypassed due to recovery failure", layer_name),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "warning".to_string(),
+            event_type: "bypass".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("layer".to_string(), layer_name.to_string()),
                 ("action".to_string(), "bypass".to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: layer_name.to_string(),
-                action: "bypass".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "bypass".to_string(),
                 message: "Layer bypassed due to recovery failure".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "warning".to_string(),
+                component: layer_name.to_string(),
+                metadata: std::collections::HashMap::new(),
             })),
         };
         
@@ -1914,14 +1938,17 @@ impl LayerManager {
             detail: "System rolled back to previous state due to recovery failure".to_string(),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "warning".to_string(),
+            event_type: "rollback".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("action".to_string(), "rollback".to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: "layer_manager".to_string(),
-                action: "rollback".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "rollback".to_string(),
                 message: "System state rolled back due to recovery failure".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "warning".to_string(),
+                component: "layer_manager".to_string(),
+                metadata: std::collections::HashMap::new(),
             })),
         };
         
@@ -1961,17 +1988,24 @@ impl LayerManager {
                 LayerCriticality::Important => "error".to_string(),
                 LayerCriticality::Optional => "warning".to_string(),
             },
+            event_type: "enhanced_escalation".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("layer".to_string(), layer_name.to_string()),
                 ("action".to_string(), "enhanced_escalation".to_string()),
                 ("criticality".to_string(), format!("{:?}", criticality)),
                 ("failure_reason".to_string(), failure_reason.to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: layer_name.to_string(),
-                action: "enhanced_escalation".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "enhanced_escalation".to_string(),
                 message: format!("Enhanced escalation: {}", failure_reason),
-                details: [
+                severity: match criticality {
+                    LayerCriticality::Critical => "critical".to_string(),
+                    LayerCriticality::Important => "error".to_string(),
+                    LayerCriticality::Optional => "warning".to_string(),
+                },
+                component: layer_name.to_string(),
+                metadata: [
                     ("criticality".to_string(), format!("{:?}", criticality)),
                     ("failure_reason".to_string(), failure_reason.to_string()),
                 ].into_iter().collect(),
@@ -2061,14 +2095,17 @@ impl LayerManager {
             detail: "Controlled shutdown initiated due to critical layer failure".to_string(),
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
             severity: "critical".to_string(),
+            event_type: "controlled_shutdown".to_string(),
+            data: std::collections::HashMap::new(),
             attributes: [
                 ("action".to_string(), "controlled_shutdown".to_string()),
             ].into_iter().collect(),
-            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                component: "layer_manager".to_string(),
-                action: "controlled_shutdown".to_string(),
+            event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                event_type: "controlled_shutdown".to_string(),
                 message: "System shutdown due to critical layer failure".to_string(),
-                details: std::collections::HashMap::new(),
+                severity: "critical".to_string(),
+                component: "layer_manager".to_string(),
+                metadata: std::collections::HashMap::new(),
             })),
         };
         

@@ -14,30 +14,56 @@ tracing = "0.1"
 once_cell = "1.19"
 tracing-subscriber = "0.3"
 tracing-bunyan-formatter = "0.3"
-opentelemetry = { version = "0.21", default-features = false, features = ["metrics", "trace"] }
-opentelemetry_sdk = { version = "0.21", features = ["rt-tokio", "metrics", "trace"] }
-# opentelemetry-otlp = { version = "0.14", default-features = false, features = ["grpc-tonic", "trace", "metrics"], optional = true } # DISABLED: uses tonic
-opentelemetry-prometheus = { version = "0.14", optional = true }
-opentelemetry-semantic-conventions = "0.13"
-tracing-opentelemetry = "0.22" 
+sysinfo = "0.30"
+opentelemetry = { version = "0.29", default-features = false, features = ["trace", "metrics"], optional = true }
+opentelemetry_sdk = { version = "0.29", features = ["rt-tokio", "trace", "metrics"], optional = true }
+opentelemetry-otlp = { version = "0.29", features = ["grpc-tonic", "trace", "metrics"], optional = true }
+opentelemetry-prometheus = { version = "0.29", optional = true }
+opentelemetry-semantic-conventions = { version = "0.29", optional = true }
+tracing-opentelemetry = { version = "0.25", optional = true }
 pprof = { version = "0.11", features = ["flamegraph"], optional = true }
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 warp = { version = "0.3", optional = true }
-# tonic = { version = "0.10", optional = true } # DISABLED: uses ring/openssl
+# tonic is not enabled by default; pulled via opentelemetry-otlp feature when opted in
+opentelemetry-proto = { version = "0.29", features = ["tonic"], optional = true }
+tonic = { version = "0.12", features = ["transport"], optional = true }
 anyhow = "1.0"
+rand = "0.8"
+thiserror = "1.0"
+uuid = { version = "1", features = ["v4"], optional = true }
 
 [features]
-default = ["prometheus"] # Removed "otlp" as it depends on tonic
-flamegraph = ["pprof", "chrono"] 
-# otlp = ["dep:opentelemetry-otlp", "dep:tonic"] # DISABLED: uses tonic
+# Default build excludes OTLP to avoid heavy deps; Prometheus path only
+default = ["prometheus"]
+flamegraph = ["pprof", "chrono"]
+# Enable OTLP OpenTelemetry integration
+otlp = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry-prometheus",
+    "dep:opentelemetry-semantic-conventions",
+    "dep:tracing-opentelemetry",
+    "dep:uuid",
+]
+otlp_exporter = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry-semantic-conventions",
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry-proto",
+    "dep:tonic",
+]
 prometheus = ["dep:opentelemetry-prometheus", "dep:warp"]
 
 [package.metadata.docs.rs]
-features = ["flamegraph", "otlp", "prometheus"] 
+features = ["flamegraph", "otlp", "prometheus"]
+
+authors = ["NyxNet Contributors"]
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["client", "tcp"] }
-# reqwest = { version = "0.11", default-features = false, features=["json","stream"] } # DISABLED: uses ring/openssl
-ureq = { version = "2.9", default-features = false, features = ["json"] } # Pure Rust HTTP client
-tempfile = "3.8" 
+ureq = { version = "2.9", default-features = false, features = ["json"] }

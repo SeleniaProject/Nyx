@@ -408,7 +408,7 @@ impl NyxDaemon {
 
     /// Start event processing background task
     async fn start_event_processing(&self) {
-        let mut receiver_opt = self.event_receiver.lock().await.take();
+    let receiver_opt = self.event_receiver.lock().await.take();
         
         if let Some(mut receiver) = receiver_opt {
             tokio::spawn(async move {

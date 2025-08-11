@@ -5,6 +5,26 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[features]
+# Minimal default: core daemon path builder only
+default = ["path-builder"]
+# Path builder no longer pulls in metrics by default; metrics optional
+path-builder = []
+experimental-dht = []
+experimental-p2p = []
+experimental-events = []
+experimental-alerts = []
+experimental-metrics = ["experimental-alerts"]
+experimental-all = [
+	"experimental-dht",
+	"experimental-p2p",
+	"experimental-events",
+	"experimental-alerts",
+	"experimental-metrics"
+]
+ # Internal advanced algorithms (kept for research; off by default to suppress dead_code warnings)
+ internal-advanced-path = []
+
 [dependencies]
 async-trait = "0.1"
 prost = "0.12"
@@ -41,9 +61,12 @@ pin-project = "1.1"
 bytes = "1.5"
 thiserror = "1.0"
 anyhow = "1.0"
+once_cell = "1.19"
 
 # System monitoring
 sysinfo = "0.30"
+url = "2.5"
+gethostname = "0.4"
 
 # Configuration and serialization
 toml = "0.8"
@@ -114,10 +137,12 @@ redb = { version = "2.1", features = ["logging"] }
 # Avoiding ALL ring dependencies including rustls, tokio-rustls
 # Using plain TCP/TLS with pure Rust crypto
 trust-dns-resolver = "0.23"
-sha2 = "0.10"
 # Pure Rust TLS alternative (no ring dependency)
 native-tls = "0.2"  # Pure Rust TLS implementation
 tokio-native-tls = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
 
 [build-dependencies]
 # tonic-build = "0.10" # DISABLED: uses ring/openssl 

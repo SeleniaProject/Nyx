@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+// Temporary allow to suppress noisy dead_code warnings for experimental subsystem.
+// TODO: prune unused APIs or add integration usages then remove this.
 
 //! Comprehensive event system for Nyx daemon.
 //!
@@ -234,6 +236,21 @@ impl EventSystem {
             max_queue_size: 10000,
             processing_timeout: Duration::from_secs(5),
             cleanup_interval: Duration::from_secs(60),
+        }
+    }
+
+    /// Build a simple event (helper used by external subsystems) with standard field population.
+    /// This reduces boilerplate at call sites and centralizes any future schema evolutions.
+    pub fn build_simple_event<S: Into<String>>(event_type: S, severity: S, detail: S) -> Event {
+        Event {
+            timestamp: Some(crate::proto::Timestamp::now()),
+            event_type: event_type.into(),
+            data: HashMap::new(),
+            event_data: None, // Subsystems with rich context can populate later.
+            r#type: "generic".to_string(),
+            detail: detail.into(),
+            severity: severity.into(),
+            attributes: HashMap::new(),
         }
     }
     
@@ -587,7 +604,8 @@ impl EventSystem {
     }
     
     /// Check if an event matches a filter
-    pub fn matches_filter(&self, event: &Event, filter: &EventFilter) -> bool {
+    // Internalize: not required as public API (unused externally). Keeping pub(crate) for tests.
+    pub(crate) fn matches_filter(&self, event: &Event, filter: &EventFilter) -> bool {
         let internal_filter = InternalEventFilter::from_proto(filter);
         internal_filter.matches(event)
     }
@@ -621,19 +639,19 @@ impl EventSystem {
     }
     
     /// Record filtered event
-    pub async fn record_filtered_event(&self) {
+    pub(crate) async fn record_filtered_event(&self) {
         let mut stats = self.statistics.write().await;
         stats.filtered_events += 1;
     }
     
     /// Get current queue size
-    pub async fn get_queue_size(&self) -> usize {
+    pub(crate) async fn get_queue_size(&self) -> usize {
         let queue = self.event_queue.lock().await;
         queue.len()
     }
     
     /// Get subscriber information
-    pub async fn get_subscriber_info(&self) -> HashMap<String, (bool, u32, Option<String>)> {
+    pub(crate) async fn get_subscriber_info(&self) -> HashMap<String, (bool, u32, Option<String>)> {
         let subscribers = self.subscribers.read().await;
         subscribers.iter()
             .map(|(id, sub)| (id.clone(), (sub.is_active, sub.error_count, sub.last_error.clone())))
@@ -685,40 +703,43 @@ impl Clone for InternalEventFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proto::{StreamEvent, StreamStats};
+    use crate::proto::{StreamStats};
+    use crate::proto::event::{Event as NewEvent, EventData, StreamEvent as NewStreamEvent};
     use std::time::SystemTime;
     
     #[test]
     fn test_event_filter_matching() {
         let filter = EventFilter {
+            event_types: vec!["stream".to_string()],
             types: vec!["stream".to_string()],
-            stream_ids: vec![123],
+            severity_levels: vec!["info".to_string()],
             severity: "info".to_string(),
+            time_range_seconds: None,
+            stream_ids: vec![123],
         };
-        
+
+        let stream_event = NewStreamEvent {
+            stream_id: "123".to_string(),
+            event_type: "stream".to_string(),
+            action: "opened".to_string(),
+            target_address: "test".to_string(),
+            stats: None,
+            timestamp: Some(crate::proto::Timestamp::now()),
+            data: HashMap::new(),
+            details: "Test event".to_string(),
+        };
+
         let event = Event {
+            timestamp: Some(crate::proto::Timestamp::now()),
+            event_type: "stream".to_string(),
+            data: HashMap::new(),
+            event_data: Some(EventData::StreamEvent(stream_event)),
             r#type: "stream".to_string(),
             detail: "Test event".to_string(),
-            timestamp: Some(crate::proto::Timestamp {
-                seconds: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
-                nanos: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos() as i32,
-            }),
             severity: "info".to_string(),
             attributes: HashMap::new(),
-            event_data: Some(crate::proto::event::EventData::StreamEvent(StreamEvent {
-                stream_id: 123,
-                action: "opened".to_string(),
-                target_address: "test".to_string(),
-                stats: None,
-                data: std::collections::HashMap::new(),
-                event_type: "test".to_string(),
-                timestamp: Some(crate::proto::Timestamp {
-                    seconds: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
-                    nanos: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos() as i32,
-                }),
-            })),
         };
-        
+
         let internal_filter = InternalEventFilter::from_proto(&filter);
         assert!(internal_filter.matches(&event));
     }
@@ -726,23 +747,25 @@ mod tests {
     #[test]
     fn test_event_filter_mismatch() {
         let filter = EventFilter {
+            event_types: vec!["connection".to_string()],
             types: vec!["connection".to_string()],
-            stream_ids: vec![],
+            severity_levels: vec!["error".to_string()],
             severity: "error".to_string(),
+            time_range_seconds: None,
+            stream_ids: vec![],
         };
-        
+
         let event = Event {
+            timestamp: Some(crate::proto::Timestamp::now()),
+            event_type: "stream".to_string(),
+            data: HashMap::new(),
+            event_data: None,
             r#type: "stream".to_string(),
             detail: "Test event".to_string(),
-            timestamp: Some(crate::proto::Timestamp {
-                seconds: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
-                nanos: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos() as i32,
-            }),
             severity: "info".to_string(),
             attributes: HashMap::new(),
-            event_data: None,
         };
-        
+
         let internal_filter = InternalEventFilter::from_proto(&filter);
         assert!(!internal_filter.matches(&event));
     }
@@ -752,15 +775,14 @@ mod tests {
         let event_system = EventSystem::new();
         
         let event = Event {
+            timestamp: Some(crate::proto::Timestamp::now()),
+            event_type: "test".to_string(),
+            data: HashMap::new(),
+            event_data: None,
             r#type: "test".to_string(),
             detail: "Test event".to_string(),
-            timestamp: Some(crate::proto::Timestamp {
-                seconds: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
-                nanos: SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos() as i32,
-            }),
             severity: "info".to_string(),
             attributes: HashMap::new(),
-            event_data: None,
         };
         
         event_system.record_event(&event).await;

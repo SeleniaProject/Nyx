@@ -148,12 +148,15 @@ pub struct StreamSession {
     pub last_activity: SystemTime,
     pub bytes_sent: u64,
     pub bytes_received: u64,
+    pub packets_sent: u64,
+    pub packets_received: u64,
     pub error_count: u32,
     pub last_error: Option<String>,
     pub last_error_at: Option<SystemTime>,
     pub statistics: PathStatistics,
     pub paths: Vec<StreamPath>,
     pub options: StreamOptions,
+    pub target_address: String,
 }
 
 /// Stream options
@@ -260,7 +263,7 @@ impl StreamManager {
             streams: Arc::new(DashMap::new()),
             transport,
             cmix_controller: Arc::new(CmixController::default()),
-            path_builder: Arc::new(PathBuilder::new(bootstrap_peers, path_builder_config).await.unwrap()),
+            path_builder: Arc::new(PathBuilder::new(bootstrap_peers, path_builder_config)),
             prober: Arc::new(RwLock::new(nyx_mix::larmix::Prober::new())),
             scheduler: Arc::new(RwLock::new(PathScheduler::default())),
             known_peers: Arc::new(DashMap::new()),
@@ -366,7 +369,8 @@ impl StreamManager {
         let options = if let Some(opts) = request.options {
             StreamOptions {
                 buffer_size: opts.buffer_size.max(1024).min(1024 * 1024), // 1KB to 1MB
-                timeout_ms: opts.timeout_ms.max(1000).min(300000), // 1s to 5min
+                // opts.timeout_ms is u64 from proto; clamp then cast to u32 for internal options
+                timeout_ms: (opts.timeout_ms.max(1000).min(300000)) as u32, // 1s to 5min
                 multipath: opts.multipath && self.config.enable_multipath,
                 max_paths: opts.max_paths.min(self.config.max_paths_per_stream.try_into().unwrap_or(u32::MAX)),
                 path_strategy: opts.path_strategy,
@@ -411,12 +415,15 @@ impl StreamManager {
             last_activity: now,
             bytes_sent: 0,
             bytes_received: 0,
+            packets_sent: 0,
+            packets_received: 0,
             error_count: 0,
             last_error: None,
             last_error_at: None,
             statistics: PathStatistics::new(),
             paths: paths.clone(),
             options: options.clone(),
+            target_address: request.target_address.clone(),
         };
         
         // Store the session
@@ -440,12 +447,13 @@ impl StreamManager {
             data: HashMap::new(),
             event_data: Some(proto::event::EventData::StreamEvent(proto::event::StreamEvent {
                 stream_id: stream_id.to_string(),
+                event_type: "stream_opened".to_string(),
                 action: "opened".to_string(),
                 target_address: request.target_address.clone(),
                 stats: Some(self.build_stream_stats(&session).await),
-                event_type: "stream_opened".to_string(),
                 timestamp: Some(crate::system_time_to_proto_timestamp(now)),
                 data: HashMap::new(),
+                details: "Stream opened".to_string(),
             })),
         };
         
@@ -506,6 +514,7 @@ impl StreamManager {
                     event_type: "stream_closed".to_string(),
                     timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
                     data: HashMap::new(),
+                    details: "Stream closed".to_string(),
                 })),
             };
             
@@ -699,7 +708,7 @@ impl StreamManager {
         let mut path_stats = Vec::new();
         for path in &session.paths {
             let path_stat = proto::StreamPathStats {
-                path_id: path.path_id.clone(),
+                path_id: path.path_id.to_string(),
                 status: format!("{:?}", path.status).to_lowercase(),
                 rtt_ms: path.last_rtt.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
                 bandwidth_mbps: path.estimated_bandwidth,
@@ -734,35 +743,40 @@ impl StreamManager {
         };
         
         let stream_info = proto::StreamInfo {
-            stream_id: session.stream_id,
-            target_address: "unknown".to_string(), // Would be populated from actual target
+            stream_id: session.stream_id.to_string(),
+            target_address: session.target_address.clone(),
             state: format!("{:?}", session.state),
+            status: format!("{:?}", session.state),
+            destination: session.target_address.clone(),
             created_at: Some(crate::system_time_to_proto_timestamp(session.created_at)),
+            last_activity: Some(crate::system_time_to_proto_timestamp(session.last_activity)),
         };
         
         proto::StreamStats {
-            stream_id: session.stream_id,
-            target_address: "unknown".to_string(),
+            stream_id: session.stream_id.to_string(),
+            bytes_sent: session.bytes_sent,
+            bytes_received: session.bytes_received,
+            packets_sent: session.packets_sent,
+            packets_received: session.packets_received,
+            retransmissions: 0,
+            rtt_ms: avg_rtt_ms,
+            bandwidth_bps: (bandwidth_mbps * 1_000_000.0) as f64,
+            bandwidth_mbps,
+            paths: path_stats.iter().map(|p| proto::PathStat { path_id: p.path_id.clone(), rtt_ms: p.rtt_ms, bandwidth_mbps: p.bandwidth_mbps, status: p.status.clone(), packet_count: p.packet_count, success_rate: p.success_rate }).collect(),
+            target_address: session.target_address.clone(),
             state: format!("{:?}", session.state),
             created_at: Some(crate::system_time_to_proto_timestamp(session.created_at)),
             last_activity: Some(crate::system_time_to_proto_timestamp(session.last_activity)),
-            bytes_sent: session.bytes_sent,
-            bytes_received: session.bytes_received,
-            packets_sent: 0, // Would be populated from actual stats
-            packets_received: 0, // Would be populated from actual stats
-            retransmissions: 0,
             avg_rtt_ms,
-            min_rtt_ms: 0.0, // Would be calculated from RTT samples
-            max_rtt_ms: 0.0, // Would be calculated from RTT samples
-            bandwidth_mbps,
-            packet_loss_rate: 0.0, // Would be calculated
-            paths: path_stats,
-            connection_errors: session.error_count,
+            min_rtt_ms: 0.0,
+            max_rtt_ms: 0.0,
+            packet_loss_rate: 0.0,
+            connection_errors: session.error_count as u64,
             timeout_errors: 0,
             last_error: session.last_error.clone().unwrap_or_default(),
             last_error_at: session.last_error_at.map(|t| crate::system_time_to_proto_timestamp(t)),
             stream_info: Some(stream_info),
-            path_stats: vec![], // Duplicate of paths field
+            path_stats,
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
         }
     }

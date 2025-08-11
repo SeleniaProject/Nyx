@@ -1,5 +1,10 @@
+#![forbid(unsafe_code)]
+
 use nyx_stream::StreamLayer;
+#[cfg(feature = "fec")]
 use nyx_fec::timing::TimingConfig;
+#[cfg(not(feature = "fec"))]
+use nyx_stream::tx::TimingConfig;
 use tokio::time::{Duration, Instant};
 
 #[tokio::test]
@@ -17,4 +22,4 @@ async fn obfuscator_delay_nonzero() {
     } else {
         panic!("no packet received");
     }
-} 
+}

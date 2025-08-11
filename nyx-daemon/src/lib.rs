@@ -1,0 +1,27 @@
+// Library entry for nyx-daemon exposing path builder & supporting modules for other crates
+pub mod proto; // always available
+pub mod capability; // capability management
+pub mod push; // push notification mock
+#[cfg(feature = "experimental-metrics")] pub mod metrics; // metrics collector
+#[cfg(feature = "path-builder")] pub mod path_builder_broken; // heavy module guarded by feature
+#[cfg(feature = "path-builder")] pub use path_builder_broken as path_builder; // maintain expected name
+pub mod pure_rust_dht; // always expose minimal DHT for integration
+#[cfg(feature = "experimental-alerts")] pub mod alert_system; // alert system
+
+// Helper exported items
+#[cfg(feature = "path-builder")] pub use path_builder_broken::{PathBuilder, PathBuilderConfig};
+
+// Utility helpers duplicated from main for library context
+use std::time::SystemTime;
+use once_cell::sync::Lazy;
+use nyx_core::path_monitor::PathPerformanceRegistry;
+
+// グローバル共有 PathPerformanceRegistry (ライブラリ/バイナリ双方から利用)
+pub static GLOBAL_PATH_PERFORMANCE_REGISTRY: Lazy<PathPerformanceRegistry> = Lazy::new(|| PathPerformanceRegistry::new());
+
+pub fn system_time_to_proto_timestamp(time: SystemTime) -> proto::Timestamp {
+	let duration = time
+		.duration_since(std::time::UNIX_EPOCH)
+		.unwrap_or_default();
+	proto::Timestamp { seconds: duration.as_secs() as i64, nanos: duration.subsec_nanos() as i32 }
+}

@@ -29,8 +29,11 @@ mod integration_tests {
             
             let handle = tokio::spawn(async move {
                 let request = PathRequest {
+                    destination: format!("target-{}", i),
                     target: format!("target-{}", i),
+                    num_hops: 3,
                     hops: 3,
+                    preferences: std::collections::HashMap::new(),
                 };
                 
                 match timeout(Duration::from_secs(15), pb.build_path(&request)).await {

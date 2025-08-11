@@ -157,6 +157,24 @@ impl QuicConnection {
     #[must_use] pub fn peer_addr(&self) -> SocketAddr { self.connection.remote_address() }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn quic_datagram_roundtrip() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let endpoint = QuicEndpoint::bind(4567).await.expect("bind");
+        let conn = QuicConnection::connect("127.0.0.1:4567").await.expect("connect");
+        conn.send(b"hello").expect("send");
+        // Receive from endpoint channel
+        let mut rx = endpoint.incoming;
+        let got = timeout(Duration::from_secs(2), rx.recv()).await.unwrap().unwrap();
+        assert_eq!(got.1, b"hello");
+    }
+}
+
 /// No-op certificate verifier (dangerous!).
 struct NoVerifier;
 

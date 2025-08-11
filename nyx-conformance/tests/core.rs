@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+/// @spec 10. Compliance Levels
+
 use nyx_core::config::NyxConfig;
 use nyx_core::i18n::{tr, Lang};
 use std::{fs, path::PathBuf};

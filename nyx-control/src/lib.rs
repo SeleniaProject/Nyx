@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 #[cfg(feature = "dht")]
-use futures::StreamExt;
+// use futures::StreamExt; // Uncomment when streaming DHT events
 // #[cfg(feature = "dht")]
 // use libp2p::{identity, kad::{store::MemoryStore, Kademlia, Quorum, record::{Key, Record}}, swarm::SwarmEvent, PeerId, Multiaddr};
 use tokio::sync::{mpsc, oneshot};
@@ -30,7 +30,7 @@ pub async fn init_control(cfg: &NyxConfig) -> ControlManager {
     let push = cfg.push.clone().map(spawn_push_service);
 
     // If rendezvous endpoint configured in env NYX_RENDEZVOUS_URL
-    if let Ok(url) = std::env::var("NYX_RENDEZVOUS_URL") {
+    if let Ok(_url) = std::env::var("NYX_RENDEZVOUS_URL") {
         // Use node_id from config or fallback random.
         let bytes = cfg.node_id.as_ref()
             .and_then(|s| hex::decode(s).ok())

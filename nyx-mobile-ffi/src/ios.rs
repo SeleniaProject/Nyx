@@ -6,7 +6,7 @@
 #[cfg(target_os = "ios")]
 use std::ffi::{CStr, CString};
 #[cfg(target_os = "ios")]
-use std::os::raw::{c_char, c_int, c_float};
+use std::os::raw::{c_char as _c_char, c_int, c_float};
 #[cfg(target_os = "ios")]
 use objc::{msg_send, sel, sel_impl, class, runtime::Object};
 #[cfg(target_os = "ios")]
@@ -231,7 +231,7 @@ pub extern "C" fn ios_register_app_notifications() -> c_int {
 
 // Non-iOS platforms - provide stub implementations
 #[cfg(not(target_os = "ios"))]
-use std::os::raw::{c_char, c_int, c_float};
+use std::os::raw::{c_int, c_float};
 
 #[cfg(not(target_os = "ios"))]
 #[no_mangle]

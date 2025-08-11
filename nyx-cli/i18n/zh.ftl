@@ -51,6 +51,9 @@ error-permission-denied = 权限被拒绝
 error-invalid-stream-id = 无效的流ID: { $stream_id }
 error-stream-closed = 流 { $stream_id } 已关闭
 error-protocol-error = 协议错误: { $error }
+error-unsupported-cap = 请求了不支持的功能
+error-resource-exhausted = 资源耗尽，请稍后重试
+error-failed-precondition = 不满足此操作的前提条件
 
 # 通用消息
 operation-cancelled = 操作已取消

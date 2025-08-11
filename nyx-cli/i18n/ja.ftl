@@ -51,6 +51,9 @@ error-permission-denied = アクセスが拒否されました
 error-invalid-stream-id = 無効なストリームID: { $stream_id }
 error-stream-closed = ストリーム { $stream_id } は閉じられています
 error-protocol-error = プロトコルエラー: { $error }
+error-unsupported-cap = 未対応の機能が要求されました
+error-resource-exhausted = 資源が枯渇しています。後でもう一度お試しください
+error-failed-precondition = この操作の前提条件を満たしていません
 
 # 一般メッセージ
 operation-cancelled = 操作がキャンセルされました

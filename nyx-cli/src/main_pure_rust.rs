@@ -32,6 +32,8 @@ pub struct NodeInfo {
     pub total_sent_bytes: u64,
     pub total_received_bytes: u64,
     pub connected_peers: u32,
+    pub compliance_level: Option<String>,
+    pub capabilities: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -629,6 +631,8 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
             println!("node_id: {}", info.node_id);
             println!("version: {}", info.version);
             println!("uptime_seconds: {}", info.uptime_seconds);
+            if let Some(level) = &info.compliance_level { println!("compliance_level: {}", level); }
+            if let Some(caps) = &info.capabilities { println!("capabilities: {:?}", caps); }
             println!("cpu_usage_percent: {}", info.cpu_usage_percent);
             println!("memory_usage_bytes: {}", info.memory_usage_bytes);
             println!("network_rx_bytes: {}", info.network_rx_bytes);
@@ -646,6 +650,8 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
             println!("│ Node ID          │ {} │", info.node_id);
             println!("│ Version          │ {} │", info.version);
             println!("│ Uptime           │ {} seconds │", info.uptime_seconds);
+            if let Some(level) = &info.compliance_level { println!("│ Compliance Level │ {} │", level); }
+            if let Some(caps) = &info.capabilities { println!("│ Capabilities     │ {:?} │", caps); }
             println!("│ CPU Usage        │ {:.2}% │", info.cpu_usage_percent);
             println!("│ Memory Usage     │ {} bytes │", info.memory_usage_bytes);
             println!("│ Network RX       │ {} bytes │", info.network_rx_bytes);

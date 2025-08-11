@@ -330,12 +330,17 @@ impl DhtPeerDiscovery {
         
         // Create a simple peer for the region
         let peer_info = crate::proto::PeerInfo {
+            peer_id: format!("region-{}-node", region),
             node_id: format!("region-{}-node", region),
             address: format!("{}:4330", region),
-            latency_ms: 50.0,
-            bandwidth_mbps: 100.0,
-            status: "active".to_string(),
             last_seen: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
+            connection_status: "active".to_string(),
+            status: "active".to_string(),
+            latency_ms: 50.0,
+            reliability_score: 0.9,
+            bytes_sent: 0,
+            bytes_received: 0,
+            bandwidth_mbps: 100.0,
             connection_count: 0,
             region: region.to_string(),
         };
@@ -349,12 +354,17 @@ impl DhtPeerDiscovery {
         
         // Create a simple peer for the capability
         let peer_info = crate::proto::PeerInfo {
+            peer_id: format!("cap-{}-node", capability),
             node_id: format!("cap-{}-node", capability),
             address: format!("{}:4330", capability),
-            latency_ms: 50.0,
-            bandwidth_mbps: 100.0,
-            status: "active".to_string(),
             last_seen: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
+            connection_status: "active".to_string(),
+            status: "active".to_string(),
+            latency_ms: 50.0,
+            reliability_score: 0.9,
+            bytes_sent: 0,
+            bytes_received: 0,
+            bandwidth_mbps: 100.0,
             connection_count: 0,
             region: "global".to_string(),
         };
@@ -368,12 +378,17 @@ impl DhtPeerDiscovery {
         
         // Create a simple low-latency peer
         let peer_info = crate::proto::PeerInfo {
+            peer_id: "low-latency-node".to_string(),
             node_id: "low-latency-node".to_string(),
             address: "fast.nyx.network:4330".to_string(),
-            latency_ms: max_latency / 2.0,
-            bandwidth_mbps: 100.0,
-            status: "active".to_string(),
             last_seen: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
+            connection_status: "active".to_string(),
+            status: "active".to_string(),
+            latency_ms: max_latency / 2.0,
+            reliability_score: 0.95,
+            bytes_sent: 0,
+            bytes_received: 0,
+            bandwidth_mbps: 100.0,
             connection_count: 0,
             region: "global".to_string(),
         };
@@ -388,15 +403,20 @@ impl DhtPeerDiscovery {
         let mut peers = Vec::new();
         for i in 0..count {
             let peer_info = crate::proto::PeerInfo {
+                peer_id: format!("random-node-{}", i),
                 node_id: format!("random-node-{}", i),
                 address: format!("random-{}.nyx.network:4330", i),
-                latency_ms: 50.0 + (i as f64 * 10.0),
-                bandwidth_mbps: 100.0,
-                status: "active".to_string(),
                 last_seen: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
+                connection_status: "active".to_string(),
+                status: "active".to_string(),
+                latency_ms: 50.0 + (i as f64 * 10.0),
+                reliability_score: 0.9,
+                bytes_sent: 0,
+                bytes_received: 0,
+                bandwidth_mbps: 100.0,
                 connection_count: 0,
                 region: "global".to_string(),
-            };
+            }; 
             peers.push(peer_info);
         }
         
@@ -418,12 +438,17 @@ impl DhtPeerDiscovery {
         
         for (id, address) in default_peers {
             let peer_info = crate::proto::PeerInfo {
+                peer_id: id.to_string(),
                 node_id: id.to_string(),
                 address: format!("{}:4330", address),
-                latency_ms: 50.0,
-                bandwidth_mbps: 100.0,
-                status: "active".to_string(),
                 last_seen: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
+                connection_status: "active".to_string(),
+                status: "active".to_string(),
+                latency_ms: 50.0,
+                reliability_score: 0.9,
+                bytes_sent: 0,
+                bytes_received: 0,
+                bandwidth_mbps: 100.0,
                 connection_count: 0,
                 region: "global".to_string(),
             };

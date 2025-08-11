@@ -133,6 +133,7 @@ mod tests {
 mod tests_mont {
     use super::*;
     use num_bigint::BigUint;
+    use std::time::Instant;
 
     #[test]
     fn mont_round_trip() {
@@ -144,5 +145,22 @@ mod tests_mont {
         let t = 128u64;
         let (y, pi) = prove_mont(&x, &n, t);
         assert!(verify(&x, &y, &pi, &n, t));
+    }
+
+    #[test]
+    fn timing_with_calibration_within_tolerance() {
+        // Use moderate test modulus (very small so timing may be tiny, we simulate scaling).
+        let p = BigUint::from(1009u32);
+        let q = BigUint::from(1013u32);
+        let n = &p * &q;
+        // Calibrate for target 5ms to keep CI fast.
+        let target_ms = 5u64;
+        let t = crate::vdf_calib::calibrate_t(&n, target_ms);
+        let x = BigUint::from(9u8);
+        let start = Instant::now();
+        let (_y, _pi) = prove_mont(&x, &n, t);
+        let elapsed = start.elapsed();
+        // Accept wide tolerance because tiny modulus yields faster loops.
+        assert!(elapsed.as_millis() <= (target_ms as u128 * 3 + 1));
     }
 } 

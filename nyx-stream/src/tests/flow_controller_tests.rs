@@ -1,5 +1,5 @@
 // TODO: Fix constructor issues - temporarily disabled
-#[cfg(disabled)]
+#[cfg(feature = "legacy_tests_disabled")]
 mod flow_controller_tests {
     use crate::flow_controller::*;
 

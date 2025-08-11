@@ -21,7 +21,7 @@ use super::aead::{NyxAead, AeadError};
 use crate::hybrid::{HybridPublicKey, HybridSecretKey, PqAlgorithm, HybridError};
 #[cfg(feature = "hybrid")]
 use crate::hybrid::handshake_extensions::{EeKyberExtension, SeKyberExtension};
-use zeroize::ZeroizeOnDrop;
+use zeroize::{ZeroizeOnDrop, Zeroize};
 #[cfg(feature = "classic")]
 use rand_core_06::OsRng;
 use thiserror::Error;
@@ -99,7 +99,8 @@ pub enum NoiseError {
     DhFailed,
     
     #[error("Hybrid operation failed: {0}")]
-    #[cfg(feature = "hybrid")]
+    // Always include to allow code paths compiled with other feature combos (e.g. pq_only)
+    // to reference this error without requiring the full `hybrid` feature.
     HybridFailed(String),
     
     #[error("Handshake hash corruption detected")]
@@ -161,7 +162,7 @@ pub enum Role {
 }
 
 /// 32-byte Nyx session key that zeroizes on drop.
-#[derive(Debug, Clone, ZeroizeOnDrop)]
+#[derive(Debug, Clone, ZeroizeOnDrop, Hash, PartialEq, Eq)]
 pub struct SessionKey(pub [u8; 32]);
 
 impl SessionKey {
@@ -174,13 +175,7 @@ impl SessionKey {
     }
 }
 
-impl PartialEq for SessionKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for SessionKey {}
+// (Eq / PartialEq / Hash derived)
 
 /// Transport mode context for post-handshake communication
 #[derive(Debug)]
@@ -190,6 +185,8 @@ pub struct NoiseTransport {
     send_nonce: u64,
     recv_nonce: u64,
 }
+
+impl Drop for NoiseTransport { fn drop(&mut self) { self.send_key.0.zeroize(); self.recv_key.0.zeroize(); } }
 
 impl NoiseTransport {
     pub fn new(send_key: SessionKey, recv_key: SessionKey) -> Self {
@@ -277,6 +274,20 @@ pub struct HybridNoiseHandshake {
     
     // Symmetric state for encryption during handshake
     symmetric_key: Option<SessionKey>,
+
+    // Directional transport keys (after key schedule)
+    send_key: Option<SessionKey>,
+    recv_key: Option<SessionKey>,
+
+    // Classic ephemeral keys (hybrid X25519 部分)
+    #[cfg(feature = "hybrid")]
+    local_ephemeral: Option<x25519_dalek::EphemeralSecret>,
+    #[cfg(feature = "hybrid")]
+    remote_ephemeral: Option<x25519_dalek::PublicKey>,
+
+    // Kyber (PQ) 片のセッション鍵（まだ結合前）
+    #[cfg(feature = "hybrid")]
+    kyber_partial: Option<SessionKey>,
 }
 
 #[cfg(feature = "classic")]
@@ -675,12 +686,16 @@ impl NoiseHandshake {
     }
 }
 
+#[cfg(feature = "classic")]
 pub fn derive_session_key(shared: &SharedSecret) -> SessionKey {
     let okm = hkdf_expand(shared.as_bytes(), KdfLabel::Session, 32);
     let mut out = [0u8; 32];
     out.copy_from_slice(&okm);
     SessionKey(out)
 }
+
+// 非 classic 構成では derive_session_key を公開しない (呼出し側は cfg(feature="classic") で分岐必須)
+// これにより pq_only ビルドでの誤用はコンパイルエラーとなる。
 
 // -----------------------------------------------------------------------------
 // Kyber1024 Post-Quantum fallback (feature "pq")
@@ -1025,6 +1040,7 @@ impl HybridNoiseHandshake {
     #[cfg(feature = "hybrid")]
     fn new_hybrid_role(role: Role, pq_algorithm: PqAlgorithm) -> Result<Self, NoiseError> {
         use crate::hybrid::generate_keypair;
+    if matches!(pq_algorithm, PqAlgorithm::Bike) { return Err(NoiseError::HybridFailed("BIKE algorithm is policy-disabled (unsupported)".into())); }
         
         // Generate hybrid keypair (X25519 + PQ)
         let (_local_public, local_secret) = generate_keypair(pq_algorithm)
@@ -1061,6 +1077,14 @@ impl HybridNoiseHandshake {
             handshake_hash,
             chaining_key,
             symmetric_key: None,
+            #[cfg(feature = "hybrid")]
+            local_ephemeral: None,
+            #[cfg(feature = "hybrid")]
+            remote_ephemeral: None,
+            #[cfg(feature = "hybrid")]
+            kyber_partial: None,
+            send_key: None,
+            recv_key: None,
         })
     }
     
@@ -1162,102 +1186,214 @@ impl HybridNoiseHandshake {
     
     /// Write first message (initiator -> responder)
     fn write_hybrid_initiator_first_message(&mut self, payload: &[u8], message: &mut [u8]) -> Result<usize, NoiseError> {
-        // For now, implement basic version without full hybrid logic
-        // In production, this would include hybrid public key exchange
-        
-        if message.len() < payload.len() + 64 {
-            return Err(NoiseError::MessageTooShort {
-                expected: payload.len() + 64,
-                actual: message.len(),
-            });
+        #[cfg(feature = "hybrid")]
+        {
+            use crate::noise::hybrid as flow;
+            use x25519_dalek::{PublicKey};
+            use crate::noise::kyber;
+
+            // 事前条件: remote_hybrid(=相手PQ公開鍵) が必要 (Responder の PQ 公開鍵)
+            if self.remote_hybrid.is_none() {
+                return Err(NoiseError::InvalidState { expected: "remote hybrid public key preset".into(), actual: "None".into() });
+            }
+            let remote_pq_pk = match &self.remote_hybrid { Some(pk) => pk, None => unreachable!() };
+            // Kyber 公開鍵は HybridPublicKey 内に含まれている想定。ここでは generate_keypair 実装制約により
+            // Kyber 部分を直接利用できないケースがあるため attempt.
+            // 便宜上: generate_keypair で得られる HybridPublicKey が kyber::PublicKey をラップしていると仮定。
+            // （未対応ならエラー）
+            let kyber_pk_bytes = match remote_pq_pk.kyber_public_bytes() {
+                Some(k) => k,
+                None => return Err(NoiseError::HybridFailed("Missing Kyber public key in remote hybrid key".into()))
+            };
+
+            // Initiator step: 生成 (X25519 eph, Kyber encapsulation)
+            // Reconstruct pqc_kyber::PublicKey from bytes
+            #[cfg(feature = "kyber")]
+            let kyber_pk = {
+                use pqc_kyber::*; pqc_kyber::PublicKey::from(*kyber_pk_bytes)
+            };
+            let (classic_pub, classic_sec, kyber_ct, kyber_key) = flow::initiator_step(&kyber_pk)?;
+            self.local_ephemeral = Some(classic_sec);
+            self.kyber_partial = Some(kyber_key.clone());
+
+            // メッセージフォーマット: [X25519 eph(32)] [Kyber CT(1088)] [payload]
+            let required = 32 + kyber_ct.len() + payload.len();
+            if message.len() < required {
+                return Err(NoiseError::MessageTooShort { expected: required, actual: message.len() });
+            }
+            message[..32].copy_from_slice(classic_pub.as_bytes());
+            message[32..32+kyber_ct.len()].copy_from_slice(&kyber_ct);
+            message[32+kyber_ct.len() .. required].copy_from_slice(payload);
+
+            // transcript hash update
+            self.handshake_hash.update(classic_pub.as_bytes());
+            self.handshake_hash.update(&kyber_ct);
+            self.handshake_hash.update(payload);
+
+            self.state = HandshakeState::InitiatorSentFirst;
+            Ok(required)
         }
-        
-        // Copy payload (simplified implementation)
-        message[..payload.len()].copy_from_slice(payload);
-        
-        self.state = HandshakeState::InitiatorSentFirst;
-        Ok(payload.len())
+        #[cfg(not(feature = "hybrid"))]
+        {
+            let _ = payload; let _ = message;
+            Err(NoiseError::HybridFailed("hybrid feature disabled".into()))
+        }
     }
     
     /// Read first message (responder receiving from initiator)
     fn read_hybrid_responder_first_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, NoiseError> {
-        if payload.len() < message.len() {
-            return Err(NoiseError::MessageTooShort {
-                expected: message.len(),
-                actual: payload.len(),
-            });
+        #[cfg(feature = "hybrid")]
+        {
+            use x25519_dalek::PublicKey;
+            use crate::noise::kyber;
+            // 期待レイアウト: 32 + 1088 + payload
+            if message.len() < 32 + 1088 { return Err(NoiseError::MessageTooShort { expected: 32+1088, actual: message.len() }); }
+            let mut eph_bytes = [0u8;32]; eph_bytes.copy_from_slice(&message[..32]);
+            let remote_ephemeral = PublicKey::from(eph_bytes);
+            let mut ct = [0u8;1088]; ct.copy_from_slice(&message[32..32+1088]);
+            let remaining = &message[32+1088..];
+            if payload.len() < remaining.len() { return Err(NoiseError::MessageTooShort { expected: remaining.len(), actual: payload.len() }); }
+            payload[..remaining.len()].copy_from_slice(remaining);
+
+            // 自ノードは local_hybrid 内に (X25519+Kyber secret) を保持している前提で Kyber secret を取り出す API 想定
+            let local_sk = match &self.local_hybrid { Some(s) => s, None => return Err(NoiseError::HybridFailed("local hybrid secret missing".into())) };
+            let kyber_sk_bytes = match local_sk.kyber_secret_bytes() { Some(s) => s, None => return Err(NoiseError::HybridFailed("local Kyber secret missing".into())) };
+            #[cfg(feature = "kyber")]
+            let kyber_sk = { use pqc_kyber::*; SecretKey::from(*kyber_sk_bytes) };
+            let kyber_key = kyber::responder_decapsulate(&ct, &kyber_sk)?; // Kyber セッション鍵 (32 bytes)
+
+            self.remote_ephemeral = Some(remote_ephemeral);
+            self.kyber_partial = Some(kyber_key.clone());
+
+            self.handshake_hash.update(remote_ephemeral.as_bytes());
+            self.handshake_hash.update(&ct);
+            self.handshake_hash.update(remaining);
+
+            self.state = HandshakeState::ResponderReceivedFirst;
+            Ok(remaining.len())
         }
-        
-        // Copy payload (simplified implementation)
-        let payload_len = message.len();
-        payload[..payload_len].copy_from_slice(message);
-        
-        self.state = HandshakeState::ResponderReceivedFirst;
-        Ok(payload_len)
+        #[cfg(not(feature = "hybrid"))]
+        { let _=message; let _=payload; Err(NoiseError::HybridFailed("hybrid feature disabled".into())) }
     }
     
     /// Write second message (responder -> initiator)
     fn write_hybrid_responder_second_message(&mut self, payload: &[u8], message: &mut [u8]) -> Result<usize, NoiseError> {
-        if message.len() < payload.len() + 128 {
-            return Err(NoiseError::MessageTooShort {
-                expected: payload.len() + 128,
-                actual: message.len(),
-            });
+        #[cfg(feature = "hybrid")]
+        {
+            use x25519_dalek::{EphemeralSecret, PublicKey};
+            // 生成 X25519 エフェメラル
+            let mut rng = rand_core_06::OsRng;
+            let sec = EphemeralSecret::random_from_rng(&mut rng);
+            let pubk = PublicKey::from(&sec);
+            self.local_ephemeral = Some(sec);
+            // まだ directional keys 未導出。まず handshake hash へ eph 反映
+            self.handshake_hash.update(pubk.as_bytes());
+
+            // セッション鍵結合: kyber_partial + DH(init_ephemeral, resp_ephemeral)
+            let dh_key = {
+                let r_pub = self.remote_ephemeral.ok_or_else(|| NoiseError::HybridFailed("missing remote eph".into()))?;
+                let l_sec = self.local_ephemeral.take().ok_or_else(|| NoiseError::HybridFailed("missing local eph".into()))?;
+                l_sec.diffie_hellman(&r_pub)
+            };
+            let kyber_part = self.kyber_partial.as_ref().ok_or_else(|| NoiseError::HybridFailed("Kyber partial missing".into()))?;
+            let kyber_bytes = kyber_part.0; // copy
+            let dh_bytes = *dh_key.as_bytes();
+            self.mix_key_material(&kyber_bytes);
+            self.mix_key_material(&dh_bytes);
+            self.derive_directional_keys();
+            // 方向鍵確立後、Responder -> Initiator 方向の send_key で payload 暗号化
+            let send_key = self.send_key.as_ref().ok_or_else(|| NoiseError::HybridFailed("missing send key".into()))?;
+            let aead = NyxAead::new(send_key);
+            let nonce = [0u8;12];
+            let ct = aead.encrypt(&nonce, payload, &[])?; // tag付与
+            let len_bytes = (ct.len() as u16).to_le_bytes();
+            let required = 32 + 2 + ct.len();
+            if message.len() < required { return Err(NoiseError::MessageTooShort { expected: required, actual: message.len() }); }
+            // layout: eph || len || ct
+            message[..32].copy_from_slice(pubk.as_bytes());
+            message[32..34].copy_from_slice(&len_bytes);
+            message[34..34+ct.len()].copy_from_slice(&ct);
+            self.handshake_hash.update(&len_bytes);
+            self.handshake_hash.update(&ct);
+            self.state = HandshakeState::ResponderSentSecond;
+            Ok(required)
         }
-        
-        // Copy payload (simplified implementation)
-        message[..payload.len()].copy_from_slice(payload);
-        
-        self.state = HandshakeState::ResponderSentSecond;
-        Ok(payload.len())
+        #[cfg(not(feature = "hybrid"))]
+        { let _=payload; let _=message; Err(NoiseError::HybridFailed("hybrid feature disabled".into())) }
     }
     
     /// Read second message (initiator receiving from responder)
     fn read_hybrid_initiator_second_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, NoiseError> {
-        if payload.len() < message.len() {
-            return Err(NoiseError::MessageTooShort {
-                expected: message.len(),
-                actual: payload.len(),
-            });
+        #[cfg(feature = "hybrid")]
+        {
+            if message.len() < 34 { return Err(NoiseError::MessageTooShort { expected: 34, actual: message.len() }); }
+            let mut eph = [0u8;32]; eph.copy_from_slice(&message[..32]);
+            let r_pub = x25519_dalek::PublicKey::from(eph);
+            self.remote_ephemeral = Some(r_pub);
+            self.handshake_hash.update(r_pub.as_bytes());
+            let len_bytes = &message[32..34];
+            let ct_len = u16::from_le_bytes([len_bytes[0], len_bytes[1]]) as usize;
+            if message.len() < 34+ct_len { return Err(NoiseError::MessageTooShort { expected: 34+ct_len, actual: message.len() }); }
+            let ct = &message[34..34+ct_len];
+            // DH + Kyber combine
+            let dh_key = {
+                let r_pub = self.remote_ephemeral.ok_or_else(|| NoiseError::HybridFailed("missing remote eph".into()))?;
+                let l_sec = self.local_ephemeral.take().ok_or_else(|| NoiseError::HybridFailed("missing local eph".into()))?;
+                l_sec.diffie_hellman(&r_pub)
+            };
+            let kyber_part = self.kyber_partial.as_ref().ok_or_else(|| NoiseError::HybridFailed("Kyber partial missing".into()))?;
+            let kyber_bytes = kyber_part.0;
+            let dh_bytes = *dh_key.as_bytes();
+            self.mix_key_material(&kyber_bytes);
+            self.mix_key_material(&dh_bytes);
+            self.derive_directional_keys();
+            // decrypt with recv_key
+            let recv_key = self.recv_key.as_ref().ok_or_else(|| NoiseError::HybridFailed("missing recv key".into()))?;
+            let aead = NyxAead::new(recv_key);
+            let nonce=[0u8;12];
+            let pt = aead.decrypt(&nonce, ct, &[])?;
+            if pt.len() > payload.len() { return Err(NoiseError::MessageTooShort { expected: pt.len(), actual: payload.len() }); }
+            payload[..pt.len()].copy_from_slice(&pt);
+            self.handshake_hash.update(len_bytes);
+            self.handshake_hash.update(ct);
+            self.state = HandshakeState::InitiatorReceivedSecond;
+            Ok(pt.len())
         }
-        
-        let payload_len = message.len();
-        payload[..payload_len].copy_from_slice(message);
-        
-        self.state = HandshakeState::InitiatorReceivedSecond;
-        Ok(payload_len)
+        #[cfg(not(feature = "hybrid"))]
+        { let _=message; let _=payload; Err(NoiseError::HybridFailed("hybrid feature disabled".into())) }
     }
     
     /// Write third message (initiator -> responder)
     fn write_hybrid_initiator_third_message(&mut self, payload: &[u8], message: &mut [u8]) -> Result<usize, NoiseError> {
-        if message.len() < payload.len() + 64 {
-            return Err(NoiseError::MessageTooShort {
-                expected: payload.len() + 64,
-                actual: message.len(),
-            });
-        }
-        
-        // Copy payload (simplified implementation)
-        message[..payload.len()].copy_from_slice(payload);
-        
-        self.state = HandshakeState::Completed;
-        Ok(payload.len())
+    // AEAD 暗号化 + 長さプレフィクス
+    let send_key = self.send_key.as_ref().ok_or_else(|| NoiseError::HybridFailed("missing send key".into()))?;
+    let aead = NyxAead::new(send_key); let nonce=[0u8;12]; let ct = aead.encrypt(&nonce, payload, &[])?;
+    let total = 2 + ct.len();
+    if message.len() < total { return Err(NoiseError::MessageTooShort { expected: total, actual: message.len() }); }
+    let len_bytes = (ct.len() as u16).to_le_bytes();
+    message[..2].copy_from_slice(&len_bytes);
+    message[2..2+ct.len()].copy_from_slice(&ct);
+    self.handshake_hash.update(&len_bytes);
+    self.handshake_hash.update(&ct);
+    self.state = HandshakeState::Completed;
+    Ok(total)
     }
     
     /// Read third message (responder receiving from initiator)
     fn read_hybrid_responder_third_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, NoiseError> {
-        if payload.len() < message.len() {
-            return Err(NoiseError::MessageTooShort {
-                expected: message.len(),
-                actual: payload.len(),
-            });
-        }
-        
-        let payload_len = message.len();
-        payload[..payload_len].copy_from_slice(message);
-        
-        self.state = HandshakeState::Completed;
-        Ok(payload_len)
+    if message.len() < 2 { return Err(NoiseError::MessageTooShort { expected: 2, actual: message.len() }); }
+    let len = u16::from_le_bytes([message[0], message[1]]) as usize;
+    if message.len() < 2+len { return Err(NoiseError::MessageTooShort { expected: 2+len, actual: message.len() }); }
+    let ct = &message[2..2+len];
+    let recv_key = self.recv_key.as_ref().ok_or_else(|| NoiseError::HybridFailed("missing recv key".into()))?;
+    let aead = NyxAead::new(recv_key); let nonce=[0u8;12];
+    let pt = aead.decrypt(&nonce, ct, &[])?;
+    if pt.len() > payload.len() { return Err(NoiseError::MessageTooShort { expected: pt.len(), actual: payload.len() }); }
+    payload[..pt.len()].copy_from_slice(&pt);
+    self.handshake_hash.update(&message[..2]);
+    self.handshake_hash.update(ct);
+    self.state = HandshakeState::Completed;
+    Ok(pt.len())
     }
     
     /// Convert to transport mode after successful handshake
@@ -1270,39 +1406,239 @@ impl HybridNoiseHandshake {
         }
         
         // Derive transport keys from final handshake state
-        let session_key = self.symmetric_key.unwrap_or_else(|| SessionKey([0u8; 32]));
-        
-        Ok(NoiseTransport::new(session_key.clone(), session_key))
+        let send = self.send_key.clone().or(self.symmetric_key.clone()).unwrap_or(SessionKey([0u8;32]));
+        let recv = self.recv_key.clone().or(self.symmetric_key.clone()).unwrap_or(send.clone());
+        Ok(NoiseTransport::new(send, recv))
+    }
+}
+
+impl HybridNoiseHandshake {
+    #[cfg(feature = "hybrid")]
+    fn mix_key_material(&mut self, material: &[u8]) {
+        use blake3::Hasher as B3;
+        let mut h = B3::new();
+        h.update(&self.chaining_key);
+        h.update(material);
+        let out = h.finalize();
+        self.chaining_key.copy_from_slice(&out.as_bytes()[..32]);
+    }
+
+    #[cfg(feature = "hybrid")]
+    fn derive_directional_keys(&mut self) {
+        if self.send_key.is_some() && self.recv_key.is_some() { return; }
+        let okm = hkdf_expand(&self.chaining_key, KdfLabel::Session, 64);
+        let mut k1=[0u8;32]; let mut k2=[0u8;32];
+        k1.copy_from_slice(&okm[..32]); k2.copy_from_slice(&okm[32..64]);
+        match self.role {
+            Role::Initiator => { self.send_key = Some(SessionKey(k1)); self.recv_key = Some(SessionKey(k2)); },
+            Role::Responder => { self.send_key = Some(SessionKey(k2)); self.recv_key = Some(SessionKey(k1)); },
+        }
+        self.symmetric_key = self.send_key.clone();
     }
 }
 
 #[cfg(test)]
 mod hybrid_tests {
-    // TODO: Implement HybridNoiseHandshake constructor methods
-    // These tests require additional implementation in the HybridNoiseHandshake struct
-    
-    #[test]
-    #[ignore = "Requires HybridNoiseHandshake implementation"]
-    fn test_hybrid_handshake_creation() {
-        // Test will be enabled when constructor methods are implemented
-    }
-    
-    #[test]
-    #[ignore = "Requires HybridNoiseHandshake implementation"]
-    fn test_ee_kyber_extension() {
-        // Test will be enabled when EE Kyber handshake is implemented
-    }
-    
-    #[test]
-    #[ignore = "Requires HybridNoiseHandshake implementation"]
+    use super::*;
     #[cfg(feature = "hybrid")]
-    fn test_se_kyber_extension() {
-        // Test will be enabled when SE Kyber handshake is implemented
+    #[test]
+    fn test_simple_hybrid_flow() {
+    /// @spec 3. Hybrid Post-Quantum Handshake
+    // 前提: Kyber (pq_algorithm Kyber1024) のみ
+        let mut initiator = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+        let mut responder = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+        // responder 公開鍵を initiator 側へ設定 (簡易: local_hybrid の public expose 前提)
+        let resp_pub = responder.local_hybrid.as_ref().unwrap().public().clone();
+        initiator.remote_hybrid = Some(resp_pub.clone());
+        // initiator first
+        let mut m1 = vec![0u8; 32+1088+16];
+        let p1 = b"hello"; let l1 = initiator.write_hybrid_message(p1, &mut m1).unwrap(); m1.truncate(l1);
+        // responder read
+        let mut buf = vec![0u8;64]; let _ = responder.read_hybrid_message(&m1, &mut buf).unwrap();
+        // responder second
+    let mut m2 = vec![0u8; 32 + 2 + 64]; let p2 = b"ok"; let l2 = responder.write_hybrid_message(p2, &mut m2).unwrap(); m2.truncate(l2);
+        // initiator read
+        let mut buf2 = vec![0u8;32]; let _ = initiator.read_hybrid_message(&m2, &mut buf2).unwrap();
+        // initiator third (optional ack)
+    let mut m3 = vec![0u8; 2 + 64]; let p3 = b"!"; let l3 = initiator.write_hybrid_message(p3, &mut m3).unwrap(); m3.truncate(l3);
+        let mut buf3 = vec![0u8;8]; let _ = responder.read_hybrid_message(&m3, &mut buf3).unwrap();
+        assert!(initiator.state == HandshakeState::Completed);
+        assert!(responder.state == HandshakeState::Completed);
+        // 双方で対称鍵が確立されている
+        assert!(initiator.send_key.is_some());
+        assert!(responder.recv_key.is_some());
+        assert_eq!(initiator.send_key.as_ref().unwrap(), responder.recv_key.as_ref().unwrap());
+        assert_ne!(initiator.send_key.as_ref().unwrap().0, initiator.recv_key.as_ref().unwrap().0);
+    }
+
+    #[cfg(feature = "hybrid")]
+    #[test]
+    fn test_hybrid_message_too_short() {
+        let mut responder = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+        let mut payload_buf = [0u8;16];
+        let err = responder.read_hybrid_message(&[], &mut payload_buf).unwrap_err();
+        match err { NoiseError::MessageTooShort {..} => {}, _ => panic!("expected MessageTooShort") }
+    }
+
+    #[cfg(feature = "hybrid")]
+    #[test]
+    fn test_hybrid_replay_second_message() {
+        let mut initiator = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+        let mut responder = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+        let resp_pub = responder.local_hybrid.as_ref().unwrap().public().clone();
+        initiator.remote_hybrid = Some(resp_pub);
+        let mut m1 = vec![0u8; 32+1088+4]; let l1=initiator.write_hybrid_message(b"hi", &mut m1).unwrap(); m1.truncate(l1);
+        let mut tmp = vec![0u8;32]; responder.read_hybrid_message(&m1, &mut tmp).unwrap();
+    let mut m2 = vec![0u8; 32 + 2 + 32]; let l2 = responder.write_hybrid_message(b"ok", &mut m2).unwrap(); m2.truncate(l2);
+        let mut tmp2 = vec![0u8;32]; initiator.read_hybrid_message(&m2, &mut tmp2).unwrap();
+        let mut tmp3 = vec![0u8;32];
+        let err = initiator.read_hybrid_message(&m2, &mut tmp3).unwrap_err();
+        match err { NoiseError::InvalidState {..} => {}, _ => panic!("expected InvalidState on replay") }
+    }
+
+    #[cfg(feature = "hybrid")]
+    #[test]
+    fn test_hybrid_corrupted_kyber_ct() {
+        let mut initiator = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+        let mut responder = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+        let resp_pub = responder.local_hybrid.as_ref().unwrap().public().clone();
+        initiator.remote_hybrid = Some(resp_pub);
+        // 正常メッセージ
+        let mut m1 = vec![0u8; 32+1088+6];
+        let l1 = initiator.write_hybrid_message(b"hello", &mut m1).unwrap();
+        m1.truncate(l1);
+        // Kyber CT 部 (32..32+1088) の複数バイトを改竄 (失敗誘発確率を上げる)
+        for off in [8usize, 111usize, 507, 900] {
+            if 32+off < m1.len() { m1[32+off] ^= 0x55; }
+        }
+        let mut buf = vec![0u8;64];
+        // 破損でエラーになる場合と、エラーにならず誤った共有鍵になる場合の両方を許容し検証
+        let result = responder.read_hybrid_message(&m1, &mut buf);
+        if let Err(e) = result {
+            match e { NoiseError::DecryptionFailed(_) | NoiseError::HybridFailed(_) => {}, _ => panic!("unexpected error kind {e:?}") }
+        } else {
+            // 成功した場合: 取得した kyber_partial が同じ条件の正常ハンドシェイクと比べて異なるはず
+            // 正常ハンドシェイクを再現し比較
+            let mut responder_ref = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+            let mut initiator_ref = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+            let resp_pub_ref = responder_ref.local_hybrid.as_ref().unwrap().public().clone();
+            initiator_ref.remote_hybrid = Some(resp_pub_ref);
+            let mut m1_ref = vec![0u8; 32+1088+6];
+            let l1r = initiator_ref.write_hybrid_message(b"hello", &mut m1_ref).unwrap(); m1_ref.truncate(l1r);
+            let mut buf_ref = vec![0u8;64]; responder_ref.read_hybrid_message(&m1_ref, &mut buf_ref).unwrap();
+            let corrupt_key = responder.kyber_partial.as_ref().map(|k| k.0);
+            let ref_key = responder_ref.kyber_partial.as_ref().map(|k| k.0);
+            assert!(corrupt_key.is_some() && ref_key.is_some());
+            assert_ne!(corrupt_key.unwrap(), ref_key.unwrap(), "corrupted CT produced same Kyber partial key (unexpected)");
+        }
+    }
+
+    #[cfg(feature = "hybrid")]
+    #[test]
+    fn test_hybrid_corrupted_kyber_ct_stability() {
+    use rand::{Rng};
+    use rand_chacha::ChaCha20Rng;
+    use rand::SeedableRng;
+        let mut rng = ChaCha20Rng::from_entropy();
+        // 基準 (正常) 部分鍵取得
+        let mut responder_ref = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+        let mut initiator_ref = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+        let resp_pub_ref = responder_ref.local_hybrid.as_ref().unwrap().public().clone();
+        initiator_ref.remote_hybrid = Some(resp_pub_ref);
+        let mut base = vec![0u8;32+1088+4];
+        let l = initiator_ref.write_hybrid_message(b"ok", &mut base).unwrap(); base.truncate(l);
+        let mut buf_ref = vec![0u8;32]; responder_ref.read_hybrid_message(&base, &mut buf_ref).unwrap();
+        let reference = responder_ref.kyber_partial.as_ref().unwrap().0;
+        let mut observed_divergence = false;
+        let mut observed_error = false;
+        // 複数回ランダム改竄 (最大 16 試行)
+        for _ in 0..16 {
+            let mut mutated = base.clone();
+            // ランダムに 6 箇所 flip
+            for _i in 0..6 { let idx = 32 + rng.gen_range(0..1088); mutated[idx] ^= 1u8 << (rng.gen_range(0..8)); }
+            let mut r = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+            let pk = r.local_hybrid.as_ref().unwrap().public().clone();
+            let mut i = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+            i.remote_hybrid = Some(pk);
+            // 使い回ししない (ランダム要素混入を避け)→ mutated は initiator_ref 生成物なので responder のみ読む
+            let mut buf = vec![0u8;32];
+            match r.read_hybrid_message(&mutated, &mut buf) {
+                Err(_) => { observed_error = true; },
+                Ok(_) => {
+                    if let Some(partial) = r.kyber_partial.as_ref() {
+                        if partial.0 != reference { observed_divergence = true; }
+                    }
+                }
+            }
+            if observed_error || observed_divergence { break; }
+        }
+        assert!(observed_error || observed_divergence, "no divergence or error observed after multiple corruptions");
+    }
+
+    #[cfg(feature = "hybrid")]
+    #[test]
+    fn test_hybrid_forward_secrecy_ephemeral_cleared() {
+        let mut initiator = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+        let mut responder = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+        let resp_pub = responder.local_hybrid.as_ref().unwrap().public().clone();
+        initiator.remote_hybrid = Some(resp_pub);
+        // M1
+        let mut m1 = vec![0u8; 32+1088+2]; let l1=initiator.write_hybrid_message(b"x", &mut m1).unwrap(); m1.truncate(l1);
+        let mut tmp = vec![0u8;16]; responder.read_hybrid_message(&m1, &mut tmp).unwrap();
+        // M2
+    let mut m2 = vec![0u8; 32 + 2 + 64]; let l2 = responder.write_hybrid_message(b"y", &mut m2).unwrap(); m2.truncate(l2);
+        let mut tmp2 = vec![0u8;16]; initiator.read_hybrid_message(&m2, &mut tmp2).unwrap();
+        // M3
+    let mut m3 = vec![0u8; 2 + 64]; let l3=initiator.write_hybrid_message(b"!", &mut m3).unwrap(); m3.truncate(l3);
+        let mut tmp3 = vec![0u8;8]; responder.read_hybrid_message(&m3, &mut tmp3).unwrap();
+        assert!(initiator.local_ephemeral.is_none(), "initiator ephemeral not cleared");
+        assert!(responder.local_ephemeral.is_none(), "responder ephemeral not cleared");
     }
     
+    #[cfg(feature = "hybrid")]
     #[test]
-    #[ignore = "Requires HybridNoiseHandshake implementation"]
-    fn test_hybrid_message_flow() {
-        // Test will be enabled when hybrid message flow is implemented
+    fn test_hybrid_forward_secrecy_multi_handshake_uniqueness() {
+        use std::collections::HashSet;
+        const N: usize = 12;
+        let mut send_keys = HashSet::new();
+        let mut recv_keys = HashSet::new();
+        for _ in 0..N {
+            let mut initiator = HybridNoiseHandshake::new_hybrid_initiator(PqAlgorithm::Kyber1024).unwrap();
+            let mut responder = HybridNoiseHandshake::new_hybrid_responder(PqAlgorithm::Kyber1024).unwrap();
+            let responder_pk = responder.local_hybrid.as_ref().unwrap().public().clone();
+            initiator.remote_hybrid = Some(responder_pk);
+            // M1
+            let mut m1 = vec![0u8; 32 + 1088 + 4];
+            let len1 = initiator.write_hybrid_message(b"init", &mut m1).unwrap();
+            m1.truncate(len1);
+            let mut buf = vec![0u8; 16];
+            responder.read_hybrid_message(&m1, &mut buf).unwrap();
+            // M2
+            let mut m2 = vec![0u8; 32 + 2 + 64];
+            let len2 = responder.write_hybrid_message(b"resp", &mut m2).unwrap();
+            m2.truncate(len2);
+            let mut buf2 = vec![0u8; 16];
+            initiator.read_hybrid_message(&m2, &mut buf2).unwrap();
+            // M3
+            let mut m3 = vec![0u8; 2 + 64];
+            let len3 = initiator.write_hybrid_message(b"fin", &mut m3).unwrap();
+            m3.truncate(len3);
+            let mut buf3 = vec![0u8; 8];
+            responder.read_hybrid_message(&m3, &mut buf3).unwrap();
+            let (isk, irk) = (
+                initiator.send_key.expect("initiator send key set"),
+                initiator.recv_key.expect("initiator recv key set"),
+            );
+            let (rsk, rrk) = (
+                responder.send_key.expect("responder send key set"),
+                responder.recv_key.expect("responder recv key set"),
+            );
+            assert_eq!(isk, rrk, "initiator send should match responder recv");
+            assert_eq!(irk, rsk, "initiator recv should match responder send");
+            assert!(send_keys.insert(isk), "duplicate send key observed across independent handshakes");
+            assert!(recv_keys.insert(irk), "duplicate recv key observed across independent handshakes");
+        }
+        assert_eq!(send_keys.len(), N);
+        assert_eq!(recv_keys.len(), N);
     }
 }

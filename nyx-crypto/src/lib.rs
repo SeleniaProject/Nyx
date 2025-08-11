@@ -22,6 +22,7 @@ pub mod aead;
 pub mod keystore;
 #[cfg(feature = "hpke")]
 pub mod hpke;
+pub mod pcr;
 
 pub use kdf::KdfLabel;
 

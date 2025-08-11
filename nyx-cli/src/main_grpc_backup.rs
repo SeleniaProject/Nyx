@@ -1,6 +1,12 @@
 #![forbid(unsafe_code)]
+#![cfg(feature="grpc-backup")]
 
-//! Nyx command line tool with comprehensive network functionality.
+//! Nyx command line tool with comprehensive network functionality. (LEGACY gRPC VERSION)
+//!
+//! This file is retained for reference & potential regression comparison. The primary
+//! maintained CLI is the pure Rust HTTP variant in `main.rs`. Enable this build via
+//! `--features grpc-backup`. New features should go to the primary CLI; only
+//! critical security fixes should modify this file.
 //! 
 //! Implements connect, status, bench subcommands for interacting with Nyx daemon
 //! via gRPC, with full internationalization support and professional CLI experience.
@@ -25,6 +31,9 @@ use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use sha2::{Sha256, Digest};
+use std::fs;
+use std::path::Path;
+use serde::Deserialize;
 
 
 mod i18n;
@@ -69,6 +78,17 @@ struct Cli {
     
     #[command(subcommand)]
     command: Commands,
+}
+
+// Config structures for reading nyx.toml
+#[derive(Debug, Deserialize, Default)]
+struct CliCfg { max_reconnect_attempts: Option<u32> }
+#[derive(Debug, Deserialize, Default)]
+struct RootCfg { cli: Option<CliCfg> }
+
+fn load_root_cfg() -> RootCfg {
+    let p = Path::new("nyx.toml");
+    if let Ok(s) = fs::read_to_string(p) { toml::from_str(&s).unwrap_or_default() } else { RootCfg::default() }
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -356,7 +376,9 @@ async fn cmd_connect(
     shutdown: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Enhanced connection with retry logic and exponential backoff
-    let max_retries = 3;
+    let cfg = load_root_cfg();
+    let cfg_max = cfg.cli.and_then(|c| c.max_reconnect_attempts).unwrap_or(3).clamp(1, 20);
+    let max_retries = cfg_max;
     let mut retry_count = 0;
     let mut base_delay = Duration::from_millis(500);
     
@@ -1567,14 +1589,31 @@ async fn cmd_status(
         
         match format {
             "json" => {
-                // TODO: Implement JSON serialization for NodeInfo
-                eprintln!("JSON format not yet implemented for NodeInfo");
-                display_status_table(&status, &cli.language)?;
+                // Full serialization using serde (prost types derive Serialize via conversion)
+                // Fallback: manual struct if direct serialize fails.
+                match serde_json::to_string_pretty(&status) {
+                    Ok(s) => println!("{}", s),
+                    Err(_) => {
+                        let fallback = serde_json::json!({
+                            "version": status.version,
+                            "uptime_sec": status.uptime_sec,
+                            "bytes_in": status.bytes_in,
+                            "bytes_out": status.bytes_out,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&fallback).unwrap());
+                    }
+                }
             }
             "yaml" => {
-                // TODO: Implement YAML serialization for NodeInfo
-                eprintln!("YAML format not yet implemented for NodeInfo");
-                display_status_table(&status, &cli.language)?;
+                match serde_yaml::to_string(&status) {
+                    Ok(s) => println!("{}", s),
+                    Err(_) => {
+                        println!("version: {}", status.version);
+                        println!("uptime_sec: {}", status.uptime_sec);
+                        println!("bytes_in: {}", status.bytes_in);
+                        println!("bytes_out: {}", status.bytes_out);
+                    }
+                }
             }
             "table" | _ => {
                 display_status_table(&status, &cli.language)?;

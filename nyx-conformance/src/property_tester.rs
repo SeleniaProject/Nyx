@@ -127,7 +127,7 @@ pub struct TestResults<T> {
 
 /// Test execution record
 #[derive(Debug, Clone)]
-struct TestExecution {
+pub(crate) struct TestExecution {
     property_name: String,
     generator_name: String,
     start_time: Instant,
@@ -346,7 +346,7 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
     }
     
     /// Get test execution history
-    pub fn get_test_history(&self) -> Vec<TestExecution> {
+    pub(crate) fn get_test_history(&self) -> Vec<TestExecution> {
         self.test_history.lock().unwrap().clone()
     }
     
@@ -409,7 +409,12 @@ impl ByteVecGenerator {
 
 impl Generator<Vec<u8>> for ByteVecGenerator {
     fn generate(&self, rng: &mut StdRng, size: usize) -> Vec<u8> {
-        let len = rng.gen_range(self.min_len..=std::cmp::min(self.max_len, size));
+    // Ensure we never create an invalid empty range when the provided size is
+    // smaller than the generator's minimum length. When `size < min_len`, we
+    // clamp the upper bound to at least `min_len` so the inclusive range is valid.
+    let effective_upper = std::cmp::min(self.max_len, size);
+    let upper = if effective_upper < self.min_len { self.min_len } else { effective_upper };
+    let len = rng.gen_range(self.min_len..=upper);
         (0..len).map(|_| rng.gen()).collect()
     }
     

@@ -51,6 +51,9 @@ error-permission-denied = Permission denied
 error-invalid-stream-id = Invalid stream ID: { $stream_id }
 error-stream-closed = Stream { $stream_id } is closed
 error-protocol-error = Protocol error: { $error }
+error-unsupported-cap = Unsupported capability requested
+error-resource-exhausted = Resource exhausted, please retry later
+error-failed-precondition = Failed precondition for this operation
 
 # General messages
 operation-cancelled = Operation cancelled

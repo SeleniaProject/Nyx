@@ -105,3 +105,21 @@ pub async fn ice_lite_handshake(sock: &UdpSocket, peer: SocketAddr) -> bool {
     }
     false
 } 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn encode_decode_stun_binding() {
+        // Build response using a fake STUN server echo logic (simplified): we re-use encode then craft a response
+        let mut req = [0u8;20];
+        let txid = super::encode_binding_request(&mut req);
+        // Simulate minimal binding response echoing txid
+        let mut resp = vec![0u8;20];
+        resp[0..2].copy_from_slice(&STUN_BINDING_RESPONSE.to_be_bytes());
+        resp[4..8].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+        resp[8..20].copy_from_slice(&txid);
+        // No attributes -> length 0
+        assert!(decode_binding_response(&resp).is_none());
+    }
+}

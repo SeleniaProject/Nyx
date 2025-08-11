@@ -18,9 +18,7 @@ fn rs_fec_reconstruct_all_data_loss() {
     // zero out data shards
     for i in 0..DATA_SHARDS { mut_refs[i].fill(0); }
 
-    // reconstruct
-    codec.reconstruct(&mut mut_refs, &mut present).unwrap();
-    // verify
-    let verify_vec: Vec<&[u8]> = mut_refs.iter().map(|s| &**s).collect();
-    assert!(codec.verify(&verify_vec).unwrap());
+    // Attempt reconstruct: impossible (only 3 parity shards < required 10 total shards for RS MDS recovery)
+    let res = codec.reconstruct(&mut mut_refs, &mut present);
+    assert!(res.is_err(), "Reconstruction should fail when ALL data shards are lost with insufficient parity shards");
 } 

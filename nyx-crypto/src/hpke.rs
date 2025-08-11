@@ -19,11 +19,14 @@
 use hpke::{kem::X25519HkdfSha256, kdf::HkdfSha256, aead::ChaCha20Poly1305, OpModeR, OpModeS};
 use hpke::kem::Kem;
 use hpke::{Serializable, Deserializable};
+
+// Re-export underlying crate error so downstream crates can use nyx_crypto::hpke::HpkeError
+pub use hpke::HpkeError;
 use rand_core_06::{OsRng, RngCore, CryptoRng};
 use crate::noise::SessionKey;
 use crate::kdf::{hkdf_expand, KdfLabel};
 use thiserror::Error;
-use zeroize::ZeroizeOnDrop;
+use zeroize::{ZeroizeOnDrop, Zeroize};
 
 /// Generate a fresh symmetric secret, seal it to `pk_r` and return (enc, ct, session_key).
 /// The generated secret is 32 bytes and mapped into Nyx [`SessionKey`].
@@ -101,7 +104,11 @@ impl From<hpke::HpkeError> for CryptoError {
 }
 
 /// Shared secret derived from HPKE key encapsulation
-#[derive(Clone, ZeroizeOnDrop)]
+///
+/// Zeroized on drop to avoid lingering sensitive material. We derive `Zeroize` so that
+/// `ZeroizeOnDrop` can automatically call it; no manual `Drop` impl needed (avoids
+/// conflicting Drop implementations).
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SharedSecret {
     inner: Vec<u8>,
 }
@@ -1135,5 +1142,18 @@ mod tests {
         // Test session key derivation with valid shared secret
         let session_key = deriver.derive_session_key(&shared_secret, b"valid-context").unwrap();
         assert_ne!(session_key.0, [0u8; 32]);
+    }
+
+    #[test]
+    fn hpke_rekey_roundtrip() {
+        // Integration style test: simulate two successive HPKE-based session establishments
+    let (sk_r, pk_r) = generate_keypair();
+        let (enc1, ct1, sess1) = generate_and_seal_session(&pk_r, b"nyx-hpke", b"aad1").unwrap();
+        let open1 = open_session(&sk_r, &enc1, b"nyx-hpke", b"aad1", &ct1).unwrap();
+        assert_eq!(sess1.0, open1.0);
+        let (enc2, ct2, sess2) = generate_and_seal_session(&pk_r, b"nyx-hpke", b"aad2").unwrap();
+        let open2 = open_session(&sk_r, &enc2, b"nyx-hpke", b"aad2", &ct2).unwrap();
+        assert_eq!(sess2.0, open2.0);
+        assert_ne!(sess1.0, sess2.0); // Different encapsulation => different session key (overwhelming probability)
     }
 } 

@@ -1,5 +1,5 @@
 use nyx_stream::TxQueue;
-use nyx_fec::TimingConfig;
+use nyx_stream::tx::TimingConfig; // TimingConfig is defined inside tx module, not re-exported at crate root
 
 #[tokio::test]
 async fn txqueue_backpressure_stress() {

@@ -11,7 +11,7 @@
 //! - Layer-specific configuration updates
 //! - Configuration change notifications to all layers
 
-use crate::proto::{ConfigResponse, ConfigUpdate, Event};
+use crate::proto::{ConfigResponse, ConfigUpdate, Event, ValidationError};
 use nyx_core::config::NyxConfig;
 use serde::{Deserialize, Serialize};
 
@@ -205,7 +205,7 @@ impl ConfigManager {
     
     /// Update configuration dynamically with layer notification
     pub async fn update_config(&self, update: ConfigUpdate) -> Result<ConfigResponse> {
-        let mut validation_errors = Vec::new();
+    let mut validation_errors: Vec<ValidationError> = Vec::new();
         let mut updated_fields = Vec::new();
         let mut notifications = Vec::new();
         
@@ -229,7 +229,7 @@ impl ConfigManager {
                     notifications.push(notification);
                 }
                 Err(e) => {
-                    validation_errors.push(format!("{}: {}", key, e));
+                    validation_errors.push(ValidationError { field: key.clone(), message: e.to_string() });
                 }
             }
         }
@@ -256,11 +256,14 @@ impl ConfigManager {
                     ("action".to_string(), "config_update".to_string()),
                     ("fields".to_string(), updated_fields.join(",").to_string()),
                 ].into_iter().collect(),
-                event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                    component: "config_manager".to_string(),
-                    action: "config_update".to_string(),
+                event_type: "config_update".to_string(),
+                data: HashMap::new(),
+                event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                    event_type: "config_update".to_string(),
+                    severity: "info".to_string(),
                     message: format!("Updated {} settings", updated_fields.len()),
-                    details: std::collections::HashMap::new(),
+                    metadata: std::collections::HashMap::new(),
+                    component: "config_manager".to_string(),
                 })),
             };
             
@@ -269,7 +272,10 @@ impl ConfigManager {
             info!("Configuration updated successfully: {:?}", updated_fields);
             Ok(ConfigResponse {
                 success: true,
+                status: "ok".to_string(),
                 message: format!("Updated {} settings", updated_fields.len()),
+                current_value: None,
+                details: HashMap::new(),
                 validation_errors: Vec::new(),
             })
         } else {
@@ -281,7 +287,10 @@ impl ConfigManager {
             warn!("Configuration update failed with validation errors: {:?}", validation_errors);
             Ok(ConfigResponse {
                 success: false,
+                status: "error".to_string(),
                 message: "Configuration validation failed".to_string(),
+                current_value: None,
+                details: HashMap::new(),
                 validation_errors,
             })
         }
@@ -298,7 +307,10 @@ impl ConfigManager {
                             info!("Configuration reloaded from file: {:?}", config_path);
                             Ok(ConfigResponse {
                                 success: true,
+                                status: "ok".to_string(),
                                 message: "Configuration reloaded successfully".to_string(),
+                                current_value: None,
+                                details: HashMap::new(),
                                 validation_errors: Vec::new(),
                             })
                         }
@@ -306,8 +318,11 @@ impl ConfigManager {
                             error!("Failed to parse configuration file: {}", e);
                             Ok(ConfigResponse {
                                 success: false,
+                                status: "error".to_string(),
                                 message: format!("Configuration parsing failed: {}", e),
-                                validation_errors: vec![e.to_string()],
+                                current_value: None,
+                                details: HashMap::new(),
+                                validation_errors: vec![ValidationError { field: "file".to_string(), message: e.to_string() }],
                             })
                         }
                     }
@@ -316,16 +331,22 @@ impl ConfigManager {
                     error!("Failed to read configuration file: {}", e);
                     Ok(ConfigResponse {
                         success: false,
+                        status: "error".to_string(),
                         message: format!("Failed to read configuration file: {}", e),
-                        validation_errors: vec![e.to_string()],
+                        current_value: None,
+                        details: HashMap::new(),
+                        validation_errors: vec![ValidationError { field: "file".to_string(), message: e.to_string() }],
                     })
                 }
             }
         } else {
             Ok(ConfigResponse {
                 success: false,
+                status: "error".to_string(),
                 message: "No configuration file path specified".to_string(),
-                validation_errors: vec!["Configuration file path not set".to_string()],
+                current_value: None,
+                details: HashMap::new(),
+                validation_errors: vec![ValidationError { field: "path".to_string(), message: "Configuration file path not set".to_string() }],
             })
         }
     }
@@ -611,8 +632,8 @@ impl ConfigManager {
     pub async fn validate_config(&self, config: &NyxConfig) -> anyhow::Result<Vec<String>> {
         let mut errors = Vec::new();
         
-        // Validate listen port
-        if config.listen_port == 0 || config.listen_port > 65535 {
+        // Validate listen port (u16なので >65535 比較は不要かつunused_comparisons警告となる)
+        if config.listen_port == 0 {
             errors.push("listen_port must be between 1 and 65535".to_string());
         }
         
@@ -747,11 +768,14 @@ impl ConfigManager {
                     ("action".to_string(), "rollback".to_string()),
                     ("version".to_string(), version.to_string()),
                 ].into_iter().collect(),
-                event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::SystemEvent {
-                    component: "config_manager".to_string(),
-                    action: "rollback".to_string(),
+                event_type: "rollback".to_string(),
+                data: HashMap::new(),
+                event_data: Some(crate::proto::event::EventData::SystemEvent(crate::proto::event::SystemEvent {
+                    event_type: "rollback".to_string(),
+                    severity: "warning".to_string(),
                     message: format!("Rolled back to version {}: {}", version, version_data.description),
-                    details: std::collections::HashMap::new(),
+                    metadata: std::collections::HashMap::new(),
+                    component: "config_manager".to_string(),
                 })),
             };
             
@@ -760,7 +784,10 @@ impl ConfigManager {
             info!("Configuration rolled back to version {}: {}", version, version_data.description);
             Ok(ConfigResponse {
                 success: true,
+                status: "ok".to_string(),
                 message: format!("Rolled back to version {}", version),
+                current_value: None,
+                details: HashMap::new(),
                 validation_errors: Vec::new(),
             })
         } else {
@@ -807,7 +834,7 @@ impl ConfigManager {
             
             let should_rollback = {
                 let pending = self.pending_rollback.read().await;
-                if let Some((version, rollback_time)) = *pending {
+                if let Some((_version, rollback_time)) = *pending {
                     SystemTime::now() >= rollback_time
                 } else {
                     false
@@ -899,4 +926,4 @@ impl Clone for ConfigManager {
             pending_rollback: Arc::clone(&self.pending_rollback),
         }
     }
-} 
+}

@@ -16,7 +16,11 @@ use futures::future::join_all;
 use rand::{Rng, thread_rng};
 
 use nyx_crypto::noise::NoiseHandshake;
+// NyxAsyncStream / FrameHandler disabled in current baseline build
+#[cfg(feature = "legacy_tests_disabled")]
 use nyx_stream::{NyxAsyncStream, FlowController, FrameHandler};
+#[cfg(not(feature = "legacy_tests_disabled"))]
+use nyx_stream::{FlowController};
 use nyx_conformance::{
     network_simulator::{NetworkSimulator, SimulationConfig, LatencyDistribution, SimulatedPacket, PacketPriority},
     property_tester::{PropertyTester, PropertyTestConfig, ByteVecGenerator}

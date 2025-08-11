@@ -259,6 +259,44 @@ impl NyxError {
             _ => None,
         }
     }
+
+    /// Map this SDK error to a Nyx protocol Close code (spec §20) when applicable.
+    /// This provides a bridge between transport-level close frames and higher-level gRPC/SDK status.
+    pub fn close_code(&self) -> Option<u16> {
+        match self {
+            // Protocol::code may already carry a semantic code (e.g., HTTP mapped) - return that.
+            NyxError::Protocol { code: Some(c), .. } => Some(*c),
+            // Permission/auth translate to generic AUTH failure (spec could allocate later); use 0x06 INTERNAL for now.
+            NyxError::Auth { .. } => Some(0x06),
+            NyxError::PermissionDenied { .. } => Some(0x06),
+            // Unsupported capability surfaces upstream as Protocol error with 0x07; if message hints, map.
+            NyxError::Protocol { code: None, message } if message.contains("UNSUPPORTED_CAP") => Some(0x07),
+            // Internal maps to INTERNAL_ERROR (0x06)
+            NyxError::Internal { .. } => Some(0x06),
+            // Timeout / Network: typically no close frame mapping (transport-level) → None
+            _ => None,
+        }
+    }
+}
+
+// Policy: Mapping Nyx CLOSE frame codes to gRPC Status (when legacy gRPC fallback enabled)
+// 0x07 (UNSUPPORTED_CAP) -> Code::FailedPrecondition (client actionable)
+// Future examples:
+// 0x10 (AUTH_FAILED hypothetical) -> Code::Unauthenticated
+// 0x20 (RATE_LIMIT) -> Code::ResourceExhausted
+// Central enum for forward compatibility:
+#[allow(dead_code)]
+pub enum CloseCodePolicy {
+    UnsupportedCap = 0x07,
+}
+// Conversion helper (only compiled under grpc-backup feature):
+#[cfg(feature="grpc-backup")]
+impl CloseCodePolicy {
+    pub fn to_grpc_status(self, msg: &str) -> tonic::Status {
+        match self {
+            CloseCodePolicy::UnsupportedCap => tonic::Status::failed_precondition(msg.to_string()),
+        }
+    }
 }
 
 // Convenience constructors
@@ -431,6 +469,16 @@ impl From<tonic::transport::Error> for NyxError {
 }
 */
 
+// Helper: Map Nyx close frame code to abstract gRPC-like category string for logging / FFI status.
+pub fn close_code_category(code: u16) -> &'static str {
+    match code {
+        0x07 => "FailedPrecondition",
+        0x10..=0x1F => "PermissionDenied",
+        0x20..=0x2F => "ResourceExhausted",
+        _ => "Unknown",
+    }
+}
+
 impl From<std::io::Error> for NyxError {
     fn from(error: std::io::Error) -> Self {
         match error.kind() {
@@ -454,4 +502,4 @@ impl From<serde_json::Error> for NyxError {
     fn from(error: serde_json::Error) -> Self {
         Self::config_error(format!("JSON parse error: {}", error), None)
     }
-} 
+}

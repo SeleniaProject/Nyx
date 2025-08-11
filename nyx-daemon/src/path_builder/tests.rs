@@ -203,7 +203,7 @@ async fn test_path_builder_initialization() {
         "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWGrfVU2HUd65qGM9jdnvYTfL5e4DjX1FgZm8R3S4X5K6Z".to_string(),
     ];
     
-    let result = PathBuilder::new(bootstrap_peers).await;
+    let result = PathBuilder::new(bootstrap_peers, PathBuilderConfig::default()).await;
     assert!(result.is_ok(), "PathBuilder initialization should succeed");
     
     let mut path_builder = result.unwrap();
@@ -220,7 +220,7 @@ async fn test_path_building_with_dht() {
         "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWGrfVU2HUd65qGM9jdnvYTfL5e4DjX1FgZm8R3S4X5K6Z".to_string(),
     ];
     
-    let mut path_builder = PathBuilder::new(bootstrap_peers).await
+    let mut path_builder = PathBuilder::new(bootstrap_peers, PathBuilderConfig::default()).await
         .expect("PathBuilder initialization should succeed");
     
     // Start DHT services
@@ -229,8 +229,11 @@ async fn test_path_building_with_dht() {
     
     // Create path request
     let request = PathRequest {
+        destination: "target-node-123".to_string(),
         target: "target-node-123".to_string(),
+        num_hops: 3,
         hops: 3,
+        preferences: std::collections::HashMap::new(),
     };
     
     // Build path with timeout to prevent hanging

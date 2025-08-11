@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use x25519_dalek::{EphemeralSecret, PublicKey};
-use rand_core::OsRng;
+// Use the 0.6 compatibility crate for OsRng to satisfy EphemeralSecret::random_from_rng bounds
+use rand_core_06::OsRng;
 
 fn diffie_hellman_bench(c: &mut Criterion) {
     let secret = EphemeralSecret::random_from_rng(OsRng);

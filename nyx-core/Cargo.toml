@@ -23,6 +23,10 @@ anyhow = "1"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 rand = { version = "0.8", features = ["std"] }
 chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+serde_bytes = "0.11"
+num_cpus = "1.16"
+socket2 = "0.5"
 
 # Optional telemetry integration
 nyx-telemetry = { path = "../nyx-telemetry", optional = true }
@@ -33,6 +37,13 @@ nyx-crypto = { path = "../nyx-crypto", optional = true }
 # Optional push notification dependencies
 fcm = { version = "0.9", optional = true }
 a2 = { version = "0.10", optional = true }
+
+# Optional big integer and num traits for cmix integration
+num-bigint = { package = "num-bigint", version = "0.4", optional = true }
+num-traits = { package = "num-traits", version = "0.2", optional = true }
+
+# Optional CBOR alt crate for plugin framework
+cbor4ii = { version = "0.3", optional = true }
 
 [features]
 default = []
@@ -46,6 +57,10 @@ push = ["dep:fcm", "dep:a2"]
 fcm = ["dep:fcm"]
 # Enable APNS support  
 apns = ["dep:a2"]
+# Optional modules (off by default to avoid build breakage)
+plugin_framework = ["cbor4ii"]
+multipath_dp = []
+cmix = ["num-bigint", "num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 seccomp = "0.1"

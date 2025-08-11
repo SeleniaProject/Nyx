@@ -17,6 +17,7 @@ rand = "0.8"
 rand_distr = "0.4"
 raptorq = "=1.6.0"
 rayon = { version = "1.10", optional = true }
+tracing = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 rayon = { version = "1.10" }

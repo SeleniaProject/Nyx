@@ -42,6 +42,10 @@ pub struct NodeInfo {
     pub performance: Option<PerformanceMetrics>,
     pub resources: Option<ResourceUsage>,
     pub topology: Option<NetworkTopology>,
+    /// Nyx Protocol compliance level (Core / Plus / Full)
+    pub compliance_level: Option<String>,
+    /// Numeric capability identifiers advertised by this node (spec Appendix)
+    pub capabilities: Option<Vec<u32>>,    
 }
 
 // Performance metrics for the daemon
@@ -352,6 +356,16 @@ pub struct ValidationError {
     pub message: String,
 }
 
+// Top-level configuration request (restored after duplicate removal)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ConfigRequest {
+    pub key: String,
+    pub value: Option<String>,
+    pub operation: String, // "get", "set", "delete", "list"
+    pub scope: String,     // "global", "local", "temporary"
+    pub metadata: HashMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConfigResponse {
     pub success: bool,
@@ -391,6 +405,9 @@ pub struct Event {
     pub attributes: HashMap<String, String>,
 }
 
+// Note: The top-level SystemEvent is kept for backward compatibility with some modules
+// but internal event_data should use event::SystemEvent via event::EventData.
+// Call sites in daemon should construct crate::proto::event::SystemEvent, not this one.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SystemEvent {
     pub timestamp: Option<Timestamp>,
@@ -490,7 +507,12 @@ pub mod event {
     pub struct StreamEvent {
         pub stream_id: String,
         pub event_type: String,
-        pub details: String,
+        pub action: String,
+        pub target_address: String,
+        pub stats: Option<super::StreamStats>,
+        pub timestamp: Option<Timestamp>,
+        pub data: HashMap<String, String>,
+        pub details: String, // Backward compatible detail/summary
     }
     
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -535,38 +557,10 @@ pub mod event {
         pub message: String,
         pub severity: String,
         pub component: String,
-    pub metadata: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ConfigRequest {
-    pub key: String,
-    pub value: Option<String>,
-    pub operation: String, // "get", "set", "delete", "list"
-    pub scope: String,     // "global", "local", "temporary"
-    pub metadata: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]    // Performance metrics for daemon monitoring
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-    pub struct PerformanceMetrics {
-        pub latency_avg_ms: f64,
-        pub throughput_mbps: f64,
-        pub packet_loss_rate: f64,
-        pub connection_success_rate: f64,
-        pub bandwidth_utilization: f64,
-        pub active_streams: u64,
-        pub memory_usage_mb: f64,
-        pub cpu_usage_percent: f64,
+        pub metadata: HashMap<String, String>,
     }
-    
-    // Configuration request/response types
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-    pub struct ConfigRequest {
-        pub key: String,
-        pub value: Option<String>,
-        pub operation: String, // "get", "set", "delete"
-    }
+
+    // NOTE: Removed duplicate ConfigRequest and PerformanceMetrics definitions to avoid type conflicts.
 
     impl Event {
         pub fn new(event_type: String, severity: EventSeverity) -> Self {
@@ -618,6 +612,22 @@ pub trait NyxControl: Send + Sync + 'static {
     async fn reload_config(&self, request: Empty) -> Result<ConfigResponse, String>;
 }
 
+/// gRPC エラーコード変換ポリシー
+/// 現行: 内部 Close コード (例: 0x07 UNSUPPORTED_CAP) を gRPC 相当の抽象分類へマップする。
+///  - 0x07 (UNSUPPORTED_CAP) => FailedPrecondition (client が capability 拡張で再試行可能)
+///  - 0x10–0x1F (認証/権限系: 予約想定) => PermissionDenied / Unauthenticated
+///  - 0x20–0x2F (一時的資源枯渇) => ResourceExhausted
+///  - その他未分類 => Unknown
+#[allow(dead_code)]
+pub fn map_close_code_to_grpc(code: u16) -> &'static str {
+    match code {
+        0x07 => "FailedPrecondition",
+        0x10..=0x1F => "PermissionDenied",
+        0x20..=0x2F => "ResourceExhausted",
+        _ => "Unknown",
+    }
+}
+
 // Server types for gRPC replacement
 #[derive(Debug, Clone)]
 pub struct NyxControlServer<T> 
@@ -641,16 +651,9 @@ where
     }
 }
 
+#[cfg(feature = "experimental-p2p")]
 pub mod nyx_control_server {
-    use super::*;
-    
-    pub struct NyxControlService {
-        // Service implementation
-    }
-    
-    impl NyxControlService {
-        pub fn new() -> Self {
-            Self {}
-        }
-    }
+    // use super::*; // not currently needed
+    pub struct NyxControlService { /* placeholder */ }
+    impl NyxControlService { pub fn new() -> Self { Self { } } }
 }

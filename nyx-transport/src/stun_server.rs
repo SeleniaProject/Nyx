@@ -37,33 +37,8 @@ pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
                     let msg_type = u16::from_be_bytes([buf[0], buf[1]]);
                     if msg_type != STUN_BINDING_REQUEST { continue; }
                     let txid = &buf[8..20];
-                    // Build response
-                    let mut resp = [0u8; 32];
-                    // Type & length placeholder
-                    resp[0..2].copy_from_slice(&STUN_BINDING_RESPONSE.to_be_bytes());
-                    // Will fill length later
-                    resp[4..8].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
-                    resp[8..20].copy_from_slice(txid);
-                    // XOR-MAPPED-ADDRESS attr at offset 20
-                    let idx = 20;
-                    resp[idx..idx+2].copy_from_slice(&XOR_MAPPED_ADDR.to_be_bytes());
-                    resp[idx+2..idx+4].copy_from_slice(&8u16.to_be_bytes());
-                    resp[idx+4] = 0; // reserved
-                    resp[idx+5] = 0x01; // IPv4
-                    let x_port = src.port() ^ ((STUN_MAGIC_COOKIE >> 16) as u16);
-                    resp[idx+6..idx+8].copy_from_slice(&x_port.to_be_bytes());
-                    if let IpAddr::V4(ipv4) = src.ip() {
-                        for i in 0..4 {
-                            resp[idx+8+i] = ipv4.octets()[i] ^ STUN_MAGIC_COOKIE.to_be_bytes()[i];
-                        }
-                    } else {
-                        continue; // skip non-IPv4 for simplicity
-                    }
-                    let msg_len = 12u16; // one attribute header+value (4+8)
-                    resp[2..4].copy_from_slice(&msg_len.to_be_bytes());
-                    if socket.send_to(&resp[..idx+12], src).await.is_err() {
-                        error!("failed to send STUN response");
-                    }
+                    let resp = build_binding_response(src, txid);
+                    if socket.send_to(&resp, src).await.is_err() { error!("failed to send STUN response"); }
                 }
                 Err(e) => {
                     error!("stun recv error: {}", e);
@@ -72,3 +47,53 @@ pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
         }
     }))
 } 
+
+/// Construct a STUN Binding Success Response with single XOR-MAPPED-ADDRESS attribute.
+fn build_binding_response(src: SocketAddr, txid: &[u8]) -> Vec<u8> {
+    let mut resp = Vec::with_capacity(32);
+    resp.extend_from_slice(&STUN_BINDING_RESPONSE.to_be_bytes()); // Type
+    resp.extend_from_slice(&[0,0]); // placeholder length
+    resp.extend_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+    resp.extend_from_slice(txid); // 12 bytes
+    // Attribute start
+    resp.extend_from_slice(&XOR_MAPPED_ADDR.to_be_bytes());
+    resp.extend_from_slice(&8u16.to_be_bytes());
+    resp.push(0); // reserved
+    resp.push(0x01); // Family IPv4
+    let x_port = if let SocketAddr::V4(v4) = src { v4.port() } else { 0 } ^ ((STUN_MAGIC_COOKIE >> 16) as u16);
+    resp.extend_from_slice(&x_port.to_be_bytes());
+    if let IpAddr::V4(ipv4) = src.ip() {
+        for (i, b) in ipv4.octets().iter().enumerate() { resp.push(b ^ &STUN_MAGIC_COOKIE.to_be_bytes()[i]); }
+    } else {
+        resp.extend_from_slice(&[0,0,0,0]);
+    }
+    // Now set message length (attr header + value = 12)
+    let msg_len = 12u16;
+    resp[2..4].copy_from_slice(&msg_len.to_be_bytes());
+    resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn stun_round_trip() {
+        let handle = start_stun_server(3480).await.unwrap();
+        // simple client send binding request (reuse existing code path in ice.rs?)
+        use tokio::net::UdpSocket;
+        let sock = UdpSocket::bind("0.0.0.0:0").await.unwrap();
+        let mut req = [0u8;20];
+        // minimal binding request
+        req[0..2].copy_from_slice(&STUN_BINDING_REQUEST.to_be_bytes());
+        req[4..8].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+        sock.send_to(&req, ("127.0.0.1",3480)).await.unwrap();
+        let mut buf=[0u8;1500];
+        let (len,_) = timeout(Duration::from_millis(500), sock.recv_from(&mut buf)).await.unwrap().unwrap();
+        assert!(len>=32- (32-len));
+        // Basic header checks
+        assert_eq!(u16::from_be_bytes([buf[0],buf[1]]), STUN_BINDING_RESPONSE);
+        drop(handle);
+    }
+}

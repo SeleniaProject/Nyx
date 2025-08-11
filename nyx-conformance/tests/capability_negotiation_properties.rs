@@ -1,3 +1,4 @@
+/// @spec 8. Capability Negotiation
 use nyx_stream::{
     Capability, encode_caps, decode_caps, negotiate, NegotiationError, 
     FLAG_REQUIRED, perform_cap_negotiation, LOCAL_CAP_IDS

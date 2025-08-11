@@ -1,5 +1,5 @@
 use nyx_stream::TxQueue;
-use nyx_fec::TimingConfig;
+use nyx_stream::tx::TimingConfig; // use stream layer fallback TimingConfig
 
 #[tokio::test]
 async fn txqueue_path_seq_numbers() {

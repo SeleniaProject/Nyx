@@ -38,4 +38,15 @@ mod tests {
         pad_outgoing(&mut v);
         assert_eq!(v.len() % SHARD_SIZE, 0);
     }
+
+    #[test]
+    fn roundtrip_trim_restores_original() {
+        let original_len = 1500;
+        let mut v = vec![7u8; original_len];
+        pad_outgoing(&mut v);
+        let padded = v.clone();
+        let slice = trim_incoming(&padded, original_len);
+        assert_eq!(slice.len(), original_len);
+        assert!(slice.iter().all(|b| *b == 7));
+    }
 } 

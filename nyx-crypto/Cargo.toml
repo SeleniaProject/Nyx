@@ -31,7 +31,7 @@ bench = ["criterion"]
 # Core crypto deps
 # Classic X25519 (enabled by feature "classic")
 # X25519 implementation (classic mode)
-x25519-dalek = { version = "2.0.1", default-features = false, optional = true }
+x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets"], optional = true }
 
 # Pure Rust post-quantum implementations
 pqc_kyber = { version = "0.7", optional = true }
@@ -73,4 +73,6 @@ tokio = { version = "1.0", features = ["time", "sync", "rt", "rt-multi-thread", 
 [dev-dependencies]
 hex-literal = "0.4"
 filetime = { version = "0.2", optional = false }
-rand_chacha = "0.3"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = { version = "0.8", default-features = false, features=["std", "std_rng"], optional = false }
+rand_chacha = { version = "0.3" }

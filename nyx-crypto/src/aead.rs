@@ -60,6 +60,8 @@ pub struct FrameCrypter {
     recv_highest: u64,
     // bitmap holding WINDOW_SIZE bits; 1 = seen.  1 048 576 / 8 = 131 072 bytes.
     bitmap: Box<[u8; WINDOW_SIZE as usize / 8]>,
+    // Logical head offset (in bits) for ring-buffer interpretation of bitmap.
+    head_offset_bits: usize,
 }
 
 impl FrameCrypter {
@@ -71,6 +73,7 @@ impl FrameCrypter {
             send_seq: 0,
             recv_highest: 0,
             bitmap: Box::new([0u8; WINDOW_SIZE as usize / 8]),
+            head_offset_bits: 0,
         }
     }
 
@@ -106,18 +109,15 @@ impl FrameCrypter {
     }
 
     fn check_replay(&self, seq: u64) -> Result<(), AeadError> {
-        if seq + WINDOW_SIZE < self.recv_highest {
-            return Err(AeadError::Stale);
-        }
+        // Avoid addition overflow by expressing logic in terms of distance when seq <= recv_highest.
         if seq > self.recv_highest {
-            // brand-new sequence – always allowed
-            return Ok(());
+            return Ok(()); // strictly newer – accept
         }
-        let idx = (self.recv_highest - seq) as usize; // distance from latest
-        if idx >= WINDOW_SIZE as usize {
+        let distance = self.recv_highest - seq; // safe because seq <= recv_highest
+        if distance > WINDOW_SIZE {
             return Err(AeadError::Stale);
         }
-        if self.bitmap_get(idx) {
+        if self.bitmap_get(distance as usize) {
             return Err(AeadError::Replay);
         }
         Ok(())
@@ -127,7 +127,7 @@ impl FrameCrypter {
         if seq > self.recv_highest {
             // advance window forward
             let shift = seq - self.recv_highest;
-            self.slide_window(shift);
+            self.advance_window(shift);
             self.recv_highest = seq;
         }
         let idx = (self.recv_highest - seq) as usize;
@@ -136,45 +136,55 @@ impl FrameCrypter {
         }
     }
 
-    fn slide_window(&mut self, shift: u64) {
+    fn advance_window(&mut self, shift: u64) {
+        if shift == 0 { return; }
         if shift >= WINDOW_SIZE {
-            // large jump – clear all bits
+            // Jump beyond whole window: clear everything and reset offset.
             for b in self.bitmap.iter_mut() { *b = 0; }
-        } else {
-            let shift = shift as usize;
-            let byte_shift = shift / 8;
-            let bit_shift = shift % 8;
-
-            if byte_shift > 0 {
-                // Move bytes towards MSB end.
-                for i in (byte_shift..self.bitmap.len()).rev() {
-                    self.bitmap[i] = self.bitmap[i - byte_shift];
-                }
-                for i in 0..byte_shift { self.bitmap[i] = 0; }
-            }
-            if bit_shift > 0 {
-                let mut carry = 0u8;
-                for byte in &mut *self.bitmap {
-                    let new_carry = *byte >> (8 - bit_shift);
-                    *byte = (*byte << bit_shift) | carry;
-                    carry = new_carry;
-                }
-            }
+            self.head_offset_bits = 0;
+            return;
+        }
+        let shift_usize = shift as usize;
+        // Move head forward (ring buffer)
+        let window_bits = WINDOW_SIZE as usize;
+        self.head_offset_bits = (self.head_offset_bits + shift_usize) % window_bits;
+        // Clear bits for new region (distances 0..shift-1)
+        for d in 0..shift_usize {
+            self.bitmap_clear(d);
         }
     }
 
     #[inline]
     fn bitmap_get(&self, idx: usize) -> bool {
-        let byte = idx / 8;
-        let bit = idx % 8;
+        let bit_index = (self.head_offset_bits + idx) % (WINDOW_SIZE as usize);
+        let byte = bit_index / 8;
+        let bit = bit_index % 8;
         ((self.bitmap[byte] >> bit) & 1) == 1
     }
 
     #[inline]
     fn bitmap_set(&mut self, idx: usize) {
-        let byte = idx / 8;
-        let bit = idx % 8;
+        let bit_index = (self.head_offset_bits + idx) % (WINDOW_SIZE as usize);
+        let byte = bit_index / 8;
+        let bit = bit_index % 8;
         self.bitmap[byte] |= 1 << bit;
+    }
+
+    fn bitmap_clear(&mut self, idx: usize) {
+        let bit_index = (self.head_offset_bits + idx) % (WINDOW_SIZE as usize);
+        let byte = bit_index / 8;
+        let bit = bit_index % 8;
+        self.bitmap[byte] &= !(1 << bit);
+    }
+
+    /// Testing/benchmark helper: encrypt using an explicit sequence number without
+    /// mutating the internal send sequence counter. Safe for test usage only; production
+    /// code should prefer `encrypt` to preserve monotonically increasing nonces.
+    pub fn encrypt_at(&self, dir: u32, seq: u64, plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
+        let nonce = Self::make_nonce(dir, seq);
+        self.cipher
+            .encrypt(Nonce::from_slice(&nonce), Payload { msg: plaintext, aad })
+            .expect("encryption failure")
     }
 }
 
@@ -390,20 +400,33 @@ impl Default for ChaCha20Poly1305Encryptor {
 /// Simplified AEAD interface for Noise protocol handshake
 pub struct NyxAead {
     cipher: ChaCha20Poly1305,
+    #[cfg(feature="telemetry")] // reuse telemetry feature gate for lightweight metrics
+    alloc_counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl NyxAead {
     /// Create new AEAD instance with session key
     pub fn new(session_key: &SessionKey) -> Self {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(session_key.as_bytes()));
-        Self { cipher }
+    Self { cipher, #[cfg(feature="telemetry")] alloc_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)) }
     }
     
     /// Encrypt plaintext with given nonce and AAD
     pub fn encrypt(&self, nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, AeadError> {
-        self.cipher
+        // 期待サイズ: plaintext + 16(tag)
+        let expected = plaintext.len() + 16;
+        let out = self.cipher
             .encrypt(Nonce::from_slice(nonce), Payload { msg: plaintext, aad })
-            .map_err(|e| AeadError::EncryptionFailed(format!("Encryption failed: {:?}", e)))
+            .map_err(|e| AeadError::EncryptionFailed(format!("Encryption failed: {:?}", e)))?;
+        #[cfg(feature="telemetry")] {
+            if out.capacity() > expected { // 余剰容量を再割当由来とみなす簡易ヒューリスティック
+                self.alloc_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if self.alloc_counter.load(std::sync::atomic::Ordering::Relaxed) % 100 == 0 {
+                    tracing::trace!(extra_allocations = self.alloc_counter.load(std::sync::atomic::Ordering::Relaxed), "nyx_aead_extra_allocations");
+                }
+            }
+        }
+        Ok(out)
     }
     
     /// Decrypt ciphertext with given nonce and AAD
@@ -419,6 +442,11 @@ impl NyxAead {
         nonce[4..].copy_from_slice(&counter.to_le_bytes());
         nonce
     }
+}
+
+impl NyxAead {
+    #[cfg(feature="telemetry")]
+    pub fn extra_allocations(&self) -> u64 { self.alloc_counter.load(std::sync::atomic::Ordering::Relaxed) }
 }
 
 /// Key rotation configuration for a context
@@ -982,16 +1010,18 @@ mod tests {
     fn round_trip() {
         let mut a = FrameCrypter::new(SessionKey([7u8; 32]));
         let mut b = FrameCrypter::new(SessionKey([7u8; 32]));
-
-        for i in 0..100 {
+        // First frame (seq=0)
+        let first_ct = a.encrypt(0, b"hi", b"hdr");
+        let first_pt = b.decrypt(0, 0, &first_ct, b"hdr").unwrap();
+        assert_eq!(first_pt, b"hi");
+        // Immediate replay of first frame (seq=0)
+        assert_eq!(b.decrypt(0, 0, &first_ct, b"hdr").unwrap_err(), AeadError::Replay);
+        // More frames (ensure normal operation continues)
+        for i in 1..100 {
             let ct = a.encrypt(0, b"hi", b"hdr");
             let pt = b.decrypt(0, i, &ct, b"hdr").unwrap();
             assert_eq!(pt, b"hi");
         }
-
-        // replay attack detection
-        let dup = a.encrypt(0, b"x", b"hdr");
-        assert_eq!(b.decrypt(0, 0, &dup, b"hdr").unwrap_err(), AeadError::Replay);
     }
     
     // New comprehensive tests for enhanced ChaCha20Poly1305 implementation

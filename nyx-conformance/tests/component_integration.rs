@@ -16,7 +16,11 @@ use tokio::time::{timeout, sleep};
 use tracing::{info, warn};
 
 use nyx_crypto::{hpke::HpkeKeyDeriver, noise::NoiseHandshake};
+// Async stream components disabled in current baseline; keep behind feature
+#[cfg(feature = "legacy_tests_disabled")]
 use nyx_stream::{NyxAsyncStream, FlowController, FrameHandler};
+#[cfg(not(feature = "legacy_tests_disabled"))]
+use nyx_stream::{FlowController};
 use nyx_conformance::{network_simulator::NetworkSimulator, property_tester::PropertyTester};
 
 /// Test data structure for component integration scenarios

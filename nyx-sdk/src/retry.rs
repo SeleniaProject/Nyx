@@ -264,7 +264,7 @@ impl RetryExecutor {
 }
 
 /// Convenience function to retry an operation with default strategy
-pub async fn retry<F, Fut, T>(mut operation: F) -> NyxResult<T>
+pub async fn retry<F, Fut, T>(operation: F) -> NyxResult<T>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = NyxResult<T>>,

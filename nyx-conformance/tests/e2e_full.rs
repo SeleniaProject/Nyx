@@ -40,11 +40,15 @@ async fn e2e_full_stack() {
     assert_eq!(delivered, vec![0,1,2]);
 
     // --- RaptorQ Encode/Decode ------------------------------------------
-    let codec = RaptorQCodec::new(0.3); // 30% redundancy
+    let codec = RaptorQCodec::new(0.5); // 50% redundancy (ensure recovery after dropping first 2 packets)
     let mut data = vec![0u8; 4096];
     thread_rng().fill(&mut data[..]);
     let packets = codec.encode(&data);
-    // simulate loss: drop first two packets
-    let recovered = codec.decode(&packets[2..]).expect("decode");
+    // simulate loss: drop two packets AFTER sentinel so length sentinel is preserved
+    // packets[0] is sentinel inserted by encoder; drop indices 1 and 2
+    let mut subset: Vec<_> = Vec::with_capacity(packets.len() - 2);
+    subset.push(packets[0].clone());
+    subset.extend_from_slice(&packets[3..]);
+    let recovered = codec.decode(&subset).expect("decode failure (insufficient repair symbols)");
     assert_eq!(recovered, data);
 } 

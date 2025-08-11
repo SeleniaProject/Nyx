@@ -1,6 +1,5 @@
 use nyx_stream::simple_frame_handler::FrameHandler;
 use nyx_stream::flow_controller::FlowController;
-use tokio::runtime::Runtime;
 use std::time::{Duration, Instant};
 
 #[tokio::main]
@@ -166,8 +165,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_bytes = 0;
     
     for i in 0..num_tests {
-        let test_start = Instant::now();
-        
         // フロー制御チェック
         if flow_controller.can_send(test_size as u32) {
             // データ生成

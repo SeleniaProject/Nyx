@@ -66,3 +66,22 @@ impl TimingObfuscator {
         self.tx.clone()
     }
 } 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{Instant, Duration};
+
+    #[tokio::test]
+    async fn delays_within_expected_distribution() {
+        let config = TimingConfig { mean_ms: 15.0, sigma_ms: 5.0 };
+        let obf = TimingObfuscator::new(config);
+        let start = Instant::now();
+        obf.enqueue(vec![1,2,3]).await;
+        let mut rx = obf;
+        let _pkt = rx.recv().await.expect("packet");
+        let elapsed = start.elapsed().as_millis();
+        // Expect delay roughly within 0..= (mean + 3*sigma) ≈ 30ms (wide tolerance for CI variance)
+        assert!(elapsed <= 60, "elapsed {}ms too large", elapsed);
+    }
+}

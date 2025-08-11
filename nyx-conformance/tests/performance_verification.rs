@@ -433,7 +433,7 @@ impl PerformanceVerificationSuite {
             std::hint::black_box(dummy_data);
 
             // Warm up stream operations
-            let stream = NyxAsyncStream::new(1, 32768, 1024);
+            let (stream, _rx) = NyxAsyncStream::new(1, 32768, 1024);
             std::hint::black_box(stream);
 
             sleep(Duration::from_millis(1)).await;
@@ -525,7 +525,7 @@ impl PerformanceVerificationSuite {
 
         while stream_start.elapsed() < self.test_config.test_duration {
             let op_start = Instant::now();
-            let stream = NyxAsyncStream::new(stream_operations as u32, 65536, 1024);
+            let (stream, _rx) = NyxAsyncStream::new(stream_operations as u32, 65536, 1024);
             let op_duration = op_start.elapsed();
             
             latency_samples.push(op_duration.as_millis() as f64);

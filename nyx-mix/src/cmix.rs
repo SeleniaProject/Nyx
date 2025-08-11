@@ -36,18 +36,43 @@ const DEFAULT_BATCH: usize = 100;
 /// VDF iterations per millisecond (calibrated empirically ~10k on modern CPU).
 const VDF_ITERS_PER_MS: u64 = 10_000;
 
-/// Resulting batch metadata.
+/// Proof components detached from the batch payload itself.
+#[derive(Debug, Clone)]
+pub struct BatchProof {
+    pub digest: [u8; 32],
+    pub vdf_y: Vec<u8>,
+    pub vdf_pi: Vec<u8>,
+    pub vdf_iters: u64,
+    pub acc_value: Vec<u8>,
+    pub witness: Vec<u8>,
+}
+
+/// Resulting batch metadata (packets + proof).  Historic API kept but new
+/// code SHOULD prefer accessing the detached [`BatchProof`] via
+/// [`CmixBatch::proof`].
 #[derive(Debug, Clone)]
 pub struct CmixBatch {
     pub packets: Vec<Vec<u8>>, // shuffled packets (shallow copy)
-    pub digest: [u8; 32],      // SHA-256 digest of concatenated packets
-    // Wesolowski VDF proof components
-    pub vdf_y: Vec<u8>,        // y = x^{2^t} mod n
-    pub vdf_pi: Vec<u8>,       // π = x^q mod n
-    pub vdf_iters: u64,        // iteration count (t)
-    // RSA accumulator data
-    pub acc_value: Vec<u8>,    // current accumulator value A bytes
-    pub witness: Vec<u8>,      // membership witness (pre-add accumulator)
+    pub digest: [u8; 32],
+    pub vdf_y: Vec<u8>,
+    pub vdf_pi: Vec<u8>,
+    pub vdf_iters: u64,
+    pub acc_value: Vec<u8>,
+    pub witness: Vec<u8>,
+}
+
+impl CmixBatch {
+    /// Return detached proof object for publishing / signing layers.
+    pub fn proof(&self) -> BatchProof {
+        BatchProof {
+            digest: self.digest,
+            vdf_y: self.vdf_y.clone(),
+            vdf_pi: self.vdf_pi.clone(),
+            vdf_iters: self.vdf_iters,
+            acc_value: self.acc_value.clone(),
+            witness: self.witness.clone(),
+        }
+    }
 }
 
 /// cMix controller: receives packets via channel, outputs `CmixBatch` after delay.
@@ -145,35 +170,49 @@ impl Default for CmixController {
     fn default() -> Self { Self::new(DEFAULT_BATCH, DEFAULT_DELAY_MS) }
 }
 
-/// Verify `CmixBatch` integrity: digest, VDF proof, and RSA accumulator membership.
-pub fn verify_batch(batch: &CmixBatch, params: &crate::accumulator::AccumulatorParams, _expected_iters: Option<u64>) -> bool {
+/// Detailed verification error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyError {
+    DigestMismatch,
+    VdfInvalid,
+    AccumulatorInvalid,
+    IterationsMismatch,
+}
+
+/// Verify `CmixBatch` integrity returning structured errors. `_expected_iters`
+/// allows callers to enforce a policy (e.g. calibrated value) – if `None`, any
+/// iteration count accepted.
+pub fn verify_batch_detailed(batch: &CmixBatch, params: &crate::accumulator::AccumulatorParams, _expected_iters: Option<u64>) -> Result<(), VerifyError> {
     use crate::accumulator::verify_membership;
-    // Recompute digest from packets.
+    // (1) Recompute digest.
     let mut hasher = Sha256::new();
     for p in &batch.packets { hasher.update(p); }
-    if hasher.finalize().as_slice() != &batch.digest {
-        return false;
-    }
-
-    // Verify VDF proof.
+    if hasher.finalize().as_slice() != &batch.digest { return Err(VerifyError::DigestMismatch); }
+    // (2) Enforce iteration policy if provided.
+    if let Some(exp) = _expected_iters { if exp != batch.vdf_iters { return Err(VerifyError::IterationsMismatch); } }
+    // (3) VDF proof.
     let x = BigUint::from_bytes_be(&batch.digest);
     let y = BigUint::from_bytes_be(&batch.vdf_y);
     let pi = BigUint::from_bytes_be(&batch.vdf_pi);
-    if !vdf::verify(&x, &y, &pi, &params.n, batch.vdf_iters) {
-        return false;
-    }
-
-    // Verify RSA accumulator membership.
+    if !vdf::verify(&x, &y, &pi, &params.n, batch.vdf_iters) { return Err(VerifyError::VdfInvalid); }
+    // (4) Accumulator membership.
     let elem = crate::accumulator::hash_to_prime(&batch.digest);
     let witness = BigUint::from_bytes_be(&batch.witness);
     let acc_val = BigUint::from_bytes_be(&batch.acc_value);
-    verify_membership(&params.n, &elem, &witness, &acc_val)
+    if !verify_membership(&params.n, &elem, &witness, &acc_val) { return Err(VerifyError::AccumulatorInvalid); }
+    Ok(())
+}
+
+/// Backwards-compatible boolean verifier wrapper.
+pub fn verify_batch(batch: &CmixBatch, params: &crate::accumulator::AccumulatorParams, expected_iters: Option<u64>) -> bool {
+    verify_batch_detailed(batch, params, expected_iters).is_ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// @spec 4. cMix Integration
     #[tokio::test]
     async fn emits_batch_after_timeout() {
         let mut cmix = CmixController::new(10, 50);
@@ -184,5 +223,20 @@ mod tests {
         assert_eq!(batch.packets.len(), 1);
         // Verify proofs
         assert!(verify_batch(&batch, cmix.params(), None));
+    }
+
+    /// @spec 4. cMix Integration
+    #[tokio::test]
+    async fn detailed_verification_reports_errors() {
+        let mut cmix = CmixController::new(4, 30);
+        let tx = cmix.sender();
+        tx.send(b"abc".to_vec()).await.unwrap();
+        let batch = cmix.recv().await.unwrap();
+        // Valid case
+        assert!(verify_batch_detailed(&batch, cmix.params(), None).is_ok());
+        // Tamper digest
+        let mut tampered = batch.clone();
+        tampered.digest[0] ^= 0xFF;
+        assert_eq!(verify_batch_detailed(&tampered, cmix.params(), None).unwrap_err(), VerifyError::DigestMismatch);
     }
 } 

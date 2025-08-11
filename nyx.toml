@@ -37,3 +37,8 @@ discovery_timeout = 30
 grpc_addr = "127.0.0.1:50051"
 # Prometheus metrics address  
 prometheus_addr = "127.0.0.1:9090"
+
+# CLI specific configuration
+[cli]
+# Maximum reconnect attempts for stream establishment / monitor logic
+max_reconnect_attempts = 5

@@ -441,13 +441,152 @@ impl AlertSystem {
                 log::warn!("Alert: {} - {} - {}", alert.title, alert.description, alert.current_value);
             },
             AlertHandler::Email(email) => {
-                // TODO: Implement email notification
-                log::info!("Would send email alert to {}: {}", email, alert.title);
+                if let Err(e) = self.send_email_smtp(email, alert).await {
+                    log::error!("Failed to send email alert to {}: {}", email, e);
+                }
             },
             AlertHandler::Webhook(url) => {
-                // TODO: Implement webhook notification
-                log::info!("Would send webhook to {}: {}", url, alert.title);
+                if let Err(e) = self.send_webhook_http(url, alert).await {
+                    log::error!("Failed to send webhook alert to {}: {}", url, e);
+                }
             },
+        }
+    }
+
+    /// Very minimal SMTP email sender (plaintext, no STARTTLS). Controlled via env:
+    /// NYX_ALERT_SMTP_SERVER=host:port (default 127.0.0.1:25)
+    /// NYX_ALERT_SMTP_FROM=from@example.com (required)
+    async fn send_email_smtp(&self, to: &str, alert: &Alert) -> Result<(), String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpStream;
+
+        let server = std::env::var("NYX_ALERT_SMTP_SERVER").unwrap_or_else(|_| "127.0.0.1:25".to_string());
+        let from = std::env::var("NYX_ALERT_SMTP_FROM").map_err(|_| "NYX_ALERT_SMTP_FROM not set".to_string())?;
+
+        let mut stream = TcpStream::connect(&server).await.map_err(|e| format!("connect {}: {}", server, e))?;
+        let mut buf = [0u8; 512];
+        // Read greeting (ignore result)
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), stream.read(&mut buf)).await;
+
+        let hostname = gethostname::gethostname().to_string_lossy().into_owned();
+        let helo = format!("HELO {}\r\n", hostname);
+        stream.write_all(helo.as_bytes()).await.map_err(|e| e.to_string())?;
+        let mail_from = format!("MAIL FROM:<{}>\r\n", from);
+        stream.write_all(mail_from.as_bytes()).await.map_err(|e| e.to_string())?;
+        let rcpt = format!("RCPT TO:<{}>\r\n", to);
+        stream.write_all(rcpt.as_bytes()).await.map_err(|e| e.to_string())?;
+        stream.write_all(b"DATA\r\n").await.map_err(|e| e.to_string())?;
+
+        let subject = format!("Nyx Alert: {} ({:?})", alert.title, alert.severity);
+        let body = format!(
+            "Subject: {}\r\nFrom: {}\r\nTo: {}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{}\r\nMetric: {}\r\nValue: {:.2} (threshold {:.2})\r\nID: {}\r\n.\r\n",
+            subject,
+            from,
+            to,
+            alert.description,
+            alert.metric,
+            alert.current_value,
+            alert.threshold,
+            alert.id
+        );
+        stream.write_all(body.as_bytes()).await.map_err(|e| e.to_string())?;
+        stream.write_all(b"QUIT\r\n").await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Minimal HTTP POST webhook (HTTP only). For HTTPS endpoints this will log a warning and skip.
+    /// NYX_ALERT_WEBHOOK_TIMEOUT_MS optional (default 3000).
+        async fn send_webhook_http(&self, url: &str, alert: &Alert) -> Result<(), String> {
+            // Config
+            let timeout_ms: u64 = std::env::var("NYX_ALERT_WEBHOOK_TIMEOUT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(4000);
+            let retries: u32 = std::env::var("NYX_ALERT_WEBHOOK_RETRIES").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+            let hmac_secret = std::env::var("NYX_ALERT_WEBHOOK_HMAC").ok();
+
+            let parsed = url::Url::parse(url).map_err(|e| format!("invalid url {}: {}", url, e))?;
+            let scheme = parsed.scheme();
+            let host = parsed.host_str().ok_or("missing host")?;
+            let port = parsed.port_or_known_default().unwrap_or_else(|| if scheme == "https" { 443 } else { 80 });
+            let path = if parsed.path().is_empty() { "/" } else { parsed.path() };
+            let body_json = serde_json::json!({
+                "id": alert.id,
+                "title": alert.title,
+                "description": alert.description,
+                "metric": alert.metric,
+                "severity": format!("{:?}", alert.severity),
+                "value": alert.current_value,
+                "threshold": alert.threshold,
+                "layer": alert.layer.as_ref().map(|l| format!("{:?}", l)),
+                "ts": chrono::Utc::now().to_rfc3339(),
+            });
+            let body = body_json.to_string();
+            let signature_header = if let Some(secret) = hmac_secret.as_ref() {
+                use hmac::{Hmac, Mac};
+                use sha2::Sha256;
+                let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).map_err(|e| e.to_string())?;
+                mac.update(body.as_bytes());
+                let sig = mac.finalize().into_bytes();
+                Some(format!("X-Nyx-Signature: sha256={}\r\n", base64::encode(sig)))
+            } else { None };
+
+            for attempt in 0..=retries {
+                let deadline = std::time::Duration::from_millis(timeout_ms);
+                let result = if scheme == "http" {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    use tokio::net::TcpStream;
+                    let addr = format!("{}:{}", host, port);
+                    match tokio::time::timeout(deadline, TcpStream::connect(&addr)).await {
+                        Err(_) => Err("connect timeout".to_string()),
+                        Ok(Err(e)) => Err(e.to_string()),
+                        Ok(Ok(mut stream)) => {
+                            let req = format!(
+                                "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
+                                path, host, body.len(), signature_header.clone().unwrap_or_default(), body
+                            );
+                            if let Err(e) = stream.write_all(req.as_bytes()).await { return Err(e.to_string()); }
+                            let mut buf = Vec::new();
+                            let _ = tokio::time::timeout(deadline, stream.read_to_end(&mut buf)).await;
+                            Ok(())
+                        }
+                    }
+                } else if scheme == "https" {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    use tokio_native_tls::TlsConnector;
+                    let addr = format!("{}:{}", host, port);
+                    match tokio::time::timeout(deadline, tokio::net::TcpStream::connect(&addr)).await {
+                        Err(_) => Err("connect timeout".to_string()),
+                        Ok(Err(e)) => Err(e.to_string()),
+                        Ok(Ok(stream)) => {
+                            let native_connector = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
+                            let connector = TlsConnector::from(native_connector);
+                            match tokio::time::timeout(deadline, connector.connect(host, stream)).await {
+                                Err(_) => Err("tls handshake timeout".to_string()),
+                                Ok(Err(e)) => Err(format!("tls: {}", e)),
+                                Ok(Ok(mut tls)) => {
+                                    let req = format!(
+                                        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
+                                        path, host, body.len(), signature_header.clone().unwrap_or_default(), body
+                                    );
+                                    if let Err(e) = tokio::time::timeout(deadline, tls.write_all(req.as_bytes())).await { return Err(format!("write timeout: {e:?}")); }
+                                    let mut buf = Vec::new();
+                                    let _ = tokio::time::timeout(deadline, tls.read_to_end(&mut buf)).await;
+                                    Ok(())
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Err("unsupported scheme".to_string())
+                };
+                match result {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        if attempt == retries { return Err(e); }
+                        let backoff = 2u64.pow(attempt).min(8);
+                        tokio::time::sleep(Duration::from_millis(200 * backoff)).await;
+                    }
+                }
+            }
+            Err("unreachable".to_string())
         }
     }
     

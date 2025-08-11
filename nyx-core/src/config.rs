@@ -48,6 +48,20 @@ pub struct MultipathConfig {
     
     /// Weight calculation method for round-robin scheduling
     pub weight_method: WeightMethod,
+    /// Adaptive reorder buffer: target p95 delay factor vs RTT (e.g. 1.5 means target p95 <= 1.5*RTT)
+    pub reorder_target_p95_factor: f64,
+    /// Adaptive reorder PID proportional gain
+    pub reorder_pid_kp: f64,
+    /// Adaptive reorder PID integral gain
+    pub reorder_pid_ki: f64,
+    /// Adaptive reorder PID derivative gain
+    pub reorder_pid_kd: f64,
+    /// Minimum reorder buffer size for adaptation
+    pub reorder_min_size: usize,
+    /// Maximum reorder buffer size for adaptation
+    pub reorder_max_size: usize,
+    /// Fairness entropy floor (below this triggers weight smoothing boost)
+    pub fairness_entropy_floor: f64,
 }
 
 /// Method for calculating path weights in multipath round-robin scheduling
@@ -117,6 +131,13 @@ impl Default for MultipathConfig {
             max_hops: MAX_HOPS,
             reorder_timeout_ms: 100, // RTT diff + jitter * 2
             weight_method: WeightMethod::InverseRtt,
+            reorder_target_p95_factor: 1.5,
+            reorder_pid_kp: 0.4,
+            reorder_pid_ki: 0.05,
+            reorder_pid_kd: 0.1,
+            reorder_min_size: 32,
+            reorder_max_size: 4096,
+            fairness_entropy_floor: 0.7,
         }
     }
 }

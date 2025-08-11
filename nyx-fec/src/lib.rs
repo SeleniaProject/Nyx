@@ -1,8 +1,14 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//! Reed-Solomon FEC wrapper for Nyx fixed-length 1280-byte packets.
-//! Default parameters: data shards = 10, parity shards = 3 (≈30% overhead).
+//! RaptorQ and Reed-Solomon FEC implementation for Nyx packets.
+//! 
+//! NyxNet v1.0 includes complete RaptorQ fountain code implementation
+//! with adaptive redundancy control, replacing traditional Reed-Solomon
+//! for improved efficiency and resilience.
+//!
+//! Default Reed-Solomon parameters: data shards = 10, parity shards = 3 (≈30% overhead).
+//! RaptorQ parameters: symbol size = 1280 bytes, adaptive redundancy 10-80%.
 
 use reed_solomon_erasure::{galois_8::ReedSolomon, Error as RSError};
 
@@ -10,7 +16,14 @@ pub mod timing;
 pub use timing::{TimingObfuscator, TimingConfig, Packet};
 
 pub mod raptorq;
-pub use raptorq::{RaptorQCodec, AdaptiveRaptorQ};
+pub use raptorq::{
+    RaptorQCodec, 
+    AdaptiveRaptorQ, 
+    NetworkCondition, 
+    EncodingStats, 
+    DecodingStats, 
+    FECStats
+};
 
 pub mod padding;
 pub use padding::{pad_outgoing, trim_incoming};

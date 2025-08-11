@@ -42,6 +42,8 @@ pub struct NodeInfo {
     pub performance: Option<PerformanceMetrics>,
     pub resources: Option<ResourceUsage>,
     pub topology: Option<NetworkTopology>,
+    pub compliance_level: Option<String>,
+    pub capabilities: Option<Vec<u32>>,
 }
 
 // Performance metrics for the daemon

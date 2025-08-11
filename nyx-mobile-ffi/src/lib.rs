@@ -19,8 +19,7 @@
 //! All FFI functions are implemented with safe Rust wrappers around platform-specific
 //! APIs, with comprehensive error handling and type safety guarantees.
 
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int};
+use std::os::raw::c_int;
 use std::sync::Arc;
 use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;

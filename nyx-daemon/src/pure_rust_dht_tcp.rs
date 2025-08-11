@@ -2034,8 +2034,10 @@ impl PureRustDht {
         info!("Bootstrap completed successfully: {}/{} connections established", 
               successful_connections, successful_connections + failed_connections);
 
-        // Update bootstrap node statistics
-        self.update_bootstrap_statistics(successful_connections, failed_connections).await;
+        // Update bootstrap node statistics (Resultを無視しない)
+        if let Err(e) = self.update_bootstrap_statistics(successful_connections, failed_connections).await {
+            warn!("Failed to update bootstrap statistics: {e}");
+        }
 
         // Save updated state
         self.save_to_storage().await?;

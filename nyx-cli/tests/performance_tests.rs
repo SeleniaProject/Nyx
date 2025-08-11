@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use tokio::task::JoinSet;
 use assert_cmd::prelude::*;
-use predicates::prelude::*;
 use sysinfo::System;
 
 /// Performance test configuration

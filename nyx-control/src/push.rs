@@ -5,9 +5,8 @@
 use serde_json::Value as JsonValue;
 use tokio::sync::{mpsc, oneshot};
 use nyx_core::PushProvider;
-use chrono::Utc;
-use pasetors::version4::V4;
-use pasetors::keys::{AsymmetricSecretKey, AsymmetricKeyPair, Generate};
+// Prefixed with underscore to retain for future crypto/time extensions without warning
+// (Removed unused top-level pasetors imports; generate_apns_token handles its own scoped imports)
 
 /// Errors that can occur while sending push notifications.
 #[derive(Debug)]
@@ -119,9 +118,9 @@ impl PushManager {
 }
 
 /// Generate APNS token using PASETO v4 public key authentication.
-fn generate_apns_token(team_id: &str, key_id: &str, key_p8: &str) -> Result<String, PushError> {
+fn generate_apns_token(team_id: &str, _key_id: &str, _key_p8: &str) -> Result<String, PushError> {
     use pasetors::{
-        keys::AsymmetricKeyPair,
+    keys::{AsymmetricKeyPair, Generate},
         version4::V4,
         claims::Claims,
     };

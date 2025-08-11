@@ -709,9 +709,28 @@ impl PureRustP2PAuth {
         peer_info.auth_state.status = AuthenticationStatus::InProgress;
         self.authenticated_peers.write().await.insert(peer_id, peer_info);
         
-        // TODO: Send auth_request to peer via TCP connection
-        // This would involve establishing a TCP connection and sending the serialized request
-        info!("Authentication request sent to peer {:?}", peer_id);
+        // Establish a TCP connection and send the serialized request (length-prefixed bincode)
+        // PURE RUST: std::net + tokio only, avoiding any C/C++ dependent TLS stack here.
+        match tokio::net::TcpStream::connect(peer_address).await {
+            Ok(mut stream) => {
+                if let Ok(bytes) = bincode::serialize(&auth_request) {
+                    // Frame: [u8;4] length LE + payload
+                    let len = bytes.len() as u32;
+                    let mut frame = len.to_le_bytes().to_vec();
+                    frame.extend_from_slice(&bytes);
+                    if let Err(e) = stream.write_all(&frame).await {
+                        warn!("Failed sending auth request to {:?}: {}", peer_id, e);
+                    } else {
+                        info!("Authentication request sent to peer {:?} ({} bytes)", peer_id, bytes.len());
+                    }
+                } else {
+                    warn!("Failed to serialize auth request for peer {:?}", peer_id);
+                }
+            }
+            Err(e) => {
+                warn!("TCP connect failed for auth peer {:?} @ {}: {}", peer_id, peer_address, e);
+            }
+        }
         
         // Start timeout timer
         let auth_manager = self.clone();
@@ -972,33 +991,77 @@ impl PureRustP2PAuth {
         self.network_stats.write().await.secure_messages_sent += 1;
         self.network_stats.write().await.encrypted_bytes_transmitted += encrypted.len() as u64;
         
-        // TODO: Actually send encrypted message via TCP connection
-        // This would involve sending the nonce + encrypted data
-        
-        info!("Encrypted message sent to peer {:?} ({} bytes)", 
-              peer_id, encrypted.len());
-        
-        Ok(())
-    }
-    
-    /// Receive and decrypt message from authenticated peer
-    pub async fn receive_encrypted_message(
-        &self,
-        peer_id: PeerId,
-        nonce: &[u8; 12],
-        encrypted_data: &[u8],
-    ) -> Result<Vec<u8>, P2PError> {
-        let mut peers = self.authenticated_peers.write().await;
-        let peer_info = peers.get_mut(&peer_id)
-            .ok_or(P2PError::PeerNotFound)?;
-        
-        // Check authentication status
-        if peer_info.auth_state.status != AuthenticationStatus::Authenticated {
-            return Err(P2PError::PeerNotAuthenticated);
+        // Send framed encrypted payload: [4B len][12B nonce][ciphertext]
+        if let Some(addr) = Some(peer_info.address) { // future: maintain live socket map
+            match tokio::net::TcpStream::connect(addr).await {
+                Ok(mut stream) => {
+                    let total_len = 12 + encrypted.len();
+                    let mut frame = (total_len as u32).to_le_bytes().to_vec();
+                    frame.extend_from_slice(&nonce);
+                    frame.extend_from_slice(&encrypted);
+                    if let Err(e) = stream.write_all(&frame).await {
+                        warn!("Failed to send encrypted frame to {:?}: {}", peer_id, e);
+                        return Err(P2PError::NetworkError(e.to_string()));
+                    } else {
+                        info!("Encrypted message sent to peer {:?} ({} bytes ciphertext)", peer_id, encrypted.len());
+                    }
+                }
+                Err(e) => {
+                    warn!("TCP connect failed for encrypted send {:?}: {}", peer_id, e);
+                    return Err(P2PError::NetworkError(e.to_string()));
+                }
+            }
         }
         
-        // Get cipher
-        let cipher = peer_info.auth_state.cipher.as_ref()
+                let max_retries: u32 = std::env::var("NYX_P2P_SEND_RETRIES").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+                let timeout_ms: u64 = std::env::var("NYX_P2P_SEND_TIMEOUT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(3000);
+                let rotate_after: u64 = std::env::var("NYX_P2P_KEY_ROTATE_MESSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
+                if let Some(addr) = Some(peer_info.address) {
+                    let total_len = 12 + encrypted.len();
+                    let mut frame = (total_len as u32).to_le_bytes().to_vec();
+                    frame.extend_from_slice(&nonce);
+                    frame.extend_from_slice(&encrypted);
+                    for attempt in 0..=max_retries {
+                        let res = tokio::time::timeout(
+                            std::time::Duration::from_millis(timeout_ms),
+                            async {
+                                match tokio::net::TcpStream::connect(addr).await {
+                                    Ok(mut stream) => stream.write_all(&frame).await.map_err(|e| e),
+                                    Err(e) => Err(e)
+                                }
+                            }
+                        ).await;
+                        match res {
+                            Err(_) => {
+                                if attempt == max_retries { return Err(P2PError::NetworkError("send timeout".into())); }
+                                tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt as u64 +1))).await;
+                                continue;
+                            }
+                            Ok(Err(e)) => {
+                                if attempt == max_retries { return Err(P2PError::NetworkError(e.to_string())); }
+                                tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt as u64 +1))).await;
+                                continue;
+                            }
+                            Ok(Ok(_)) => {
+                                info!("Encrypted message sent to peer {:?} ({} bytes ciphertext) attempt {}", peer_id, encrypted.len(), attempt+1);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Key rotation heuristic event (emit when messages_sent crosses multiple of rotate_after)
+                if peer_info.messages_sent % rotate_after == 0 && rotate_after > 0 {
+                    if crate::event_system::EventSystem::is_enabled() {
+                        if let Some(es) = &self.event_system { // assuming field exists; otherwise ignore
+                            let mut ev = crate::event_system::EventSystem::build_simple_event(
+                                "p2p.key.rotate.recommended", "info",
+                                format!("peer={:?} sent_messages={} trigger_interval={}", peer_id, peer_info.messages_sent, rotate_after)
+                            );
+                            es.publish_event(ev);
+                        }
+                    }
+                }
             .ok_or(P2PError::NoSecureChannel)?;
         
         // Decrypt message
