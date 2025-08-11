@@ -9,7 +9,9 @@ async fn exporter_returns_404() {
         collection_interval: 30,
         otlp_enabled: false,
         otlp_endpoint: None,
-        trace_sampling: 1.0,
+    trace_sampling: 1.0,
+    attribute_filter_config: None,
+    exporter_recovery: true,
     };
     
     let _collector = TelemetryCollector::new(config).unwrap();
