@@ -198,6 +198,13 @@ let authenticated_peers = auth_manager.get_authenticated_peers().await;
 
 ### 2. Attack Mitigation
 - **Replay Attacks**: Prevented with unique challenges and timestamps
+ 
+## Low Power / Push Interoperability
+
+モバイル環境での認証済ピア維持最適化:
+- 認証完了後、端末が Inactive/Critical へ移行すると `LOW_POWER` capability を持つノードは cover traffic と再鍵頻度を自動減衰。
+- Push wake 到着時は再認証不要 (セッションキー猶予期間内) で軽量パス再確立。
+- 詳細設計とメトリクス: `MOBILE_POWER_PUSH_INTEGRATION.md` 参照。
 - **Man-in-the-Middle**: Mitigated by Ed25519 signature verification
 - **DoS Protection**: Request size limits and rate limiting
 - **Sybil Attacks**: Trust scores and reputation tracking

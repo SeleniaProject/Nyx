@@ -43,4 +43,4 @@ RS(255,223) → RaptorQ（冗長率アダプティブ）。
 | Full | cMix, Plugin, LowPower |
 
 ---
-*main ブランチの Rust 実装は上記すべてに対応済み。v0.1 互換性は Capability で確保しています。* 
+*main ブランチの Rust 実装は上記すべてに対応済み。v0.1 互換性は Capability で確保しています。カバー (cover) トラフィック制御と Low-Power 電池 (battery) 低消費ロジックも統合済み。* 

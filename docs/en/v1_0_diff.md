@@ -43,4 +43,4 @@ Switched from RS(255,223) to RaptorQ with adaptive redundancy controller.
 | Full | cMix, Plugin, Low-Power Mode |
 
 ---
-_Note: the Rust codebase on `main` already implements all bullet-points above. Backwards-compatibility with v0.1 peers is preserved via capability negotiation._ 
+_Note: the Rust codebase on `main` already implements all bullet-points above. Backwards-compatibility with v0.1 peers is preserved via capability negotiation. Adaptive cover traffic (cover packet rate controller) and Low-Power Mode battery conservation logic are both integrated._ 
