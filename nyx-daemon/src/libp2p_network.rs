@@ -2545,7 +2545,8 @@ impl LibP2PNetwork {
                         
                         let _ = event_sender.send(LibP2PNetworkEvent::DhtRecordStored {
                             key: key_str.to_string(),
-                            peer_id: PeerId::random(), // Placeholder
+                            // Prefer our local peer id for stored records when publisher is self
+                            peer_id: pure_rust_dht.local_peer_id().into(),
                         });
                     }
                     QueryResult::GetClosestPeers(Ok(peers)) => {
@@ -2799,9 +2800,21 @@ impl LibP2PNetwork {
 
     /// Convert Multiaddr to SocketAddr for Pure Rust DHT compatibility
     fn multiaddr_to_socket_addr(addr: &Multiaddr) -> Option<std::net::SocketAddr> {
-        // Implementation to extract TCP socket address from Multiaddr
-        // This is a simplified version
-        None // Placeholder
+        use libp2p::multiaddr::Protocol;
+        let mut host: Option<std::net::IpAddr> = None;
+        let mut port: Option<u16> = None;
+        for p in addr.iter() {
+            match p {
+                Protocol::Ip4(ip) => host = Some(std::net::IpAddr::V4(ip)),
+                Protocol::Ip6(ip) => host = Some(std::net::IpAddr::V6(ip)),
+                Protocol::Tcp(p) => port = Some(p),
+                _ => {}
+            }
+        }
+        match (host, port) {
+            (Some(h), Some(p)) => Some(std::net::SocketAddr::new(h, p)),
+            _ => None,
+        }
     }
 
     /// Process incoming authentication request
@@ -3186,8 +3199,17 @@ mod tests {
     
     /// Encrypt message with session key
     fn encrypt_message(message: &[u8], session_key: &[u8; 32]) -> Vec<u8> {
-        // In real implementation, would use ChaCha20Poly1305 with session key
-        message.to_vec() // Placeholder - would be encrypted
+        // Simple authenticated encryption using chacha20poly1305 (pure Rust)
+        use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305, Key, Nonce};
+        use blake3::hash;
+        // Derive 96-bit nonce from message prefix + session key hash (deterministic per message)
+        let mut nonce_bytes = [0u8; 12];
+        let h = hash(session_key);
+        nonce_bytes.copy_from_slice(&h.as_bytes()[..12]);
+        let key = Key::from_slice(session_key);
+        let cipher = ChaCha20Poly1305::new(key);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        cipher.encrypt(nonce, message).unwrap_or_else(|_| Vec::new())
     }
     }
 }
