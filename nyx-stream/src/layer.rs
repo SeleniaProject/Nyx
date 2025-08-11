@@ -4,7 +4,10 @@
 //! At this stage it provides a simple byte-oriented send/recv API and can be expanded later.
 
 use crate::{tx::TxQueue, receiver::MultipathReceiver};
-use nyx_fec::timing::{TimingConfig, Packet};
+#[cfg(feature = "fec")]
+use nyx_fec::timing::TimingConfig;
+#[cfg(not(feature = "fec"))]
+use crate::tx::TimingConfig; // fallback from tx.rs compat
 use tokio::sync::mpsc;
 
 /// StreamLayer bundles a [`TxQueue`] (with timing obfuscation) and exposes
@@ -26,7 +29,7 @@ impl StreamLayer {
         tokio::spawn(async move {
             let mut rx = in_rx;
             while let Some(bytes) = rx.recv().await {
-                txq_sender.send(Packet(bytes)).await.ok();
+                txq_sender.send(crate::tx::Packet(bytes)).await.ok();
             }
         });
 
@@ -64,4 +67,4 @@ mod tests {
         let v2 = layer.handle_incoming(1, 0, vec![0]);
         assert!(v2.is_empty());
     }
-} 
+}

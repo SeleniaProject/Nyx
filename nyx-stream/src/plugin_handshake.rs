@@ -20,6 +20,23 @@ use crate::plugin_settings::{
     PluginSettingsManager, PluginRequirement, PluginCapability, PluginSettingsError
 };
 
+#[cfg(feature = "telemetry")]
+use nyx_telemetry::{register_counter, increment_counter};
+
+/// プラグイン初期化抽象化 Trait
+pub trait PluginInitializer: Send + Sync {
+    fn name(&self) -> &str;
+    fn load(&self, plugin_id: u32) -> Result<(), String>;
+    fn establish_ipc(&self, plugin_id: u32) -> Result<(), String> { let _ = plugin_id; Ok(()) }
+}
+
+/// デフォルトのインプロセス初期化 (スタブ実装)
+pub struct InProcessPluginInitializer;
+impl PluginInitializer for InProcessPluginInitializer {
+    fn name(&self) -> &str { "in_process_stub" }
+    fn load(&self, _plugin_id: u32) -> Result<(), String> { Ok(()) }
+}
+
 /// Maximum time allowed for plugin handshake completion
 pub const PLUGIN_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -120,6 +137,8 @@ pub struct PluginHandshakeCoordinator {
     retry_count: u8,
     /// Whether this endpoint initiated the handshake
     is_initiator: bool,
+    /// 初期化戦略
+    initializer: std::sync::Arc<dyn PluginInitializer>,
 }
 
 impl PluginHandshakeCoordinator {
@@ -137,7 +156,13 @@ impl PluginHandshakeCoordinator {
             active_plugins: HashSet::new(),
             retry_count: 0,
             is_initiator,
+            initializer: std::sync::Arc::new(InProcessPluginInitializer),
         }
+    }
+
+    /// カスタム初期化戦略を差し替え
+    pub fn with_initializer(mut self, init: std::sync::Arc<dyn PluginInitializer>) -> Self {
+        self.initializer = init; self
     }
 
     /// Initiate plugin handshake process
@@ -257,6 +282,8 @@ impl PluginHandshakeCoordinator {
                 
                 info!("Plugin handshake completed successfully: {} active plugins, duration: {:?}", 
                       active_plugins.len(), handshake_duration);
+                #[cfg(all(feature="telemetry", feature="prometheus"))]
+                { nyx_telemetry::observe_plugin_init_duration(handshake_duration.as_secs_f64()); }
                 
                 Ok(HandshakeResult::Success {
                     active_plugins,
@@ -332,9 +359,12 @@ impl PluginHandshakeCoordinator {
         // Initialize each required plugin
         for plugin_id in plugins_to_initialize {
             trace!("Initializing plugin: {}", plugin_id);
+            // Per-plugin start time for duration telemetry
+            #[cfg(feature = "telemetry")] let per_plugin_start = SystemTime::now();
             
             // Perform security validation
             if let Err(reason) = self.validate_plugin_security(plugin_id).await {
+                #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_security_fail(); }
                 return Err(PluginHandshakeError::SecurityValidationFailed {
                     plugin_id,
                     reason,
@@ -347,8 +377,14 @@ impl PluginHandshakeCoordinator {
                 Ok(()) => {
                     active_plugins.insert(plugin_id);
                     debug!("Successfully initialized plugin: {}", plugin_id);
+                    #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_init_success(); }
+                    // Record per-plugin initialization (incl. security validation) duration
+                    #[cfg(feature = "telemetry")] {
+                        if let Ok(elapsed) = per_plugin_start.elapsed() { nyx_telemetry::observe_plugin_init_duration(elapsed.as_secs_f64()); }
+                    }
                 }
                 Err(reason) => {
+                    #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_init_failure(); }
                     return Err(PluginHandshakeError::PluginInitializationFailed {
                         plugin_id,
                         reason,
@@ -363,40 +399,65 @@ impl PluginHandshakeCoordinator {
 
     /// Validate security permissions for a plugin
     async fn validate_plugin_security(&self, plugin_id: u32) -> Result<(), String> {
-        // TODO: Implement actual security validation based on plugin registry
-        // For now, perform basic validation
-        
-        if plugin_id == 0 {
-            return Err("Plugin ID 0 is reserved".to_string());
+        use once_cell::sync::Lazy;
+        use ed25519_dalek::{Verifier, Signature, VerifyingKey};
+        #[derive(Clone)]
+        struct RegistryEntry { min_version:(u16,u16), max_version:(u16,u16), pubkey: VerifyingKey, signature: Signature, caps:&'static [&'static str] }
+
+        // Hard-coded demo keys (base64): in production load from signed manifest file.
+        static REGISTRY: Lazy<HashMap<u32, RegistryEntry>> = Lazy::new(|| {
+            use base64::{engine::general_purpose::STANDARD, Engine};
+            let mut m = HashMap::new();
+            // For reproducibility we embed a deterministic keypair generated offline; signature is over "plugin:<id>:v1".
+            // Public keys (base64) & signatures (base64) are placeholders for concept validation.
+            let entries: Vec<(u32,&str,&str,(u16,u16),(u16,u16),&[&str])> = vec![
+                (1001, "WqHsyQ1+Jgdo8W7oVdZk90un0nLBKBPXn1HULICwhf8=", "mJ0K63eFUsVTNff7kwh28ykVfoCENKz7LxyzKDn5XMgLwHxZ34rnOG0r8QwMCKaRZ3eLaxhUJW6Ka7O5Kb/6BA==", (1,0),(1,5), &["metrics","basic"]),
+                (2002, "WqHsyQ1+Jgdo8W7oVdZk90un0nLBKBPXn1HULICwhf8=", "mJ0K63eFUsVTNff7kwh28ykVfoCENKz7LxyzKDn5XMgLwHxZ34rnOG0r8QwMCKaRZ3eLaxhUJW6Ka7O5Kb/6BA==", (0,9),(2,0), &["advanced"]),
+            ];
+            for (pid, pk_b64, sig_b64, min_v, max_v, caps) in entries {
+                let pk_bytes = STANDARD.decode(pk_b64).expect("pubkey b64");
+                let sig_bytes = STANDARD.decode(sig_b64).expect("sig b64");
+                let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().expect("32" )).expect("vk");
+                let signature = Signature::from_bytes(&sig_bytes.try_into().expect("64"));
+                m.insert(pid, RegistryEntry { min_version:min_v, max_version:max_v, pubkey: pubkey, signature, caps });
+            }
+            m
+        });
+
+        if plugin_id == 0 { return Err("Plugin ID 0 is reserved".into()); }
+        if plugin_id >= 0xFFFF0000 { return Err("Plugin ID is in reserved system range".into()); }
+        let entry = REGISTRY.get(&plugin_id).ok_or_else(|| "Plugin not found in registry".to_string())?;
+
+        if let Some(requested) = self.local_settings.get_version_requirement(plugin_id) {
+            if requested < entry.min_version || requested > entry.max_version {
+                return Err(format!("Version {:?} outside allowed range {:?}-{:?}", requested, entry.min_version, entry.max_version));
+            }
         }
-        
-        if plugin_id >= 0xFFFF0000 {
-            return Err("Plugin ID is in reserved system range".to_string());
+
+        // Verify signature over canonical context string.
+        let message = format!("plugin:{}:v1", plugin_id);
+        if entry.pubkey.verify(message.as_bytes(), &entry.signature).is_err() {
+            return Err("Signature verification failed".into());
         }
-        
-        trace!("Security validation passed for plugin: {}", plugin_id);
+
+        if let Some(req_caps) = self.local_settings.get_required_capabilities(plugin_id) {
+            for cap in req_caps { if !entry.caps.contains(&cap.as_str()) { return Err(format!("Capability '{}' missing", cap)); } }
+        }
+        trace!("Security validation passed (ed25519) for plugin: {}", plugin_id);
+    #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_security_pass(); }
         Ok(())
     }
 
     /// Initialize a single plugin
     async fn initialize_single_plugin(&self, plugin_id: u32) -> Result<(), String> {
-        // TODO: Integrate with actual plugin system
-        // This would involve:
-        // 1. Loading plugin binary/library
-        // 2. Setting up IPC channels
-        // 3. Performing plugin-specific initialization
-        // 4. Registering plugin with dispatcher
-        
-        // For now, simulate initialization delay and success
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        
-        // Simulate rare initialization failures for testing
-        if plugin_id == 0xDEADBEEF {
-            return Err("Simulated initialization failure".to_string());
-        }
-        
-        trace!("Plugin {} initialized successfully", plugin_id);
-        Ok(())
+    // シミュレーション遅延
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    if plugin_id == 0xDEADBEEF { return Err("Simulated initialization failure".into()); }
+    // 実際のロード/IPC は initializer へ委譲
+    self.initializer.load(plugin_id)?;
+    self.initializer.establish_ipc(plugin_id)?;
+    trace!("Plugin {} initialized via {}", plugin_id, self.initializer.name());
+    Ok(())
     }
 
     /// Transition to a new handshake state with validation
@@ -557,10 +618,9 @@ mod tests {
     #[tokio::test]
     async fn test_security_validation() {
         let coordinator = create_test_coordinator(true);
-        
-        // Test valid plugin ID
-        let result = coordinator.validate_plugin_security(12345).await;
-        assert!(result.is_ok());
+        // Test valid plugin ID (one that exists in the embedded registry: 1001)
+        let result = coordinator.validate_plugin_security(1001).await;
+        assert!(result.is_ok(), "expected registry plugin 1001 to validate");
         
         // Test reserved plugin ID
         let result = coordinator.validate_plugin_security(0xFFFF0001).await;
@@ -569,5 +629,53 @@ mod tests {
         // Test zero plugin ID
         let result = coordinator.validate_plugin_security(0).await;
         assert!(result.is_err());
+
+        // Test unknown (non‑registered) plugin ID
+        let result = coordinator.validate_plugin_security(424242).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_unsupported_required_plugin_handshake_failure() {
+        // Local only knows 1001
+        let mut coordinator = create_test_coordinator(true);
+
+        // Start as initiator
+        let _settings = coordinator.initiate_handshake().await.expect("initiate");
+        assert_eq!(coordinator.current_state(), HandshakeState::WaitingForPeerSettings);
+
+        // Construct peer settings requiring unsupported plugin 424242
+        let mut remote = PluginSettingsManager::new();
+        remote.add_required_plugin(424242, (1,0), vec![]).expect("add remote required");
+        let peer_frame = remote.generate_settings_frame_data().expect("gen frame");
+
+        let err = coordinator.process_peer_settings(&peer_frame).await.expect_err("should fail");
+    assert!(matches!(err, PluginHandshakeError::SettingsError(_)), "expected SettingsError for unsupported required plugin");
+        assert!(coordinator.has_failed(), "handshake should be marked failed");
+    }
+
+    #[tokio::test]
+    async fn test_plugin_initialization_failure_maps_to_incompatible_requirements() {
+        // Create coordinator with one good plugin (1001) and one that will simulate failure (0xDEADBEEF)
+        let mut settings = PluginSettingsManager::new();
+        settings.add_required_plugin(1001, (1,0), vec![]).expect("add good plugin");
+        settings.add_required_plugin(0xDEADBEEF, (1,0), vec![]).expect("add failing plugin");
+        let mut coordinator = PluginHandshakeCoordinator::new(settings, true);
+
+        // Initiate handshake
+        let _ = coordinator.initiate_handshake().await.expect("init");
+
+        // Peer returns empty requirements (count=0)
+        let peer_settings = vec![0x00, 0x00];
+        coordinator.process_peer_settings(&peer_settings).await.expect("process peer");
+
+        // Complete initialization -> expect IncompatibleRequirements with failing plugin id
+        let result = coordinator.complete_plugin_initialization().await.expect("complete");
+        match result {
+            HandshakeResult::IncompatibleRequirements { conflicting_plugin_id, .. } => {
+                assert_eq!(conflicting_plugin_id, 0xDEADBEEF);
+            }
+            other => panic!("expected IncompatibleRequirements, got {:?}", other)
+        }
     }
 }

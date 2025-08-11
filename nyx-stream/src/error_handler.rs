@@ -594,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_error_classification() {
-        let mut handler = StreamErrorHandler::new(1);
+        let handler = StreamErrorHandler::new(1);
         
         // Test default classification rules
         let (category, severity, _) = handler.classify_error("connection_timeout occurred");

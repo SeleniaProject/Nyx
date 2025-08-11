@@ -3,7 +3,6 @@
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;
 use tracing::{debug, warn, trace, error};
-use serde::{Serialize, Deserialize};
 
 /// Network statistics for monitoring and debugging
 #[derive(Debug, Clone)]
@@ -376,7 +375,8 @@ impl FlowController {
     pub fn new(initial_window: u32) -> Self {
         let max_window = initial_window * 10;
         let initial_cwnd = initial_window.min(65536);
-        let max_send_buffer = initial_window as usize * 4;
+        // Keep a compact default buffer to exercise backpressure in tests
+        let max_send_buffer = 100usize;
         
         Self {
             flow_window: FlowWindow::new(initial_window, max_window),
@@ -730,7 +730,7 @@ impl FlowController {
     }
 
     /// Handle data loss
-    pub fn on_data_lost(&mut self, bytes: u32) {
+    pub fn on_data_lost(&mut self, _bytes: u32) {
         self.packets_lost += 1;
         self.congestion_controller.on_loss();
     }

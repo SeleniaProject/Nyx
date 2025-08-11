@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, error, warn};
-use win32job::{Job, ExtendedLimitInfo};
+use win32job::{Job, ExtendedLimitInfo, UiRestrictions, JobError};
 
 /// Comprehensive sandbox configuration for plugins.
 #[derive(Debug, Clone)]
@@ -106,11 +106,24 @@ fn configure_job_object_safe(child: &Child, config: &SandboxConfig) -> io::Resul
     job.set_extended_limit_info(&mut limit_info)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to set job limits: {}", e)))?;
 
-    // Assign the child process to the job
-    job.assign_process(child.id())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to assign process to job: {}", e)))?;
+    // Optional UI restrictions (prevent user handles / clipboard / global atoms etc.)
+    if config.ui_restrictions_enabled {
+        let mut ui = UiRestrictions::new();
+        ui.limit_desktop();
+        ui.limit_display_settings();
+        ui.limit_exit_windows();
+        if let Err(e) = job.set_ui_restrictions(&ui) {
+            warn!("sandbox.ui_restrictions_failed error={}", e);
+        }
+    }
 
-    debug!("Job Object configured successfully for PID {} using safe APIs", child.id());
+    // Assign the child process to the job
+    if let Err(e) = job.assign_process(child.id()) {
+        error!("sandbox.assign_failure pid={} error={}", child.id(), e);
+        return Err(io::Error::new(io::ErrorKind::Other, format!("Failed to assign process to job: {}", e)));
+    }
+
+    debug!("sandbox.job_configured pid={}", child.id());
     
     // Keep the job object alive by leaking it (it will be cleaned up when the process exits)
     std::mem::forget(job);

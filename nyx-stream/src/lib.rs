@@ -14,7 +14,7 @@ pub mod tx;
 pub mod stream_frame;
 pub mod ack;
 pub mod state;
-//pub mod async_stream;  // Disabled during debugging  
+pub mod async_stream;  // Re-enabled
 pub mod error_handler;
 pub mod resource_manager;
 pub mod plugin;
@@ -46,6 +46,7 @@ pub mod management;
 pub mod settings;
 mod localized;
 mod scheduler;
+pub mod scheduler_v2;
 mod capability;
 mod cap_negotiator;
 #[cfg(feature = "plugin")]
@@ -62,8 +63,8 @@ pub use mpr::MprDispatcher;
 // Multipath Data Plane (v1.0新機能)
 pub mod multipath;
 
-pub use frame::{FrameHeader, parse_header, parse_header_ext, FLAG_HAS_PATH_ID};
-pub use builder::build_header;
+pub use frame::{FrameHeader, parse_header, parse_header_ext, FLAG_HAS_PATH_ID, FLAG_MULTIPATH_ENABLED};
+pub use builder::{build_header, build_header_ext};
 pub use congestion::CongestionCtrl;
 pub use tx::TxQueue;
 pub use stream_frame::{StreamFrame, build_stream_frame, parse_stream_frame};
@@ -77,7 +78,7 @@ mod receiver;
 pub use receiver::MultipathReceiver;
 mod sequencer;
 pub use sequencer::Sequencer;
-//pub use async_stream::{NyxAsyncStream, StreamError, StreamState as AsyncStreamState, CleanupConfig, StreamStats};  // Disabled during debugging
+pub use async_stream::{NyxAsyncStream, StreamError, StreamState as AsyncStreamState, CleanupConfig, StreamStats};
 // pub use frame_handler::{FrameHandler, FrameHandlerError, FrameValidation, ReassembledData, FrameHandlerStats}; // Temporarily disabled
 //pub use integrated_frame_processor::{IntegratedFrameProcessor, StreamContext}; // Temporarily disabled
 pub use flow_controller::{FlowController, FlowControlError, FlowControlStats, CongestionState, RttEstimator};
@@ -118,11 +119,16 @@ pub use settings::{StreamSettings, settings_watch};
 
 pub use localized::{LocalizedStringFrame, build_localized_string_frame, parse_localized_string_frame};
 pub use scheduler::WeightedRrScheduler;
+pub use scheduler_v2::{WeightedRoundRobinScheduler, SchedulerStats, PathInfo};
 
 #[cfg(feature = "hpke")]
 pub mod hpke_rekey;
 #[cfg(feature = "hpke")]
 pub use hpke_rekey::{RekeyFrame, build_rekey_frame, parse_rekey_frame, seal_for_rekey, open_rekey};
+#[cfg(feature = "hpke")]
+pub mod hpke_rekey_manager;
+#[cfg(feature = "hpke")]
+pub use hpke_rekey_manager::{HpkeRekeyManager, RekeyPolicy, RekeyDecision};
 
 #[cfg(test)]
 mod tests;

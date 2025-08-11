@@ -29,8 +29,11 @@
 //! stream layer while still providing convenient one-shot functions.
 
 use nom::{number::complete::be_u16, bytes::complete::take, IResult};
-use nyx_crypto::{hpke, noise::SessionKey};
-use nyx_crypto::hpke::{PublicKey, PrivateKey, generate_and_seal_session, open_session};
+use nyx_crypto::noise::SessionKey;
+use nyx_crypto::hpke::{PublicKey, PrivateKey, generate_and_seal_session, open_session, HpkeError};
+#[cfg(feature="telemetry")]
+use nyx_telemetry::{inc_hpke_rekey_applied, inc_hpke_rekey_failure, inc_hpke_rekey_failure_reason};
+use crate::HpkeRekeyManager; // manager resides in same crate guarded by feature
 
 /// Frame carrying an HPKE-encrypted rekey blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +67,7 @@ pub fn parse_rekey_frame(input: &[u8]) -> IResult<&[u8], RekeyFrame> {
 /// Seal a fresh session key to `remote_pk` and return the on-wire frame **and**
 /// the locally generated [`SessionKey`].  The caller MUST switch to the new
 /// key immediately after sending the frame.
-pub fn seal_for_rekey(remote_pk: &PublicKey, info: &[u8]) -> Result<(RekeyFrame, SessionKey), hpke::HpkeError> {
+pub fn seal_for_rekey(remote_pk: &PublicKey, info: &[u8]) -> Result<(RekeyFrame, SessionKey), HpkeError> {
     let (enc, ct, sk) = generate_and_seal_session(remote_pk, info, b"")?;
     Ok((RekeyFrame { encapped_key: enc, ciphertext: ct }, sk))
 }
@@ -72,8 +75,39 @@ pub fn seal_for_rekey(remote_pk: &PublicKey, info: &[u8]) -> Result<(RekeyFrame,
 /// Open a received rekey frame using our private key `sk_r` and return the
 /// decrypted [`SessionKey`].  The caller MUST adopt the new key *before*
 /// acknowledging the frame to avoid key desynchronisation.
-pub fn open_rekey(sk_r: &PrivateKey, frame: &RekeyFrame, info: &[u8]) -> Result<SessionKey, hpke::HpkeError> {
+pub fn open_rekey(sk_r: &PrivateKey, frame: &RekeyFrame, info: &[u8]) -> Result<SessionKey, HpkeError> {
     open_session(sk_r, &frame.encapped_key, info, b"", &frame.ciphertext)
+}
+
+/// Process an inbound rekey frame bytes: parse -> decrypt -> install.
+/// Returns Ok(()) on success; increments telemetry counters when enabled.
+pub fn process_inbound_rekey(manager: &mut HpkeRekeyManager, sk_r: &PrivateKey, bytes: &[u8], info: &[u8]) -> Result<(), HpkeError> {
+    // Parse
+    let (_rest, frame) = match parse_rekey_frame(bytes) {
+        Ok(ok) => ok,
+        Err(_) => {
+            #[cfg(feature="telemetry")]
+            inc_hpke_rekey_failure_reason("parse");
+            return Err(HpkeError::OpenError);
+        }
+    }; // reuse OpenError for parse failures
+    // Decrypt
+    match open_rekey(sk_r, &frame, info) {
+        Ok(session_key) => {
+            manager.accept_remote_rekey(session_key);
+            #[cfg(feature="telemetry")]
+            inc_hpke_rekey_applied();
+            Ok(())
+        }
+        Err(e) => {
+            #[cfg(feature="telemetry")]
+            {
+                inc_hpke_rekey_failure();
+                inc_hpke_rekey_failure_reason("decrypt");
+            }
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -96,5 +130,53 @@ mod tests {
         let (frame, local_key) = seal_for_rekey(&pk_r, b"rekey").unwrap();
         let remote_key = open_rekey(&sk_r, &frame, b"rekey").unwrap();
         assert_eq!(local_key.0, remote_key.0);
+    }
+
+    #[test]
+    fn inbound_process_success() {
+        use crate::{HpkeRekeyManager, RekeyPolicy};
+        let (sk_r, pk_r) = generate_keypair();
+        let (frame, _local_key) = seal_for_rekey(&pk_r, b"rekey-test").unwrap();
+        let initial = nyx_crypto::noise::SessionKey([9u8;32]);
+    let policy = RekeyPolicy { time_interval: std::time::Duration::from_secs(999), packet_interval: 1_000_000, grace_period: std::time::Duration::from_secs(1), min_cooldown: std::time::Duration::from_millis(0) };
+        let mut mgr = HpkeRekeyManager::new(policy, initial);
+        let bytes = build_rekey_frame(&frame);
+        process_inbound_rekey(&mut mgr, &sk_r, &bytes, b"rekey-test").unwrap();
+        assert_ne!(mgr.current_key().0, [9u8;32]);
+    }
+
+    #[test]
+    fn parse_failure_returns_error() {
+        use crate::{HpkeRekeyManager, RekeyPolicy};
+        let (sk_r, pk_r) = generate_keypair();
+        let (_frame, _local_key) = seal_for_rekey(&pk_r, b"ctx").unwrap();
+        // Malformed bytes: declare enc_len=5 but only provide 1 byte, should trigger parse error -> OpenError mapping
+        let malformed: Vec<u8> = vec![0,5, 0xAA, 0,0];
+        let initial = nyx_crypto::noise::SessionKey([7u8;32]);
+    let policy = RekeyPolicy { time_interval: std::time::Duration::from_secs(1000), packet_interval: 1_000_000, grace_period: std::time::Duration::from_secs(1), min_cooldown: std::time::Duration::from_millis(0) };
+        let mut mgr = HpkeRekeyManager::new(policy, initial);
+        let err = process_inbound_rekey(&mut mgr, &sk_r, &malformed, b"ctx").err().expect("expected error");
+        // We cannot easily pattern match HpkeError variants here without exposing; acceptance is that it errored.
+        let _ = err; // silence warning
+        assert_eq!(mgr.current_key().0, [7u8;32]); // key unchanged
+    }
+
+    #[test]
+    fn decrypt_failure_returns_error() {
+        use crate::{HpkeRekeyManager, RekeyPolicy};
+        // Create frame for recipient A but attempt to open with recipient B's private key.
+        let (sk_a, pk_a) = generate_keypair();
+        let (sk_b, _pk_b) = generate_keypair();
+        let (frame, _local_key) = seal_for_rekey(&pk_a, b"mismatch").unwrap();
+        let bytes = build_rekey_frame(&frame);
+        let initial = nyx_crypto::noise::SessionKey([3u8;32]);
+    let policy = RekeyPolicy { time_interval: std::time::Duration::from_secs(1000), packet_interval: 1_000_000, grace_period: std::time::Duration::from_secs(1), min_cooldown: std::time::Duration::from_millis(0) };
+        let mut mgr = HpkeRekeyManager::new(policy, initial);
+        let err = process_inbound_rekey(&mut mgr, &sk_b, &bytes, b"mismatch").err().expect("expected decrypt failure");
+        let _ = err;
+        assert_eq!(mgr.current_key().0, [3u8;32]);
+        // Ensure using correct private key still works
+        process_inbound_rekey(&mut mgr, &sk_a, &bytes, b"mismatch").unwrap();
+        assert_ne!(mgr.current_key().0, [3u8;32]);
     }
 } 

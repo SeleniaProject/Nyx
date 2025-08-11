@@ -35,6 +35,7 @@ use crate::plugin_dispatch::{PluginDispatcher, DispatchError, PluginRuntimeStats
 
 use crate::frame::{FrameHeader, parse_header_ext, ParsedHeader};
 use crate::management::{CloseFrame, build_close_unsupported_cap, ERR_UNSUPPORTED_CAP};
+use schemars::JsonSchema;
 
 /// Plugin Frame type range (0x50-0x5F = 80-95 decimal)
 pub const PLUGIN_FRAME_TYPE_MIN: u8 = 80;  // 0x50
@@ -257,6 +258,19 @@ impl PluginFrameProcessor {
     /// Reset statistics counters
     pub fn reset_stats(&mut self) {
         self.frame_counts.clear();
+    }
+
+    /// (Testing/Docs) Export JSON Schemas for PluginHeader / PluginFrame
+    #[cfg(feature = "plugin")]
+    pub fn export_json_schemas() -> serde_json::Value {
+        use schemars::{schema_for};
+        use crate::plugin::{PluginHeader, PluginFrame, PluginHandshake, PluginCapability};
+        serde_json::json!({
+            "PluginHeader": schema_for!(PluginHeader),
+            "PluginFrame": schema_for!(PluginFrame),
+            "PluginCapability": schema_for!(PluginCapability),
+            "PluginHandshake": schema_for!(PluginHandshake)
+        })
     }
 }
 

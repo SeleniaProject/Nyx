@@ -223,6 +223,54 @@ impl PluginRegistry {
             .collect()
     }
 
+                    use std::collections::HashMap;
+                    use tokio::runtime::Runtime;
+
+                    fn sample_plugin(id: PluginId) -> PluginInfo {
+                        let mut schema = HashMap::new();
+                        schema.insert("interval_ms".to_string(), "integer >= 10".to_string());
+                        schema.insert("enable_cache".to_string(), "boolean".to_string());
+                        PluginInfo {
+                            id,
+                            name: format!("plugin-{}", id),
+                            version: "1.2.3".to_string(),
+                            description: "Sample test plugin".to_string(),
+                            permissions: vec![Permission::ReceiveFrames, Permission::DataAccess],
+                            author: "Test".to_string(),
+                            config_schema: schema,
+                            supported_frames: vec![1,2,42],
+                            required: false,
+                        }
+                    }
+
+                    #[tokio::test]
+                    async fn register_and_fetch_roundtrip() {
+                        let reg = PluginRegistry::new();
+                        let info = sample_plugin(7);
+                        reg.register(info.clone()).await.unwrap();
+                        let fetched = reg.get_plugin_info(7).await.unwrap();
+                        assert_eq!(fetched.name, info.name);
+                        assert_eq!(fetched.config_schema.get("interval_ms").unwrap(), "integer >= 10");
+                        assert!(reg.is_registered(7).await);
+                    }
+
+                    #[tokio::test]
+                    async fn duplicate_registration_fails() {
+                        let reg = PluginRegistry::new();
+                        let info = sample_plugin(9);
+                        reg.register(info.clone()).await.unwrap();
+                        let err = reg.register(info).await.err().expect("expected duplicate error");
+                        matches!(err, RegistryError::AlreadyExists(9));
+                    }
+
+                    #[tokio::test]
+                    async fn unregister_removes() {
+                        let reg = PluginRegistry::new();
+                        let info = sample_plugin(11);
+                        reg.register(info).await.unwrap();
+                        reg.unregister(11).await.unwrap();
+                        assert!(!reg.is_registered(11).await);
+                    }
     /// Validate plugin information
     fn validate_plugin_info(&self, info: &PluginInfo) -> Result<(), RegistryError> {
         // Plugin ID must be non-zero

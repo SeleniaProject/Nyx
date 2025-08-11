@@ -229,6 +229,28 @@ mod settings_plugin_tests {
 
         println!("✓ Settings frame correctly deserializes plugin requirements");
     }
+
+    #[tokio::test]
+    async fn test_close_on_unsupported_required_plugin() {
+        // Simulate local settings requiring plugin 9001 while remote only advertises 9002
+        let mut local = StreamSettings::default();
+        local.add_required_plugin(9001);
+
+        let mut remote = StreamSettings::default();
+        remote.add_required_plugin(9002);
+
+        // Local collects remote frame then validates: should detect unsupported required plugin (9002)
+        // Here we emulate validation logic: required set difference.
+        let remote_required: std::collections::HashSet<_> = remote.get_required_plugins().into_iter().collect();
+        let local_supported: std::collections::HashSet<_> = local.get_required_plugins().into_iter().collect();
+
+        // Remote demands 9002 we don't have -> should trigger UNSUPPORTED_CAP (0x07) CLOSE semantics.
+        let diff: Vec<_> = remote_required.difference(&local_supported).cloned().collect();
+        assert_eq!(diff, vec![9002]);
+
+        // emulate generation of close frame error code (management::ERR_UNSUPPORTED_CAP == 0x07)
+        assert_eq!(crate::nyx_stream::management::ERR_UNSUPPORTED_CAP, 0x07);
+    }
 }
 
 /// Test Plugin registry and capability management

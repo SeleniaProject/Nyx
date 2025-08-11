@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
+use std::collections::{HashMap, VecDeque};
 use tokio::time::sleep;
 use tokio::sync::mpsc;
 
@@ -50,6 +51,8 @@ pub struct Stream {
     recv_buffer: Vec<RecvSegment>,
     ack_tx: mpsc::Sender<u32>, // offset to acknowledge (largest)
     rto: Duration,
+    /// Advanced fake data cache for pattern reuse and generation
+    fake_data_cache: FakeDataCache,
 }
 
 impl Stream {
@@ -64,6 +67,7 @@ impl Stream {
             recv_buffer: Vec::new(),
             ack_tx,
             rto: Duration::from_millis(250),
+            fake_data_cache: FakeDataCache::new(1024), // 1KB cache size
         }
     }
 
@@ -165,6 +169,21 @@ impl Stream {
     }
 
     pub fn state(&self) -> StreamState { self.state }
+
+    /// Generate fake data using the advanced cache for testing and simulation
+    pub fn generate_fake_data(&mut self, size: usize) -> Vec<u8> {
+        self.fake_data_cache.generate_fake_data(size)
+    }
+
+    /// Get fake data cache statistics
+    pub fn cache_stats(&self) -> CacheStats {
+        self.fake_data_cache.stats()
+    }
+
+    /// Clean up expired cache entries
+    pub fn cleanup_cache(&mut self, max_age: Duration) {
+        self.fake_data_cache.cleanup_expired(max_age);
+    }
 }
 
 #[cfg(test)]
@@ -182,4 +201,201 @@ mod tests {
         assert!(fin.is_some());
         assert_eq!(s.state(), StreamState::HalfClosedLocal);
     }
-} 
+}
+
+/// Advanced cache mechanism for fake data patterns
+#[derive(Debug, Clone)]
+pub struct FakeDataCache {
+    /// Pattern storage with LRU eviction
+    patterns: HashMap<u64, CacheEntry>,
+    /// Access order for LRU
+    access_order: VecDeque<u64>,
+    /// Maximum cache size
+    max_size: usize,
+    /// Cache hit statistics
+    hit_count: u64,
+    /// Cache miss statistics  
+    miss_count: u64,
+}
+
+#[derive(Debug, Clone)]
+struct CacheEntry {
+    data: Vec<u8>,
+    frequency: u32,
+    last_access: Instant,
+    creation_time: Instant,
+}
+
+impl FakeDataCache {
+    /// Create new fake data cache with specified capacity
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            patterns: HashMap::new(),
+            access_order: VecDeque::new(),
+            max_size: max_size.max(1),
+            hit_count: 0,
+            miss_count: 0,
+        }
+    }
+
+    /// Store fake data pattern with computed hash key
+    pub fn store(&mut self, data: Vec<u8>) -> u64 {
+        let hash_key = self.compute_hash(&data);
+        
+        if self.patterns.contains_key(&hash_key) {
+            // Update existing entry
+            if let Some(entry) = self.patterns.get_mut(&hash_key) {
+                entry.frequency += 1;
+                entry.last_access = Instant::now();
+                self.update_lru_order(hash_key);
+            }
+        } else {
+            // Insert new entry
+            let entry = CacheEntry {
+                data: data.clone(),
+                frequency: 1,
+                last_access: Instant::now(),
+                creation_time: Instant::now(),
+            };
+            
+            // Evict if necessary
+            if self.patterns.len() >= self.max_size {
+                self.evict_lru();
+            }
+            
+            self.patterns.insert(hash_key, entry);
+            self.access_order.push_back(hash_key);
+        }
+        
+        hash_key
+    }
+
+    /// Retrieve fake data pattern by hash key
+    pub fn retrieve(&mut self, hash_key: u64) -> Option<Vec<u8>> {
+        let data = if let Some(entry) = self.patterns.get_mut(&hash_key) {
+            entry.frequency += 1;
+            entry.last_access = Instant::now();
+            self.hit_count += 1;
+            Some(entry.data.clone())
+        } else {
+            self.miss_count += 1;
+            None
+        };
+        
+        if data.is_some() {
+            self.update_lru_order(hash_key);
+        }
+        
+        data
+    }
+
+    /// Generate fake data using cached patterns or create new
+    pub fn generate_fake_data(&mut self, size: usize) -> Vec<u8> {
+        // Try to find similar-sized cached pattern
+        let best_match = self.patterns
+            .iter()
+            .filter(|(_, entry)| entry.data.len() <= size * 2 && entry.data.len() >= size / 2)
+            .max_by_key(|(_, entry)| entry.frequency)
+            .map(|(key, _)| *key);
+
+        if let Some(key) = best_match {
+            if let Some(mut base_data) = self.retrieve(key) {
+                // Resize to match requested size
+                if base_data.len() < size {
+                    // Extend with pattern repetition
+                    while base_data.len() < size {
+                        let remaining = size - base_data.len();
+                        let to_copy = remaining.min(base_data.len());
+                        let extension = base_data[0..to_copy].to_vec();
+                        base_data.extend(extension);
+                    }
+                } else if base_data.len() > size {
+                    base_data.truncate(size);
+                }
+                return base_data;
+            }
+        }
+
+        // Generate new fake data if no suitable cached pattern
+        let mut data = vec![0u8; size];
+        let mut rng = fastrand::Rng::new();
+        
+        // Create pseudo-realistic pattern
+        for i in 0..size {
+            data[i] = match i % 4 {
+                0 => rng.u8(0x20..0x7F), // ASCII printable
+                1 => rng.u8(0x00..0x20), // Control chars
+                2 => rng.u8(0x80..0xFF), // High bytes
+                _ => (i % 256) as u8,     // Sequential pattern
+            };
+        }
+
+        // Store generated pattern for future use
+        self.store(data.clone());
+        data
+    }
+
+    /// Get cache statistics
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            size: self.patterns.len(),
+            max_size: self.max_size,
+            hit_count: self.hit_count,
+            miss_count: self.miss_count,
+            hit_rate: if self.hit_count + self.miss_count > 0 {
+                self.hit_count as f64 / (self.hit_count + self.miss_count) as f64
+            } else {
+                0.0
+            },
+        }
+    }
+
+    /// Clear expired entries based on age
+    pub fn cleanup_expired(&mut self, max_age: Duration) {
+        let now = Instant::now();
+        let expired_keys: Vec<u64> = self.patterns
+            .iter()
+            .filter(|(_, entry)| now.duration_since(entry.creation_time) > max_age)
+            .map(|(key, _)| *key)
+            .collect();
+
+        for key in expired_keys {
+            self.patterns.remove(&key);
+            self.access_order.retain(|&k| k != key);
+        }
+    }
+
+    /// Compute hash for data pattern
+    fn compute_hash(&self, data: &[u8]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+        
+        let mut hasher = DefaultHasher::new();
+        data.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Update LRU access order
+    fn update_lru_order(&mut self, key: u64) {
+        // Remove from current position
+        self.access_order.retain(|&k| k != key);
+        // Add to end (most recently used)
+        self.access_order.push_back(key);
+    }
+
+    /// Evict least recently used entry
+    fn evict_lru(&mut self) {
+        if let Some(lru_key) = self.access_order.pop_front() {
+            self.patterns.remove(&lru_key);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    pub size: usize,
+    pub max_size: usize,
+    pub hit_count: u64,
+    pub miss_count: u64,
+    pub hit_rate: f64,
+}

@@ -10,6 +10,7 @@
 //! - Plugin IPC transport integration
 
 use serde::{Serialize, Deserialize};
+use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
@@ -17,7 +18,6 @@ use tokio::sync::mpsc;
 use tracing::{debug, warn, trace};
 
 use crate::frame::{
-    FRAME_TYPE_PLUGIN_START, FRAME_TYPE_PLUGIN_END,
     FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_DATA,
     FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR,
     is_plugin_frame
@@ -47,7 +47,7 @@ pub mod plugin_flags {
 }
 
 /// CBOR header structure for plugin frames
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct PluginHeader {
     /// Plugin identifier (32-bit)
     pub id: u32,
@@ -126,7 +126,7 @@ pub enum PluginError {
 }
 
 /// Plugin capability information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PluginCapability {
     /// Plugin unique identifier
     pub id: PluginId,
@@ -143,7 +143,7 @@ pub struct PluginCapability {
 }
 
 /// Plugin handshake message
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PluginHandshake {
     /// Plugin capability information
     pub capability: PluginCapability,
@@ -154,7 +154,7 @@ pub struct PluginHandshake {
 }
 
 /// Plugin frame types for different operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum PluginFrame {
     /// Plugin handshake frame (0x50)
     Handshake(PluginHandshake),
@@ -470,7 +470,7 @@ impl PluginDispatcher {
         &self,
         plugin_id: PluginId,
         command: String,
-        params: HashMap<String, String>
+        mut params: HashMap<String, String>
     ) -> Result<(), PluginError> {
         // Verify plugin is registered
         if self.registry.get_plugin(plugin_id).is_none() {
@@ -482,6 +482,9 @@ impl PluginDispatcher {
             command = %command,
             "Processing plugin control frame"
         );
+
+        // Silencing unused variable warning for now until params are used
+        let _ = &mut params;
 
         // Handle common control commands
         match command.as_str() {

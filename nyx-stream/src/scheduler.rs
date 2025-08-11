@@ -32,7 +32,7 @@ struct PathState {
 /// sched.update_path(1, 10.0); // RTT 10ms
 /// sched.update_path(2, 50.0); // RTT 50ms
 /// let pid = sched.next();
-/// println!("selected path {pid}");
+/// println!("selected path {:?}", pid);
 /// ```
 pub struct WeightedRrScheduler {
     // path_id → state
@@ -122,4 +122,4 @@ mod tests {
         let ratio = count1 as f64 / count2.max(1) as f64;
         assert!(ratio > 4.0 && ratio < 6.0, "ratio {ratio}");
     }
-} 
+}

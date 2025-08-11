@@ -390,6 +390,19 @@ impl PluginSettingsManager {
         self.plugin_requirements.len()
     }
 
+    /// Get a requested version requirement (min_version) for a plugin if present.
+    pub fn get_version_requirement(&self, plugin_id: u32) -> Option<(u16,u16)> {
+        self.plugin_requirements.iter().find(|r| r.plugin_id == plugin_id).map(|r| r.min_version)
+    }
+
+    /// Get required capabilities list declared locally for a plugin (synthetic: we treat capability Required as capability name list if config params encode UTF-8 CSV).
+    pub fn get_required_capabilities(&self, plugin_id: u32) -> Option<Vec<String>> {
+        self.plugin_requirements.iter().find(|r| r.plugin_id==plugin_id && r.capability==PluginCapability::Required).map(|r| {
+            if r.config_params.is_empty() { return Vec::new(); }
+            match std::str::from_utf8(&r.config_params) { Ok(s) => s.split(',').filter(|x| !x.is_empty()).map(|s| s.trim().to_string()).collect(), Err(_) => Vec::new() }
+        })
+    }
+
     /// Clear all plugin requirements (useful for testing)
     pub fn clear_all_requirements(&mut self) {
         self.required_plugins.clear();
