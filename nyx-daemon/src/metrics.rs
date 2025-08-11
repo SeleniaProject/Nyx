@@ -1806,10 +1806,8 @@ impl SystemResourceMonitor {
         // Assess disk health using worst free-percent across non-readonly disks
         let (mut total_disk, mut free_disk) = (0u128, 0u128);
         {
-            use sysinfo::SystemExt;
-            let mut sys = sysinfo::System::new();
-            sys.refresh_disks_list();
-            sys.refresh_disks();
+            let mut sys = sysinfo::System::new_all();
+            sys.refresh_all();
             #[allow(deprecated)]
             for d in sys.disks() {
                 // Skip read-only or zero-sized
