@@ -370,6 +370,8 @@ async fn test_integration_pipeline() {
     use nyx_crypto::noise::SessionKey;
     #[cfg(feature = "nyx-crypto")]
     use nyx_crypto::aead::FrameCrypter;
+    #[cfg(not(feature = "nyx-crypto"))]
+    use nyx_core::zero_copy::integration::FrameCrypter;
     use nyx_core::zero_copy::integration::fec_integration::RaptorQCodec;
 
     let config = ZeroCopyManagerConfig::default();
@@ -377,18 +379,17 @@ async fn test_integration_pipeline() {
     let path_id = "integration_test".to_string();
 
     // Create mock components (using actual constructors where available)
+    #[cfg(feature = "nyx-crypto")]
     let session_key = SessionKey([0u8; 32]);
+    #[cfg(feature = "nyx-crypto")]
     let crypter = FrameCrypter::new(session_key);
+    #[cfg(not(feature = "nyx-crypto"))]
+    let crypter = FrameCrypter;
     let codec = RaptorQCodec::new(0.3); // 30% redundancy
 
     // Create zero-copy pipeline
     let pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id.clone())
-        .with_aead({
-            #[cfg(feature = "nyx-crypto")]
-            { crypter }
-            #[cfg(not(feature = "nyx-crypto"))]
-            { nyx_core::zero_copy::integration::mock_crypto::FrameCrypter }
-        })
+        .with_aead(crypter)
         .with_fec(codec);
 
     // Test data processing (without transmission for this test)

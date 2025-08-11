@@ -12,7 +12,7 @@ use crate::zero_copy::manager::{ZeroCopyManager, ZeroCopyError};
 
 // Conditional imports - only available with respective features
 #[cfg(feature = "nyx-crypto")]
-use nyx_crypto::aead::{FrameCrypter, AeadError};
+pub use nyx_crypto::aead::{FrameCrypter, AeadError};
 
 // Mock crypto for testing without crypto feature
 #[cfg(not(feature = "nyx-crypto"))]
@@ -47,7 +47,7 @@ mod mock_crypto {
 }
 
 #[cfg(not(feature = "nyx-crypto"))]
-use mock_crypto::{FrameCrypter, AeadError};
+pub use mock_crypto::{FrameCrypter, AeadError};
 use std::sync::Arc;
 
 /// Integration with AEAD encryption for zero-copy optimization
