@@ -180,6 +180,8 @@ pub struct LowPowerManager {
     cover_pattern: Arc<RwLock<CoverTrafficPattern>>,
     /// Optional sink to deliver generated cover packets to the transport layer
     cover_packet_sink: Arc<Mutex<Option<mpsc::UnboundedSender<Vec<u8>>>>>,
+    /// Optional sink to deliver real queued messages to the transport layer (destination, payload)
+    message_packet_sink: Arc<Mutex<Option<mpsc::UnboundedSender<(String, Vec<u8>)>>>>,
     /// Power state change notifications
     state_notifier: watch::Sender<PowerState>,
     /// Statistics
@@ -250,6 +252,7 @@ impl LowPowerManager {
             message_queue: Arc::new(Mutex::new(VecDeque::new())),
             cover_pattern: Arc::new(RwLock::new(CoverTrafficPattern::default())),
             cover_packet_sink: Arc::new(Mutex::new(None)),
+            message_packet_sink: Arc::new(Mutex::new(None)),
             state_notifier: state_tx,
             stats: Arc::new(RwLock::new(LowPowerStats::default())),
             device_token: Arc::new(RwLock::new(None)),
@@ -262,6 +265,13 @@ impl LowPowerManager {
     /// Provide a sink to receive generated cover packets.
     pub fn set_cover_packet_sink(&self, tx: mpsc::UnboundedSender<Vec<u8>>) {
         *self.cover_packet_sink.lock().unwrap() = Some(tx);
+    }
+
+    /// Provide a sink to send real messages via the transport layer.
+    /// The tuple is (destination, payload). Destination format is implementation-defined
+    /// by the transport (e.g., "ip:port" or logical NodeEndpoint string form).
+    pub fn set_message_packet_sink(&self, tx: mpsc::UnboundedSender<(String, Vec<u8>)>) {
+        *self.message_packet_sink.lock().unwrap() = Some(tx);
     }
 
     /// Convenience constructor for mobile FFI polling detector (feature mobile_ffi).
@@ -570,9 +580,17 @@ impl LowPowerManager {
                         
                         for message in messages_to_send {
                             info!("Sending queued message to {}", message.destination);
-                            // Integrate with actual Nyx sending mechanism
-                            if let Err(e) = Self::send_message_via_nyx(&message).await {
-                                error!("Failed to send queued message: {}", e);
+                            // Prefer transport sink when configured; fallback to internal helper
+                            let mut sent_via_sink = false;
+                            if let Some(tx) = &*message_packet_sink.lock().unwrap() {
+                                if tx.send((message.destination.clone(), message.payload.clone())).is_ok() {
+                                    sent_via_sink = true;
+                                }
+                            }
+                            if !sent_via_sink {
+                                if let Err(e) = Self::send_message_via_nyx(&message).await {
+                                    error!("Failed to send queued message: {}", e);
+                                }
                             }
                         }
                     }
@@ -606,7 +624,6 @@ impl LowPowerManager {
                                         priority: message.priority,
                                         ttl: 3600,
                                     };
-                                    
                                     if let Err(e) = push_svc.send_notification(&token, &push_message).await {
                                         error!("Failed to send push notification: {}", e);
                                     }
