@@ -55,7 +55,7 @@ nyx-crypto = { path = "../nyx-crypto" }
 nyx-fec = { path = "../nyx-fec" }
 
 # System information for health checks (pure Rust, cross-platform)
-sysinfo = { version = "0.30", default-features = false, features = ["multithread"] }
+sysinfo = { version = "0.30", default-features = true }
 
 # Additional dependencies for comprehensive implementation
 serde = { version = "1.0", features = ["derive"] }
