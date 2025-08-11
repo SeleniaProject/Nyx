@@ -303,9 +303,26 @@ impl NyxDaemon {
     /// Get node information from the daemon
     pub async fn node_info(&self) -> NyxResult<NodeInfo> {
         // In a real implementation, this would query the daemon
+        // Replace placeholder public key with deterministic derivation
+        use ed25519_dalek::{SigningKey, VerifyingKey};
+        use blake3::hash;
+        let pk_hex = {
+            if let Some(seed) = &self.config.identity_seed {
+                let digest = hash(seed.as_bytes());
+                let mut seed32 = [0u8;32];
+                seed32.copy_from_slice(&digest.as_bytes()[..32]);
+                let sk = SigningKey::from_bytes(&seed32);
+                let vk: VerifyingKey = (&sk).into();
+                hex::encode(vk.to_bytes())
+            } else {
+                let src = self.config.daemon.endpoint.clone().unwrap_or_else(|| "unknown".into());
+                let digest = hash(src.as_bytes());
+                hex::encode(&digest.as_bytes()[..32])
+            }
+        };
         Ok(NodeInfo {
             node_id: "local-node".to_string(),
-            public_key: "public-key-placeholder".to_string(),
+            public_key: pk_hex,
             address: self.config.daemon.endpoint.as_ref()
                 .unwrap_or(&"unknown".to_string()).clone(),
             region: "local".to_string(),
