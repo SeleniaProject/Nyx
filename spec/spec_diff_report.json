@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-08-10T17:13:30.897313+00:00",
+  "timestamp": "2025-08-11T09:50:33.038355+00:00",
   "spec_file": "spec\\Nyx_Protocol_v1.0_Spec_EN.md",
   "sections": {
     "Feature Differences (v0.1 \u2192 v1.0)": {
@@ -117,5 +117,11 @@
     }
   },
   "uncovered_keywords": {},
+  "section_mapping": {
+    "section_coverage_percent": 100.0,
+    "mapped_section_count": 10,
+    "total_section_count": 10,
+    "unmapped_sections": []
+  },
   "coverage_threshold_met": true
 }
