@@ -14,7 +14,7 @@ NyxNet 未実装/プレースホルダー総点検チェックリスト
 - [ ] README の「Cloud Integration(計画)」テンプレート群の実装整備(`charts/`, `Dockerfile` 等)
 
 nyx-core
-- [ ] Zero-copy: コピー計測の実装(`nyx-core/src/zero_copy.rs`: copy_overhead_ns // TODO)
+- [x] Zero-copy: コピー計測の実装(`nyx-core/src/zero_copy.rs`: copy_overhead_ns // TODO)
 - [ ] Low power: カバートラフィック送出の実処理化(placeholder を除去)(`nyx-core/src/low_power.rs`)
 - [ ] Zero-copy テレメトリ統合テストのプレースホルダー解消(`nyx-core/tests/zero_copy_tests.rs`)
 - [ ] Zero-copy integration: mock 依存部を本実装へ置換(crypto/FEC/UDP モックの除去)(`nyx-core/src/zero_copy/integration.rs`, `manager.rs`, `telemetry.rs`)
@@ -39,7 +39,7 @@ nyx-stream
 
 nyx-daemon
 - [ ] Event system: 未使用 API の整理 or 実配線(`nyx-daemon/src/event_system.rs` // TODO)
-- [ ] Health monitor: ディスク空き監視の実装(現在は "not implemented" を返却)(`nyx-daemon/src/health_monitor.rs`)
+- [x] Health monitor: ディスク空き監視の実装(現在は "not implemented" を返却)(`nyx-daemon/src/health_monitor.rs`)
 - [ ] Metrics: placeholder 値/エンドポイント/uptime の実測・蓄積・エクスポート実装(`nyx-daemon/src/metrics.rs`)
 - [ ] main: イベントストアの実装(placeholder を廃止)(`nyx-daemon/src/main.rs`)
 - [ ] Layer manager: 一時的劣化(degrade)や bypass の実処理化(現在多くが説明ログのみ)(`nyx-daemon/src/layer_manager.rs`)
@@ -119,16 +119,16 @@ nyx-mobile-ffi
 - [ ] `spec/spec_test_mapping.json` の "placeholder" 表記を解消し、完全な仕様→テスト対応を提示
 
 補足(個別ソース箇所 抜粋)
-- [ ] `nyx-daemon/src/health_monitor.rs`: "Disk space check not implemented" を実処理に置換
+- [x] `nyx-daemon/src/health_monitor.rs`: "Disk space check not implemented" を実処理に置換
 - [ ] `nyx-daemon/src/proto.rs`: `NyxControlService { /* placeholder */ }` の機能実装
 - [ ] `nyx-daemon/src/main.rs`: イベントストア/フィルタ(placeholder)の実装
 - [ ] `nyx-daemon/src/libp2p_network.rs`: 値検索/署名/暗号/メッセージ処理(placeholder)の実装
 - [ ] `nyx-daemon/src/pure_rust_dht_tcp.rs`: 値検索 `None // Placeholder` の実装、Ping の node_id 生成の実装
 - [ ] `nyx-daemon/src/path_builder_broken.rs`: 互換スタブ/メンテ placeholder の撤去 or 代替
 - [ ] `nyx-transport/src/stun_server.rs`: placeholder 長の正規算出
-- [ ] `nyx-core/src/zero_copy.rs`: `copy_overhead_ns: 0 // TODO` の実計測
+- [x] `nyx-core/src/zero_copy.rs`: `copy_overhead_ns: 0 // TODO` の実計測
 - [ ] `nyx-stream/src/plugin_handshake.rs`: 埋め込み鍵/署名(placeholder)→レジストリ検証
-- [ ] `nyx-telemetry/src/otlp.rs`: `force_flush()` の実処理
+- [x] `nyx-telemetry/src/otlp.rs`: `force_flush()` の実処理
 - [ ] `nyx-sdk/src/daemon.rs`: `public_key-placeholder` の解消
 - [ ] `nyx-cli/src/main_grpc_backup.rs`: リトライ回数設定/TUI ダッシュボード/ファイル受信の実装
 
