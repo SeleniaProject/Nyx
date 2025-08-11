@@ -36,6 +36,17 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn, error};
 
+/// Reference guard that decrements the internal reference counter on drop
+pub struct ZeroCopyRef {
+    counter: Arc<AtomicUsize>,
+}
+
+impl Drop for ZeroCopyRef {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 pub mod manager;
 pub mod telemetry;
 pub mod integration;
@@ -200,17 +211,6 @@ impl ZeroCopyBuffer {
     /// Check if buffer can be reused (single reference)
     pub fn can_reuse(&self) -> bool {
         self.ref_count.load(Ordering::Acquire) == 1
-    }
-
-    /// Reference guard that decrements the internal reference counter on drop
-    pub struct ZeroCopyRef {
-        counter: Arc<AtomicUsize>,
-    }
-
-    impl Drop for ZeroCopyRef {
-        fn drop(&mut self) {
-            self.counter.fetch_sub(1, Ordering::AcqRel);
-        }
     }
 
     /// Clone buffer reference (increment ref count) and return a guard that decrements on drop
