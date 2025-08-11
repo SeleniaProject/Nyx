@@ -69,7 +69,7 @@ low_power_manager.attach_push_gateway(push_gateway_manager.clone());
 | low_power_reconnect_latency_ms_histogram | 遅延ヒストグラム (p50/p95) | p50/p95 実装 (簡易リングバッファ) |
 | cover_packets_generated_total | 生成されたカバー総数 | 実装 |
 | push_notifications_sent_total | 送信 push 通知総数 | 実装 |
-| suppressed_cover_packets_total | 低電力で抑制された cover 数 | 仕様のみ (個別計測未導入) |
+| suppressed_cover_packets_total | 低電力で抑制された cover 数 | 実装 (推定) |
 
 ## 7. 推奨テスト
 - 画面オン→オフ→オン 循環で cover_ratio 適応を検証。

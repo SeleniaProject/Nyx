@@ -201,6 +201,8 @@ pub struct LowPowerStats {
     pub push_notifications_sent: u64,
     /// Cover traffic packets generated
     pub cover_packets_generated: u64,
+    /// Estimated number of cover packets suppressed due to reduced intensity
+    pub suppressed_cover_packets: u64,
     /// Battery level history (timestamp, level)
     pub battery_history: Vec<(u64, u8)>,
     /// Power state transitions
@@ -214,6 +216,7 @@ impl Default for LowPowerStats {
             messages_delayed: 0,
             push_notifications_sent: 0,
             cover_packets_generated: 0,
+            suppressed_cover_packets: 0,
             battery_history: Vec::new(),
             state_transitions: HashMap::new(),
         }
@@ -224,10 +227,11 @@ impl Default for LowPowerStats {
 struct LowPowerTelemetry {
     cover_packets_metric: Mutex<BasicMetrics>,
     push_notifications_metric: Mutex<BasicMetrics>,
+    suppressed_cover_packets_metric: Mutex<BasicMetrics>,
 }
 
 #[cfg(feature = "telemetry")]
-impl LowPowerTelemetry { fn new() -> Self { Self { cover_packets_metric: Mutex::new(BasicMetrics::new()), push_notifications_metric: Mutex::new(BasicMetrics::new()) } } }
+impl LowPowerTelemetry { fn new() -> Self { Self { cover_packets_metric: Mutex::new(BasicMetrics::new()), push_notifications_metric: Mutex::new(BasicMetrics::new()), suppressed_cover_packets_metric: Mutex::new(BasicMetrics::new()) } } }
 
 impl LowPowerManager {
     /// Create new low power manager
@@ -469,6 +473,8 @@ impl LowPowerManager {
         let stats = Arc::clone(&self.stats);
     #[cfg(feature = "telemetry")]
     let telemetry = Arc::clone(&self.telemetry);
+    // Baseline assumption: full power mode would have intensity=1.0 with same interval.
+    // We'll approximate suppressed cover packets as ( (1.0 - intensity)/intensity ) * generated_each_loop.
         
         tokio::spawn(async move {
             loop {
@@ -488,9 +494,19 @@ impl LowPowerManager {
                     // Simulate sending cover packet (placeholder)
                     trace!("Generated cover traffic packet: {} bytes", packet_size);
                     
+                    let intensity_snapshot;
                     {
                         let mut stats_guard = stats.write().unwrap();
                         stats_guard.cover_packets_generated += 1;
+                        intensity_snapshot = pattern.intensity;
+                        if intensity_snapshot < 1.0 && intensity_snapshot > 0.0 {
+                            // suppressed ≈ packets that would have been sent if intensity=1 minus what we sent (1 per loop)
+                            // scale: (1/intensity) - 1
+                            let suppressed_estimate = ((1.0 / intensity_snapshot) - 1.0).round() as u64;
+                            stats_guard.suppressed_cover_packets += suppressed_estimate;
+                            #[cfg(feature = "telemetry")]
+                            if let Ok(mut m) = telemetry.suppressed_cover_packets_metric.lock() { for _ in 0..suppressed_estimate { m.increment(); } }
+                        }
                     }
                     #[cfg(feature = "telemetry")]
                     if let Ok(mut m) = telemetry.cover_packets_metric.lock() { m.increment(); }
@@ -890,7 +906,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
             waited += 50;
         }
-        assert!(success, "expected push gateway resume to be invoked after screen on transition");
+    assert!(success, "expected push gateway resume to be invoked after screen on transition");
     }
 }
 
