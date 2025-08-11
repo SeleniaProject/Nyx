@@ -354,6 +354,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub verbose: bool,
 
+    /// Language (en/ja/zh)
+    #[arg(long = "language", default_value = "en")]
+    pub language: String,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -440,7 +444,12 @@ async fn cmd_connect(cli: &Cli, target: &str, interactive: bool) -> Result<()> {
         .template("{spinner:.green} {msg}")
         .unwrap()
     );
-    progress.set_message(format!("Establishing connection to {}...", target));
+    {
+        let mut args_map = std::collections::HashMap::new();
+        args_map.insert("target", target.to_string());
+        let msg = localize(&cli.language, "connect-establishing", Some(&args_map));
+        progress.set_message(msg);
+    }
     progress.enable_steady_tick(Duration::from_millis(100));
 
     let start_time = Instant::now();
@@ -463,12 +472,13 @@ async fn cmd_connect(cli: &Cli, target: &str, interactive: bool) -> Result<()> {
                 if stream_info.success {
                     let duration = start_time.elapsed();
                     progress.finish_and_clear();
-                    println!("{} {} {} in {:.2}s",
-                        style("✓").green(),
-                        style("Connected to").green(),
-                        style(target).bold(),
-                        duration.as_secs_f64()
-                    );
+                    {
+                        let mut args_map = std::collections::HashMap::new();
+                        args_map.insert("target", target.to_string());
+                        args_map.insert("stream_id", stream_info.stream_id.to_string());
+                        let ok = localize(&cli.language, "connect-success", Some(&args_map));
+                        println!("{} {} in {:.2}s", style("✓").green(), ok, duration.as_secs_f64());
+                    }
                     
                     stream_response = Some(stream_info);
                     connection_established = true;
@@ -487,7 +497,7 @@ async fn cmd_connect(cli: &Cli, target: &str, interactive: bool) -> Result<()> {
                         a.insert("error", raw.clone());
                         ("error-protocol-error", a)
                     };
-                    let msg = localize("en", key, Some(&args));
+                    let msg = localize(&cli.language, key, Some(&args));
                     return Err(msg.into());
                 }
             }
@@ -524,7 +534,7 @@ async fn cmd_connect(cli: &Cli, target: &str, interactive: bool) -> Result<()> {
                         "ResourceExhausted" => "error-resource-exhausted",
                         _ => "error-permission-denied",
                     };
-                    let msg = localize("en", key, None);
+                    let msg = localize(&cli.language, key, None);
                     println!("{}", style(format!("❌ {}", msg)).red());
                     return Err(msg.into());
                 } else {
