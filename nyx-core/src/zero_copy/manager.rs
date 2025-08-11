@@ -481,12 +481,13 @@ impl ZeroCopyManager {
     pub async fn create_critical_path(&self, path_id: String) -> Result<Arc<CriticalPath>, ZeroCopyError> {
         let mut paths = self.paths.write().await;
         
-        if paths.len() >= self.config.max_active_paths {
-            return Err(ZeroCopyError::TooManyPaths);
-        }
-
+        // Prefer duplicate path detection over capacity limit for clearer error semantics
         if paths.contains_key(&path_id) {
             return Err(ZeroCopyError::PathAlreadyExists(path_id));
+        }
+
+        if paths.len() >= self.config.max_active_paths {
+            return Err(ZeroCopyError::TooManyPaths);
         }
 
         let path = Arc::new(CriticalPath::new(path_id.clone(), self.config.default_path_config.clone()));
