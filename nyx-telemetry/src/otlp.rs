@@ -27,7 +27,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex, atomic::AtomicU64};
+use std::sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}};
 use tracing::{Id, Subscriber};
 use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, Layer};
@@ -108,6 +108,7 @@ where
 				}
 				let captured = CapturedSpan { name, attributes: std::mem::take(&mut map) };
 				self.store.lock().unwrap().push(captured.clone());
+				TOTAL_SPANS_CLOSED.fetch_add(1, Ordering::Relaxed);
 				#[cfg(feature = "otlp_exporter")]
 				{
 					if let Some(tx) = &*EXPORT_SENDER.read().unwrap() { let _ = tx.try_send(captured); }
@@ -119,6 +120,7 @@ where
 
 /// Initialize in-memory tracing capture (replaces global subscriber each call).
 static SPAN_COUNTER: AtomicU64 = AtomicU64::new(0);
+static TOTAL_SPANS_CLOSED: AtomicU64 = AtomicU64::new(0);
 use crate::sampling::deterministic_accept;
 
 // -------------------------------------------------------------------------------------------------
@@ -150,8 +152,17 @@ pub fn init_in_memory_tracer(_service_name: &str, sampling_ratio: f64) -> (traci
 	(dispatch, store)
 }
 
-/// Placeholder flush (no batching exporter currently attached).
-pub fn force_flush() {}
+/// Attempt to force-flush captured spans by waiting for quiescence.
+pub fn force_flush() {
+    let mut last = TOTAL_SPANS_CLOSED.load(Ordering::Relaxed);
+    let mut stable_iters = 0u8;
+    for _ in 0..20u8 { // ~ up to ~1s
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let now = TOTAL_SPANS_CLOSED.load(Ordering::Relaxed);
+        if now == last { stable_iters += 1; } else { stable_iters = 0; last = now; }
+        if stable_iters >= 3 { break; }
+    }
+}
 
 // ----------------------------------------------------------------------------------------------
 // Exporter recovery (simplified): Provide a wrapper that can execute an export attempt with

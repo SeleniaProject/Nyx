@@ -161,7 +161,7 @@
 #### Sandboxing
 - **Linux**: seccomp-bpf system call filtering
 - **OpenBSD**: pledge and unveil restrictions
-- **Windows**: Process isolation (planned)
+- **Windows**: Process isolation using Job Objects (process and memory limits, optional UI restrictions)
 
 #### Cryptographic Security
 - **Post-Quantum Ready**: Kyber1024 and BIKE support

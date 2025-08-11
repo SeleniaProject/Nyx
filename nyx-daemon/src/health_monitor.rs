@@ -141,12 +141,69 @@ impl HealthMonitor {
             })
         );
         
-        // Disk space check
+        // Disk space check (cross-platform)
         self.register_check(
             "disk_space".to_string(),
             Box::new(|| {
-                // This is a placeholder for future implementation
-                Ok("Disk space check not implemented".to_string())
+                // Read thresholds from environment variables with sensible defaults
+                // NYX_DISK_MIN_FREE_PERCENT: minimum free space percentage required (default: 10%)
+                // NYX_DISK_MIN_FREE_BYTES: minimum free bytes required (default: 1 GiB)
+                let min_free_percent: f64 = std::env::var("NYX_DISK_MIN_FREE_PERCENT")
+                    .ok()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(10.0);
+                let min_free_bytes: u64 = std::env::var("NYX_DISK_MIN_FREE_BYTES")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(1_073_741_824); // 1 GiB
+
+                let mut sys = sysinfo::System::new();
+                sys.refresh_disks_list();
+                sys.refresh_disks();
+
+                // Aggregate across all writable disks; if none found, return degraded
+                let mut worst_percent: f64 = 100.0;
+                let mut worst_free: u64 = u64::MAX;
+                let mut checked_any = false;
+
+                for disk in sys.disks() {
+                    // Only consider disks that are not read-only
+                    if disk.is_removable() || disk.is_read_only() {
+                        continue;
+                    }
+                    checked_any = true;
+                    let total = disk.total_space();
+                    let available = disk.available_space();
+                    if total == 0 { continue; }
+                    let percent = (available as f64) * 100.0 / (total as f64);
+                    if percent < worst_percent { worst_percent = percent; }
+                    if available < worst_free { worst_free = available; }
+                }
+
+                if !checked_any {
+                    return Err("No suitable writable disks found for health check".to_string());
+                }
+
+                let ok_percent = worst_percent >= min_free_percent;
+                let ok_bytes = worst_free >= min_free_bytes;
+
+                if ok_percent && ok_bytes {
+                    Ok(format!(
+                        "Disk space healthy: worst_free_percent={:.2}%, worst_free_bytes={}",
+                        worst_percent, worst_free
+                    ))
+                } else if ok_percent || ok_bytes {
+                    // Degraded if one of thresholds fails; encode as Ok with warning
+                    Err(format!(
+                        "Disk space degraded: worst_free_percent={:.2}%, worst_free_bytes={}, min_percent={}%, min_bytes={}",
+                        worst_percent, worst_free, min_free_percent, min_free_bytes
+                    ))
+                } else {
+                    Err(format!(
+                        "Disk space unhealthy: worst_free_percent={:.2}%, worst_free_bytes={}, min_percent={}%, min_bytes={}",
+                        worst_percent, worst_free, min_free_percent, min_free_bytes
+                    ))
+                }
             }),
         );
         
