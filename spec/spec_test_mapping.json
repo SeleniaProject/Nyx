@@ -25,6 +25,10 @@
     "3. Hybrid Post-Quantum Handshake": [
       "nyx-crypto/tests/kyber.rs::kyber_kem_session_key_matches",
       "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_async_flush_sends_frames",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_telemetry_counters_increment",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_grace_usage_counter",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_failure_counter",
       "nyx-crypto/src/noise.rs::test_hybrid_message_too_short"
     ],
     "8. System Metrics (Disk/FD/Thread)": [
@@ -70,7 +74,11 @@
       "nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_size_limits"
     ],
     "9. Telemetry Schema (OTLP)": [
-      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold"
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_async_flush_sends_frames",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_telemetry_counters_increment",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_grace_usage_counter",
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_failure_counter"
     ]
   },
   "mapped_sections": [

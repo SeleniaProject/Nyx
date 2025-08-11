@@ -13,6 +13,8 @@ use nyx_telemetry::ensure_hpke_rekey_metrics_registered;
 use prometheus::default_registry;
 
 #[tokio::test]
+/// @spec 3. Hybrid Post-Quantum Handshake
+/// @spec 9. Telemetry Schema (OTLP)
 async fn hpke_rekey_triggers_on_packet_threshold() {
     let q = TxQueue::new(Default::default());
     let policy = RekeyPolicy { time_interval: std::time::Duration::from_secs(3600), packet_interval: 3, grace_period: std::time::Duration::from_millis(50), min_cooldown: std::time::Duration::from_millis(0) };
@@ -32,6 +34,8 @@ async fn hpke_rekey_triggers_on_packet_threshold() {
 }
 
 #[tokio::test]
+/// @spec 3. Hybrid Post-Quantum Handshake
+/// @spec 9. Telemetry Schema (OTLP)
 async fn hpke_rekey_async_flush_sends_frames() {
     let q = TxQueue::new(Default::default());
     let policy = RekeyPolicy { time_interval: std::time::Duration::from_secs(3600), packet_interval: 2, grace_period: std::time::Duration::from_millis(50), min_cooldown: std::time::Duration::from_millis(0) };
@@ -60,6 +64,8 @@ async fn hpke_rekey_async_flush_sends_frames() {
 
 #[tokio::test]
 #[cfg(all(feature="telemetry", feature="hpke"))]
+/// @spec 3. Hybrid Post-Quantum Handshake
+/// @spec 9. Telemetry Schema (OTLP)
 async fn hpke_rekey_telemetry_counters_increment() {
     // Ensure registry & counters
     let registry = default_registry();
@@ -89,6 +95,8 @@ async fn hpke_rekey_telemetry_counters_increment() {
 
 #[tokio::test]
 #[cfg(all(feature="telemetry", feature="hpke"))]
+/// @spec 3. Hybrid Post-Quantum Handshake
+/// @spec 9. Telemetry Schema (OTLP)
 async fn hpke_rekey_grace_usage_counter() {
     let registry = default_registry();
     nyx_telemetry::ensure_hpke_rekey_metrics_registered(registry);
@@ -120,6 +128,8 @@ async fn hpke_rekey_grace_usage_counter() {
 
 #[tokio::test]
 #[cfg(all(feature="telemetry", feature="hpke"))]
+/// @spec 3. Hybrid Post-Quantum Handshake
+/// @spec 9. Telemetry Schema (OTLP)
 async fn hpke_rekey_failure_counter() {
     let registry = default_registry();
     nyx_telemetry::ensure_hpke_rekey_metrics_registered(registry);
