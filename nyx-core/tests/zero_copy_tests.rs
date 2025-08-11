@@ -366,7 +366,9 @@ async fn test_optimization_report_generation() {
 /// Integration test with mock AEAD, FEC, and transmission components
 #[tokio::test]
 async fn test_integration_pipeline() {
+    #[cfg(feature = "nyx-crypto")]
     use nyx_crypto::noise::SessionKey;
+    #[cfg(feature = "nyx-crypto")]
     use nyx_crypto::aead::FrameCrypter;
     use nyx_core::zero_copy::integration::fec_integration::RaptorQCodec;
 
@@ -381,7 +383,12 @@ async fn test_integration_pipeline() {
 
     // Create zero-copy pipeline
     let pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id.clone())
-        .with_aead(crypter)
+        .with_aead({
+            #[cfg(feature = "nyx-crypto")]
+            { crypter }
+            #[cfg(not(feature = "nyx-crypto"))]
+            { nyx_core::zero_copy::integration::mock_crypto::FrameCrypter }
+        })
         .with_fec(codec);
 
     // Test data processing (without transmission for this test)
