@@ -354,7 +354,20 @@ impl PluginSettingsManager {
                     return Err(PluginSettingsError::UnsupportedRequiredPlugin(requirement.plugin_id));
                 }
 
-                // TODO: Add version compatibility checking here when plugin registry is available
+                // Version compatibility check: ensure our requested (or default) min version meets peer's minimum
+                if let Some((our_major, our_minor)) = self.get_version_requirement(requirement.plugin_id) {
+                    let (req_major, req_minor) = requirement.min_version;
+                    let meets = (our_major > req_major) || (our_major == req_major && our_minor >= req_minor);
+                    if !meets {
+                        return Err(PluginSettingsError::VersionMismatch {
+                            id: requirement.plugin_id,
+                            required_major: req_major,
+                            required_minor: req_minor,
+                            available_major: our_major,
+                            available_minor: our_minor,
+                        });
+                    }
+                }
                 debug!("Validated required plugin: {} (version {}.{})", 
                        requirement.plugin_id, requirement.min_version.0, requirement.min_version.1);
             }
