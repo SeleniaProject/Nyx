@@ -40,7 +40,7 @@ nyx-stream
 nyx-daemon
 - [ ] Event system: 未使用 API の整理 or 実配線(`nyx-daemon/src/event_system.rs` // TODO)
 - [x] Health monitor: ディスク空き監視の実装(現在は "not implemented" を返却)(`nyx-daemon/src/health_monitor.rs`)
-- [ ] Metrics: placeholder 値/エンドポイント/uptime の実測・蓄積・エクスポート実装(`nyx-daemon/src/metrics.rs`)
+- [x] Metrics: placeholder 値/エンドポイント/uptime の実測・蓄積・エクスポート実装(`nyx-daemon/src/metrics.rs`)
 - [ ] main: イベントストアの実装(placeholder を廃止)(`nyx-daemon/src/main.rs`)
 - [ ] Layer manager: 一時的劣化(degrade)や bypass の実処理化(現在多くが説明ログのみ)(`nyx-daemon/src/layer_manager.rs`)
 - [ ] libp2p_network: プレースホルダー(値取得/PeerId/暗号/None返却など)の全面実装(`nyx-daemon/src/libp2p_network.rs`)
