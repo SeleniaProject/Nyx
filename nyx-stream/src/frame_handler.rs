@@ -212,77 +212,7 @@ impl FrameHandler {
 
     /// Process incoming frame and return reassembled data
     pub fn process_frame(&mut self, frame: StreamFrame<'static>) -> Result<Vec<ReassembledData>, FrameHandlerError> {
-        let stream_id = frame.stream_id;
-        let frame_data_len = frame.data.len();
-        
-        trace!("Processing frame for stream {}, offset {}, length {}", 
-               stream_id, frame.offset, frame_data_len);
-
-        // Check global buffer limits
-        if self.total_buffered + frame_data_len > self.max_total_buffer {
-            warn!("Global buffer limit exceeded: {} + {} > {}", 
-                  self.total_buffered, frame_data_len, self.max_total_buffer);
-            return Err(FrameHandlerError::BufferOverflow(stream_id));
-        }
-
-        // Get or create stream
-        if !self.streams.contains_key(&stream_id) {
-            if self.streams.len() >= self.max_streams {
-                error!("Maximum number of concurrent streams exceeded: {}", self.max_streams);
-                return Err(FrameHandlerError::StreamNotFound(stream_id));
-            }
-            self.streams.insert(stream_id, StreamReassembly::new(stream_id, self.max_buffer_per_stream));
-            debug!("Created new stream reassembly for stream {}", stream_id);
-        }
-
-        let stream_state = self.streams.get_mut(&stream_id).unwrap();
-
-        // Validate frame
-        match stream_state.validate_frame(&frame) {
-            FrameValidation::Valid => {}
-            FrameValidation::Duplicate => {
-                debug!("Ignoring duplicate frame for stream {}, offset {}", stream_id, frame.offset);
-                return Ok(vec![]);
-            }
-            FrameValidation::OutOfOrder => {
-                warn!("Out of order frame for stream {}: expected {}, got {}", 
-                      stream_id, stream_state.expected_offset, frame.offset);
-                return Err(FrameHandlerError::OutOfOrder {
-                    expected: stream_state.expected_offset,
-                    actual: frame.offset,
-                });
-            }
-            FrameValidation::Invalid(reason) => {
-                error!("Invalid frame for stream {}: {}", stream_id, reason);
-                return Err(FrameHandlerError::InvalidFrame(reason));
-            }
-        }
-
-        // Add frame to stream buffer
-        stream_state.add_frame(frame)?;
-        self.total_buffered += frame_data_len;
-
-        // Collect all available contiguous data
-        let mut results = Vec::new();
-        while let Some(data) = stream_state.get_contiguous_data() {
-            self.total_buffered = self.total_buffered.saturating_sub(data.data.len());
-            
-            let is_stream_complete = data.is_complete;
-            results.push(data);
-            
-            // Clean up completed stream
-            if is_stream_complete {
-                debug!("Stream {} completed, removing from active streams", stream_id);
-                self.streams.remove(&stream_id);
-                break;
-            }
-        }
-
-        if !results.is_empty() {
-            debug!("Reassembled {} data chunks for stream {}", results.len(), stream_id);
-        }
-
-        Ok(results)
+        self.process_frame_internal(frame)
     }
 
     /// Process incoming frame data and return reassembled data if available
@@ -316,7 +246,7 @@ impl FrameHandler {
     }
 
     /// Process a frame for performance testing (async compatible)
-    pub async fn process_frame_async(&mut self, stream_id: u64, data: Vec<u8>) -> crate::errors::StreamResult<Option<Vec<u8>>> {
+    pub async fn process_frame_async(&mut self, _stream_id: u64, data: Vec<u8>) -> crate::errors::StreamResult<Option<Vec<u8>>> {
         if data.len() > self.max_frame_size {
             return Err(crate::errors::StreamError::InvalidFrame(
                 format!("Frame size {} exceeds maximum {}", data.len(), self.max_frame_size)
