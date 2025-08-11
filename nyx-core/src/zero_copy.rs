@@ -202,10 +202,21 @@ impl ZeroCopyBuffer {
         self.ref_count.load(Ordering::Acquire) == 1
     }
 
-    /// Clone buffer reference (increment ref count)
-    pub fn clone_ref(&self) -> Arc<AtomicUsize> {
+    /// Reference guard that decrements the internal reference counter on drop
+    pub struct ZeroCopyRef {
+        counter: Arc<AtomicUsize>,
+    }
+
+    impl Drop for ZeroCopyRef {
+        fn drop(&mut self) {
+            self.counter.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    /// Clone buffer reference (increment ref count) and return a guard that decrements on drop
+    pub fn clone_ref(&self) -> ZeroCopyRef {
         self.ref_count.fetch_add(1, Ordering::AcqRel);
-        Arc::clone(&self.ref_count)
+        ZeroCopyRef { counter: Arc::clone(&self.ref_count) }
     }
 }
 
@@ -468,11 +479,11 @@ impl AllocationTracker {
             let stage_events: Vec<_> = events.iter().filter(|e| e.stage == stage).collect();
             
             let total_allocations = stage_events.iter()
-                .filter(|e| matches!(e.operation, OperationType::Allocate | OperationType::Reallocate))
+                .filter(|e| matches!(e.operation, OperationType::Allocate | OperationType::Reallocate | OperationType::PoolGet))
                 .count() as u64;
             
             let total_bytes: u64 = stage_events.iter()
-                .filter(|e| matches!(e.operation, OperationType::Allocate | OperationType::Reallocate))
+                .filter(|e| matches!(e.operation, OperationType::Allocate | OperationType::Reallocate | OperationType::PoolGet))
                 .map(|e| e.size as u64)
                 .sum();
             
