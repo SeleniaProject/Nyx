@@ -20,7 +20,8 @@ ciborium = "0.2"
 tokio-stream = { version = "0.1", features=["sync"] }
 async-trait = "0.1"
 anyhow = "1"
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.0", features = ["v4"] }
+futures = "0.3"
 rand = { version = "0.8", features = ["std"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
@@ -33,6 +34,9 @@ nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 
 # Optional crypto integration
 nyx-crypto = { path = "../nyx-crypto", optional = true }
+
+# Optional FEC integration (removed due to circular dependency)
+# nyx-fec integration is handled through traits and feature gates
 
 # Optional push notification dependencies
 fcm = { version = "0.9", optional = true }
@@ -51,6 +55,8 @@ default = []
 telemetry = ["nyx-telemetry"]
 # Enable mobile platform integration
 mobile = ["nyx-crypto"]
+# Enable mobile FFI based low power triggers (polling bridge to nyx-mobile-ffi)
+mobile_ffi = ["nyx-mobile-ffi"]
 # Enable push notification support
 push = ["dep:fcm", "dep:a2"]
 # Enable FCM support
@@ -61,6 +67,12 @@ apns = ["dep:a2"]
 plugin_framework = ["cbor4ii"]
 multipath_dp = []
 cmix = ["num-bigint", "num-traits"]
+# Enable zero-copy integration with crypto components (fec handled separately)
+zero_copy = ["nyx-crypto"]
+
+[dependencies.nyx-mobile-ffi]
+path = "../nyx-mobile-ffi"
+optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 seccomp = "0.1"
@@ -70,9 +82,20 @@ anyhow = "1"
 pledge = "0.4"
 unveil = "0.3"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.56", features = ["Win32_Foundation","Win32_System_Threading","Win32_System_JobObjects", "Win32_Security"] }
+win32job = "2.0"
+
 [dev-dependencies]
 hex-literal = "0.4"
 tempfile = "3.8"
+tokio-test = "0.4"
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+futures = "0.3"
+
+[[bench]]
+name = "zero_copy_benchmarks"
+harness = false
 
 [build-dependencies]
 protoc-bin-vendored = "3"

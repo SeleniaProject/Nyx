@@ -5,6 +5,8 @@ pub mod error;
 pub mod types;
 #[cfg(target_os = "linux")]
 pub mod sandbox;
+#[cfg(target_os = "windows")]
+pub mod windows;
 pub mod i18n;
 pub mod mobile;
 pub mod push;
@@ -12,8 +14,12 @@ pub mod capability;
 pub mod compliance;
 pub mod cmix;
 pub mod low_power;
+pub mod push_gateway; // Push Notification Path / Gateway reconnection
+#[cfg(feature = "mobile_ffi")]
+mod ffi_detector; // internal module providing FfiScreenStateDetector
 pub mod advanced_routing;
 pub mod performance;
+pub mod zero_copy; // Zero-copy optimization for critical data paths
 pub mod path_monitor; // 新しい共有パス性能モニタ
 // New v1.0 Critical Priority modules
 #[cfg(feature = "plugin_framework")]
@@ -33,6 +39,8 @@ pub use types::PathId;
 pub use path_monitor::{PathPerformanceMonitor, PathPerformanceMetrics, PerformanceTrend as PathPerformanceTrend, GlobalPathStats as CoreGlobalPathStats};
 #[cfg(target_os = "linux")]
 pub use sandbox::install_seccomp;
+#[cfg(target_os = "windows")]
+pub use windows::apply_process_isolation;
 #[cfg(target_os = "openbsd")]
 pub mod openbsd;
 #[cfg(target_os = "openbsd")]
@@ -50,6 +58,8 @@ pub fn install_panic_abort() {
 
 pub use capability::{Capability, FLAG_REQUIRED};
 pub use compliance::{ComplianceLevel};
+#[cfg(feature = "mobile_ffi")]
+pub use ffi_detector::FfiScreenStateDetector;
 
 // Export new v1.0 Critical Priority components
 #[cfg(feature = "plugin_framework")]
