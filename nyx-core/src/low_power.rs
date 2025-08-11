@@ -178,6 +178,8 @@ pub struct LowPowerManager {
     message_queue: Arc<Mutex<VecDeque<DelayedMessage>>>,
     /// Cover traffic pattern
     cover_pattern: Arc<RwLock<CoverTrafficPattern>>,
+    /// Optional sink to deliver generated cover packets to the transport layer
+    cover_packet_sink: Arc<Mutex<Option<mpsc::UnboundedSender<Vec<u8>>>>>,
     /// Power state change notifications
     state_notifier: watch::Sender<PowerState>,
     /// Statistics
@@ -247,6 +249,7 @@ impl LowPowerManager {
             push_service,
             message_queue: Arc::new(Mutex::new(VecDeque::new())),
             cover_pattern: Arc::new(RwLock::new(CoverTrafficPattern::default())),
+            cover_packet_sink: Arc::new(Mutex::new(None)),
             state_notifier: state_tx,
             stats: Arc::new(RwLock::new(LowPowerStats::default())),
             device_token: Arc::new(RwLock::new(None)),
@@ -254,6 +257,11 @@ impl LowPowerManager {
             telemetry: Arc::new(LowPowerTelemetry::new()),
             push_gateway: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Provide a sink to receive generated cover packets.
+    pub fn set_cover_packet_sink(&self, tx: mpsc::UnboundedSender<Vec<u8>>) {
+        *self.cover_packet_sink.lock().unwrap() = Some(tx);
     }
 
     /// Convenience constructor for mobile FFI polling detector (feature mobile_ffi).
@@ -487,12 +495,19 @@ impl LowPowerManager {
                 if should_generate {
                     let pattern = cover_pattern.read().unwrap().clone();
                     
-                    // Generate cover traffic packet
-                    let packet_size = pattern.size_range.0 + 
-                        (rand::random::<usize>() % (pattern.size_range.1 - pattern.size_range.0));
-                    
-                    // Simulate sending cover packet (placeholder)
-                    trace!("Generated cover traffic packet: {} bytes", packet_size);
+                    // Generate cover traffic packet and deliver to sink if provided
+                    let packet_size = pattern.size_range.0 +
+                        (rand::random::<usize>() % (pattern.size_range.1 - pattern.size_range.0).max(1));
+                    let mut packet = Vec::with_capacity(packet_size);
+                    for _ in 0..packet_size { packet.push(rand::random::<u8>()); }
+
+                    if let Some(tx) = &*cover_packet_sink.lock().unwrap() {
+                        if tx.send(packet).is_err() {
+                            trace!("Cover packet sink is closed; dropping generated packet");
+                        }
+                    } else {
+                        trace!("Cover packet sink not configured; packet accounted only");
+                    }
                     
                     let intensity_snapshot;
                     {
