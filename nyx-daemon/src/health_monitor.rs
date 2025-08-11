@@ -166,7 +166,7 @@ impl HealthMonitor {
                 let mut checked_any = false;
 
                 for disk in &disks {
-                    if disk.is_removable() || disk.is_read_only() { continue; }
+                    if disk.is_removable() { continue; }
                     checked_any = true;
                     let total = disk.total_space();
                     let available = disk.available_space();

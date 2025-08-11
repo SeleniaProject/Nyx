@@ -1811,7 +1811,7 @@ impl SystemResourceMonitor {
             #[allow(deprecated)]
             for d in sys.disks() {
                 // Skip read-only or zero-sized
-                if d.is_read_only() { continue; }
+                // Some platforms do not expose read-only API; skip only removable disks
                 let t = d.total_space() as u128;
                 if t == 0 { continue; }
                 let a = d.available_space() as u128;
