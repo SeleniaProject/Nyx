@@ -18,6 +18,8 @@ VERIFICATION_TIMEOUT=${VERIFICATION_TIMEOUT:-600}
 JAVA_OPTS=${JAVA_OPTS:-"-Xmx4g"}
 SKIP_TLA=${SKIP_TLA:-false}
 SKIP_RUST=${SKIP_RUST:-false}
+KEYWORD_THRESHOLD=${KEYWORD_THRESHOLD:-95.0}
+SECTION_REQUIRED=${SECTION_REQUIRED:-100.0}
 
 echo -e "${BLUE}Nyx Protocol Build & Verification Pipeline${NC}"
 echo "=========================================="
@@ -101,7 +103,7 @@ run_verification() {
     cd "$PROJECT_ROOT"
     
     # Prepare verification arguments
-    VERIFY_ARGS="--timeout $VERIFICATION_TIMEOUT --java-opts '$JAVA_OPTS'"
+    VERIFY_ARGS="--timeout $VERIFICATION_TIMEOUT --java-opts '$JAVA_OPTS' --keyword-threshold $KEYWORD_THRESHOLD --section-required $SECTION_REQUIRED"
     
     if [ "$SKIP_TLA" = "true" ]; then
         VERIFY_ARGS="$VERIFY_ARGS --rust-only"
