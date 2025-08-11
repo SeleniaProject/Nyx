@@ -38,14 +38,15 @@ fn multipath_distribution_converges() { /* ... */ }
 
 ## 当面の手動ダイジェスト (抜粋)
 
-自動生成テーブル (セクションカバレッジ 160.0%: 16/10):
+自動生成テーブル (セクションカバレッジ 100.0%: 10/10):
 
 | Spec 節 | テストケース |
 |---------|--------------|
 | 1. Protocol Combinator (Plugin Framework) | nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_type_validation<br>nyx-stream/tests/plugin_framework_tests.rs::test_plugin_header_cbor_encoding<br>nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_building_and_parsing<br>nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_size_limits |
 | 10. Compliance Levels | nyx-conformance/tests/core.rs::nyx_config_parse_defaults |
 | 2. Multipath Data Plane | nyx-stream/tests/multipath_failover_end_to_end.rs::multipath_failover_and_rejoin<br>nyx-stream/tests/multipath_integration_distribution.rs::multipath_wrr_distribution_matches_weights<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_scheduler_creation_and_basic_operations<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_path_management<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_weight_calculation_from_rtt<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_smooth_wrr_distribution<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_path_activation_deactivation |
-| 3. Hybrid Post-Quantum Handshake | nyx-crypto/tests/kyber.rs::kyber_kem_session_key_matches<br>nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold |
+| 3. Hybrid Post-Quantum Handshake | nyx-crypto/tests/kyber.rs::kyber_kem_session_key_matches<br>nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold<br>nyx-crypto/src/noise.rs::test_hybrid_message_too_short |
+| 4. cMix Integration | nyx-conformance/tests/cmix.rs::cmix_batch_verification<br>nyx-conformance/tests/cmix_negative.rs::cmix_verify_rejects_tampered_batch<br>nyx-conformance/tests/cmix_negative.rs::cmix_verify_rejects_invalid_witness<br>nyx-conformance/tests/e2e_full.rs::e2e_full_stack<br>nyx-mix/src/cmix.rs::emits_batch_after_timeout<br>nyx-mix/src/cmix.rs::detailed_verification_reports_errors |
 | 5. Adaptive Cover Traffic | nyx-mix/tests/adaptive_cover_feedback.rs::adaptive_cover_utilization_feedback_non_decreasing_lambda<br>nyx-stream/tests/multipath_integration_distribution.rs::multipath_wrr_distribution_matches_weights |
 | 6. Low Power Mode (Mobile) | tests/integration/comprehensive_test_suite.rs::test_low_power_mode<br>tests/integration/production_integration_tests.rs::test_low_power_scenarios<br>nyx-mix/tests/low_power_screen_off_ratio.rs::low_power_screen_off_cover_ratio_applied |
 | 6. Low Power Mode (Mobile) (redundant placeholder) | nyx-core/tests/low_power_screen_off_ratio.rs::low_power_screen_off_cover_ratio_applied |
@@ -59,7 +60,7 @@ fn multipath_distribution_converges() { /* ... */ }
 | 8. System Metrics (Disk/FD/Thread) | nyx-daemon/tests/disk_fd_thread_metrics.rs::system_metrics_basic_smoke |
 | 9. Telemetry Schema (OTLP) | nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold |
 
-未マッピング節: 4. cMix Integration
+未マッピング節: なし
 
 ---
 このセクション以下は自動生成されます。手動編集は次回上書きされます。

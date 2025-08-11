@@ -8,6 +8,14 @@
     "8. Capability Negotiation": [
       "nyx-conformance/tests/capability_negotiation_properties.rs::capability_id_strategy"
     ],
+    "4. cMix Integration": [
+      "nyx-conformance/tests/cmix.rs::cmix_batch_verification",
+      "nyx-conformance/tests/cmix_negative.rs::cmix_verify_rejects_tampered_batch",
+      "nyx-conformance/tests/cmix_negative.rs::cmix_verify_rejects_invalid_witness",
+      "nyx-conformance/tests/e2e_full.rs::e2e_full_stack",
+      "nyx-mix/src/cmix.rs::emits_batch_after_timeout",
+      "nyx-mix/src/cmix.rs::detailed_verification_reports_errors"
+    ],
     "10. Compliance Levels": [
       "nyx-conformance/tests/core.rs::nyx_config_parse_defaults"
     ],
@@ -16,7 +24,8 @@
     ],
     "3. Hybrid Post-Quantum Handshake": [
       "nyx-crypto/tests/kyber.rs::kyber_kem_session_key_matches",
-      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold"
+      "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold",
+      "nyx-crypto/src/noise.rs::test_hybrid_message_too_short"
     ],
     "8. System Metrics (Disk/FD/Thread)": [
       "nyx-daemon/tests/disk_fd_thread_metrics.rs::system_metrics_basic_smoke"
@@ -64,10 +73,20 @@
       "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold"
     ]
   },
-  "unmapped_sections": [
-    "4. cMix Integration"
+  "mapped_sections": [
+    "1. Protocol Combinator (Plugin Framework)",
+    "10. Compliance Levels",
+    "2. Multipath Data Plane",
+    "3. Hybrid Post-Quantum Handshake",
+    "4. cMix Integration",
+    "5. Adaptive Cover Traffic",
+    "6. Low Power Mode (Mobile)",
+    "7. Extended Packet Format",
+    "8. Capability Negotiation",
+    "9. Telemetry Schema (OTLP)"
   ],
-  "section_coverage_percent": 160.0,
-  "mapped_section_count": 16,
+  "unmapped_sections": [],
+  "section_coverage_percent": 100.0,
+  "mapped_section_count": 10,
   "total_section_count": 10
 }
