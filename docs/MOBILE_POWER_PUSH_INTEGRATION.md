@@ -21,7 +21,8 @@
 1. モバイルアプリは起動時に `device_push_token` を取得し daemon FFI API へ登録。
 2. Gateway ノードは対象 peer の Quiet 状態 (Inactive/Critical) を検知でキューイング。
 3. イベント (新メッセージ / 再鍵必要 / 重要経路更新) 発生時: push プロバイダ(Firebase/APNs) 経由で wake 信号送達。
-4. アプリは起床後 3 秒以内に `NyxDaemon::resume_low_power_session()` を呼び path_builder が最小セット (1 control + 1 data) を再確立。
+4. アプリは起床後 3 秒以内に `nyx_resume_low_power_session()`（FFI）または内部 API で resume を要求し path_builder が最小セット (1 control + 1 data) を再確立。
+5. 画面が再度 ON になった場合は LowPowerManager が自動的に PushGatewayManager に対し再開 (`resume_low_power_session`) を spawn し手動呼び出しが不要 (冪等)。
 
 セキュリティ: Push payload は最小 (トピック + nonce) でアプリ内暗号キーにより AEAD 包装、復号失敗は無視。
 
@@ -33,6 +34,19 @@ fn nyx_power_set_state(state: NyxPowerState);
 fn nyx_push_wake();
 // 再接続速攻確立 (small path set)
 fn nyx_resume_low_power_session();
+// Rust 内部統合: LowPowerManager に gateway を接続
+low_power_manager.attach_push_gateway(push_gateway_manager.clone());
+// 外部 (FFI) から wake 受領時: wake → (debounce) → ScreenOn 遷移後は自動 resume
+```
+
+### PushGatewayManager 内部仕様 (実装済)
+- Debounce: 直近 wake から 2 秒未満は `Debounced` として統計のみ増加し再接続を抑制。
+- Backoff: 200ms, 400ms, 800ms, 1600ms, 3200ms (最大 5 試行) で成功か `RetriesExhausted`。
+- Metrics/Stats (現状):
+	- total_wake_events
+	- total_reconnect_attempts / total_reconnect_failures / total_reconnect_success
+	- avg_reconnect_latency_ms (成功試行平均; wake→成功まで累積)
+- 今後の拡張候補: ヒストグラム (p50/p95), jitter 付き backoff, debounced_wake_count 別カウンタ。
 ```
 
 ## 5. Peer Authentication との連携
@@ -41,12 +55,19 @@ fn nyx_resume_low_power_session();
 - 詳細: `PEER_AUTHENTICATION_GUIDE.md` セクション「Low Power / Push Interop」参照。
 
 ## 6. Telemetry / メトリクス
-| Metric | 説明 |
-|--------|------|
-| power_state_transitions_total | 状態遷移総数 |
-| push_wake_events_total | 受信 push wake 数 |
-| low_power_reconnect_latency_ms | wake から最初の path ready まで p50/p95 |
-| suppressed_cover_packets_total | Low Power で抑制された cover 数 |
+| Metric / Stat | 説明 | 実装状況 |
+|----------------|------|----------|
+| power_state_transitions_total | 状態遷移総数 | 実装 (stats hashmap / telemetry 拡張予定) |
+| push_wake_events_total | 受信 push wake 数 (debounce 後のみ) | 実装 |
+| debounced_wake_events_total | デバウンス抑制された wake 数 | 未実装 (拡張予定) |
+| reconnect_attempts_total | 再接続試行総数 | 実装 |
+| reconnect_failures_total | 再接続失敗総数 | 実装 |
+| reconnect_success_total | 再接続成功総数 | 実装 |
+| avg_reconnect_latency_ms | 成功試行平均遅延 | 実装 |
+| low_power_reconnect_latency_ms_histogram | 遅延ヒストグラム (p50/p95) | 未実装 (将来) |
+| cover_packets_generated_total | 生成されたカバー総数 | 実装 |
+| push_notifications_sent_total | 送信 push 通知総数 | 実装 |
+| suppressed_cover_packets_total | 低電力で抑制された cover 数 | 仕様のみ (個別計測未導入) |
 
 ## 7. 推奨テスト
 - 画面オン→オフ→オン 循環で cover_ratio 適応を検証。

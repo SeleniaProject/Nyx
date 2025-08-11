@@ -21,6 +21,11 @@ use thiserror::Error;
 use tokio::time::{sleep, interval};
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, error, trace};
+#[cfg(feature = "telemetry")] use nyx_telemetry::metrics::BasicMetrics;
+use crate::push_gateway::PushGatewayManager;
+
+#[cfg(feature = "mobile_ffi")]
+use crate::ffi_detector::FfiScreenStateDetector;
 
 /// Default low power cover ratio (10% of normal traffic)
 pub const LOW_POWER_COVER_RATIO: f64 = 0.1;
@@ -179,6 +184,10 @@ pub struct LowPowerManager {
     stats: Arc<RwLock<LowPowerStats>>,
     /// Device token for push notifications
     device_token: Arc<RwLock<Option<String>>>,
+    #[cfg(feature = "telemetry")]
+    telemetry: Arc<LowPowerTelemetry>,
+    /// Optional push gateway manager for wake->resume integration
+    push_gateway: Arc<RwLock<Option<Arc<PushGatewayManager>>>>,
 }
 
 /// Low power mode statistics
@@ -211,6 +220,15 @@ impl Default for LowPowerStats {
     }
 }
 
+#[cfg(feature = "telemetry")]
+struct LowPowerTelemetry {
+    cover_packets_metric: Mutex<BasicMetrics>,
+    push_notifications_metric: Mutex<BasicMetrics>,
+}
+
+#[cfg(feature = "telemetry")]
+impl LowPowerTelemetry { fn new() -> Self { Self { cover_packets_metric: Mutex::new(BasicMetrics::new()), push_notifications_metric: Mutex::new(BasicMetrics::new()) } } }
+
 impl LowPowerManager {
     /// Create new low power manager
     pub fn new(
@@ -228,7 +246,18 @@ impl LowPowerManager {
             state_notifier: state_tx,
             stats: Arc::new(RwLock::new(LowPowerStats::default())),
             device_token: Arc::new(RwLock::new(None)),
+            #[cfg(feature = "telemetry")]
+            telemetry: Arc::new(LowPowerTelemetry::new()),
+            push_gateway: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Convenience constructor for mobile FFI polling detector (feature mobile_ffi).
+    /// This will create and use the FFI-backed ScreenStateDetector.
+    #[cfg(feature = "mobile_ffi")]
+    pub fn with_mobile_ffi(push_service: Option<Arc<dyn PushNotificationService>>) -> Result<Self, LowPowerError> {
+        let detector = FfiScreenStateDetector::new()?; // performs init internally
+        Ok(Self::new(detector, push_service))
     }
 
     /// Start low power monitoring
@@ -236,11 +265,14 @@ impl LowPowerManager {
         info!("Starting low power mode monitoring");
 
         // Start screen state monitoring
-        let screen_rx = self.screen_detector.start_monitoring()?;
+    let screen_rx = self.screen_detector.start_monitoring()?;
         let power_state = Arc::clone(&self.power_state);
         let state_notifier = self.state_notifier.clone();
-        let stats = Arc::clone(&self.stats);
+    let stats = Arc::clone(&self.stats);
+    #[cfg(feature = "telemetry")]
+    let telemetry = Arc::clone(&self.telemetry);
         let screen_detector = Arc::clone(&self.screen_detector);
+    let push_gateway_opt = Arc::clone(&self.push_gateway);
 
         tokio::spawn(async move {
             let mut screen_rx = screen_rx;
@@ -272,6 +304,11 @@ impl LowPowerManager {
                     let mut stats_guard = stats.write().unwrap();
                     let transition_key = format!("{:?}->{:?}", old_state, new_state);
                     *stats_guard.state_transitions.entry(transition_key).or_insert(0) += 1;
+                    if matches!(new_state, PowerState::ScreenOn) {
+                        if let Some(pg) = push_gateway_opt.read().unwrap().as_ref().cloned() {
+                            tokio::spawn(async move { let _ = pg.resume_low_power_session().await; });
+                        }
+                    }
                 }
             }
         });
@@ -362,6 +399,10 @@ impl LowPowerManager {
 
         let mut stats = self.stats.write().unwrap();
         stats.push_notifications_sent += 1;
+        #[cfg(feature = "telemetry")]
+        {
+            if let Ok(mut m) = self.telemetry.push_notifications_metric.lock() { m.increment(); }
+        }
 
         info!("Push notification sent for high-priority message");
         Ok(())
@@ -426,6 +467,8 @@ impl LowPowerManager {
         let power_state = Arc::clone(&self.power_state);
         let cover_pattern = Arc::clone(&self.cover_pattern);
         let stats = Arc::clone(&self.stats);
+    #[cfg(feature = "telemetry")]
+    let telemetry = Arc::clone(&self.telemetry);
         
         tokio::spawn(async move {
             loop {
@@ -449,6 +492,8 @@ impl LowPowerManager {
                         let mut stats_guard = stats.write().unwrap();
                         stats_guard.cover_packets_generated += 1;
                     }
+                    #[cfg(feature = "telemetry")]
+                    if let Ok(mut m) = telemetry.cover_packets_metric.lock() { m.increment(); }
                     
                     // Calculate next interval with variance
                     let base_ms = pattern.base_interval.as_millis() as f64;
@@ -545,6 +590,22 @@ impl LowPowerManager {
                 }
             }
         });
+    }
+
+    /// Attach a PushGatewayManager so that screen-on events can auto-resume the
+    /// low power session and push wake events can be recorded.
+    pub fn attach_push_gateway(&self, gateway: Arc<PushGatewayManager>) {
+        let mut guard = self.push_gateway.write().unwrap();
+        *guard = Some(gateway);
+        debug!("PushGatewayManager attached to LowPowerManager");
+    }
+
+    /// Record a push wake originating externally (e.g., native push callback).
+    /// This forwards to the PushGatewayManager if attached.
+    pub fn record_push_wake(&self) {
+        if let Some(pg) = self.push_gateway.read().unwrap().as_ref().cloned() {
+            let _ = pg.push_wake();
+        }
     }
 }
 
@@ -795,6 +856,41 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(120)).await;
         assert_eq!(manager.get_power_state(), PowerState::CriticalBattery);
         assert!(manager.is_low_power_mode());
+    }
+
+    use crate::push_gateway::PushGatewayManager;
+    use std::sync::atomic::{AtomicUsize};
+
+    #[tokio::test]
+    async fn test_auto_resume_on_screen_on_triggers_push_gateway() {
+        let detector = Arc::new(TestScreenDetector::new());
+        let manager = LowPowerManager::new(detector.clone(), None);
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let pg_attempts = attempts.clone();
+        let pg = PushGatewayManager::from_async_fn(move || {
+            let pg_attempts = pg_attempts.clone();
+            async move {
+                pg_attempts.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        });
+        manager.attach_push_gateway(pg);
+
+        manager.start_monitoring().await.unwrap();
+        // Transition away from ScreenOn -> ScreenOff -> ScreenOn to trigger resume
+        detector.send_state(false); // off
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        detector.send_state(true); // back on should fire resume
+
+        let mut waited = 0u64;
+        let mut success = false;
+        while waited < 2000 { // up to 2s
+            if attempts.load(Ordering::SeqCst) > 0 { success = true; break; }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            waited += 50;
+        }
+        assert!(success, "expected push gateway resume to be invoked after screen on transition");
     }
 }
 

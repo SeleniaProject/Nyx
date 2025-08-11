@@ -150,8 +150,19 @@
  - [ ] CLOSE コード変換の CLI / FFI 実利用統合 (ユーザ向けエラー出力反映) – 未着手。
 
 ## P. モバイル / 低電力
-- [ ] Low Power Mode: 実環境 (Android/iOS) トリガ連動 (画面オン/オフ, バッテリレベル) 実装/FFI 層公開。
-- [ ] Push Notification Path: Gateway 経路確立/再接続フォールバック実装。
+- [x] Low Power Mode: 実環境 (Android/iOS) トリガ連動 (画面オン/オフ, バッテリレベル) 実装/FFI 層公開。
+	- FFI ポーリング検出器 (mobile_ffi) 統合 / screen state channel 監視。
+	- Battery 取得 / PowerSave / CriticalBattery 判定 & cover traffic 動的調整。
+	- Telemetry (feature `telemetry`) カウンタ: cover_packets / push_notifications。
+	- ScreenOn 遷移時イベント発火 & state transition 統計収集。
+	- 統合テスト: cover 生成 / CriticalBattery 遷移 / 自動再開 (push gateway 連動) 追加。
+- [x] Push Notification Path: Gateway 経路確立/再接続フォールバック実装。
+	- PushGatewayManager: wake デバウンス(2s) + 指数バックオフ(200ms base, 最大5試行)。
+	- FFI: nyx_push_wake / nyx_resume_low_power_session 実装。
+	- LowPowerManager へ attach_push_gateway() による連結 + ScreenOn で自動 resume spawn。
+	- 統計 API: total_wake_events / total_reconnect_{attempts,failures,success} / avg_reconnect_latency_ms。
+	- 統合テスト: ScreenOff→On で resume 起動検証。
+	- 追加計画 (未実装・今後): ジッタ付 backoff 上限 / latency histogram / wake debounce telemetry 公開。
 
 ## Q. ビルド / CI
 - [x] Feature Matrix テスト (代表組合せ smoke: base / hpke / hpke+telemetry / plugin / mpr_experimental / fec) 追加 (`tests/feature_matrix.rs`)。残: hybrid / pq_only (別クレート feature 分岐) 拡張と CI 行列化。
