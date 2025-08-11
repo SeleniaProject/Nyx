@@ -1,0 +1,121 @@
+{
+  "timestamp": "2025-08-10T17:13:30.897313+00:00",
+  "spec_file": "spec\\Nyx_Protocol_v1.0_Spec_EN.md",
+  "sections": {
+    "Feature Differences (v0.1 \u2192 v1.0)": {
+      "title": "Feature Differences (v0.1 \u2192 v1.0)",
+      "hash": "854db18831f825e828e2bde5a827c445dd849945acff7243c82444e3a3cb2d10",
+      "changed": false
+    },
+    "1. Protocol Combinator (Plugin Framework)": {
+      "title": "1. Protocol Combinator (Plugin Framework)",
+      "hash": "fe02fe60ee333ae6ae0a85d56dca43a2dcd57624b2d5b0111aaad8039586d05c",
+      "changed": false
+    },
+    "2. Multipath Data Plane": {
+      "title": "2. Multipath Data Plane",
+      "hash": "4e042a445f6c88278f69f60f39d695510000c85ae953e4fa1fdb517f2d452e6d",
+      "changed": false
+    },
+    "3. Hybrid Post-Quantum Handshake": {
+      "title": "3. Hybrid Post-Quantum Handshake",
+      "hash": "ed1d3cdfe8c311e596a70b060bc1f8c01ffebc50a11361dde3c493a5094bba3b",
+      "changed": false
+    },
+    "4. cMix Integration": {
+      "title": "4. cMix Integration",
+      "hash": "e0cd6e0c6575f45512d1e5f766cd65d8d6e310aa67da51d69a27f0c3b115e472",
+      "changed": false
+    },
+    "5. Adaptive Cover Traffic": {
+      "title": "5. Adaptive Cover Traffic",
+      "hash": "aa19e88455b18fa9e280087bc36981a988feace6dc33f2efb9a90e0ab81bb92e",
+      "changed": false
+    },
+    "6. Low Power Mode (Mobile)": {
+      "title": "6. Low Power Mode (Mobile)",
+      "hash": "6d4f9dbbf996508117ed0653621cff8bdc6e58db81d9efbe564a206aa333f97f",
+      "changed": false
+    },
+    "7. Extended Packet Format": {
+      "title": "7. Extended Packet Format",
+      "hash": "546ff3b57c32d8bcdadd080cfa0b115ab299486e6016a212021669f1e23bdaff",
+      "changed": false
+    },
+    "8. Capability Negotiation": {
+      "title": "8. Capability Negotiation",
+      "hash": "b690f83db96df7e626393e0597f01c5b9245e37e05270632f5ab76a3fe20feae",
+      "changed": false
+    },
+    "9. Telemetry Schema (OTLP)": {
+      "title": "9. Telemetry Schema (OTLP)",
+      "hash": "82537bae98fd4e1708647b8ba4e5e0e8b546e87e679094e648f139710cf487aa",
+      "changed": false
+    },
+    "10. Compliance Levels": {
+      "title": "10. Compliance Levels",
+      "hash": "32dfcd4452c12cdad3cc6ae26234034b11fe3723470b7947a7f70750169094ae",
+      "changed": false
+    },
+    "Implementation Architecture": {
+      "title": "Implementation Architecture",
+      "hash": "fad64d7d0ab84108eee27a6e776662c1680d2e9fe7273f423edec3ad235d7076",
+      "changed": false
+    }
+  },
+  "new_sections": [],
+  "removed_sections": [],
+  "keyword_coverage_percent": 100.0,
+  "keyword_coverage": {
+    "Cryptography": {
+      "HPKE": true,
+      "Hybrid": true,
+      "Kyber": true,
+      "PQ": true,
+      "Post-Quantum": true
+    },
+    "Routing": {
+      "Multipath": true,
+      "WRR": true,
+      "routing": true,
+      "hop": true
+    },
+    "Transport": {
+      "QUIC": true,
+      "TCP": true,
+      "Teredo": true,
+      "DATAGRAM": true
+    },
+    "FEC": {
+      "RaptorQ": true,
+      "RS(255,223)": true,
+      "redundancy": true
+    },
+    "Plugin": {
+      "Plugin": true,
+      "Frame": true,
+      "Capability": true,
+      "CBOR": true
+    },
+    "Telemetry": {
+      "Telemetry": true,
+      "Prometheus": true,
+      "OpenTelemetry": true,
+      "metrics": true
+    },
+    "Low Power": {
+      "Low Power": true,
+      "Low-Power": true,
+      "cover": true,
+      "battery": true
+    },
+    "Compliance": {
+      "Compliance": true,
+      "Core": true,
+      "Plus": true,
+      "Full": true
+    }
+  },
+  "uncovered_keywords": {},
+  "coverage_threshold_met": true
+}
