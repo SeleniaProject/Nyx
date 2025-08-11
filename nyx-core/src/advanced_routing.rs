@@ -166,6 +166,8 @@ pub mod advanced_routing {
         round_robin_index: Arc<RwLock<usize>>,
         reordering_buffers: Arc<RwLock<HashMap<NodeEndpoint, ReorderingBuffer>>>,
         sequence_number: Arc<RwLock<u32>>,
+    // For smooth weighted round-robin we maintain per-path current_weight
+    weighted_state: Arc<RwLock<HashMap<NodeEndpoint, f32>>>,
     }
 
     impl AdvancedRouter {
@@ -176,12 +178,14 @@ pub mod advanced_routing {
                 round_robin_index: Arc::new(RwLock::new(0)),
                 reordering_buffers: Arc::new(RwLock::new(HashMap::new())),
                 sequence_number: Arc::new(RwLock::new(0)),
+                weighted_state: Arc::new(RwLock::new(HashMap::new())),
             }
         }
 
         /// Add a new path to the routing table
         pub async fn add_path(&self, endpoint: NodeEndpoint) -> Result<(), RoutingError> {
             let mut paths = self.paths.write().await;
+            let mut weights = self.weighted_state.write().await;
             
             if paths.len() >= self.config.max_paths {
                 return Err(RoutingError::MaxPathsExceeded);
@@ -191,6 +195,8 @@ pub mod advanced_routing {
             quality.endpoint = endpoint.clone();
             
             paths.insert(endpoint.clone(), quality);
+            // Initialize current weight accumulator
+            weights.insert(endpoint.clone(), 0.0);
             
             // Initialize reordering buffer for this path
             let mut buffers = self.reordering_buffers.write().await;
@@ -210,9 +216,11 @@ pub mod advanced_routing {
         pub async fn remove_path(&self, endpoint: &NodeEndpoint) -> Result<(), RoutingError> {
             let mut paths = self.paths.write().await;
             let mut buffers = self.reordering_buffers.write().await;
+            let mut weights = self.weighted_state.write().await;
             
             paths.remove(endpoint);
             buffers.remove(endpoint);
+            weights.remove(endpoint);
             
             info!("Removed path from routing table: {}", endpoint);
             Ok(())
@@ -254,27 +262,35 @@ pub mod advanced_routing {
 
         /// Weighted round-robin based on path quality
         async fn weighted_round_robin_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
-            // Proportional deterministic cycling: build cumulative slots preserving ratios
-            // Scale weights so that max becomes ~1000 slots, others proportional (min 1)
-            let mut items: Vec<(NodeEndpoint, f32)> = paths.iter()
-                .map(|(ep,q)| (ep.clone(), self.calculate_path_weight(q)))
-                .collect();
-            if items.is_empty() { return Err(RoutingError::NoPaths); }
-            let max_w = items.iter().map(|(_,w)| *w).fold(0.0, f32::max);
-            let scale = if max_w > 0.0 { 1000.0 / max_w } else { 1.0 };
-            let mut slots: Vec<NodeEndpoint> = Vec::new();
-            for (ep,w) in items.into_iter() {
-                let count = ((w * scale).round() as i32).clamp(1, 5000) as usize;
-                // Push ep 'count' times
-                slots.extend(std::iter::repeat(ep).take(count));
+            if paths.is_empty() { return Err(RoutingError::NoPaths); }
+            // Smooth Weighted Round Robin (similar to NGINX algorithm)
+            // current_weight_i += weight_i; select max; current_weight_selected -= total_weight
+            let mut weight_state = self.weighted_state.write().await;
+            // Ensure state contains all paths (in case paths changed externally)
+            for ep in paths.keys() { weight_state.entry(ep.clone()).or_insert(0.0); }
+            // Remove any stale entries
+            weight_state.retain(|ep,_| paths.contains_key(ep));
+
+            let mut total_weight: f32 = 0.0;
+            let mut selected_ep: Option<NodeEndpoint> = None;
+            let mut selected_weight: f32 = f32::MIN;
+
+            // First pass: update current weights and pick max
+            for (ep, quality) in paths.iter() {
+                let base_w = self.calculate_path_weight(quality);
+                total_weight += base_w;
+                let entry = weight_state.entry(ep.clone()).or_insert(0.0);
+                *entry += base_w; // current_weight += weight
+                if *entry > selected_weight { selected_weight = *entry; selected_ep = Some(ep.clone()); }
             }
-            if slots.is_empty() { return Err(RoutingError::NoPaths); }
-            let mut index = self.round_robin_index.write().await;
-            if *index >= slots.len() { *index = 0; }
-            let selected = slots[*index].clone();
-            *index += 1;
-            debug!("Selected path via weighted round-robin: {} (slots={})", selected, slots.len());
-            Ok(selected)
+
+            if let Some(sel) = selected_ep.clone() {
+                if let Some(entry) = weight_state.get_mut(&sel) { *entry -= total_weight; }
+                debug!("Selected path via weighted round-robin: {} (total_weight={:.3})", sel, total_weight);
+                Ok(sel)
+            } else {
+                Err(RoutingError::NoPaths)
+            }
         }
 
         /// Least connections path selection
