@@ -2079,7 +2079,7 @@ async fn handle_connection_event(event: &connection_monitor::ConnectionEvent, ve
                 style("🔄").cyan(), 
                 style("Reconnection started").cyan(), 
                 attempt, 
-                5); // TODO: Get max attempts from config
+                monitor.config().max_attempts);
         }
         ConnectionEvent::ReconnectionSucceeded { attempt, duration } => {
             println!("{} {} (attempt {} succeeded in {:.2}s)", 
