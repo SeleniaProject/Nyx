@@ -15,6 +15,11 @@ use std::path::Path;
 
 // HTTP client for Pure Rust communication
 use ureq;
+use std::collections::HashMap;
+use nyx_sdk::error::{NyxError, close_code_category};
+
+mod i18n;
+use i18n::localize;
 
 // Pure Rust HTTP API types (replacing protobuf)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -562,8 +567,20 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                     stream_response = Some(stream_info);
                     break;
                 } else {
-                    let error_msg = stream_info.error.as_deref().unwrap_or("Unknown error");
-                    return Err(anyhow!("Stream establishment failed: {}", error_msg));
+                    // Localize server-provided failure reason
+                    let raw = stream_info.error.as_deref().unwrap_or("Unknown error").to_string();
+                    let (key, args): (&str, HashMap<&str, String>) = if raw.contains("UNSUPPORTED_CAP") {
+                        ("error-unsupported-cap", HashMap::new())
+                    } else if raw.contains("Resource exhausted") {
+                        ("error-resource-exhausted", HashMap::new())
+                    } else if raw.contains("Failed precondition") {
+                        ("error-failed-precondition", HashMap::new())
+                    } else {
+                        let mut a = HashMap::new(); a.insert("error", raw.clone());
+                        ("error-protocol-error", a)
+                    };
+                    let msg = localize("en", key, Some(&args));
+                    return Err(anyhow!(msg));
                 }
             }
             Ok(Err(e)) => {
@@ -591,8 +608,17 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                     return Err(anyhow!("Target not found: {}", e));
                 } else if error_string.contains("403") || error_string.contains("PermissionDenied") {
                     progress.finish_and_clear();
-                    println!("{}", style("❌ Access denied - check daemon permissions").red());
-                    return Err(anyhow!("Permission denied: {}", e));
+                    // Map to close code category and localize
+                    let code = NyxError::PermissionDenied { operation: "connect".into() }.close_code().unwrap_or(0x06);
+                    let category = close_code_category(code);
+                    let key = match category {
+                        "FailedPrecondition" => "error-failed-precondition",
+                        "ResourceExhausted" => "error-resource-exhausted",
+                        _ => "error-permission-denied",
+                    };
+                    let msg = localize("en", key, None);
+                    println!("{}", style(format!("❌ {}", msg)).red());
+                    return Err(anyhow!(msg));
                 } else {
                     progress.set_message(format!("Connection error: {}", e));
                     if retry_count >= max_retries {
