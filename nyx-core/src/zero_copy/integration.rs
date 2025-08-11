@@ -11,11 +11,11 @@ use super::*;
 use crate::zero_copy::manager::{ZeroCopyManager, ZeroCopyError};
 
 // Conditional imports - only available with respective features
-#[cfg(feature = "nyx-crypto")]
+#[cfg(any(feature = "nyx-crypto", feature = "crypto"))]
 use nyx_crypto::aead::{FrameCrypter, AeadError};
 
 // Mock crypto for testing without crypto feature
-#[cfg(not(feature = "nyx-crypto"))]
+#[cfg(not(any(feature = "nyx-crypto", feature = "crypto")))]
 mod mock_crypto {
     #[derive(Clone)]
     pub struct FrameCrypter;
@@ -46,7 +46,7 @@ mod mock_crypto {
     }
 }
 
-#[cfg(not(feature = "nyx-crypto"))]
+#[cfg(not(any(feature = "nyx-crypto", feature = "crypto")))]
 use mock_crypto::{FrameCrypter, AeadError};
 use std::sync::Arc;
 
