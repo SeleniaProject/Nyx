@@ -5,15 +5,15 @@
 //! This module provides a unified interface for frame processing that combines
 //! frame handling, reassembly, flow control, and congestion management.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, info, warn, error, trace};
 use thiserror::Error;
 
-use crate::simple_frame_handler::{SimpleFrameHandler};
-use crate::flow_controller::{FlowController, FlowControlError, FlowControlStats};
+use crate::simple_frame_handler::FrameHandler;
+use crate::flow_controller::{FlowController, FlowControlError, FlowControlStats, NetworkStats};
 use crate::stream_frame::{StreamFrame, parse_stream_frame};
 
 /// Data that has been successfully reassembled from frames
