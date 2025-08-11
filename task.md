@@ -108,6 +108,10 @@
  - [x] Multipath Telemetry: per-path RTT jitter Histogram 登録 (B との重複トラッキング)。
  - [x] Multipath Telemetry: reorder_delay Histogram 登録。
  - [x] Multipath Telemetry: reorder_buffer_utilization Gauge 登録。
+ - [x] Push Gateway Telemetry: wake / debounced_wake / reconnect_{success,fail} カウンタ追加。
+ - [x] Push Gateway Latency 分位点: p50 / p95 簡易リングバッファ実装 (histogram 本実装は後続)。
+ - [x] Low Power: suppressed_cover_packets 推定カウンタ + telemetry 追加。
+ - [ ] Push Gateway: ジッタ付き backoff / 遅延 full histogram (bucket化) 導入。
 
 ## K. セキュリティ / サンドボックス
 - [x] Windows sandboxing: JobObject 拡張 (UI 制限, 失敗時 telemetry warn ログ) 実装。残: token 権限縮小 / ACL ルート制限 (今後強化候補)。
@@ -139,6 +143,7 @@
  - [x] Multipath スケジューラ: RTT / 帯域 / 損失 / ジッタ複合動的重み + 再順序バッファ適応サイズ (RTT/帯域/平均パケット長/ジッタ) 実装完了。
  - [x] Multipath 追加最適化: burst loss 検知ペナルティ / エントロピー(公平性) 指標 / 重み再計算クールダウン閾値細分化（全て実装 & テレメトリ統合）。
  - [x] Reorder Buffer 高度化: p95 遅延サンプリング + PID サイズ調整 (グローバル / パス別) & テスト追加。
+ - [x] Weighted Round Robin: スロット複製方式→Smooth Weighted Round Robin へ刷新し分布安定化 (テスト安定)。
  - [x] HPKE 再鍵オーバーヘッド分析: Criterion ベンチ + 解析スクリプト (CSV 出力) 追加。
  - [ ] Zero-copy: クリティカルパス (暗号→FEC→送信) の end-to-end コピー / 再割当総数計測は未完 (AEAD 余剰アロケ / RaptorQ encode トレースのみ) → 集約カウンタ & 削減策 TODO。
  - [x] Cover traffic レート制御: 適応 Poisson λ (利用率バンド + 匿名性スコア) 実装済 / PPS & 比率偏差メトリクス追加。
@@ -160,13 +165,16 @@
 	- PushGatewayManager: wake デバウンス(2s) + 指数バックオフ(200ms base, 最大5試行)。
 	- FFI: nyx_push_wake / nyx_resume_low_power_session 実装。
 	- LowPowerManager へ attach_push_gateway() による連結 + ScreenOn で自動 resume spawn。
-	- 統計 API: total_wake_events / total_reconnect_{attempts,failures,success} / avg_reconnect_latency_ms。
+	- 統計 API: total_wake_events / debounced_wake_events / total_reconnect_{attempts,failures,success} / avg_reconnect_latency_ms / p50 / p95。
 	- 統合テスト: ScreenOff→On で resume 起動検証。
-	- 追加計画 (未実装・今後): ジッタ付 backoff 上限 / latency histogram / wake debounce telemetry 公開。
+	- Telemetry: wake / debounced / reconnect 成功・失敗カウンタ導入済。
+	- 追加計画 (未実装・今後): ジッタ付 backoff 上限 / full latency histogram (分位点→bucket) / push latency outlier アラート。
+	- Low Power: suppressed_cover_packets 推定カウンタ実装 (intensity 比率から算出)。
 
 ## Q. ビルド / CI
 - [x] Feature Matrix テスト (代表組合せ smoke: base / hpke / hpke+telemetry / plugin / mpr_experimental / fec) 追加 (`tests/feature_matrix.rs`)。残: hybrid / pq_only (別クレート feature 分岐) 拡張と CI 行列化。
 - [ ] Windows 特有 placeholder (load average, disk metrics) 実装 or 適切な conditional skip。
+ - [x] Feature 警告解消: unexpected cfg (prometheus / dynamic_config / mpr_experimental / hybrid / cmix / plugin / low_power / grpc-backup) 用空 feature 宣言追加。
 
 ## R. トレーサビリティ / 自動化
 - [x] spec_diff: セクションハッシュ + uncovered keyword リスト出力実装。
@@ -216,4 +224,5 @@
 ---
 更新日: 2025-08-11 (Telemetry/Multi-path/Traceability 拡張更新)
 更新再反映: 2025-08-11 (Performance & Error Handling セクション進捗反映 / Zero-copy 残タスク明確化)
+更新再反映: 2025-08-11 (PushGateway telemetry / suppressed cover metric / Smooth WRR / feature 警告整理 反映)
 
