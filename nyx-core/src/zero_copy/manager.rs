@@ -18,6 +18,9 @@ pub struct CriticalPath {
     contexts: Arc<RwLock<HashMap<String, ProcessingContext>>>,
 }
 
+// Re-export buffer type so tests can import from manager path consistently
+pub use super::ZeroCopyBuffer;
+
 /// Configuration for critical path optimization
 #[derive(Debug, Clone)]
 pub struct CriticalPathConfig {

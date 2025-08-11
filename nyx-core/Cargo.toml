@@ -92,6 +92,8 @@ tempfile = "3.8"
 tokio-test = "0.4"
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 futures = "0.3"
+nyx-crypto = { path = "../nyx-crypto" }
+nyx-fec = { path = "../nyx-fec" }
 
 [[bench]]
 name = "zero_copy_benchmarks"

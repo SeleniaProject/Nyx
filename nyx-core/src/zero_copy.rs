@@ -40,6 +40,17 @@ pub mod manager;
 pub mod telemetry;
 pub mod integration;
 
+// Re-export core types for ergonomic access in tests and external modules
+pub use manager::{
+    ZeroCopyManager,
+    ZeroCopyManagerConfig,
+    CriticalPath,
+    CriticalPathConfig,
+    ProcessingContext,
+    AggregatedMetrics,
+    ZeroCopyError,
+};
+
 /// Critical path stage identifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Stage {

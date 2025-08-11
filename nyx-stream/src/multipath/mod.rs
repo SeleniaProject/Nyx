@@ -1126,9 +1126,9 @@ mod tests {
         // Sequence pattern: 0 (gap until 2),2,1 repeated to accumulate samples with some delay.
         for base in 0..40u32 { // produce >32 samples
             let s = base*3;
-            let _ = m.receive_packet(1, s, vec![0]); // hold
-            let _ = m.receive_packet(1, s+2, vec![0]); // future
-            let ready = m.receive_packet(1, s+1, vec![0]); // releases three (some had waited)
+            let _ = m.receive_packet(1, (s).into(), vec![0]); // hold
+            let _ = m.receive_packet(1, (s+2).into(), vec![0]); // future
+            let ready = m.receive_packet(1, (s+1).into(), vec![0]); // releases three (some had waited)
             let _ = ready; // ignore
         }
         // After samples, PID may have adjusted buffer max_size away from default (256)
