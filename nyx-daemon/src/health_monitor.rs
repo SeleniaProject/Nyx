@@ -157,7 +157,11 @@ impl HealthMonitor {
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(1_073_741_824); // 1 GiB
 
-                let mut sys = sysinfo::System::new();
+                let mut sys = sysinfo::System::new_all();
+                sys.refresh_memory();
+                sys.refresh_cpu();
+                sys.refresh_networks_list();
+                sys.refresh_networks();
                 sys.refresh_disks_list();
                 sys.refresh_disks();
 

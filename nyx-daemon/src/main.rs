@@ -1110,7 +1110,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_job_memory_mb: std::env::var("NYX_WIN_MAX_JOB_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(1024),
             max_working_set_mb: std::env::var("NYX_WIN_MAX_WORKINGSET_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(256),
             max_process_time_seconds: std::env::var("NYX_WIN_MAX_CPU_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
-            ui_restrictions_enabled: std::env::var("NYX_WIN_UI_RESTRICT").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true),
             kill_on_job_close: std::env::var("NYX_WIN_KILL_ON_CLOSE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true),
         };
         let _ = nyx_core::apply_process_isolation(Some(cfg));
