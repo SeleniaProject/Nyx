@@ -87,9 +87,10 @@ impl RaptorQCodec {
         }
     }
 
-    /// Get current encoding statistics
+    /// Get encoding statistics for this codec
     pub fn get_stats(&self) -> EncodingStats {
-        self.stats.lock().unwrap().clone()
+        let stats = self.stats.lock().unwrap();
+        stats.clone()
     }
 
     /// Update redundancy ratio

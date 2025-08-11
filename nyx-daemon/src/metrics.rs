@@ -414,21 +414,26 @@ impl MetricsCollector {
             let system = self.system.read().await;
             let current_pid = std::process::id();
             if let Some(process) = system.process(Pid::from(current_pid.try_into().unwrap_or(0))) {
+                // Populate cross-platform fields with best-effort values. On Windows, we compute handle
+                // count and disk usage via Win32 APIs using the pure-Rust `windows` crate.
+                let disk_used = self.get_disk_usage().await;
+                let thread_count = self.get_thread_count().await;
+                let fd_count = self.get_file_descriptor_count().await;
                 Some(crate::proto::ResourceUsage {
                     cpu_percent: process.cpu_usage() as f64,
                     memory_bytes: process.memory() * 1024, // Convert from KB to bytes
                     memory_rss_bytes: process.memory() * 1024, // Convert from KB to bytes
                     memory_vms_bytes: process.virtual_memory() * 1024, // Convert from KB to bytes
-                    memory_percent: (process.memory() as f64 / (1024.0 * 1024.0 * 1024.0)) * 100.0, // Rough percentage
-                    disk_usage_bytes: 0, // Would need platform-specific implementation
-                    disk_total_bytes: 0, // Would need platform-specific implementation
+                    memory_percent: (process.memory() as f64 / (1024.0 * 1024.0 * 1024.0)) * 100.0, // Approximate
+                    disk_usage_bytes: disk_used,
+                    disk_total_bytes: 0, // Total capacity not uniformly available without platform APIs
                     network_rx_bytes: self.bytes_received.load(Ordering::Relaxed),
                     network_tx_bytes: self.bytes_sent.load(Ordering::Relaxed),
                     network_bytes_sent: self.bytes_sent.load(Ordering::Relaxed),
                     network_bytes_received: self.bytes_received.load(Ordering::Relaxed),
-                    file_descriptors: 0, // Would need platform-specific implementation
-                    open_file_descriptors: 0, // Would need platform-specific implementation
-                    thread_count: 0, // Would need platform-specific implementation
+                    file_descriptors: fd_count,
+                    open_file_descriptors: fd_count,
+                    thread_count,
                 })
             } else {
                 None
@@ -1489,15 +1494,16 @@ impl SystemResourceMonitor {
         }
         #[cfg(windows)]
         {
-            // Windows: enumerate handles is heavy; approximate by number of open files via sysinfo processes
-            let sys = self.system.read().await; // Already refreshed in caller loop
-            let pid = std::process::id();
-            if let Some(p) = sys.process(sysinfo::Pid::from(pid as usize)) {
-                // sysinfo does not expose handle count directly; fallback to threads + memory mapped files heuristic
-                // We return thread count as coarse stand-in (documented) until a pure-Rust safe handle enumeration is added.
-                return p.threads().len() as u32;
+            // Windows: use GetProcessHandleCount to return the number of open handles for current process.
+            #[allow(unsafe_code)]
+            unsafe {
+                use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+                use windows::Win32::Foundation::HANDLE;
+                let mut count: u32 = 0;
+                let hproc: HANDLE = GetCurrentProcess();
+                // If the call fails, return 0 as a conservative default.
+                if GetProcessHandleCount(hproc, &mut count).as_bool() { count } else { 0 }
             }
-            0
         }
     }
     
@@ -1528,7 +1534,7 @@ impl SystemResourceMonitor {
     /// Get disk usage
     async fn get_disk_usage(&self) -> u64 {
         // Approximation: sum (total - available) across disks if available; else 0.
-        // sysinfo 0.30 API: System::disks() removed; fallback to platform specific.
+        // sysinfo 0.30 API: System::disks() removed; implement per-platform.
         #[cfg(unix)]
         {
             // Use statvfs on root (pure Rust via libc? but libc could bridge C). Avoid C: use std::fs metadata multiples mount points.
@@ -1544,15 +1550,33 @@ impl SystemResourceMonitor {
         }
         #[cfg(windows)]
         {
-            // Windows: approximate via drive letters C..Z root entries size sum
-            let mut total = 0u64;
-            for drive in 'C'..='Z' {
-                let root = format!("{}:/", drive);
-                if let Ok(read_dir) = std::fs::read_dir(&root) {
-                    for e in read_dir.flatten().take(2000) { if let Ok(md) = e.metadata() { total = total.saturating_add(md.len()); } }
+            // Windows: sum used bytes across logical drives using GetDiskFreeSpaceExW
+            #[allow(unsafe_code)]
+            unsafe {
+                use windows::Win32::Storage::FileSystem::{GetLogicalDrives, GetDiskFreeSpaceExW};
+                use windows::core::PCWSTR;
+                let mut used_total: u64 = 0;
+                let mask = GetLogicalDrives();
+                for i in 0..26u32 { // A..Z
+                    if (mask & (1u32 << i)) != 0 {
+                        let drive_letter = (b'A' + (i as u8)) as char;
+                        let path = format!("{}:\\", drive_letter);
+                        let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+                        let mut free_avail: u64 = 0;
+                        let mut total_bytes: u64 = 0;
+                        let mut free_bytes: u64 = 0;
+                        let ok = GetDiskFreeSpaceExW(
+                            PCWSTR(wide.as_ptr()),
+                            &mut free_avail,
+                            &mut total_bytes,
+                            &mut free_bytes,
+                        )
+                        .as_bool();
+                        if ok && total_bytes >= free_bytes { used_total = used_total.saturating_add(total_bytes - free_bytes); }
+                    }
                 }
+                used_total
             }
-            total
         }
     }
     
