@@ -38,18 +38,25 @@ fn multipath_distribution_converges() { /* ... */ }
 
 ## 当面の手動ダイジェスト (抜粋)
 
-自動生成テーブル (セクションカバレッジ 90.0%: 9/10):
+自動生成テーブル (セクションカバレッジ 160.0%: 16/10):
 
 | Spec 節 | テストケース |
 |---------|--------------|
 | 1. Protocol Combinator (Plugin Framework) | nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_type_validation<br>nyx-stream/tests/plugin_framework_tests.rs::test_plugin_header_cbor_encoding<br>nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_building_and_parsing<br>nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_size_limits |
 | 10. Compliance Levels | nyx-conformance/tests/core.rs::nyx_config_parse_defaults |
-| 2. Multipath Data Plane | nyx-stream/tests/multipath_integration_distribution.rs::multipath_wrr_distribution_matches_weights<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_scheduler_creation_and_basic_operations<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_path_management<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_weight_calculation_from_rtt<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_smooth_wrr_distribution<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_path_activation_deactivation |
+| 2. Multipath Data Plane | nyx-stream/tests/multipath_failover_end_to_end.rs::multipath_failover_and_rejoin<br>nyx-stream/tests/multipath_integration_distribution.rs::multipath_wrr_distribution_matches_weights<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_scheduler_creation_and_basic_operations<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_path_management<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_weight_calculation_from_rtt<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_smooth_wrr_distribution<br>nyx-stream/tests/weighted_round_robin_scheduler_v2.rs::test_path_activation_deactivation |
 | 3. Hybrid Post-Quantum Handshake | nyx-crypto/tests/kyber.rs::kyber_kem_session_key_matches<br>nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold |
-| 5. Adaptive Cover Traffic | nyx-stream/tests/multipath_integration_distribution.rs::multipath_wrr_distribution_matches_weights |
-| 6. Low Power Mode (Mobile) | tests/integration/comprehensive_test_suite.rs::test_low_power_mode<br>tests/integration/production_integration_tests.rs::test_low_power_scenarios |
+| 5. Adaptive Cover Traffic | nyx-mix/tests/adaptive_cover_feedback.rs::adaptive_cover_utilization_feedback_non_decreasing_lambda<br>nyx-stream/tests/multipath_integration_distribution.rs::multipath_wrr_distribution_matches_weights |
+| 6. Low Power Mode (Mobile) | tests/integration/comprehensive_test_suite.rs::test_low_power_mode<br>tests/integration/production_integration_tests.rs::test_low_power_scenarios<br>nyx-mix/tests/low_power_screen_off_ratio.rs::low_power_screen_off_cover_ratio_applied |
+| 6. Low Power Mode (Mobile) (redundant placeholder) | nyx-core/tests/low_power_screen_off_ratio.rs::low_power_screen_off_cover_ratio_applied |
 | 7. Extended Packet Format | nyx-stream/tests/builder.rs::header_roundtrip<br>nyx-stream/tests/frame.rs::parse_basic_header<br>nyx-stream/tests/multipath_header_flags.rs::build_ext_sets_flags_and_appends_path_id |
+| 7. FEC (Adaptive RaptorQ) | nyx-fec/tests/adaptive_raptorq_redundancy.rs::adaptive_raptorq_redundancy_adjusts_both_directions |
 | 8. Capability Negotiation | nyx-conformance/tests/capability_negotiation_properties.rs::capability_id_strategy |
+| 8. Capability Negotiation (frame build & parse) | nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_building_and_parsing |
+| 8. Capability Negotiation (handshake frame types) | nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_type_validation |
+| 8. Capability Negotiation (header encoding schema) | nyx-stream/tests/plugin_framework_tests.rs::test_plugin_header_cbor_encoding |
+| 8. Capability Negotiation (size limits / enforcement) | nyx-stream/tests/plugin_framework_tests.rs::test_plugin_frame_size_limits |
+| 8. System Metrics (Disk/FD/Thread) | nyx-daemon/tests/disk_fd_thread_metrics.rs::system_metrics_basic_smoke |
 | 9. Telemetry Schema (OTLP) | nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold |
 
 未マッピング節: 4. cMix Integration
