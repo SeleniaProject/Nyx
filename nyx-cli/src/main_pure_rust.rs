@@ -703,12 +703,22 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
             if let Some(caps) = &info.capabilities { println!("│ Capabilities     │ {:?} │", caps); }
             println!("│ CPU Usage        │ {:.2}% │", info.cpu_usage_percent);
             println!("│ Memory Usage     │ {} bytes │", info.memory_usage_bytes);
-            println!("│ Network RX       │ {} bytes │", info.network_rx_bytes);
-            println!("│ Network TX       │ {} bytes │", info.network_tx_bytes);
+            // Localized traffic lines
+            let mut map = std::collections::HashMap::new();
+            map.insert("bytes_in", info.network_rx_bytes.to_string());
+            let tin = localize(&cli.language, "status-traffic-in", Some(&map));
+            println!("│ {:16} │ │", tin);
+            map.clear();
+            map.insert("bytes_out", info.network_tx_bytes.to_string());
+            let tout = localize(&cli.language, "status-traffic-out", Some(&map));
+            println!("│ {:16} │ │", tout);
             println!("│ Active Conns     │ {} │", info.active_connections);
             println!("│ Total Sent       │ {} bytes │", info.total_sent_bytes);
             println!("│ Total Received   │ {} bytes │", info.total_received_bytes);
-            println!("│ Connected Peers  │ {} │", info.connected_peers);
+            map.clear();
+            map.insert("count", info.connected_peers.to_string());
+            let lpeers = localize(&cli.language, "status-peer-count", Some(&map));
+            println!("│ {:16} │ │", lpeers);
             println!("{}", style("═".repeat(80)).dim());
         }
     }
