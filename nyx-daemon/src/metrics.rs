@@ -2782,6 +2782,9 @@ pub struct PrometheusExporter {
     
     /// Metrics labels for consistent labeling
     default_labels: HashMap<String, String>,
+
+    /// Monotonic start time of the HTTP server for uptime calculation
+    server_started_at: Option<std::time::Instant>,
 }
 
 impl PrometheusExporter {
@@ -2800,6 +2803,7 @@ impl PrometheusExporter {
             metrics_collector,
             server_addr,
             default_labels,
+            server_started_at: None,
         }
     }
     
@@ -2812,35 +2816,48 @@ impl PrometheusExporter {
             http::{StatusCode, HeaderMap, header},
         };
         use std::sync::Arc;
-        
-        let _metrics_collector = Arc::clone(&self.metrics_collector);
-        let _default_labels = self.default_labels.clone();
-        
-        // Enhanced metrics endpoint with caching and compression
-        async fn metrics_handler() -> impl IntoResponse {
-            let metrics_data = "# Nyx Metrics\n# Placeholder metrics endpoint\n".to_string();
-            
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                header::CONTENT_TYPE,
-                "text/plain; version=0.0.4; charset=utf-8".parse().unwrap(),
-            );
-            
-            (StatusCode::OK, headers, metrics_data)
-        }
-        
-        // Enhanced health check endpoint
-        async fn health_handler() -> impl IntoResponse {
-            let response = serde_json::json!({
-                "status": "healthy",
-                "timestamp": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            });
-            
-            (StatusCode::OK, response.to_string())
-        }
+        use std::collections::HashMap as StdHashMap;
+
+        // Record server start time for uptime calculation
+        self.server_started_at = Some(std::time::Instant::now());
+
+        let metrics_collector = Arc::clone(&self.metrics_collector);
+        let default_labels = self.default_labels.clone();
+
+        // Metrics endpoint that renders current snapshot in Prometheus exposition format
+        let metrics_handler = {
+            let metrics_collector = Arc::clone(&metrics_collector);
+            let default_labels = default_labels.clone();
+            move |axum::extract::Query(params): axum::extract::Query<StdHashMap<String, String>>| {
+                let metrics_collector = Arc::clone(&metrics_collector);
+                let default_labels = default_labels.clone();
+                async move {
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        header::CONTENT_TYPE,
+                        "text/plain; version=0.0.4; charset=utf-8".parse().unwrap(),
+                    );
+                    match Self::export_metrics_with_options(metrics_collector, default_labels, params).await {
+                        Ok(body) => (StatusCode::OK, headers, body).into_response(),
+                        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, headers, format!("error exporting metrics: {}", e)).into_response(),
+                    }
+                }
+            }
+        };
+
+        // Health endpoint that evaluates current checks
+        let health_handler = {
+            let metrics_collector = Arc::clone(&metrics_collector);
+            move || {
+                let metrics_collector = Arc::clone(&metrics_collector);
+                async move {
+                    match Self::check_system_health(metrics_collector).await {
+                        Ok(json) => (StatusCode::OK, json.to_string()),
+                        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"status":"error","message":e.to_string()}).to_string()),
+                    }
+                }
+            }
+        };
         
         // Define handler functions to ensure Send trait compliance
         async fn ready_handler() -> (StatusCode, &'static str) {
@@ -3428,11 +3445,8 @@ impl PrometheusExporter {
     pub async fn get_server_stats(&self) -> ServerStats {
         let is_running = self.is_running();
         let uptime = if is_running {
-            // This would need to be tracked from server start time
-            Some(Duration::from_secs(0)) // Placeholder
-        } else {
-            None
-        };
+            self.server_started_at.map(|t| t.elapsed()).or(Some(Duration::from_secs(0)))
+        } else { None };
         
         ServerStats {
             is_running,
