@@ -1,6 +1,8 @@
 use nyx_mix::{cmix::{CmixController, verify_batch}, vdf};
 use tokio::time::Duration;
 
+/// @spec 4. cMix Integration
+/// Verifies that a batch is emitted and the proof validates under expected parameters.
 #[tokio::test]
 async fn cmix_batch_verification() {
     let mut controller = CmixController::new(5, 20); // small batch & short delay for test

@@ -2,6 +2,8 @@
 use nyx_mix::cmix::{CmixController, verify_batch};
 use tokio::time::Duration;
 
+/// @spec 4. cMix Integration
+/// Tampered digest must be detected and cause verification failure.
 #[tokio::test]
 async fn cmix_verify_rejects_tampered_batch() {
     let mut controller = CmixController::new(3, 10);
@@ -20,6 +22,8 @@ async fn cmix_verify_rejects_tampered_batch() {
     assert!(!verify_batch(&batch, controller.params(), None));
 }
 
+/// @spec 4. cMix Integration
+/// Corrupted accumulator witness must be detected and cause verification failure.
 #[tokio::test]
 async fn cmix_verify_rejects_invalid_witness() {
     let mut controller = CmixController::new(3, 10);

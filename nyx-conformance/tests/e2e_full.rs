@@ -6,6 +6,7 @@ use nyx_fec::RaptorQCodec;
 use tokio::time::{timeout, Duration};
 use rand::{Rng, thread_rng};
 
+/// @spec 4. cMix Integration
 /// Combined E2E scenario exercising each major subsystem (cMix, LowPower, Multipath, RaptorQ).
 #[tokio::test]
 async fn e2e_full_stack() {
