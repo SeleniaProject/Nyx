@@ -66,6 +66,8 @@ reconnect = ["backoff"]
 error-propagation = []
 # Enable metrics collection
 metrics = ["nyx-core/telemetry"]
+ # Legacy gRPC backup compatibility flag (to silence cfg in error.rs)
+ grpc-backup = []
 
 [dev-dependencies]
 tempfile = "3.8"

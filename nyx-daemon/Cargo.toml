@@ -24,6 +24,12 @@ experimental-all = [
 ]
  # Internal advanced algorithms (kept for research; off by default to suppress dead_code warnings)
  internal-advanced-path = []
+ # Added for capability flags referenced in main.rs (previously produced unexpected cfg warnings)
+ mpr_experimental = []
+ hybrid = []
+ cmix = []
+ plugin = []
+ low_power = []
 
 [dependencies]
 async-trait = "0.1"

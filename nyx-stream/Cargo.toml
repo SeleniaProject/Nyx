@@ -64,3 +64,6 @@ hpke = ["nyx-crypto/hpke"]
 fec = ["dep:nyx-fec"]
 telemetry = ["dep:nyx-telemetry"]
 legacy_tests_disabled = []
+# Added to silence unexpected cfg warnings referenced in source
+prometheus = []
+dynamic_config = []
