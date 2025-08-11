@@ -15,7 +15,10 @@ from __future__ import annotations
 import re, json, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
-TEST_GLOBS = ["**/tests/**/*.rs", "**/src/tests/**/*.rs"]
+# Include crate-level tests and internal test modules.
+# Note: We intentionally include all src/**/*.rs to catch #[cfg(test)] modules.
+# The mapping logic ties annotations to actual test functions via function signatures.
+TEST_GLOBS = ["**/tests/**/*.rs", "**/src/tests/**/*.rs", "**/src/**/*.rs"]
 SPEC_FILE = ROOT/"spec"/"Nyx_Protocol_v1.0_Spec_EN.md"
 JSON_OUT = ROOT/"spec"/"spec_test_mapping.json"
 MD_OUT = ROOT/"docs"/"SPEC_TEST_MAPPING.md"
@@ -66,12 +69,23 @@ for glob in TEST_GLOBS:
                     current_fn = None
         # in case file ends without new function (ignored)
 
-# Determine unmapped sections (ignore those before numbered sections for now)
-unmapped = [s for s in SPEC_SECTIONS if any(s.startswith(prefix) for prefix in ("1.","2.","3.","4.","5.","6.","7.","8.","9.","10.")) and s not in spec_map]
+# Determine coverage strictly against numbered sections existing in the spec file
+numbered_sections = [s for s in SPEC_SECTIONS if any(s.startswith(prefix) for prefix in ("1.","2.","3.","4.","5.","6.","7.","8.","9.","10."))]
+numbered_set = set(numbered_sections)
+mapped_keys = set(spec_map.keys())
+mapped_numbered = sorted(list(numbered_set.intersection(mapped_keys)))
+unmapped = sorted(list(numbered_set.difference(mapped_keys)))
 
-total_numbered = len([s for s in SPEC_SECTIONS if any(s.startswith(prefix) for prefix in ("1.","2.","3.","4.","5.","6.","7.","8.","9.","10."))])
-section_coverage = (len(spec_map)/total_numbered*100.0) if total_numbered else 0.0
-report = {"sections": spec_map, "unmapped_sections": unmapped, "section_coverage_percent": section_coverage, "mapped_section_count": len(spec_map), "total_section_count": total_numbered}
+total_numbered = len(numbered_sections)
+section_coverage = (len(mapped_numbered)/total_numbered*100.0) if total_numbered else 0.0
+report = {
+    "sections": spec_map,
+    "mapped_sections": mapped_numbered,
+    "unmapped_sections": unmapped,
+    "section_coverage_percent": section_coverage,
+    "mapped_section_count": len(mapped_numbered),
+    "total_section_count": total_numbered
+}
 JSON_OUT.write_text(json.dumps(report, indent=2), encoding='utf-8')
 
 # Update Markdown
@@ -92,7 +106,7 @@ kept = orig_lines[:marker_idx+1]
 
 generated: list[str] = []
 generated.append("")
-generated.append(f"自動生成テーブル (セクションカバレッジ {section_coverage:.1f}%: {len(spec_map)}/{total_numbered}):")
+generated.append(f"自動生成テーブル (セクションカバレッジ {section_coverage:.1f}%: {len(mapped_numbered)}/{total_numbered}):")
 generated.append("")
 generated.append('| Spec 節 | テストケース |')
 generated.append('|---------|--------------|')
