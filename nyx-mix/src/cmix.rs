@@ -9,15 +9,16 @@
 //! Implementation outline:
 //! 1. Incoming packets are buffered until `batch_size` is reached **or**
 //!    `max_wait` expires.
-//! 2. A VDF (e.g. Wesolowski) is computed over the batch digest to generate a
-//!    proof of delay. Here we only simulate the delay with `tokio::sleep` and
-//!    attach a placeholder proof.
+//! 2. A VDF (Wesolowski) is computed over the batch digest to generate a
+//!    proof of delay using `vdf::prove_mont` (log-sized proof). The resulting
+//!    `(y, π, t)` is attached to the batch metadata.
 //! 3. The batch is shuffled (Fisher–Yates) and emitted downstream.
 //!
 //! **Feature flag**: `cmix_experimental`
 //!
-//! NOTE: This is *not* production-ready. Real VDF implementation and RSA
-//! accumulator integration are TODO.
+//! The RSA accumulator (membership witness) is computed from the batch digest
+//! using `accumulator::RsaAccumulator` and verified on receipt. This module
+//! provides a functional reference pipeline suitable for cMix integration tests.
 
 #![forbid(unsafe_code)]
 
