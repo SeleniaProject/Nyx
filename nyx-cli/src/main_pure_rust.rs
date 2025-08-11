@@ -701,7 +701,10 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
 
             if let Some(level) = &info.compliance_level { println!("│ Compliance Level │ {} │", level); }
             if let Some(caps) = &info.capabilities { println!("│ Capabilities     │ {:?} │", caps); }
-            println!("│ CPU Usage        │ {:.2}% │", info.cpu_usage_percent);
+            let mut map = std::collections::HashMap::new();
+            map.insert("cpu", format!("{:.2}", info.cpu_usage_percent));
+            let lcpu = localize(&cli.language, "status-cpu", Some(&map));
+            println!("│ {:16} │ │", lcpu);
             println!("│ Memory Usage     │ {} bytes │", info.memory_usage_bytes);
             // Localized traffic lines
             let mut map = std::collections::HashMap::new();

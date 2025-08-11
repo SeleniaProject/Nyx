@@ -22,6 +22,9 @@ status-active-streams = Active Streams: { $count }
 status-peer-count = Connected Peers: { $count }
 status-mix-routes = Mix Routes: { $count }
 status-cover-traffic = Cover Traffic Rate: { $rate } pps
+status-cpu = CPU: { $cpu }%
+status-memory = Memory Usage: { $bytes } bytes
+status-active-connections = Active Connections: { $count }
 
 # Benchmark command messages
 bench-starting = Starting benchmark against { $target }

@@ -22,6 +22,9 @@ status-active-streams = アクティブストリーム: { $count }
 status-peer-count = 接続ピア数: { $count }
 status-mix-routes = Mixルート数: { $count }
 status-cover-traffic = カバートラフィック率: { $rate } pps
+status-cpu = CPU: { $cpu }%
+status-memory = メモリ使用量: { $bytes } バイト
+status-active-connections = アクティブ接続数: { $count }
 
 # ベンチマークコマンドメッセージ
 bench-starting = { $target } に対するベンチマークを開始中

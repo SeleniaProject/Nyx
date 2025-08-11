@@ -784,8 +784,11 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
                 println!("{}", uptime_line);
                 args_map.clear();
 
-                // CPU is not localized; keep numeric presentation
-                println!("CPU: {:.2}%", info.cpu_usage_percent);
+                // CPU
+                let mut args_map = std::collections::HashMap::new();
+                args_map.insert("cpu", format!("{:.2}", info.cpu_usage_percent));
+                let lcpu = localize(&cli.language, "status-cpu", Some(&args_map));
+                println!("{}", lcpu);
                 // Localize traffic in/out and peer count if available
                 let mut args_map = std::collections::HashMap::new();
                 args_map.insert("bytes_in", info.network_rx_bytes.to_string());

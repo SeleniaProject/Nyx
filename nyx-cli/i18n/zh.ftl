@@ -22,6 +22,9 @@ status-active-streams = 活动流: { $count }
 status-peer-count = 连接的对等节点: { $count }
 status-mix-routes = 混合路由: { $count }
 status-cover-traffic = 掩护流量率: { $rate } pps
+status-cpu = CPU: { $cpu }%
+status-memory = 内存使用: { $bytes } 字节
+status-active-connections = 活动连接数: { $count }
 
 # 基准测试命令消息
 bench-starting = 开始对 { $target } 进行基准测试
