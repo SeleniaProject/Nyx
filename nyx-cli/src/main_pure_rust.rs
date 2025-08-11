@@ -680,13 +680,25 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
             println!("connected_peers: {}", info.connected_peers);
         }
         _ => {
-            // Table format
+            // Table format (localized header/fields where available)
             println!("{}", style("═".repeat(80)).dim());
-            println!("{}", style("🔗 Nyx Daemon Status").bold().cyan());
+            let header = localize(&cli.language, "status-daemon-info", None);
+            println!("{}", style(format!("🔗 {}", header)).bold().cyan());
             println!("{}", style("═".repeat(80)).dim());
+
+            let mut map = std::collections::HashMap::new();
             println!("│ Node ID          │ {} │", info.node_id);
-            println!("│ Version          │ {} │", info.version);
-            println!("│ Uptime           │ {} seconds │", info.uptime_seconds);
+
+            map.insert("version", info.version.clone());
+            let version_line = localize(&cli.language, "status-version", Some(&map));
+            println!("│ {:16} │ │", version_line);
+            map.clear();
+
+            map.insert("uptime", info.uptime_seconds.to_string());
+            let uptime_line = localize(&cli.language, "status-uptime", Some(&map));
+            println!("│ {:16} │ │", uptime_line);
+            map.clear();
+
             if let Some(level) = &info.compliance_level { println!("│ Compliance Level │ {} │", level); }
             if let Some(caps) = &info.capabilities { println!("│ Capabilities     │ {:?} │", caps); }
             println!("│ CPU Usage        │ {:.2}% │", info.cpu_usage_percent);
