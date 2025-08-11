@@ -1792,11 +1792,47 @@ impl SystemResourceMonitor {
             1.0
         };
         
-        // Assess network health (simplified)
-        let network_health = 0.8; // Placeholder - would need actual network metrics
-        
-        // Assess disk health
-        let disk_health = 0.9; // Placeholder - would need actual disk metrics
+        // Assess network health (based on observed metrics)
+        let net = &snapshot.network_metrics;
+        let latency_ms = net.average_latency.as_millis() as f64;
+        let loss = net.packet_loss_rate.max(0.0);
+        let success = net.connection_success_rate.clamp(0.0, 1.0);
+        // Normalize latency: 0ms => 1.0, 500ms+ => ~0.0
+        let latency_score = (1.0 - (latency_ms / 500.0)).clamp(0.0, 1.0);
+        // Normalize loss: 0% => 1.0, 5%+ => ~0.0
+        let loss_score = (1.0 - (loss / 5.0)).clamp(0.0, 1.0);
+        let network_health = (success * 0.6) + (loss_score * 0.25) + (latency_score * 0.15);
+
+        // Assess disk health using worst free-percent across non-readonly disks
+        let (mut total_disk, mut free_disk) = (0u128, 0u128);
+        {
+            use sysinfo::SystemExt;
+            let mut sys = sysinfo::System::new();
+            sys.refresh_disks_list();
+            sys.refresh_disks();
+            #[allow(deprecated)]
+            for d in sys.disks() {
+                // Skip read-only or zero-sized
+                if d.is_read_only() { continue; }
+                let t = d.total_space() as u128;
+                if t == 0 { continue; }
+                let a = d.available_space() as u128;
+                total_disk = total_disk.saturating_add(t);
+                free_disk = free_disk.saturating_add(a);
+            }
+        }
+        let used_pct = if total_disk > 0 { (1.0 - (free_disk as f64 / total_disk as f64)) * 100.0 } else { 0.0 };
+        let disk_health = if used_pct > thresholds.disk_critical {
+            critical_issues.push("Disk usage is critically high".to_string());
+            recommendations.push("Free disk space or expand storage".to_string());
+            0.2
+        } else if used_pct > thresholds.disk_warning {
+            warnings.push("Disk usage is elevated".to_string());
+            recommendations.push("Monitor disk usage and rotate logs".to_string());
+            0.6
+        } else {
+            1.0
+        };
         
         // Calculate stability score based on trends
         let trends = self.analyze_resource_trends().await;
