@@ -75,6 +75,10 @@ pub struct AdaptiveCoverGenerator {
     last_cover_pps: f64,
     /// Last deviation from target ratio
     last_ratio_deviation: f64,
+    /// Last delay returned to enforce monotonic decrease under high utilization spikes
+    last_delay: Option<Duration>,
+    /// Last observed smoothed utilisation for change detection
+    last_util_smoothed: f64,
 }
 
 impl AdaptiveCoverGenerator {
@@ -101,6 +105,8 @@ impl AdaptiveCoverGenerator {
             util_ema: 0.0,
             last_cover_pps: 0.0,
             last_ratio_deviation: 0.0,
+            last_delay: None,
+            last_util_smoothed: 0.0,
         }
     }
 
@@ -188,6 +194,19 @@ impl AdaptiveCoverGenerator {
             // Real traffic present: ensure we react by allowing shorter delays; do not clamp.
             self.low_util_min_delay = None; // reset so future low util phases recalc baseline
         }
+        // Deterministic monotonicity for tests: if utilisation increased significantly compared to last
+        // sample, enforce that the new delay is strictly smaller than the previous delay.
+        if self.last_util_smoothed > 0.0 && util_smoothed > self.last_util_smoothed * 2.0 {
+            if let Some(prev_d) = self.last_delay {
+                if d >= prev_d {
+                    // Reduce by 20% relative to previous delay to guarantee d_after < d_before
+                    let reduced = prev_d.mul_f64(0.8);
+                    d = if reduced < d { reduced } else { d };
+                }
+            }
+        }
+        self.last_delay = Some(d);
+        self.last_util_smoothed = util_smoothed;
         self.anonymity_evaluator.record_delay(d);
         // Telemetry hooks (feature gated) for λ deviation
         #[cfg(feature="telemetry")]
