@@ -21,13 +21,22 @@
 //! ## Usage
 //! 
 //! ```rust
-//! use nyx_core::zero_copy::{ZeroCopyManager, CriticalPath};
+//! use nyx_core::zero_copy::{ZeroCopyManager, ZeroCopyManagerConfig};
+//! use std::sync::Arc;
 //! 
-//! let mut manager = ZeroCopyManager::new();
-//! let path = manager.create_critical_path();
+//! let manager = Arc::new(ZeroCopyManager::new(ZeroCopyManagerConfig::default()));
 //! 
-//! // Process data through zero-copy optimized pipeline
-//! let result = path.process_packet(data).await?;
+//! tokio_test::block_on(async {
+//!     let path = manager
+//!         .create_critical_path("doc_example".to_string())
+//!         .await
+//!         .unwrap();
+//! 
+//!     // Process data through zero-copy optimized pipeline
+//!     let data = vec![0u8; 128];
+//!     let result = path.process_packet(&data).await.unwrap();
+//!     assert!(!result.is_empty());
+//! });
 //! ```
 
 use std::sync::{Arc, Mutex, atomic::{AtomicU64, AtomicUsize, Ordering}};
