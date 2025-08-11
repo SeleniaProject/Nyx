@@ -789,6 +789,11 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
                 args_map.insert("cpu", format!("{:.2}", info.cpu_usage_percent));
                 let lcpu = localize(&cli.language, "status-cpu", Some(&args_map));
                 println!("{}", lcpu);
+                // Memory
+                args_map.clear();
+                args_map.insert("bytes", info.memory_usage_bytes.to_string());
+                let lmem = localize(&cli.language, "status-memory", Some(&args_map));
+                println!("{}", lmem);
                 // Localize traffic in/out and peer count if available
                 let mut args_map = std::collections::HashMap::new();
                 args_map.insert("bytes_in", info.network_rx_bytes.to_string());
@@ -802,6 +807,11 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
                 args_map.insert("count", info.connected_peers.to_string());
                 let lpeers = localize(&cli.language, "status-peer-count", Some(&args_map));
                 println!("{}", lpeers);
+                // Active connections
+                args_map.clear();
+                args_map.insert("count", info.active_connections.to_string());
+                let lact = localize(&cli.language, "status-active-connections", Some(&args_map));
+                println!("{}", lact);
             }
             "compact" | "summary" => {
                 let mut args_map = std::collections::HashMap::new();

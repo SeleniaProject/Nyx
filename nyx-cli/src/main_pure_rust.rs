@@ -705,7 +705,11 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
             map.insert("cpu", format!("{:.2}", info.cpu_usage_percent));
             let lcpu = localize(&cli.language, "status-cpu", Some(&map));
             println!("│ {:16} │ │", lcpu);
-            println!("│ Memory Usage     │ {} bytes │", info.memory_usage_bytes);
+            // Memory localized line
+            let mut map = std::collections::HashMap::new();
+            map.insert("bytes", info.memory_usage_bytes.to_string());
+            let lmem = localize(&cli.language, "status-memory", Some(&map));
+            println!("│ {:16} │ │", lmem);
             // Localized traffic lines
             let mut map = std::collections::HashMap::new();
             map.insert("bytes_in", info.network_rx_bytes.to_string());
@@ -715,7 +719,11 @@ fn display_status(info: &NodeInfo, cli: &Cli) {
             map.insert("bytes_out", info.network_tx_bytes.to_string());
             let tout = localize(&cli.language, "status-traffic-out", Some(&map));
             println!("│ {:16} │ │", tout);
-            println!("│ Active Conns     │ {} │", info.active_connections);
+            // Active connections localized
+            map.clear();
+            map.insert("count", info.active_connections.to_string());
+            let lact = localize(&cli.language, "status-active-connections", Some(&map));
+            println!("│ {:16} │ │", lact);
             println!("│ Total Sent       │ {} bytes │", info.total_sent_bytes);
             println!("│ Total Received   │ {} bytes │", info.total_received_bytes);
             map.clear();
