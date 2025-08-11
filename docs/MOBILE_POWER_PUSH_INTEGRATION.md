@@ -40,13 +40,15 @@ low_power_manager.attach_push_gateway(push_gateway_manager.clone());
 ```
 
 ### PushGatewayManager 内部仕様 (実装済)
-- Debounce: 直近 wake から 2 秒未満は `Debounced` として統計のみ増加し再接続を抑制。
-- Backoff: 200ms, 400ms, 800ms, 1600ms, 3200ms (最大 5 試行) で成功か `RetriesExhausted`。
-- Metrics/Stats (現状):
-	- total_wake_events
+- Debounce: 直近 wake から 2 秒未満は `Debounced` としてカウンタのみ増加し再接続を抑制。
+- Backoff: 200ms → 400ms → 800ms → 1600ms → 3200ms (指数 5 試行) で成功か `RetriesExhausted`。
+- Metrics/Stats (現在):
+	- total_wake_events / debounced_wake_events
 	- total_reconnect_attempts / total_reconnect_failures / total_reconnect_success
-	- avg_reconnect_latency_ms (成功試行平均; wake→成功まで累積)
-- 今後の拡張候補: ヒストグラム (p50/p95), jitter 付き backoff, debounced_wake_count 別カウンタ。
+	- avg_reconnect_latency_ms (成功試行平均; wake→成功まで)
+	- p50_latency_ms / p95_latency_ms (リングバッファ64サンプルより計算)
+- Telemetry (feature `telemetry`) で以下カウンタ exposed: wake, debounced_wake, reconnect_success, reconnect_fail。
+- 今後の拡張候補: jitter 付き backoff, latency ヒストグラム導出 (分位点以外), suppressed cover 関連メトリクス。
 ```
 
 ## 5. Peer Authentication との連携
@@ -59,12 +61,12 @@ low_power_manager.attach_push_gateway(push_gateway_manager.clone());
 |----------------|------|----------|
 | power_state_transitions_total | 状態遷移総数 | 実装 (stats hashmap / telemetry 拡張予定) |
 | push_wake_events_total | 受信 push wake 数 (debounce 後のみ) | 実装 |
-| debounced_wake_events_total | デバウンス抑制された wake 数 | 未実装 (拡張予定) |
+| debounced_wake_events_total | デバウンス抑制された wake 数 | 実装 |
 | reconnect_attempts_total | 再接続試行総数 | 実装 |
 | reconnect_failures_total | 再接続失敗総数 | 実装 |
 | reconnect_success_total | 再接続成功総数 | 実装 |
 | avg_reconnect_latency_ms | 成功試行平均遅延 | 実装 |
-| low_power_reconnect_latency_ms_histogram | 遅延ヒストグラム (p50/p95) | 未実装 (将来) |
+| low_power_reconnect_latency_ms_histogram | 遅延ヒストグラム (p50/p95) | p50/p95 実装 (簡易リングバッファ) |
 | cover_packets_generated_total | 生成されたカバー総数 | 実装 |
 | push_notifications_sent_total | 送信 push 通知総数 | 実装 |
 | suppressed_cover_packets_total | 低電力で抑制された cover 数 | 仕様のみ (個別計測未導入) |

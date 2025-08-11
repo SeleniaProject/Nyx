@@ -19,9 +19,10 @@
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::collections::VecDeque;
 use tracing::{info, warn, error};
 use once_cell::sync::OnceCell;
-#[cfg(feature = "telemetry")] use nyx_telemetry::metrics::BasicMetrics; // assuming re-export path
+#[cfg(feature = "telemetry")] use nyx_telemetry::metrics::BasicMetrics; // basic counter metrics
 
 /// Error type for push gateway operations.
 #[derive(thiserror::Error, Debug)]
@@ -46,14 +47,19 @@ struct InnerState {
     last_wake: Option<Instant>,
     reconnect_in_flight: bool,
     total_wake_events: u64,
+    debounced_wake_events: u64,
     total_reconnect_attempts: u64,
     total_reconnect_failures: u64,
     total_reconnect_success: u64,
     cumulative_latency_ms: u128,
+    latency_samples: VecDeque<u64>, // ring buffer for percentile calc
     #[cfg(feature = "telemetry")] wake_metric: BasicMetrics,
+    #[cfg(feature = "telemetry")] debounced_wake_metric: BasicMetrics,
+    #[cfg(feature = "telemetry")] reconnect_success_metric: BasicMetrics,
+    #[cfg(feature = "telemetry")] reconnect_fail_metric: BasicMetrics,
 }
 
-impl Default for InnerState { fn default() -> Self { Self { last_wake: None, reconnect_in_flight: false, total_wake_events:0, total_reconnect_attempts:0, total_reconnect_failures:0, total_reconnect_success:0, cumulative_latency_ms:0, #[cfg(feature="telemetry")] wake_metric: BasicMetrics::new() } } }
+impl Default for InnerState { fn default() -> Self { Self { last_wake: None, reconnect_in_flight: false, total_wake_events:0, debounced_wake_events:0, total_reconnect_attempts:0, total_reconnect_failures:0, total_reconnect_success:0, cumulative_latency_ms:0, latency_samples: VecDeque::with_capacity(64), #[cfg(feature="telemetry")] wake_metric: BasicMetrics::new(), #[cfg(feature="telemetry")] debounced_wake_metric: BasicMetrics::new(), #[cfg(feature="telemetry")] reconnect_success_metric: BasicMetrics::new(), #[cfg(feature="telemetry")] reconnect_fail_metric: BasicMetrics::new() } } }
 
 /// Manager object.
 pub struct PushGatewayManager {
@@ -94,7 +100,7 @@ impl PushGatewayManager {
     pub fn push_wake(&self) -> Result<(), PushGatewayError> {
         let mut s = self.state.lock().unwrap();
         let now = Instant::now();
-        if let Some(prev) = s.last_wake { if now.duration_since(prev) < self.debounce { return Err(PushGatewayError::Debounced); } }
+    if let Some(prev) = s.last_wake { if now.duration_since(prev) < self.debounce { s.debounced_wake_events += 1; #[cfg(feature="telemetry")] { s.debounced_wake_metric.increment(); } return Err(PushGatewayError::Debounced); } }
     s.last_wake = Some(now); s.total_wake_events += 1; #[cfg(feature="telemetry")] { s.wake_metric.increment(); } info!("push wake recorded"); Ok(())
     }
 
@@ -114,9 +120,9 @@ impl PushGatewayManager {
 
             let res = self.reconnector.reconnect_minimal().await;
             match res {
-                Ok(_) => { let mut s = self.state.lock().unwrap(); s.reconnect_in_flight = false; s.total_reconnect_success += 1; s.cumulative_latency_ms += start_all.elapsed().as_millis() as u128; info!(attempt, latency_ms = start_all.elapsed().as_millis(), "minimal path reconnection succeeded"); return Ok(()); }
+                Ok(_) => { let elapsed_ms = start_all.elapsed().as_millis() as u64; let mut s = self.state.lock().unwrap(); s.reconnect_in_flight = false; s.total_reconnect_success += 1; #[cfg(feature="telemetry")] { s.reconnect_success_metric.increment(); } s.cumulative_latency_ms += elapsed_ms as u128; if s.latency_samples.len() == 64 { s.latency_samples.pop_front(); } s.latency_samples.push_back(elapsed_ms); info!(attempt, latency_ms = elapsed_ms, "minimal path reconnection succeeded"); return Ok(()); }
                 Err(e) => {
-                    let mut s = self.state.lock().unwrap(); s.total_reconnect_failures += 1; warn!(attempt, error=%e, "reconnection attempt failed");
+                    let mut s = self.state.lock().unwrap(); s.total_reconnect_failures += 1; #[cfg(feature="telemetry")] { s.reconnect_fail_metric.increment(); } warn!(attempt, error=%e, "reconnection attempt failed");
                     if attempt >= self.max_retries { s.reconnect_in_flight = false; error!("reconnection retries exhausted"); return Err(PushGatewayError::RetriesExhausted); }
                 }
             }
@@ -125,12 +131,20 @@ impl PushGatewayManager {
         }
     }
 
-    pub fn stats(&self) -> PushGatewayStats { let s = self.state.lock().unwrap(); let avg = if s.total_reconnect_success>0 { Some((s.cumulative_latency_ms / s.total_reconnect_success as u128) as u64) } else { None }; PushGatewayStats { total_wake_events: s.total_wake_events, total_reconnect_attempts: s.total_reconnect_attempts, total_reconnect_failures: s.total_reconnect_failures, total_reconnect_success: s.total_reconnect_success, avg_reconnect_latency_ms: avg } }
+    pub fn stats(&self) -> PushGatewayStats { let s = self.state.lock().unwrap(); let avg = if s.total_reconnect_success>0 { Some((s.cumulative_latency_ms / s.total_reconnect_success as u128) as u64) } else { None }; let (p50, p95) = percentile_pair(&s.latency_samples); PushGatewayStats { total_wake_events: s.total_wake_events, debounced_wake_events: s.debounced_wake_events, total_reconnect_attempts: s.total_reconnect_attempts, total_reconnect_failures: s.total_reconnect_failures, total_reconnect_success: s.total_reconnect_success, avg_reconnect_latency_ms: avg, p50_latency_ms: p50, p95_latency_ms: p95 } }
 }
 
 /// Exposed statistics snapshot.
 #[derive(Debug, Clone)]
-pub struct PushGatewayStats { pub total_wake_events: u64, pub total_reconnect_attempts: u64, pub total_reconnect_failures: u64, pub total_reconnect_success: u64, pub avg_reconnect_latency_ms: Option<u64> }
+pub struct PushGatewayStats { pub total_wake_events: u64, pub debounced_wake_events: u64, pub total_reconnect_attempts: u64, pub total_reconnect_failures: u64, pub total_reconnect_success: u64, pub avg_reconnect_latency_ms: Option<u64>, pub p50_latency_ms: Option<u64>, pub p95_latency_ms: Option<u64> }
+
+fn percentile_pair(samples: &VecDeque<u64>) -> (Option<u64>, Option<u64>) {
+    if samples.is_empty() { return (None, None); }
+    let mut v: Vec<u64> = samples.iter().copied().collect();
+    v.sort_unstable();
+    let idx = |pct: f64| -> usize { ((pct * ((v.len()-1) as f64)).round() as usize).min(v.len()-1) };
+    (Some(v[idx(0.50)]), Some(v[idx(0.95)]))
+}
 
 // Global singleton (simple for FFI calls)
 static GLOBAL_MANAGER: OnceCell<Arc<PushGatewayManager>> = OnceCell::new();
