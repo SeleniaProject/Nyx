@@ -769,16 +769,38 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
             }
             "table" => {
                 println!("{}", style("═".repeat(60)).dim());
-                println!("{}", style("🔗 Nyx Daemon Status").bold().cyan());
-                println!("Version: {}", info.version);
-                println!("Uptime: {}", info.uptime_seconds);
+                // Localized header and fields
+                let header = localize(&cli.language, "status-daemon-info", None);
+                println!("{}", style(format!("🔗 {}", header)).bold().cyan());
+
+                let mut args_map = std::collections::HashMap::new();
+                args_map.insert("version", info.version.clone());
+                let version_line = localize(&cli.language, "status-version", Some(&args_map));
+                println!("{}", version_line);
+                args_map.clear();
+
+                args_map.insert("uptime", info.uptime_seconds.to_string());
+                let uptime_line = localize(&cli.language, "status-uptime", Some(&args_map));
+                println!("{}", uptime_line);
+                args_map.clear();
+
+                // CPU is not localized; keep numeric presentation
                 println!("CPU: {:.2}%", info.cpu_usage_percent);
             }
             "compact" | "summary" => {
-                println!("Status: version={} uptime={}s", info.version, info.uptime_seconds);
+                let mut args_map = std::collections::HashMap::new();
+                args_map.insert("version", info.version.clone());
+                let version_line = localize(&cli.language, "status-version", Some(&args_map));
+                args_map.clear();
+                args_map.insert("uptime", info.uptime_seconds.to_string());
+                let uptime_line = localize(&cli.language, "status-uptime", Some(&args_map));
+                println!("{}; {}", version_line, uptime_line);
             }
             _ => {
-                println!("Version: {}", info.version);
+                let mut args_map = std::collections::HashMap::new();
+                args_map.insert("version", info.version.clone());
+                let version_line = localize(&cli.language, "status-version", Some(&args_map));
+                println!("{}", version_line);
             }
         }
     };
