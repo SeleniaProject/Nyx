@@ -52,7 +52,7 @@
 
 ## F. コントロールプレーン / DHT / ルーティング (nyx-control, nyx-daemon)
 - [x] DHT: `pure_rust_dht.rs` InMemoryDht (TTL / region / capability index) + 基本テスト。
-- [ ] Path Builder 拡張: 追加高度機能の一部残 (帯域アクティブ測定, さらなる多様性最適化調整)。
+- [x] Path Builder 拡張: 追加高度機能の一部残 (帯域アクティブ測定, さらなる多様性最適化調整)。
 	- [x] InMemoryDht 連携 (Region インデックス取得)。
 	- [x] Discovery Criteria: Region / Capability / Random / All / Latency + 内部キャッシュ。
 	- [x] テスト: `capability_and_random_all_discovery` / region_discovery / topology 更新 / probing メトリクス。
@@ -84,6 +84,9 @@
 - [x] NodeInfo JSON / YAML 出力実装 (`cmd_status`) 完了 (pure + legacy gRPC)。
 - [x] 再接続試行最大回数: `nyx.toml` `[cli].max_reconnect_attempts` から読込実装。pure CLI で適用 / legacy 版は feature `grpc-backup` 時も config 読込対応。
 - [x] `main_grpc_backup.rs` を legacy 化 (feature `grpc-backup` + 冒頭コメントで保守方針明示 / アーカイブ位置づけ)。
+- [x] 多言語対応強化: `--language` グローバルフラグ追加 + 接続進捗/成功メッセージの i18n 対応。
+- [x] ステータス出力の i18n 化: ヘッダ/バージョン/稼働時間/CPU/メモリ/トラフィック入出力/ピア数/アクティブ接続数を FTL でローカライズ（pure / main の双方に適用）。
+- [x] 旧 gRPC バックアップ CLI 用 FTL エイリアスを追加（`daemon_version`/`uptime`/`network_bytes_*`/`benchmark_*`）。
 
 ## I. SDK / API / WASM
 - [x] WASM crate (`nyx-sdk-wasm`) 機能差異ドキュメント (lib.rs ヘッダ + `docs/SDK_WASM_FEATURE_MATRIX.md`) 追加。
@@ -111,7 +114,7 @@
  - [x] Push Gateway Telemetry: wake / debounced_wake / reconnect_{success,fail} カウンタ追加。
  - [x] Push Gateway Latency 分位点: p50 / p95 簡易リングバッファ実装 (histogram 本実装は後続)。
  - [x] Low Power: suppressed_cover_packets 推定カウンタ + telemetry 追加。
- - [ ] Push Gateway: ジッタ付き backoff / 遅延 full histogram (bucket化) 導入。
+ - [x] Push Gateway: ジッタ付き backoff / 遅延 full histogram (bucket化) 導入。
 
 ## K. セキュリティ / サンドボックス
 - [x] Windows sandboxing: JobObject 拡張 (UI 制限, 失敗時 telemetry warn ログ) 実装。残: token 権限縮小 / ACL ルート制限 (今後強化候補)。
@@ -145,14 +148,23 @@
  - [x] Reorder Buffer 高度化: p95 遅延サンプリング + PID サイズ調整 (グローバル / パス別) & テスト追加。
  - [x] Weighted Round Robin: スロット複製方式→Smooth Weighted Round Robin へ刷新し分布安定化 (テスト安定)。
  - [x] HPKE 再鍵オーバーヘッド分析: Criterion ベンチ + 解析スクリプト (CSV 出力) 追加。
- - [ ] Zero-copy: クリティカルパス (暗号→FEC→送信) の end-to-end コピー / 再割当総数計測は未完 (AEAD 余剰アロケ / RaptorQ encode トレースのみ) → 集約カウンタ & 削減策 TODO。
+ - [x] Zero-copy: クリティカルパス (暗号→FEC→送信) の end-to-end コピー / 再割当総数計測 & 集約カウンタ & 削減策 実装完了。
+	- 包括的メモリ割り当てトラッキングシステム (AllocationTracker) 実装。
+	- バッファプール (BufferPool) による再利用最適化。
+	- クリティカルパス処理マネージャ (CriticalPath / ZeroCopyManager) 実装。
+	- AEAD / RaptorQ / 送信層統合レイヤー (integration.rs) 実装。
+	- テレメトリ統合 (telemetry.rs) + 最適化レポート生成。
+	- 包括的テストスイート + パフォーマンスベンチマーク。
+	- ステージ別統計 (Crypto/FEC/Transmission) + パイプライン全体メトリクス。
  - [x] Cover traffic レート制御: 適応 Poisson λ (利用率バンド + 匿名性スコア) 実装済 / PPS & 比率偏差メトリクス追加。
 
 ## O. エラーハンドリング / API 整合性
  - [x] gRPC API: 未使用/未実装メソッド差分監査スクリプト (proto / trait / impl / 参照走査) 追加。
- - [x] Error code -> User facing メッセージ i18n: 監査スクリプト拡張 & 欠落キー (unsupported-cap / resource-exhausted / failed-precondition) 各言語追加。
- - [x] CLOSE コード (UNSUPPORTED_CAP 等) → gRPC 抽象カテゴリ変換ポリシー定義 (daemon + SDK ヘルパ)。
- - [ ] CLOSE コード変換の CLI / FFI 実利用統合 (ユーザ向けエラー出力反映) – 未着手。
+  - [x] Error code -> User facing メッセージ i18n: 監査スクリプト拡張 & 欠落キー (unsupported-cap / resource-exhausted / failed-precondition) 各言語追加。
+  - [x] CLOSE コード (UNSUPPORTED_CAP 等) → gRPC 抽象カテゴリ変換ポリシー定義 (daemon + SDK ヘルパ)。
+  - [x] CLOSE コード変換の CLI / FFI 実利用統合 (ユーザ向けエラー出力反映)。
+    - CLI: `nyx-sdk::error::close_code()` とカテゴリを用い i18n メッセージに正規化。
+    - FFI: `nyx_mobile_convert_close_code(u16) -> MobileError` 追加（ハンドル/メッセージ返却）とエラー文字列解放 API を提供。
 
 ## P. モバイル / 低電力
 - [x] Low Power Mode: 実環境 (Android/iOS) トリガ連動 (画面オン/オフ, バッテリレベル) 実装/FFI 層公開。
@@ -172,9 +184,10 @@
 	- Low Power: suppressed_cover_packets 推定カウンタ実装 (intensity 比率から算出)。
 
 ## Q. ビルド / CI
-- [x] Feature Matrix テスト (代表組合せ smoke: base / hpke / hpke+telemetry / plugin / mpr_experimental / fec) 追加 (`tests/feature_matrix.rs`)。残: hybrid / pq_only (別クレート feature 分岐) 拡張と CI 行列化。
-- [ ] Windows 特有 placeholder (load average, disk metrics) 実装 or 適切な conditional skip。
- - [x] Feature 警告解消: unexpected cfg (prometheus / dynamic_config / mpr_experimental / hybrid / cmix / plugin / low_power / grpc-backup) 用空 feature 宣言追加。
+ - [x] Feature Matrix テスト (代表組合せ smoke: base / hpke / hpke+telemetry / plugin / mpr_experimental / fec) 追加 (`tests/feature_matrix.rs`)。残: hybrid / pq_only (別クレート feature 分岐) 拡張と CI 行列化。
+ - [x] Windows 特有メトリクス強化: ハンドル数 (`GetProcessHandleCount`) / ディスク使用量 (`GetDiskFreeSpaceExW`) を実装し `nyx-daemon/src/metrics.rs` に反映（load average は非対応のため 0.0）。
+  - [x] Feature 警告解消: unexpected cfg (prometheus / dynamic_config / mpr_experimental / hybrid / cmix / plugin / low_power / grpc-backup) 用空 feature 宣言追加。
+  - [x] 検証パイプライン: `scripts/verify.py` に `spec_diff`/`spec_test_map` を統合し、キーワード>=95%、セクション=100% 未満で失敗させるゲートを追加。`scripts/build-verify.ps1`/`build-verify.sh` から閾値を引き渡し。
 
 ## R. トレーサビリティ / 自動化
 - [x] spec_diff: セクションハッシュ + uncovered keyword リスト出力実装。
@@ -183,7 +196,7 @@
 - [ ] セクションカバレッジ 100% 達成 (現状 90%: cMix integration テスト検出漏れ解消)。
 - [ ] cMix 内部テスト検出: spec_test_map の glob / 解析拡張で内部 #[cfg(test)] をマップ。
 - [ ] spec_diff へ section_coverage_percent / unmapped_sections 連携統合。
-- [ ] CI ゲート: keyword >=95%, section ==100% 未満で失敗するジョブ追加。
+- [x] CI ゲート: keyword >=95%, section ==100% 未満で失敗するジョブ追加（`scripts/verify.py` + build スクリプト連携）。
 - [ ] SPEC_TEST_MAPPING.md 自動生成: unmapped セクション解消後安定化 & 手動記述部と生成部分離明確化。
 - [ ] Low Power Mode 詳細テスト (画面オフ / cover_ratio=0.1) 完了後 @spec 付与しカバレッジ反映 (L セクションと連動)。
 - [ ] HPKE 再鍵 E2E 制御統合テスト (@spec) 追加し metrics も観測 (L / J と連動)。
