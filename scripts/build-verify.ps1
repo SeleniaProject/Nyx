@@ -136,6 +136,8 @@ function Run-Verification {
     
     # Prepare verification arguments
     $VerifyArgs = @("--timeout", $Timeout, "--java-opts", $JavaOpts)
+    # Enforce coverage gates in CI: keyword>=95, section=100
+    $VerifyArgs += @("--keyword-threshold", 95.0, "--section-required", 100.0)
     
     if ($SkipTla) {
         $VerifyArgs += "--rust-only"
