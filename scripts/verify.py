@@ -460,11 +460,52 @@ class CoverageAnalyzer:
 class VerificationPipeline:
     """Main verification pipeline orchestrator"""
     
-    def __init__(self, java_opts: str = "-Xmx4g", timeout: int = 600):
+    def __init__(self, java_opts: str = "-Xmx4g", timeout: int = 600,
+                 keyword_threshold: float = 95.0, section_required: float = 100.0):
         self.tla_checker = TLAModelChecker(java_opts)
         self.rust_runner = RustTestRunner()
         self.coverage_analyzer = CoverageAnalyzer()
         self.timeout = timeout
+        self.keyword_threshold = keyword_threshold
+        self.section_required = section_required
+
+    def run_traceability_checks(self) -> Dict[str, Any]:
+        """Run traceability generators (spec_diff and spec_test_map) and collect coverage metrics."""
+        root = Path(".")
+        # Run spec_diff.py
+        try:
+            result = subprocess.run([sys.executable, str(root / "scripts" / "spec_diff.py"), "--threshold", str(70.0)],
+                                    capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                print("spec_diff.py returned non-zero:", result.stderr or result.stdout)
+        except Exception as e:
+            print(f"Failed to run spec_diff.py: {e}")
+        # Run spec_test_map.py
+        try:
+            result = subprocess.run([sys.executable, str(root / "scripts" / "spec_test_map.py")],
+                                    capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                print("spec_test_map.py returned non-zero:", result.stderr or result.stdout)
+        except Exception as e:
+            print(f"Failed to run spec_test_map.py: {e}")
+        # Load metrics
+        spec_diff_json = root / "spec" / "spec_diff_report.json"
+        test_map_json = root / "spec" / "spec_test_mapping.json"
+        keyword_cov = None
+        section_cov = None
+        try:
+            if spec_diff_json.exists():
+                jd = json.loads(spec_diff_json.read_text(encoding="utf-8"))
+                keyword_cov = float(jd.get("keyword_coverage_percent", 0.0))
+        except Exception:
+            pass
+        try:
+            if test_map_json.exists():
+                jt = json.loads(test_map_json.read_text(encoding="utf-8"))
+                section_cov = float(jt.get("section_coverage_percent", 0.0))
+        except Exception:
+            pass
+        return {"keyword_coverage_percent": keyword_cov, "section_coverage_percent": section_cov}
         
     def run_full_verification(self) -> VerificationReport:
         """Run complete verification pipeline"""
@@ -487,6 +528,10 @@ class VerificationPipeline:
         # Analyze coverage
         print("\n📊 Analyzing Verification Coverage...")
         coverage_metrics = self.coverage_analyzer.analyze_coverage(all_results)
+        # Traceability
+        print("\n🔗 Running Traceability Checks (@spec and spec diff)...")
+        trace_cov = self.run_traceability_checks()
+        coverage_metrics["traceability"] = trace_cov
         
         total_duration = time.time() - start_time
         
@@ -614,13 +659,24 @@ def main():
     pipeline.print_summary(report)
     pipeline.generate_report(report, args.output)
     
-    # Exit with error code if any verifications failed
+    # Exit with error code if any verifications failed or coverage gates not met
     failed_count = len([r for r in report.results if not r.success])
-    if failed_count > 0:
-        print(f"\n⚠ {failed_count} verification(s) failed")
+    keyword_cov = report.coverage_metrics.get("traceability", {}).get("keyword_coverage_percent")
+    section_cov = report.coverage_metrics.get("traceability", {}).get("section_coverage_percent")
+    gate_fail = False
+    # Enforce gates if values are available
+    if keyword_cov is not None and keyword_cov < 95.0:
+        print(f"\n⚠ Keyword coverage {keyword_cov:.1f}% below threshold 95.0%")
+        gate_fail = True
+    if section_cov is not None and section_cov < 100.0:
+        print(f"\n⚠ Section coverage {section_cov:.1f}% below required 100.0%")
+        gate_fail = True
+    if failed_count > 0 or gate_fail:
+        if failed_count > 0:
+            print(f"\n⚠ {failed_count} verification(s) failed")
+        print("CI gate not satisfied")
         sys.exit(1)
-    else:
-        print(f"\n✅ All verifications passed successfully")
+    print(f"\n✅ All verifications and coverage gates passed successfully")
 
 if __name__ == "__main__":
     main()
