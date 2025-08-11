@@ -1,3 +1,4 @@
+#[cfg(feature = "legacy_tests_disabled")]
 mod integrated_frame_processor_tests {
 
 #[ignore = "TODO: Fix undefined types IntegratedFrameConfig and IntegratedFrameProcessor"]

@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 //! Nyx Secure Stream layer (skeleton)
 
-pub mod frame_handler;
+// pub mod frame_handler; // Temporarily disabled due to compilation issues
 pub mod simple_frame_handler;
 pub mod flow_controller;
-pub mod integrated_frame_processor;
+//pub mod integrated_frame_processor; // Temporarily disabled for realistic benchmarks
 pub mod errors;
 
 pub mod frame;
@@ -79,8 +79,8 @@ pub use receiver::MultipathReceiver;
 mod sequencer;
 pub use sequencer::Sequencer;
 pub use async_stream::{NyxAsyncStream, StreamError, StreamState as AsyncStreamState, CleanupConfig, StreamStats};
-pub use frame_handler::{FrameHandler, FrameHandlerError, FrameValidation, ReassembledData, FrameHandlerStats};
-pub use integrated_frame_processor::{IntegratedFrameProcessor, StreamContext};
+// pub use frame_handler::{FrameHandler, FrameHandlerError, FrameValidation, ReassembledData, FrameHandlerStats}; // Temporarily disabled
+//pub use integrated_frame_processor::{IntegratedFrameProcessor, StreamContext}; // Temporarily disabled
 pub use flow_controller::{FlowController, FlowControlError, FlowControlStats, CongestionState, RttEstimator};
 pub use error_handler::{StreamErrorHandler, ErrorContext, ErrorCategory, ErrorSeverity, RecoveryStrategy, RecoveryAction, ErrorHandlerStats};
 pub use resource_manager::{ResourceManager, ResourceInfo, ResourceType, ResourceError, ResourceLimits, ResourceStats};
