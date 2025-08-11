@@ -80,6 +80,16 @@ extern "C" {
 int nyx_mobile_init(void);
 void nyx_mobile_cleanup(void);
 int nyx_mobile_get_platform(void);
+// Error utilities
+const char* nyx_mobile_get_error_message(int error_code);
+void nyx_mobile_free_string(char* ptr);
+
+// Close code conversion API
+typedef struct {
+    int code;
+    const char* message;
+} MobileError;
+MobileError nyx_mobile_convert_close_code(unsigned short close_code);
 
 // iOS-specific functions (implemented in Rust iOS module)
 float ios_get_battery_level(void);

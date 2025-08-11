@@ -4,6 +4,16 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use tracing::{debug, info};
 
+/// Classify Nyx close code into abstract categories suitable for mobile error handling.
+fn close_code_category(code: u16) -> &'static str {
+    match code {
+        0x07 => "FailedPrecondition", // Unsupported capability
+        0x10..=0x1F => "PermissionDenied",
+        0x20..=0x2F => "ResourceExhausted",
+        _ => "Unknown",
+    }
+}
+
 /// Platform detection constants
 pub const PLATFORM_IOS: c_int = 1;
 pub const PLATFORM_ANDROID: c_int = 2;
@@ -166,6 +176,9 @@ pub const ERROR_PLATFORM_NOT_SUPPORTED: c_int = -2;
 pub const ERROR_PERMISSION_DENIED: c_int = -3;
 pub const ERROR_SYSTEM_ERROR: c_int = -4;
 pub const ERROR_INVALID_PARAMETER: c_int = -5;
+pub const ERROR_FAILED_PRECONDITION: c_int = -6;
+pub const ERROR_RESOURCE_EXHAUSTED: c_int = -7;
+pub const ERROR_UNKNOWN_CLOSE_CODE: c_int = -8;
 
 /// Get error message for error code
 #[no_mangle]
@@ -177,10 +190,30 @@ pub extern "C" fn nyx_mobile_get_error_message(error_code: c_int) -> *const c_ch
         ERROR_PERMISSION_DENIED => "Permission denied",
         ERROR_SYSTEM_ERROR => "System error",
         ERROR_INVALID_PARAMETER => "Invalid parameter",
+        ERROR_FAILED_PRECONDITION => "Failed precondition",
+        ERROR_RESOURCE_EXHAUSTED => "Resource exhausted",
+        ERROR_UNKNOWN_CLOSE_CODE => "Unknown close code category",
         _ => "Unknown error",
     };
-    
-    message.as_ptr() as *const c_char
+    // Allocate a stable C string; caller should free via nyx_mobile_free_string
+    match CString::new(message) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Convert Nyx protocol close code into a mobile-friendly error (code + message).
+#[no_mangle]
+pub extern "C" fn nyx_mobile_convert_close_code(close_code: u16) -> MobileError {
+    let category = close_code_category(close_code);
+    let (code, msg) = match category {
+        "FailedPrecondition" => (ERROR_FAILED_PRECONDITION, "Failed precondition"),
+        "ResourceExhausted" => (ERROR_RESOURCE_EXHAUSTED, "Resource exhausted"),
+        "PermissionDenied" => (ERROR_PERMISSION_DENIED, "Permission denied"),
+        _ => (ERROR_UNKNOWN_CLOSE_CODE, "Unknown close code category"),
+    };
+    let cstr = CString::new(msg).unwrap();
+    MobileError { code, message: cstr.into_raw() }
 }
 
 /// Configuration management
@@ -268,6 +301,26 @@ mod tests {
         
         let message = nyx_mobile_get_error_message(ERROR_NOT_INITIALIZED);
         assert!(!message.is_null());
+    }
+
+    #[test]
+    fn test_close_code_conversion() {
+        let e = nyx_mobile_convert_close_code(0x07);
+        assert_eq!(e.code, ERROR_FAILED_PRECONDITION);
+        // free allocated message to avoid leaks in test
+        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+
+        let e = nyx_mobile_convert_close_code(0x21);
+        assert_eq!(e.code, ERROR_RESOURCE_EXHAUSTED);
+        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+
+        let e = nyx_mobile_convert_close_code(0x15);
+        assert_eq!(e.code, ERROR_PERMISSION_DENIED);
+        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+
+        let e = nyx_mobile_convert_close_code(0x99);
+        assert_eq!(e.code, ERROR_UNKNOWN_CLOSE_CODE);
+        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
     }
     
     #[test]
