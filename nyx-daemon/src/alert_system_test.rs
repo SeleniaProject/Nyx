@@ -9,7 +9,7 @@ use crate::metrics::{
 
 /// Test the enhanced alert system functionality
 pub async fn test_alert_system() {
-    println!("Testing Enhanced Alert System...");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Testing Enhanced Alert System...");
     
     // Create alert system
     let alert_system = EnhancedAlertSystem::new();
@@ -26,11 +26,11 @@ pub async fn test_alert_system() {
     // Test 4: Statistics and analysis
     test_statistics_and_analysis(&alert_system).await;
     
-    println!("Alert system tests completed successfully!");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Alert system tests completed successfully!");
 }
 
 async fn test_threshold_monitoring(alert_system: &EnhancedAlertSystem) {
-    println!("  Testing threshold monitoring...");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Testing threshold monitoring...");
     
     // Create a test metrics snapshot with high CPU usage
     let snapshot = create_test_snapshot(95.0, 50.0, 2.0, 500.0);
@@ -49,11 +49,11 @@ async fn test_threshold_monitoring(alert_system: &EnhancedAlertSystem) {
         assert!(alert.current_value > 90.0);
     }
     
-    println!("    ✓ Threshold monitoring working correctly");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Threshold monitoring working correctly");
 }
 
 async fn test_alert_suppression(alert_system: &EnhancedAlertSystem) {
-    println!("  Testing alert suppression...");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Testing alert suppression...");
     
     // Add suppression rule
     let suppression_rule = SuppressionRule {
@@ -82,11 +82,11 @@ async fn test_alert_suppression(alert_system: &EnhancedAlertSystem) {
     let stats = alert_system.get_alert_statistics();
     assert!(stats.suppression_count > 0, "Should have suppression count");
     
-    println!("    ✓ Alert suppression working correctly");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Alert suppression working correctly");
 }
 
 async fn test_alert_routing(alert_system: &EnhancedAlertSystem) {
-    println!("  Testing alert routing and priority...");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Testing alert routing and priority...");
     
     // Generate different severity alerts
     let critical_snapshot = create_test_snapshot(95.0, 50.0, 2.0, 500.0);
@@ -114,11 +114,11 @@ async fn test_alert_routing(alert_system: &EnhancedAlertSystem) {
         }
     }
     
-    println!("    ✓ Alert routing and priority working correctly");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Alert routing and priority working correctly");
 }
 
 async fn test_statistics_and_analysis(alert_system: &EnhancedAlertSystem) {
-    println!("  Testing statistics and analysis...");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Testing statistics and analysis...");
     
     // Generate some alerts
     let snapshot = create_test_snapshot(95.0, 85.0, 10.0, 2000.0);
@@ -143,7 +143,7 @@ async fn test_statistics_and_analysis(alert_system: &EnhancedAlertSystem) {
         assert!(updated_stats.total_resolved > 0, "Should have resolved alerts count");
     }
     
-    println!("    ✓ Statistics and analysis working correctly");
+    tracing::info!(target = "nyx-daemon::alert_system_test", "Statistics and analysis working correctly");
 }
 
 fn create_test_snapshot(cpu: f64, memory: f64, error_rate: f64, latency: f64) -> MetricsSnapshot {
