@@ -12,4 +12,4 @@
 | Reconnect Logic | Not Implemented | Session abstraction absent |
 | Telemetry Hooks | Planned | To integrate with browser Performance API |
 
-_Last updated: 2025-08-10_
+<!-- Continuously maintained; refer to repository history for updates. -->
