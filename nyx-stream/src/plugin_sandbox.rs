@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 use std::path::Path;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::io;
 use std::time::Duration;
 
@@ -119,17 +119,31 @@ pub fn spawn_sandboxed_plugin_with_config<P: AsRef<Path>>(
         debug!("Safety context applied successfully in isolated environment");
 
         // Execute the plugin
-        let mut cmd = Command::new(&plugin_path_owned);
-        
+        // Enforce that plugin path is absolute and under an allowlisted directory such as ./plugins
+        let exe_abs = std::fs::canonicalize(&plugin_path_owned)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("canonicalize failed: {}", e)))?;
+        let allow_dir = std::env::current_dir()
+            .and_then(|d| std::fs::canonicalize(d.join("plugins")))
+            .unwrap_or_else(|_| std::path::PathBuf::from("plugins"));
+        if !exe_abs.starts_with(&allow_dir) {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "plugin path not in allowlisted directory"));
+        }
+
+        let mut cmd = Command::new(&exe_abs);
+
         // Configure stdio
-        cmd.stdin(std::process::Stdio::null())
-           .stdout(std::process::Stdio::piped())
-           .stderr(std::process::Stdio::piped());
+        cmd.stdin(Stdio::null())
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
 
         // Set working directory if specified
         if let Some(ref wd) = config.working_directory {
             cmd.current_dir(wd);
         }
+
+        // Sanitize environment to reduce injection surface
+        cmd.env_clear();
+        cmd.env("PATH", allow_dir.as_os_str());
 
         // Spawn the process
         cmd.spawn()
