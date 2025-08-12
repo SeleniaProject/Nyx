@@ -77,6 +77,7 @@ pub enum PluginState {
 }
 
 /// Plugin interface
+#[async_trait::async_trait]
 pub trait PluginInterface: Send + Sync {
     /// Initialize the plugin
     async fn initialize(&mut self, config: PluginConfig) -> Result<(), PluginError>;
@@ -514,7 +515,7 @@ mod tests {
             flags: 0,
             data: b"test data".to_vec(),
         };
-        let payload = PluginFramework::serialize_header(&header).unwrap();
+        let payload = PluginFramework::serialize_header(&header).expect("serialize header");
         
         let result = framework.handle_plugin_frame(0x50, &payload).await;
         assert!(result.is_ok());
@@ -528,10 +529,10 @@ mod tests {
             data: b"hello world".to_vec(),
         };
         
-        let serialized = PluginFramework::serialize_header(&header).unwrap();
+        let serialized = PluginFramework::serialize_header(&header).expect("serialize header");
         assert!(!serialized.is_empty());
         
-        let deserialized: PluginHeader = cbor_serde::from_slice(&serialized).unwrap();
+        let deserialized: PluginHeader = cbor_serde::from_slice(&serialized).expect("deserialize header");
         assert_eq!(deserialized.id, 42);
         assert_eq!(deserialized.flags, 0x01);
         assert_eq!(deserialized.data, b"hello world");
