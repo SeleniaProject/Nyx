@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 [features]
 default = []
 mobile = []
+telemetry = []
 
 [dependencies]
 rand = { version = "0.8", features = ["std"] }

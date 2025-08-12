@@ -27,6 +27,7 @@ default = []
 # Enable SIMD-accelerated C backend of reed-solomon-erasure (requires cc).
 simd = ["reed-solomon-erasure/simd-accel"]
 raptorq = []
+telemetry = []
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

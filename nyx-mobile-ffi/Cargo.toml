@@ -8,7 +8,8 @@ license = "MIT"
 
 [lib]
 name = "nyx_mobile_ffi"
-crate-type = ["cdylib", "staticlib"]
+# Include rlib so other Rust crates (tests) can link the symbols directly.
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }

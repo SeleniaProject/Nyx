@@ -9,6 +9,8 @@ license = "MIT OR Apache-2.0"
 [features]
 default = ["classic"]
 hpke = ["dep:hpke"]
+# Telemetry (no extra deps here; used only for conditional instrumentation counters)
+telemetry = []
 # Classic (Elliptic Curve) X25519 only build
 classic = ["x25519-dalek"]
 
