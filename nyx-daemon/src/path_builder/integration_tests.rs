@@ -41,10 +41,10 @@ mod integration_tests {
                         sc.fetch_add(1, Ordering::SeqCst);
                     }
                     Ok(Err(e)) => {
-                        eprintln!("Path building error: {}", e);
+                        tracing::warn!(target = "nyx-daemon::path_builder_it", error = %e, "Path building error");
                     }
                     Err(_) => {
-                        eprintln!("Path building timeout");
+                        tracing::warn!(target = "nyx-daemon::path_builder_it", "Path building timeout");
                     }
                 }
             });
@@ -59,7 +59,7 @@ mod integration_tests {
         
         let successes = success_count.load(Ordering::SeqCst);
         assert!(successes > 0, "At least some concurrent requests should succeed");
-        println!("Concurrent test: {}/10 requests succeeded", successes);
+        tracing::info!(target = "nyx-daemon::path_builder_it", successes, total = 10, "Concurrent test summary");
     }
     
     /// Test DHT operations under network stress
@@ -88,11 +88,11 @@ mod integration_tests {
                 }
                 Ok(Err(e)) => {
                     // Acceptable under stress conditions
-                    println!("Discovery error under stress (expected): {}", e);
+                    tracing::info!(target = "nyx-daemon::path_builder_it", error = %e, "Discovery error under stress (expected)");
                 }
                 Err(_) => {
                     // Timeout acceptable under stress
-                    println!("Discovery timeout under stress (expected)");
+                    tracing::info!(target = "nyx-daemon::path_builder_it", "Discovery timeout under stress (expected)");
                 }
             }
         }
@@ -131,7 +131,7 @@ mod integration_tests {
         // Verify cache size is bounded
         let cache = discovery.peer_cache.lock().unwrap();
         assert!(cache.len() <= 1000, "Cache should be bounded by capacity");
-        println!("Cache size after bulk update: {}", cache.len());
+        tracing::info!(target = "nyx-daemon::path_builder_it", cache_size = cache.len(), "Cache size after bulk update");
     }
     
     /// Test persistent storage with corrupted data recovery
@@ -214,7 +214,7 @@ mod integration_tests {
             .collect();
         
         assert!(regions.len() >= 2, "Path should use peers from multiple regions");
-        println!("Selected regions: {:?}", regions);
+        tracing::info!(target = "nyx-daemon::path_builder_it", regions = ?regions, "Selected regions");
     }
     
     /// Test edge cases in path quality calculation
