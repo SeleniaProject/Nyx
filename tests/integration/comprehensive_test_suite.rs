@@ -548,7 +548,26 @@ async fn test_multipath_functionality() -> Result<(), Box<dyn std::error::Error>
 
 /// @spec 6. Low Power Mode (Mobile)
 async fn test_low_power_mode() -> Result<(), Box<dyn std::error::Error>> {
-    // Implement low power mode tests (placeholder)
+    // This test validates that entering Low Power mode reduces the cover traffic rate (lambda)
+    // and keeps it under a conservative threshold. It complements unit tests in nyx-mix.
+    use nyx_mix::adaptive::AdaptiveCoverGenerator;
+    use nyx_core::mobile::MobilePowerState;
+
+    // Baseline generator with moderate base rate
+    let mut gen = AdaptiveCoverGenerator::new(12.0, 0.5);
+    // Prime internal state
+    for _ in 0..5 { gen.next_delay(); }
+    let baseline = gen.current_lambda();
+
+    // Apply screen-off (Low Power) state and advance a few ticks
+    gen.apply_power_state(MobilePowerState::ScreenOff);
+    for _ in 0..5 { gen.next_delay(); }
+    let lp = gen.current_lambda();
+
+    // Assert lambda reduced compared to baseline and below a strict cap
+    assert!(lp < baseline, "lambda should reduce under low-power mode: baseline={baseline}, lp={lp}");
+    assert!(lp <= 4.0, "lambda should be capped to ~0.33x of baseline under screen-off: {lp}");
+
     Ok(())
 }
 

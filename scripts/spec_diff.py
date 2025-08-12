@@ -165,7 +165,7 @@ def load_previous_report() -> Dict:
     return {}
 
 
-def generate_markdown(sections: List[SectionInfo], cov: Dict[str, Dict[str, bool]], cov_score: float, new_sections: List[str], removed_sections: List[str]) -> str:
+def generate_markdown(sections: List[SectionInfo], cov: Dict[str, Dict[str, bool]], cov_score: float, new_sections: List[str], removed_sections: List[str], mapping_summary: Optional[Dict[str, object]] = None) -> str:
     lines: List[str] = []
     lines.append("# Spec / Docs Drift Report")
     lines.append("")
@@ -210,6 +210,21 @@ def generate_markdown(sections: List[SectionInfo], cov: Dict[str, Dict[str, bool
     lines.append("## Notes")
     lines.append("- 'Changed' indicates hash difference vs previous run for that section body.")
     lines.append("- Keyword coverage is heuristic (presence-based), not semantic validation.")
+
+    # Section mapping coverage (from spec_test_mapping.json)
+    if mapping_summary is not None:
+        lines.append("")
+        lines.append("## Section Mapping Coverage (@spec)")
+        lines.append("")
+        lines.append(f"Section Coverage: **{mapping_summary.get('section_coverage_percent', 0.0):.1f}%**  ")
+        lines.append(f"Mapped Sections: {mapping_summary.get('mapped_section_count', 0)}/{mapping_summary.get('total_section_count', 0)}")
+        unmapped = mapping_summary.get('unmapped_sections', []) or []
+        if unmapped:
+            lines.append("")
+            lines.append("Unmapped Sections:")
+            for s in unmapped:
+                lines.append(f"- {s}")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -231,6 +246,15 @@ def main(threshold: float) -> int:
     cov = keyword_coverage(delta_docs)
     cov_score = coverage_score(cov)
 
+    # Optionally load mapping coverage from spec_test_mapping.json
+    mapping_json_path = SPEC_DIR / "spec_test_mapping.json"
+    mapping_data: Optional[Dict[str, object]] = None
+    if mapping_json_path.exists():
+        try:
+            mapping_data = json.loads(mapping_json_path.read_text(encoding="utf-8"))
+        except Exception:
+            mapping_data = None
+
     report = {
         "timestamp": datetime.now(UTC).isoformat(),
         "spec_file": str(SPEC_FILE.relative_to(ROOT)),
@@ -239,12 +263,29 @@ def main(threshold: float) -> int:
         "removed_sections": removed_sections,
         "keyword_coverage_percent": cov_score,
         "keyword_coverage": cov,
-    "uncovered_keywords": {cat: [kw for kw, present in d.items() if not present] for cat, d in cov.items() if any(not v for v in d.values())},
+        "uncovered_keywords": {cat: [kw for kw, present in d.items() if not present] for cat, d in cov.items() if any(not v for v in d.values())},
+        # Mapping coverage passthrough if available
+        "section_mapping": {
+            "section_coverage_percent": float(mapping_data.get("section_coverage_percent", 0.0)) if mapping_data else None,
+            "mapped_section_count": int(mapping_data.get("mapped_section_count", 0)) if mapping_data else None,
+            "total_section_count": int(mapping_data.get("total_section_count", 0)) if mapping_data else None,
+            "unmapped_sections": mapping_data.get("unmapped_sections", []) if mapping_data else None,
+        },
         "coverage_threshold_met": cov_score >= threshold,
     }
 
     JSON_REPORT.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    MD_REPORT.write_text(generate_markdown(sections, cov, cov_score, new_sections, removed_sections), encoding="utf-8")
+    MD_REPORT.write_text(
+        generate_markdown(
+            sections,
+            cov,
+            cov_score,
+            new_sections,
+            removed_sections,
+            report.get("section_mapping") if report.get("section_mapping", {}).get("section_coverage_percent") is not None else None,
+        ),
+        encoding="utf-8",
+    )
 
     print(f"Spec diff report written: {JSON_REPORT}")
     print(f"Markdown report written: {MD_REPORT}")
