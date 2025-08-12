@@ -29,7 +29,7 @@ Traditional anonymous networks face an impossible choice between **privacy**, **
 
 ### 🔒 Privacy & Anonymity (In Development)
 - **Mix Network Routing**: Weighted multi-hop anonymization with geographic diversity (implementing)
-- **Cover Traffic Generation**: Poisson-distributed dummy traffic to hide communication patterns (planned)
+- **Cover Traffic Generation**: Poisson分布のダミー流量（適応カバートラフィックを含む）(✅ implemented)
 - **Post-Quantum Cryptography**: Kyber1024 and BIKE support (partial implementation)
 - **Perfect Forward Secrecy**: Ephemeral key exchanges with automatic rotation (implementing)
 - **Metadata Protection**: No logging, timing analysis resistance, traffic normalization (in development)
@@ -37,13 +37,13 @@ Traditional anonymous networks face an impossible choice between **privacy**, **
 ### ⚡ High Performance (In Development)
 - **Multipath Communication**: Concurrent data transmission over multiple routes (foundation implemented)
 - **Adaptive Congestion Control**: BBR-derived algorithm optimized for mix networks (in development)
-- **Forward Error Correction**: Reed-Solomon and RaptorQ coding for packet loss resilience (planned)
-- **0-RTT Handshake**: Immediate data transmission with replay protection (designing)
+- **Forward Error Correction**: Reed-Solomon / RaptorQ による損失耐性 (部分実装・テスト整備中)
+- **0-RTT Handshake**: 再送攻撃耐性付きの即時送信 (設計→実装移行中)
 - **Efficient Transport**: UDP primary, QUIC datagrams, TCP fallback (partial implementation)
 
 ### 🛡️ Enterprise Security (Implementation In Progress)
 - **Memory Safety**: Rust implementation with `#![forbid(unsafe_code)]` (✅ implemented)
-- **Sandboxing**: Linux seccomp, OpenBSD pledge/unveil system call restrictions (planned)
+- **Sandboxing**: Linux seccomp (✅ implemented), OpenBSD pledge/unveil (✅ implemented) system call restrictions
 - **Formal Verification**: TLA+ models with comprehensive security proofs (in development)
 - **Cryptographic Auditing**: Third-party security audits and penetration testing (planned)
 - **Zero-Knowledge Architecture**: No metadata collection or user tracking (designing)
