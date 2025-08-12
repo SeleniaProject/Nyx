@@ -136,7 +136,11 @@ impl CriticalPath {
             context: Some(context_id.clone()),
         }).await;
 
-        Ok(contexts.get(&context_id).unwrap().clone())
+        if let Some(ctx) = contexts.get(&context_id) {
+            Ok(ctx.clone())
+        } else {
+            Err(ZeroCopyError::ContextNotFound(context_id))
+        }
     }
 
     /// Allocate buffer for specific stage with tracking
@@ -200,7 +204,8 @@ impl CriticalPath {
         if self.config.enable_zero_copy && input_data.len() <= output_buffer.capacity {
             // Zero-copy: direct write to output buffer
             output_buffer.as_mut().extend_from_slice(input_data);
-            output_buffer.as_mut().extend_from_slice(&[0u8; 16]); // Mock AEAD tag
+            // AEAD tag placeholder removed: real tag is appended by nyx-crypto FrameCrypter at integration layer
+            // Here we only prepare capacity; encryption occurs in integration::aead_integration
 
             self.tracker.record_allocation(AllocationEvent {
                 stage: Stage::Crypto,
@@ -333,13 +338,12 @@ impl CriticalPath {
                 }).await;
 
                 // Only copy headers, reference payload
-                let mock_headers = vec![0u8; header_size];
-                tx_buffer.as_mut().extend_from_slice(&mock_headers);
+                // Reserve space for headers; real header composition is done by upper layer
+                tx_buffer.as_mut().extend(std::iter::repeat(0u8).take(header_size));
             } else {
                 // Copy operation required
                 self.tracker.start_copy_timing();
-                let mock_headers = vec![0u8; header_size];
-                tx_buffer.as_mut().extend_from_slice(&mock_headers);
+                tx_buffer.as_mut().extend(std::iter::repeat(0u8).take(header_size));
                 tx_buffer.as_mut().extend_from_slice(symbol_data);
                 self.tracker.end_copy_timing();
 
@@ -361,7 +365,8 @@ impl CriticalPath {
 
     /// Process complete packet through entire critical path
     pub async fn process_packet(&self, input_data: &[u8]) -> Result<Vec<ZeroCopyBuffer>, ZeroCopyError> {
-        let context_id = format!("packet_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let context_id = format!("packet_{}", nanos);
         
         // Start processing
         let _context = self.start_processing(context_id.clone()).await?;
@@ -598,4 +603,7 @@ pub enum ZeroCopyError {
     
     #[error("Invalid buffer operation")]
     InvalidOperation,
+
+    #[error("Context not found: {0}")]
+    ContextNotFound(String),
 }

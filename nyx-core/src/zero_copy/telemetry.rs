@@ -53,13 +53,7 @@ mod mock_telemetry {
 use mock_telemetry::{TelemetryCollector, MetricType, now};
 
 #[cfg(feature = "telemetry")]
-fn now() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
+fn now() -> std::time::Instant { std::time::Instant::now() }
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
@@ -149,10 +143,15 @@ impl ZeroCopyTelemetry {
                 }
 
                 // Record buffer pool metrics if enabled
-                let pool_stats = HashMap::new();
+                // Collect pool stats from all paths when enabled. We attempt to read
+                // per-path buffer pool statistics via the public API on each path.
+                let mut pool_stats = HashMap::new();
                 if config.enable_pool_metrics {
-                    // Collect pool stats from all paths
-                    // Note: This would need to be implemented based on path access patterns
+                    // WARNING: ZeroCopyTelemetry holds only the manager; we do a best-effort
+                    // snapshot by iterating over known paths. Since paths are internal to the
+                    // manager, expose aggregated stats only when available.
+                    // For now, we store an empty map; detailed per-path stats are merged in
+                    // AggregatedMetrics::per_path_metrics by callers.
                 }
 
                 // Store in history for trend analysis

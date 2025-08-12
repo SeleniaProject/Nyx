@@ -15,8 +15,8 @@ use crate::zero_copy::manager::{ZeroCopyManager, ZeroCopyError};
 pub use nyx_crypto::aead::{FrameCrypter, AeadError};
 
 // Mock crypto for testing without crypto feature
-#[cfg(not(feature = "nyx-crypto"))]
-mod mock_crypto {
+    #[cfg(not(feature = "nyx-crypto"))]
+    mod mock_crypto {
     #[derive(Clone)]
     pub struct FrameCrypter;
     
@@ -30,14 +30,14 @@ mod mock_crypto {
         Other,
     }
     
-    impl FrameCrypter {
-        pub fn encrypt(&mut self, _dir: u32, plaintext: &[u8], _aad: &[u8]) -> Vec<u8> {
-            let mut result = plaintext.to_vec();
-            result.extend_from_slice(&[0u8; 16]); // Mock tag
-            result
-        }
-        
-        pub fn decrypt(&mut self, _dir: u32, _seq: u64, ciphertext: &[u8], _aad: &[u8]) -> Result<Vec<u8>, AeadError> {
+        impl FrameCrypter {
+            pub fn encrypt(&mut self, _dir: u32, plaintext: &[u8], _aad: &[u8]) -> Result<Vec<u8>, AeadError> {
+                let mut result = plaintext.to_vec();
+                result.extend_from_slice(&[0u8; 16]); // Mock tag
+                Ok(result)
+            }
+            
+            pub fn decrypt(&mut self, _dir: u32, _seq: u64, ciphertext: &[u8], _aad: &[u8]) -> Result<Vec<u8>, AeadError> {
             if ciphertext.len() < 16 {
                 return Err(AeadError::DecryptionFailed);
             }
@@ -93,7 +93,7 @@ pub mod aead_integration {
             }).await;
 
             // Perform encryption
-            let result = self.crypter.encrypt(dir, plaintext, aad);
+            let result = self.crypter.encrypt(dir, plaintext, aad)?;
 
             // Track completion
             path.record_allocation(AllocationEvent {
@@ -328,29 +328,11 @@ pub mod transmission_integration {
     use super::*;
     use std::net::SocketAddr;
     
-    // Mock UDP socket for testing
-    #[derive(Clone)]
-    pub struct UdpSocket;
-    
-    impl UdpSocket {
-        pub async fn bind(_addr: SocketAddr) -> Result<Self, std::io::Error> {
-            Ok(Self)
-        }
-        
-        pub async fn send_to(&self, data: &[u8], _target: SocketAddr) -> Result<usize, std::io::Error> {
-            Ok(data.len())
-        }
-        
-        pub async fn recv_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), std::io::Error> {
-            let bytes_to_copy = std::cmp::min(buffer.len(), 100); // Mock receive 100 bytes
-            buffer[..bytes_to_copy].fill(0);
-            Ok((bytes_to_copy, "127.0.0.1:8080".parse().unwrap()))
-        }
-    }
+    use tokio::net::UdpSocket;
 
     /// Zero-copy enhanced transmission handler
     pub struct ZeroCopyTransmissionHandler {
-        /// UDP socket for transmission
+        /// UDP socket for transmission (tokio::net::UdpSocket)
         socket: Arc<UdpSocket>,
         /// Zero-copy manager reference
         manager: Arc<ZeroCopyManager>,
@@ -365,6 +347,8 @@ pub mod transmission_integration {
             manager: Arc<ZeroCopyManager>,
             path_id: String,
         ) -> Result<Self, std::io::Error> {
+            // Bind actual UDP socket via Tokio. This enables kernel-level zero-copy paths
+            // (e.g., gather I/O) where supported and integrates with our async runtime.
             let socket = Arc::new(UdpSocket::bind(bind_addr).await?);
             Ok(Self { socket, manager, path_id })
         }
