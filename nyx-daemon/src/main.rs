@@ -88,6 +88,9 @@ mod layer_recovery_test;
 
 #[cfg(feature = "experimental-metrics")] use metrics::MetricsCollector;
 #[cfg(feature = "experimental-metrics")] use prometheus_exporter::{PrometheusExporter, PrometheusExporterBuilder};
+// Ensure HTTPS webhooks are not used in C-free builds
+#[cfg(feature = "experimental-alerts")]
+const _NYX_BUILD_TLS_FREE: bool = true;
 #[cfg(feature = "experimental-metrics")] use stream_manager::{StreamManager, StreamManagerConfig};
 #[cfg(feature = "path-builder")] use path_builder::PathBuilder;
 use session_manager::{SessionManager, SessionManagerConfig};
@@ -98,6 +101,7 @@ use health_monitor::{HealthMonitor};
 #[cfg(feature = "experimental-dht")] use pure_rust_dht_tcp::PureRustDht;
 #[cfg(feature = "experimental-p2p")] use pure_rust_p2p::{PureRustP2P, P2PConfig, P2PNetworkEvent};
 use crate::proto::EventFilter;
+use std::borrow::Cow;
 
 /// Convert SystemTime to proto::Timestamp
 fn system_time_to_proto_timestamp(time: SystemTime) -> proto::Timestamp {
@@ -153,6 +157,9 @@ pub struct ControlService {
     // Statistics
     connection_count: Arc<std::sync::atomic::AtomicU32>,
     total_requests: Arc<std::sync::atomic::AtomicU64>,
+
+    // Access control: if present, all control APIs require this token
+    api_token: Option<String>,
 }
 
 impl ControlService {
@@ -181,11 +188,17 @@ impl ControlService {
             let metrics = Arc::new(MetricsCollector::new());
             let _metrics_task = Arc::clone(&metrics).start_collection();
 
-            // Initialize Prometheus exporter
-            let prometheus_addr = std::env::var("NYX_PROMETHEUS_ADDR")
-                .unwrap_or_else(|_| "127.0.0.1:9090".to_string())
-                .parse()
-                .expect("Invalid Prometheus address format");
+            // Initialize Prometheus exporter with safe parsing
+            let prometheus_addr = match std::env::var("NYX_PROMETHEUS_ADDR") {
+                Ok(v) => match v.parse() {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        tracing::warn!("Invalid NYX_PROMETHEUS_ADDR '{}': {}. Falling back to 127.0.0.1:9090", v, e);
+                        std::net::SocketAddr::from(([127,0,0,1], 9090))
+                    }
+                },
+                Err(_) => std::net::SocketAddr::from(([127,0,0,1], 9090)),
+            };
             let prometheus_exporter = PrometheusExporterBuilder::new()
                 .with_server_addr(prometheus_addr)
                 .with_update_interval(Duration::from_secs(15))
@@ -324,11 +337,11 @@ impl ControlService {
         #[cfg(feature = "experimental-dht")]
         let pure_rust_dht = {
             info!("Initializing Pure Rust DHT...");
-            let dht_addr = "127.0.0.1:3001".parse()
+            let dht_addr = std::net::SocketAddr::from(([127,0,0,1], 3001))
                 .map_err(|e| anyhow::anyhow!("Invalid DHT address: {}", e))?;
             let bootstrap_addrs = vec![
-                "127.0.0.1:3002".parse().unwrap(),
-                "127.0.0.1:3003".parse().unwrap(),
+                std::net::SocketAddr::from(([127,0,0,1], 3002)),
+                std::net::SocketAddr::from(([127,0,0,1], 3003)),
             ];
             let mut dht_instance = PureRustDht::new(dht_addr, bootstrap_addrs)
                 .await
@@ -344,10 +357,10 @@ impl ControlService {
         let pure_rust_p2p = {
             info!("Initializing Pure Rust P2P network...");
             let p2p_config = P2PConfig {
-                listen_address: "127.0.0.1:3100".parse().unwrap(),
+                listen_address: std::net::SocketAddr::from(([127,0,0,1], 3100)),
                 bootstrap_peers: vec![
-                    "127.0.0.1:3101".parse().unwrap(),
-                    "127.0.0.1:3102".parse().unwrap(),
+                    std::net::SocketAddr::from(([127,0,0,1], 3101)),
+                    std::net::SocketAddr::from(([127,0,0,1], 3102)),
                 ],
                 max_peers: 50,
                 enable_encryption: false, // Disabled for now to avoid TLS complexity
@@ -386,6 +399,9 @@ impl ControlService {
         };
         
         info!("Creating control service instance...");
+        // Load optional control-plane API token from environment
+        let api_token = std::env::var("NYX_CONTROL_TOKEN").ok().filter(|s| !s.is_empty());
+
         let service = Self {
             start_time,
             node_id,
@@ -406,6 +422,7 @@ impl ControlService {
             config: Arc::new(RwLock::new(config)),
             connection_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             total_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            api_token,
         };
         info!("Control service instance created");
         
@@ -758,6 +775,47 @@ impl ControlService {
         // For now, return a default region
         "us-west".to_string()
     }
+
+    /// Verify authorization for admin-like requests using optional metadata map.
+    /// If `NYX_CONTROL_TOKEN` is unset, authorization is not enforced.
+    fn ensure_authorized(
+        &self,
+        metadata: Option<&HashMap<String, String>>,
+    ) -> Result<(), String> {
+        let Some(expected) = &self.api_token else { return Ok(()); };
+
+        let provided = metadata
+            .and_then(|m| {
+                if let Some(v) = m.get("authorization") {
+                    let v = v.trim();
+                    if let Some(rest) = v.strip_prefix("Bearer ") {
+                        return Some(rest.trim().to_string());
+                    }
+                    return Some(v.to_string());
+                }
+                m.get("api_key")
+                    .or_else(|| m.get("api-key"))
+                    .or_else(|| m.get("x-api-key"))
+                    .map(|s| s.trim().to_string())
+            })
+            .ok_or_else(|| "Missing authorization token".to_string())?;
+
+        if constant_time_eq(expected.as_bytes(), provided.as_bytes()) {
+            Ok(())
+        } else {
+            Err("Invalid authorization token".to_string())
+        }
+    }
+}
+
+/// Constant-time equality for secret comparison
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    let mut diff = 0u8;
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
+    diff == 0
 }
 
 #[async_trait::async_trait]
@@ -769,6 +827,7 @@ impl NyxControl for ControlService {
         _request: proto::Empty,
     ) -> Result<NodeInfo, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Read-only endpoint: allow without token to enable health visibility by default.
         
         let info = self.build_node_info().await;
         Ok(info)
@@ -781,6 +840,7 @@ impl NyxControl for ControlService {
         request: HealthRequest,
     ) -> Result<HealthResponse, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Read-only endpoint: allow without token to enable health visibility by default.
         
         let health_status = self.health_monitor.get_health_status(request.include_details).await;
         
@@ -794,6 +854,8 @@ impl NyxControl for ControlService {
         request: OpenRequest,
     ) -> Result<StreamResponse, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Mutating operation requires authorization when token configured.
+        if !request.metadata.is_empty() { self.ensure_authorized(Some(&request.metadata))?; } else { self.ensure_authorized(None)?; }
         #[cfg(feature = "experimental-metrics")]
         let result = self.stream_manager.open_stream(request).await;
         #[cfg(not(feature = "experimental-metrics"))]
@@ -820,6 +882,8 @@ impl NyxControl for ControlService {
         request: StreamId,
     ) -> Result<proto::Empty, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Closing a stream is a mutating operation; require authorization if configured.
+        self.ensure_authorized(None)?;
         #[cfg(feature = "experimental-metrics")]
         let stream_id = &request.id;
         #[cfg(feature = "experimental-metrics")]
@@ -858,6 +922,7 @@ impl NyxControl for ControlService {
         request: StreamId,
     ) -> Result<StreamStats, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Stats are read-only; allow without token.
         #[cfg(feature = "experimental-metrics")]
         let stream_id = request.id.parse::<u32>().map_err(|e| format!("Invalid stream ID: {}", e))?;
         #[cfg(feature = "experimental-metrics")]
@@ -887,6 +952,7 @@ impl NyxControl for ControlService {
         _request: proto::Empty,
     ) -> Result<Vec<StreamStats>, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.ensure_authorized(None)?;
         
         // Get all stream stats from the stream manager
     #[cfg(feature = "experimental-metrics")]
@@ -903,6 +969,7 @@ impl NyxControl for ControlService {
         request: EventFilter,
     ) -> Result<Vec<Event>, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.ensure_authorized(None)?;
         #[cfg(feature = "experimental-events")]
         {
             let limit = request.time_range_seconds.map(|secs| secs as usize).or(Some(1000));
@@ -923,6 +990,7 @@ impl NyxControl for ControlService {
         _request: proto::Empty,
     ) -> Result<Vec<StatsUpdate>, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.ensure_authorized(None)?;
         
         // Return current stats snapshot
     #[cfg(feature = "experimental-metrics")]
@@ -1016,6 +1084,8 @@ impl NyxControl for ControlService {
         request: proto::ConfigRequest,
     ) -> Result<proto::ConfigResponse, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let meta = if request.metadata.is_empty() { None } else { Some(&request.metadata) };
+        self.ensure_authorized(meta)?;
         
         match self.config_manager.update_config(ConfigUpdate { section: request.scope.clone(), key: request.key.clone(), value: request.value.clone().unwrap_or_default(), settings: request.metadata.clone() }).await {
             Ok(response) => {
@@ -1059,6 +1129,7 @@ impl NyxControl for ControlService {
         _request: proto::Empty,
     ) -> Result<ConfigResponse, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.ensure_authorized(None)?;
         
         match self.config_manager.reload_config().await {
             Ok(response) => {
@@ -1141,9 +1212,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = "[::1]:50051";
     let config = Default::default();
-    let _service = ControlService::new(config);
+    let _service = ControlService::new(config).await?;
     
-    println!("Nyx daemon starting on {}", addr);
+    tracing::info!(target = "nyx-daemon", address = %addr, "Nyx daemon starting");
     
     // Start the server (simplified non-tonic version)
     loop {
