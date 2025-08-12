@@ -12,7 +12,7 @@
 //! All implementations use safe Rust wrappers around Windows APIs.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 use tokio::time::timeout;
@@ -50,14 +50,28 @@ pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Chil
         return Err(io::Error::new(io::ErrorKind::NotFound, "plugin binary not found"));
     }
 
+    // Enforce a strict allowlist for plugin locations (absolute path, under program directory/"plugins").
+    // This avoids executing arbitrary binaries.
+    let exe_abs: PathBuf = exe.canonicalize()?;
+    let allowed_dir = std::env::current_dir()?.join("plugins").canonicalize().unwrap_or_else(|_| PathBuf::from("plugins"));
+    if !exe_abs.starts_with(&allowed_dir) {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "plugin path not in allowlisted directory"));
+    }
+
     let config = SandboxConfig::default();
 
-    // Launch the child process with no inherited handles
-    let mut child = Command::new(exe)
+    // Launch the child process with no inherited handles and sanitized environment
+    let mut child_cmd = Command::new(&exe_abs);
+    child_cmd
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+
+    // Clear environment except minimal PATH to the plugin directory to avoid DLL hijacking via PATH
+    child_cmd.env_clear();
+    child_cmd.env("PATH", allowed_dir.as_os_str());
+
+    let mut child = child_cmd.spawn()?;
 
     // Create and configure Job Object using safe win32job crate
     if let Err(e) = configure_job_object_safe(&child, &config) {
