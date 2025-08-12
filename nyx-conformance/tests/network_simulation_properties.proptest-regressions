@@ -12,3 +12,6 @@ cc 608f4e685df744bdb5e750298491af3e0ee49d7f8c4ab2907707f9d7a5b12b72 # shrinks to
 cc 990098938df1655e73c270e51a1b60602c16cc4022f9f43da16507f033fdc3d6 # shrinks to redundancy_level = 2, base_loss_rate = 0.1, packet_count = 33
 cc 789268548120389dbc69f4abefe975897e7a45f6837ca4f0999bddde31d6fe9e # shrinks to failure_modes = [Delay(78), Delay(123)], node_count = 3, packet_count = 20
 cc 51c7130217d01dc9d62604593c9aab40264ec7aa68185833ebe4e5f7c03dfa23 # shrinks to redundancy_level = 4, base_loss_rate = 0.2881512768331032, packet_count = 30
+cc 39937ea3fab0c61b6863a674adc1342a0efa5719a77243673d046af3ca540c52 # shrinks to path_count = 3, packets_per_path = 13, reorder_intensity = 0.2576917333062839
+cc d4236cdbc6055b2c6412a61e296792f7b47c45788a9e478c8ea15640be103cb4 # shrinks to path_count = 4, packets_per_path = 12, reorder_intensity = 0.24188542250336334
+cc 92dbd156ba94bccececdd42c73bb5f8972d64aea46f7d573cc9405e40ae8f966 # shrinks to failure_modes = [PacketLoss(0.15873075216623767), Corruption(0.09324754480260326), Duplication(0.18571859007700683), Delay(112)], node_count = 3, packet_count = 22
