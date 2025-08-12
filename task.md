@@ -4,30 +4,31 @@ NyxNet 未実装/プレースホルダー総点検チェックリスト
 
 グローバル(仕様・設計・README 整合)
 - [x] 仕様「Windows: プロセス分離(計画)」の実装整合を取る(`spec/Nyx_Protocol_v1.0_Spec_EN.md` / `nyx-core/src/windows.rs` / `nyx-daemon/src/main.rs`)
-- [ ] 仕様「Linux: seccomp-bpf」「OpenBSD: pledge/unveil」の実装整合を取る(`spec/Nyx_Protocol_v1.0_Spec_EN.md`)
+ - [x] 仕様「Linux: seccomp-bpf」「OpenBSD: pledge/unveil」の実装整合を取る(`spec/Nyx_Protocol_v1.0_Spec_EN.md`)
 - [ ] 設計「Mobile(iOS/Android): Power management, background operation(計画)」の実装方針確定(`spec/Nyx_Design_Document_EN.md` / `spec/Nyx_Design_Document.md`)
-- [ ] 設計「WebAssembly: Research」→ 実装/非対応方針を明確化(`spec/Nyx_Design_Document_EN.md`)
-- [ ] README の「Cover Traffic Generation(planned)」の実装/テスト反映(`README.md`)
+ - [ ] 設計「WebAssembly: Research」→ 実装/非対応方針を明確化(`spec/Nyx_Design_Document_EN.md`)
+- [x] README の「Cover Traffic Generation(planned)」の実装/テスト反映(`README.md`)
 - [ ] README の「FEC: Reed-Solomon/RaptorQ(planned)」実装状況と API 整合(`README.md`, `nyx-fec/`)
 - [ ] README の「0-RTT Handshake(designing)」設計→実装に昇格(`README.md`, `nyx-crypto/`, `nyx-stream/`)
-- [ ] README の「Sandboxing(planned)」「Formal Verification(in development)」のコード/CI 整合
+- [x] README の「Sandboxing(planned)」実装反映（seccomp/pledge/unveil）(`nyx-core/src/sandbox.rs`, `README.md`)
+- [ ] README の「Formal Verification(in development)」のコード/CI 整合
 - [ ] README の「Cloud Integration(計画)」テンプレート群の実装整備(`charts/`, `Dockerfile` 等)
 
 nyx-core
 - [x] Zero-copy: コピー計測の実装(`nyx-core/src/zero_copy.rs`: copy_overhead_ns // TODO)
-- [ ] Low power: カバートラフィック送出の実処理化(placeholder を除去)(`nyx-core/src/low_power.rs`)
-- [ ] Zero-copy テレメトリ統合テストのプレースホルダー解消(`nyx-core/tests/zero_copy_tests.rs`)
+ - [x] Low power: カバートラフィック送出の実処理化(placeholder を除去)(`nyx-core/src/low_power.rs`)
+- [x] Zero-copy テレメトリ統合テストのプレースホルダー解消(`nyx-core/tests/zero_copy_tests.rs`)
 - [ ] Zero-copy integration: mock 依存部を本実装へ置換(crypto/FEC/UDP モックの除去)(`nyx-core/src/zero_copy/integration.rs`, `manager.rs`, `telemetry.rs`)
 
 nyx-mix
-- [ ] cMix: VDF 実装(例: Wesolowski)と RSA accumulator 統合の TODO 解消(`nyx-mix/src/cmix.rs`)
+ - [x] cMix: VDF 実装(例: Wesolowski)と RSA accumulator 統合の TODO 解消(`nyx-mix/src/cmix.rs`)
 - [ ] cover/adaptive: コメントのモック手順を本実装へ置換(`nyx-mix/src/cover_adaptive.rs`)
 
 nyx-stream
-- [ ] Plugin settings: プラグインレジストリ導入時のバージョン互換性チェック実装(`nyx-stream/src/plugin_settings.rs`)
-- [ ] 一時無効化モジュールの再有効化と実装復帰(`nyx-stream/src/lib.rs`)
-  - [ ] `frame_handler` 再実装/再公開
-  - [ ] `integrated_frame_processor` 実装と公開
+ - [x] Plugin settings: プラグインレジストリ導入時のバージョン互換性チェック実装(`nyx-stream/src/plugin_settings.rs`)
+ - [x] 一時無効化モジュールの再有効化と実装復帰(`nyx-stream/src/lib.rs`)
+  - [x] `frame_handler` 再実装/再公開
+  - [x] `integrated_frame_processor` 実装と公開
 - [ ] レガシーテスト無効化解除(`feature = "legacy_tests_disabled"` を外せる状態へ)
   - [ ] `tests/integrated_frame_processor_tests.rs`: 未定義 `IntegratedFrameConfig`/`IntegratedFrameProcessor` を実装
   - [ ] `tests/frame_handler_tests.rs`: `Frame` 型とデシリアライズ実装を整備
@@ -38,21 +39,21 @@ nyx-stream
 - [ ] FEC 非有効時の互換レイヤ(compat)を本実装へ統合(`nyx-stream/src/tx.rs` 他)
 
 nyx-daemon
-- [ ] Event system: 未使用 API の整理 or 実配線(`nyx-daemon/src/event_system.rs` // TODO)
+- [x] Event system: 未使用 API の整理 or 実配線(`nyx-daemon/src/event_system.rs` // TODO)
 - [x] Health monitor: ディスク空き監視の実装(現在は "not implemented" を返却)(`nyx-daemon/src/health_monitor.rs`)
 - [x] Metrics: placeholder 値/エンドポイント/uptime の実測・蓄積・エクスポート実装(`nyx-daemon/src/metrics.rs`)
-- [ ] main: イベントストアの実装(placeholder を廃止)(`nyx-daemon/src/main.rs`)
+- [x] main: イベントストアの実装(placeholder を廃止)(`nyx-daemon/src/main.rs`)
 - [ ] Layer manager: 一時的劣化(degrade)や bypass の実処理化(現在多くが説明ログのみ)(`nyx-daemon/src/layer_manager.rs`)
 - [ ] libp2p_network: プレースホルダー(値取得/PeerId/暗号/None返却など)の全面実装(`nyx-daemon/src/libp2p_network.rs`)
 - [ ] path_builder.rs: Pure Rust DHT 連携の本実装と、`path_builder_broken.rs` の残存プレースホルダー整理
-  - [ ] `path_builder_broken.rs`: placeholder/temporary stubs の撤去 or 非ビルド化
+  - [x] `path_builder_broken.rs`: placeholder/temporary stubs の撤去 or 非ビルド化
   - [ ] DHT discovery fallback の実装(placeholder 削除)
   - [ ] ノードメトリクス更新(placeholder)の実装
 - [ ] pure_rust_dht(_tcp): 値検索/ノード ID/問い合わせ系 placeholder の実装(`nyx-daemon/src/pure_rust_dht*.rs`)
 - [ ] layer_recovery_test: 一時劣化ハンドリング/回復の実テスト整備(`nyx-daemon/src/layer_recovery_test.rs`)
 
 nyx-transport
-- [ ] STUN: バッファ長等の placeholder を正規実装へ(`nyx-transport/src/stun_server.rs`)
+ - [x] STUN: バッファ長等の placeholder を正規実装へ(`nyx-transport/src/stun_server.rs`)
 - [ ] QUIC 非有効時のスタブ群を実装または機能フラグ設計を見直し(`nyx-transport/src/lib.rs`)
 
 nyx-fec
@@ -65,7 +66,7 @@ nyx-crypto
 - [ ] Noise: BIKE policy-disabled の恒久方針反映(`nyx-crypto/src/noise.rs`)
 
 nyx-telemetry
-- [ ] OTLP: `force_flush()` の本実装化と exporter 統合(`nyx-telemetry/src/otlp.rs`)
+- [x] OTLP: `force_flush()` の本実装化と exporter 統合(`nyx-telemetry/src/otlp.rs`)
 - [ ] OpenTelemetry 統合: placeholder な固定 ID/簡易動作を正式フローへ(`nyx-telemetry/src/opentelemetry_integration.rs`)
 
 nyx-control
@@ -73,12 +74,12 @@ nyx-control
 - [ ] Settings: JSONSchema ドラフト/バリデーションの最終化(`nyx-control/src/settings.rs`)
 
 nyx-cli
-- [ ] main_grpc_backup: リトライ最大回数を設定から取得(TODO 解消)(`nyx-cli/src/main_grpc_backup.rs`)
+ - [x] main_grpc_backup: リトライ最大回数を設定から取得(TODO 解消)(`nyx-cli/src/main_grpc_backup.rs`)
 - [ ] main_grpc_backup: 受信ファイル機能・リアルタイムダッシュボードの placeholder 解消
-- [ ] i18n: `{ $var }` プレースホルダー置換の拡張(複合/整形対応)(`nyx-cli/src/i18n.rs`)
+- [x] i18n: `{ $var }` プレースホルダー置換の拡張(複合/整形対応)(`nyx-cli/src/i18n.rs`)
 
 nyx-sdk
-- [ ] daemon.rs: `public_key: "public-key-placeholder"` を実キーへ置換(`nyx-sdk/src/daemon.rs`)
+ - [x] daemon.rs: `public_key: "public-key-placeholder"` を実キーへ置換(`nyx-sdk/src/daemon.rs`)
 - [ ] reconnect/retry: 一時失敗/再接続周りのポリシー最終化(仮実装/固定値除去)(`nyx-sdk/src/reconnect.rs`, `retry.rs`)
 - [ ] error.rs: CLOSE/Status マッピングでの "Unimplemented"/501 取り扱いの仕様化(`nyx-sdk/src/error.rs`)
 
@@ -107,7 +108,7 @@ nyx-mobile-ffi
 - [ ] Prometheus/OTLP へのエクスポート完全化(`nyx-daemon/src/metrics.rs`, `nyx-telemetry/`)
 
 セキュリティ/サンドボックス
-- [ ] seccomp/pledge/unveil 実装と OS ごとの fallback 設計統合(`nyx-core/src/sandbox.rs` 他)
+- [x] seccomp/pledge/unveil 実装と OS ごとの fallback 設計統合(`nyx-core/src/sandbox.rs` 他)
 - [ ] 暗号鍵管理/キー配送/ローテーションの本運用仕様化(placeholder/固定鍵排除)(`nyx-crypto/`, `nyx-daemon/`)
 
 デプロイ/運用
@@ -122,13 +123,13 @@ nyx-mobile-ffi
 - [x] `nyx-daemon/src/health_monitor.rs`: "Disk space check not implemented" を実処理に置換
 - [ ] `nyx-daemon/src/proto.rs`: `NyxControlService { /* placeholder */ }` の機能実装
 - [ ] `nyx-daemon/src/main.rs`: イベントストア/フィルタ(placeholder)の実装
-- [ ] `nyx-daemon/src/libp2p_network.rs`: 値検索/署名/暗号/メッセージ処理(placeholder)の実装
+ - [x] `nyx-daemon/src/libp2p_network.rs`: 値検索/署名/暗号/メッセージ処理(placeholder)の実装
 - [ ] `nyx-daemon/src/pure_rust_dht_tcp.rs`: 値検索 `None // Placeholder` の実装、Ping の node_id 生成の実装
-- [ ] `nyx-daemon/src/path_builder_broken.rs`: 互換スタブ/メンテ placeholder の撤去 or 代替
-- [ ] `nyx-transport/src/stun_server.rs`: placeholder 長の正規算出
+ - [x] `nyx-daemon/src/path_builder_broken.rs`: 互換スタブ/メンテ placeholder の撤去 or 代替
+ - [x] `nyx-transport/src/stun_server.rs`: placeholder 長の正規算出
 - [x] `nyx-core/src/zero_copy.rs`: `copy_overhead_ns: 0 // TODO` の実計測
 - [ ] `nyx-stream/src/plugin_handshake.rs`: 埋め込み鍵/署名(placeholder)→レジストリ検証
 - [x] `nyx-telemetry/src/otlp.rs`: `force_flush()` の実処理
-- [ ] `nyx-sdk/src/daemon.rs`: `public_key-placeholder` の解消
+ - [x] `nyx-sdk/src/daemon.rs`: `public_key-placeholder` の解消
 - [ ] `nyx-cli/src/main_grpc_backup.rs`: リトライ回数設定/TUI ダッシュボード/ファイル受信の実装
 
