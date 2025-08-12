@@ -11,6 +11,7 @@
 //! - Error tracking and analysis
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 use prometheus::{IntCounterVec, IntCounter};
@@ -212,6 +213,13 @@ pub struct TelemetryCollector {
     multipath_weight_dev: Option<GaugeVec>,
     #[cfg(feature="prometheus")]
     multipath_jitter_hist: Option<HistogramVec>,
+    // Dynamic metric registries for generic recording API
+    dynamic_counters: StdRwLock<HashMap<String, Counter>>,
+    dynamic_counter_vecs: StdRwLock<HashMap<(String, Vec<String>), prometheus::CounterVec>>,
+    dynamic_gauges: StdRwLock<HashMap<String, Gauge>>,
+    dynamic_gauge_vecs: StdRwLock<HashMap<(String, Vec<String>), GaugeVec>>,
+    // Limits to prevent unbounded growth of dynamic metric series
+    dynamic_series_limit: usize,
 }
 
 impl TelemetryCollector {
@@ -271,6 +279,11 @@ impl TelemetryCollector {
             multipath_weight_dev: None,
             #[cfg(feature="prometheus")]
             multipath_jitter_hist: None,
+            dynamic_counters: StdRwLock::new(HashMap::new()),
+            dynamic_counter_vecs: StdRwLock::new(HashMap::new()),
+            dynamic_gauges: StdRwLock::new(HashMap::new()),
+            dynamic_gauge_vecs: StdRwLock::new(HashMap::new()),
+            dynamic_series_limit: 2000,
         })
     }
 
@@ -377,6 +390,100 @@ pub fn ensure_plugin_metrics_registered(registry: &Registry) {
             ).buckets(vec![0.005,0.01,0.025,0.05,0.1,0.25,0.5,1.0,2.0,5.0])).unwrap();
             let _ = registry.register(Box::new(h.clone()));
             let _ = PLUGIN_INIT_DURATION.set(h);
+        }
+    }
+}
+
+// ---- Public lightweight metric recording API (SDK/coreから利用) ----
+#[derive(Clone, Copy, Debug)]
+pub enum MetricType { Counter, Gauge }
+
+pub type Timestamp = std::time::Instant;
+
+impl TelemetryCollector {
+    /// Record a metric by name, creating it on demand. Labels are optional.
+    pub async fn record_metric(
+        &self,
+        name: &str,
+        metric_type: MetricType,
+        value: f64,
+        _timestamp: Timestamp,
+        labels: Option<HashMap<String, String>>,
+    ) {
+        match metric_type {
+            MetricType::Counter => {
+                if let Some(labels) = labels {
+                    let keys: Vec<String> = labels.keys().cloned().collect();
+                    let key = (name.to_string(), keys.clone());
+                    let vec_map = &self.dynamic_counter_vecs;
+                    let counter_vec = {
+                        if let Some(v) = vec_map.read().unwrap().get(&key) { v.clone() } else {
+                            // Enforce series limit on metric families
+                            if vec_map.read().unwrap().len() >= self.dynamic_series_limit {
+                                // Drop creation if limit reached
+                                return;
+                            }
+                            let cv = prometheus::CounterVec::new(
+                                prometheus::Opts::new(name, name),
+                                &keys.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                            ).unwrap();
+                            let _ = self.registry.register(Box::new(cv.clone()));
+                            vec_map.write().unwrap().insert(key.clone(), cv.clone());
+                            cv
+                        }
+                    };
+                    let values: Vec<String> = keys.iter().map(|k| labels.get(k).cloned().unwrap_or_default()).collect();
+                    // Enforce label cardinality limit by hashing value tuple to a bounded key space
+                    if values.len() > 8 { return; }
+                    if let Ok(c) = counter_vec.get_metric_with_label_values(&values.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
+                        c.inc_by(value.max(0.0));
+                    }
+                } else {
+                    let c_map = &self.dynamic_counters;
+                    let c = if let Some(c) = c_map.read().unwrap().get(name) { c.clone() } else {
+                        let c = Counter::new(name, name).unwrap();
+                        let _ = self.registry.register(Box::new(c.clone()));
+                        c_map.write().unwrap().insert(name.to_string(), c.clone());
+                        c
+                    };
+                    c.inc_by(value.max(0.0));
+                }
+            }
+            MetricType::Gauge => {
+                if let Some(labels) = labels {
+                    let keys: Vec<String> = labels.keys().cloned().collect();
+                    let key = (name.to_string(), keys.clone());
+                    let vec_map = &self.dynamic_gauge_vecs;
+                    let gauge_vec = {
+                        if let Some(v) = vec_map.read().unwrap().get(&key) { v.clone() } else {
+                            if vec_map.read().unwrap().len() >= self.dynamic_series_limit {
+                                return;
+                            }
+                            let gv = GaugeVec::new(
+                                prometheus::Opts::new(name, name),
+                                &keys.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                            ).unwrap();
+                            let _ = self.registry.register(Box::new(gv.clone()));
+                            vec_map.write().unwrap().insert(key.clone(), gv.clone());
+                            gv
+                        }
+                    };
+                    let values: Vec<String> = keys.iter().map(|k| labels.get(k).cloned().unwrap_or_default()).collect();
+                    if values.len() > 8 { return; }
+                    if let Ok(g) = gauge_vec.get_metric_with_label_values(&values.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
+                        g.set(value);
+                    }
+                } else {
+                    let g_map = &self.dynamic_gauges;
+                    let g = if let Some(g) = g_map.read().unwrap().get(name) { g.clone() } else {
+                        let g = Gauge::new(name, name).unwrap();
+                        let _ = self.registry.register(Box::new(g.clone()));
+                        g_map.write().unwrap().insert(name.to_string(), g.clone());
+                        g
+                    };
+                    g.set(value);
+                }
+            }
         }
     }
 }
@@ -707,8 +814,17 @@ impl TelemetryCollector {
                 let encoder = TextEncoder::new();
                 let metric_families = registry.gather();
                 let mut buffer = Vec::new();
-                encoder.encode(&metric_families, &mut buffer).unwrap();
-                String::from_utf8(buffer).unwrap()
+                if let Err(e) = encoder.encode(&metric_families, &mut buffer) {
+                    return format!("# nyx: metrics encoding error: {}\n", e);
+                }
+                match String::from_utf8(buffer) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        // Fallback to lossy conversion to ensure endpoint remains responsive
+                        let bytes = e.into_bytes();
+                        String::from_utf8_lossy(&bytes).into_owned()
+                    }
+                }
             });
             let port = self.config.metrics_port;
             tokio::spawn(async move { warp::serve(metrics_route).run(([0,0,0,0], port)).await; });
@@ -882,8 +998,11 @@ impl TelemetryCollector {
         let circuit = self.exporter_circuit_open.clone();
         let running = self.running.clone();
         tokio::spawn(async move {
-            use std::net::TcpStream; use std::time::Duration; use tokio::time::sleep;
+            use tokio::net::TcpStream;
+            use tokio::time::{sleep, Duration, timeout};
             let mut fails = 0u32;
+            let mut backoff_ms: u64 = 1000; // start with 1s
+            let max_backoff_ms: u64 = 15000; // cap at 15s
             loop {
                 if !*running.read().await { break; }
                 // crude parse
@@ -892,9 +1011,29 @@ impl TelemetryCollector {
                 if let Some(rest) = s.strip_prefix("https://") { s = rest.to_string(); }
                 if let Some(idx) = s.find('/') { s = s[..idx].to_string(); }
                 if !s.contains(':') { s = format!("{}:4317", s); }
-                let res = TcpStream::connect_timeout(&s.parse().unwrap_or_else(|_| "127.0.0.1:4317".parse().unwrap()), Duration::from_millis(300));
-                match res { Ok(_) => { if let Some(c)=&success { c.inc(); } fails=0; if let Some(g)=&circuit { g.set(0); } }, Err(_) => { if let Some(c)=&failure { c.inc(); } fails+=1; if fails>5 { if let Some(g)=&circuit { g.set(1); } } } }
-                sleep(Duration::from_secs(2)).await;
+
+                let addr: std::net::SocketAddr = s.parse().unwrap_or_else(|_| "127.0.0.1:4317".parse().unwrap());
+                let res = timeout(Duration::from_millis(500), TcpStream::connect(addr)).await;
+                match res {
+                    Ok(Ok(_stream)) => {
+                        if let Some(c)=&success { c.inc(); }
+                        fails = 0;
+                        backoff_ms = 1000; // reset backoff on success
+                        if let Some(g)=&circuit { g.set(0); }
+                    }
+                    _ => {
+                        if let Some(c)=&failure { c.inc(); }
+                        fails = fails.saturating_add(1);
+                        if fails > 5 {
+                            if let Some(g)=&circuit { g.set(1); }
+                        }
+                        // exponential backoff with jitter
+                        backoff_ms = (backoff_ms.saturating_mul(2)).min(max_backoff_ms);
+                    }
+                }
+                // add small jitter 0..200ms
+                let jitter = (fails as u64 * 37) % 200;
+                sleep(Duration::from_millis(backoff_ms + jitter)).await;
             }
         });
     }
