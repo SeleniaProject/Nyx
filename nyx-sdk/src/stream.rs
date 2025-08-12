@@ -10,6 +10,7 @@ use crate::error::{NyxError, NyxResult};
 // use crate::proto::nyx_control_client::NyxControlClient; // Removed: C/C++ dependency
 use crate::daemon::ConnectionInfo;
 use crate::retry::{RetryExecutor, RetryStrategy};
+use crate::config::RetryConfig;
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -166,7 +167,19 @@ impl NyxStream {
             retry_executor: RetryExecutor::new(retry_strategy),
             #[cfg(feature = "reconnect")]
             reconnect_manager: if options.auto_reconnect {
-                Some(Arc::new(ReconnectionManager::new(target.clone(), options.clone())))
+                // Derive retry policy from StreamOptions to remove fixed thresholds
+                let retry_policy = RetryConfig {
+                    max_attempts: options.max_reconnect_attempts,
+                    initial_delay: options.reconnect_delay,
+                    max_delay: Duration::from_secs(300),
+                    backoff_multiplier: 2.0,
+                    jitter: true,
+                };
+                Some(Arc::new(ReconnectionManager::with_retry_policy(
+                    target.clone(),
+                    options.clone(),
+                    &retry_policy,
+                )))
             } else {
                 None
             },
