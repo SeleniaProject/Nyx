@@ -15,7 +15,7 @@ impl Timestamp {
     pub fn now() -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap();
+            .unwrap_or_default();
         Self {
             seconds: now.as_secs() as i64,
             nanos: now.subsec_nanos() as i32,
@@ -141,6 +141,8 @@ pub struct OpenRequest {
     pub destination: String,
     pub target_address: String, // Alias for destination
     pub options: Option<StreamOptions>,
+    /// Optional metadata for authorization and custom headers
+    pub metadata: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -653,7 +655,21 @@ where
 
 #[cfg(feature = "experimental-p2p")]
 pub mod nyx_control_server {
-    // use super::*; // not currently needed
-    pub struct NyxControlService { /* placeholder */ }
-    impl NyxControlService { pub fn new() -> Self { Self { } } }
+    use super::*;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    /// Minimal pure-Rust control service implementation
+    pub struct NyxControlService<S: NyxControl> {
+        inner: Arc<S>,
+        _addr: String,
+    }
+
+    impl<S: NyxControl> NyxControlService<S> {
+        pub fn new(inner: S, addr: impl Into<String>) -> Self {
+            Self { inner: Arc::new(inner), _addr: addr.into() }
+        }
+
+        pub fn address(&self) -> &str { &self._addr }
+    }
 }
