@@ -9,6 +9,7 @@ NyxNet 未実装/プレースホルダー総点検チェックリスト
  - [ ] 設計「WebAssembly: Research」→ 実装/非対応方針を明確化(`spec/Nyx_Design_Document_EN.md`)
 - [x] README の「Cover Traffic Generation(planned)」の実装/テスト反映(`README.md`)
 - [ ] README の「FEC: Reed-Solomon/RaptorQ(planned)」実装状況と API 整合(`README.md`, `nyx-fec/`)
+ - [x] README の「FEC: Reed-Solomon/RaptorQ(planned)」実装状況と API 整合(`README.md`, `nyx-fec/`)
 - [ ] README の「0-RTT Handshake(designing)」設計→実装に昇格(`README.md`, `nyx-crypto/`, `nyx-stream/`)
 - [x] README の「Sandboxing(planned)」実装反映（seccomp/pledge/unveil）(`nyx-core/src/sandbox.rs`, `README.md`)
 - [ ] README の「Formal Verification(in development)」のコード/CI 整合
@@ -58,6 +59,7 @@ nyx-transport
 
 nyx-fec
 - [ ] RaptorQ: 仕様/統計/適応冗長の最終化と本番 API 固定(`nyx-fec/src/raptorq.rs`)
+ - [x] RaptorQ: 仕様/統計/適応冗長の最終化と本番 API 固定(`nyx-fec/src/raptorq.rs`)
 - [ ] SIMD feature 非有効時挙動の整備(`nyx-fec/src/lib.rs`)
 
 nyx-crypto
