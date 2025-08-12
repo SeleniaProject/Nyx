@@ -27,6 +27,8 @@ use tracing::{debug, info, warn};
 #[cfg(feature = "reconnect")]
 use backoff::{ExponentialBackoff, backoff::Backoff};
 #[cfg(feature = "reconnect")]
+use crate::config::RetryConfig;
+#[cfg(feature = "reconnect")]
 use chrono::{DateTime, Utc};
 #[cfg(feature = "reconnect")]
 use serde::{Deserialize, Serialize};
@@ -82,7 +84,7 @@ enum CircuitBreakerState {
 #[cfg(feature = "reconnect")]
 /// Configuration for circuit breaker
 #[derive(Debug, Clone)]
-struct CircuitBreakerConfig {
+pub struct CircuitBreakerConfig {
     /// Number of failures before opening circuit
     failure_threshold: u32,
     /// Duration to keep circuit open
@@ -116,11 +118,12 @@ pub struct ReconnectionStats {
 #[cfg(feature = "reconnect")]
 impl ReconnectionManager {
     /// Create a new reconnection manager
+    /// Create a new reconnection manager with defaults derived from `StreamOptions`.
     pub fn new(target: String, options: StreamOptions) -> Self {
         let backoff = ExponentialBackoff {
             initial_interval: options.reconnect_delay,
-            max_interval: Duration::from_secs(300), // 5 minutes max
-            max_elapsed_time: Some(Duration::from_secs(3600)), // 1 hour total
+            max_interval: Duration::from_secs(300),
+            max_elapsed_time: Some(Duration::from_secs(3600)),
             multiplier: 2.0,
             randomization_factor: 0.1,
             ..Default::default()
@@ -146,6 +149,58 @@ impl ReconnectionManager {
             circuit_breaker: Arc::new(RwLock::new(circuit_breaker)),
             stats: Arc::new(RwLock::new(ReconnectionStats::default())),
         }
+    }
+
+    /// Create a new reconnection manager using explicit retry policy.
+    ///
+    /// This API removes built-in fixed thresholds by sourcing backoff parameters
+    /// from `RetryConfig`. The circuit breaker uses a conservative default unless
+    /// adjusted via `set_circuit_breaker`.
+    pub fn with_retry_policy(target: String, options: StreamOptions, retry: &RetryConfig) -> Self {
+        // Derive backoff from RetryConfig
+        let mut backoff = ExponentialBackoff {
+            initial_interval: retry.initial_delay,
+            max_interval: retry.max_delay,
+            max_elapsed_time: None, // Allow external policy to stop
+            multiplier: retry.backoff_multiplier,
+            randomization_factor: if retry.jitter { 0.2 } else { 0.0 },
+            ..Default::default()
+        };
+        // Bound multiplier to sane range to avoid explosive growth
+        if backoff.multiplier < 1.01 {
+            backoff.multiplier = 1.01;
+        }
+
+        let circuit_breaker = CircuitBreaker {
+            state: CircuitBreakerState::Closed,
+            failure_count: 0,
+            last_failure: None,
+            success_count: 0,
+            config: CircuitBreakerConfig {
+                failure_threshold: 5,
+                timeout: Duration::from_secs(60),
+                success_threshold: 2,
+            },
+        };
+
+        Self {
+            target,
+            options,
+            state: Arc::new(RwLock::new(ReconnectionState::Idle)),
+            backoff: Arc::new(Mutex::new(backoff)),
+            circuit_breaker: Arc::new(RwLock::new(circuit_breaker)),
+            stats: Arc::new(RwLock::new(ReconnectionStats::default())),
+        }
+    }
+
+    /// Override the circuit breaker configuration.
+    pub async fn set_circuit_breaker(&self, cfg: CircuitBreakerConfig) {
+        let mut breaker = self.circuit_breaker.write().await;
+        breaker.config = cfg;
+        breaker.state = CircuitBreakerState::Closed;
+        breaker.failure_count = 0;
+        breaker.success_count = 0;
+        breaker.last_failure = None;
     }
 
     /// Attempt to reconnect the stream
