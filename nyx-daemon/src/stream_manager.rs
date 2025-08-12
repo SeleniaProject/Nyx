@@ -16,6 +16,7 @@ use nyx_core::types::*;
 use nyx_stream::StreamState;
 use nyx_mix::{cmix::CmixController, larmix::LARMixPlanner};
 use nyx_transport::{Transport};
+use nyx_stream::egress_zero_copy::spawn_zero_copy_egress;
 use crate::path_builder::PathBuilder;
 
 use std::collections::HashMap;
@@ -25,7 +26,7 @@ use std::sync::{
     Arc,
 };
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
@@ -211,6 +212,9 @@ pub struct StreamManager {
     scheduler: Arc<RwLock<PathScheduler>>,
     known_peers: Arc<DashMap<NodeId, PeerInfo>>,
     active_paths: Arc<DashMap<u32, StreamPath>>,
+    // Zero-copy egress channels and tasks keyed by path_id
+    egress_senders: Arc<DashMap<u32, mpsc::Sender<Vec<u8>>>>,
+    egress_tasks: Arc<DashMap<u32, tokio::task::JoinHandle<()>>>,
     
     // Metrics collection
     metrics: Arc<crate::metrics::MetricsCollector>,
@@ -268,6 +272,8 @@ impl StreamManager {
             scheduler: Arc::new(RwLock::new(PathScheduler::default())),
             known_peers: Arc::new(DashMap::new()),
             active_paths: Arc::new(DashMap::new()),
+            egress_senders: Arc::new(DashMap::new()),
+            egress_tasks: Arc::new(DashMap::new()),
             metrics,
             next_stream_id: std::sync::atomic::AtomicU32::new(1),
             event_tx,
@@ -584,6 +590,15 @@ impl StreamManager {
     async fn build_single_path(&self, target_addr: &SocketAddr) -> Result<StreamPath, StreamError> {
         let path_id = rand::random::<u32>();
         
+        // Create zero-copy egress channel and task for this path
+        let (tx, rx) = mpsc::channel::<Vec<u8>>(1024);
+        // Bind to ephemeral local address; in production this should honor config
+        let bind = if target_addr.is_ipv4() { "0.0.0.0:0".parse().unwrap() } else { "[::]:0".parse().unwrap() };
+        let handle = spawn_zero_copy_egress(bind, *target_addr, format!("path-{}", path_id), rx).await
+            .map_err(|e| StreamError::Configuration(format!("egress spawn failed: {}", e)))?;
+        self.egress_senders.insert(path_id, tx);
+        self.egress_tasks.insert(path_id, handle);
+
         Ok(StreamPath {
             path_id,
             status: PathStatus::Validating,
