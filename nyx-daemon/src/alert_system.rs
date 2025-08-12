@@ -211,9 +211,13 @@ impl AlertSystem {
     /// Check metrics against thresholds and generate alerts
     pub async fn check_thresholds(&self, snapshot: &MetricsSnapshot) -> Vec<Alert> {
         let mut new_alerts = Vec::new();
-        let thresholds = self.thresholds.read().unwrap();
+        // Clone thresholds to avoid holding RwLock guard across await
+        let thresholds_snapshot: Vec<AlertThreshold> = {
+            let guard = self.thresholds.read().unwrap();
+            guard.values().cloned().collect()
+        };
         
-        for (threshold_id, threshold) in thresholds.iter() {
+        for threshold in thresholds_snapshot.iter() {
             if !threshold.enabled {
                 continue;
             }
@@ -399,9 +403,11 @@ impl AlertSystem {
     
     /// Route alert through configured handlers
     async fn route_alert(&self, alert: &Alert) {
-        let routes = self.routes.read().unwrap();
-        
-        for route in routes.iter() {
+        let routes_snapshot: Vec<AlertRoute> = {
+            let guard = self.routes.read().unwrap();
+            guard.clone()
+        };
+        for route in routes_snapshot.iter() {
             // Check severity filter
             if !route.severity_filter.is_empty() && !route.severity_filter.contains(&alert.severity) {
                 continue;
@@ -427,14 +433,15 @@ impl AlertSystem {
     async fn handle_alert(&self, alert: &Alert, handler: &AlertHandler) {
         match handler {
             AlertHandler::Console => {
-                println!("[ALERT] {} - {} - {}", 
-                    match alert.severity {
-                        AlertSeverity::Info => "INFO",
-                        AlertSeverity::Warning => "WARN",
-                        AlertSeverity::Critical => "CRIT",
-                    },
-                    alert.title,
-                    alert.description
+                tracing::warn!(
+                    target = "nyx-daemon::alert",
+                    severity = %match alert.severity { AlertSeverity::Info => "INFO", AlertSeverity::Warning => "WARN", AlertSeverity::Critical => "CRIT" },
+                    title = %alert.title,
+                    description = %alert.description,
+                    value = alert.current_value,
+                    threshold = alert.threshold,
+                    metric = %alert.metric,
+                    "ALERT"
                 );
             },
             AlertHandler::Log => {
@@ -519,14 +526,16 @@ impl AlertSystem {
                 "ts": chrono::Utc::now().to_rfc3339(),
             });
             let body = body_json.to_string();
+            use base64::Engine as _;
             let signature_header = if let Some(secret) = hmac_secret.as_ref() {
-                use hmac::{Hmac, Mac};
-                use sha2::Sha256;
-                let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).map_err(|e| e.to_string())?;
-                mac.update(body.as_bytes());
-                let sig = mac.finalize().into_bytes();
-                Some(format!("X-Nyx-Signature: sha256={}\r\n", base64::encode(sig)))
-            } else { None };
+            use hmac::{Hmac, Mac};
+            use sha2::Sha256;
+            let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).map_err(|e| e.to_string())?;
+            mac.update(body.as_bytes());
+            let sig = mac.finalize().into_bytes();
+            let engine = base64::engine::general_purpose::STANDARD;
+            Some(format!("X-Nyx-Signature: sha256={}\r\n", engine.encode(sig)))
+        } else { None };
 
             for attempt in 0..=retries {
                 let deadline = std::time::Duration::from_millis(timeout_ms);
@@ -549,31 +558,9 @@ impl AlertSystem {
                         }
                     }
                 } else if scheme == "https" {
-                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                    use tokio_native_tls::TlsConnector;
-                    let addr = format!("{}:{}", host, port);
-                    match tokio::time::timeout(deadline, tokio::net::TcpStream::connect(&addr)).await {
-                        Err(_) => Err("connect timeout".to_string()),
-                        Ok(Err(e)) => Err(e.to_string()),
-                        Ok(Ok(stream)) => {
-                            let native_connector = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
-                            let connector = TlsConnector::from(native_connector);
-                            match tokio::time::timeout(deadline, connector.connect(host, stream)).await {
-                                Err(_) => Err("tls handshake timeout".to_string()),
-                                Ok(Err(e)) => Err(format!("tls: {}", e)),
-                                Ok(Ok(mut tls)) => {
-                                    let req = format!(
-                                        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
-                                        path, host, body.len(), signature_header.clone().unwrap_or_default(), body
-                                    );
-                                    if let Err(e) = tokio::time::timeout(deadline, tls.write_all(req.as_bytes())).await { return Err(format!("write timeout: {e:?}")); }
-                                    let mut buf = Vec::new();
-                                    let _ = tokio::time::timeout(deadline, tls.read_to_end(&mut buf)).await;
-                                    Ok(())
-                                }
-                            }
-                        }
-                    }
+                    // HTTPS is intentionally not supported in this build to avoid C-based or platform TLS deps.
+                    // Use an HTTP endpoint or place a local reverse proxy that terminates TLS.
+                    return Err("https not supported".to_string());
                 } else {
                     Err("unsupported scheme".to_string())
                 };
@@ -581,14 +568,13 @@ impl AlertSystem {
                     Ok(_) => return Ok(()),
                     Err(e) => {
                         if attempt == retries { return Err(e); }
-                        let backoff = 2u64.pow(attempt).min(8);
+                        let backoff = 2u64.saturating_pow(attempt).min(8);
                         tokio::time::sleep(Duration::from_millis(200 * backoff)).await;
                     }
                 }
             }
             Err("unreachable".to_string())
         }
-    }
     
     /// Add alert to history
     fn add_to_history(&self, alert: Alert, action: AlertAction) {
