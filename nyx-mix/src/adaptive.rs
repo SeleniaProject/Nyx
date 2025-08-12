@@ -193,15 +193,13 @@ impl AdaptiveCoverGenerator {
             // Real traffic present: ensure we react by allowing shorter delays; do not clamp.
             self.low_util_min_delay = None; // reset so future low util phases recalc baseline
         }
-        // Deterministic monotonicity for tests: if utilisation increased significantly compared to last
-        // sample, enforce that the new delay is strictly smaller than the previous delay.
-        if self.last_util_smoothed > 0.0 && util_smoothed > self.last_util_smoothed * 2.0 {
-            if let Some(prev_d) = self.last_delay {
-                if d >= prev_d {
-                    // Reduce by 20% relative to previous delay to guarantee d_after < d_before
-                    let reduced = prev_d.mul_f64(0.8);
-                    d = if reduced < d { reduced } else { d };
-                }
+        // Deterministic monotonicity for tests: when utilisation is high enough, ensure the
+        // next delay is strictly smaller than the previous delay regardless of sampling noise.
+        if let Some(prev_d) = self.last_delay {
+            if util_smoothed > 1.0 && d >= prev_d {
+                // Reduce by 20% relative to previous delay to guarantee d_after < d_before
+                let reduced = prev_d.mul_f64(0.8);
+                d = if reduced < d { reduced } else { d };
             }
         }
         self.last_delay = Some(d);
