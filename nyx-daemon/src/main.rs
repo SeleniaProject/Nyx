@@ -260,10 +260,29 @@ impl ControlService {
         
         // Initialize event system (optional)
         #[cfg(feature = "experimental-events")]
-    let event_system = {
+        let event_system = {
             info!("Initializing event system...");
             let es = Arc::new(EventSystem::new());
-            info!("Event system initialized");
+            // Bridge broadcast channel to event system history so that all emitted
+            // events are persisted and can be queried via subscribe_events.
+            {
+                let es_clone = Arc::clone(&es);
+                let mut rx = event_tx.subscribe();
+                tokio::spawn(async move {
+                    loop {
+                        match rx.recv().await {
+                            Ok(ev) => {
+                                let _ = es_clone.publish_event(ev).await;
+                            }
+                            Err(_e) => {
+                                // Channel closed; exit task
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+            info!("Event system initialized and bridged to broadcast");
             es
         };
     // NOTE: SessionManager re-instantiation with event system omitted to keep minimal diff;
@@ -884,12 +903,17 @@ impl NyxControl for ControlService {
         request: EventFilter,
     ) -> Result<Vec<Event>, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let _ = request; // currently unused filter
-        let filtered_events = Vec::new();
-        
-        // This is a placeholder - in a real implementation, you would maintain
-        // an event store and filter based on the request criteria
-        Ok(filtered_events)
+        #[cfg(feature = "experimental-events")]
+        {
+            let limit = request.time_range_seconds.map(|secs| secs as usize).or(Some(1000));
+            let events = self.event_system.query(&request, limit).await;
+            return Ok(events);
+        }
+        #[cfg(not(feature = "experimental-events"))]
+        {
+            let _ = request;
+            Ok(Vec::new())
+        }
     }
     
     /// Subscribe to statistics with real-time updates

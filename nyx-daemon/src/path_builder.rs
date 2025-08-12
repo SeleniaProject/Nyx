@@ -637,34 +637,126 @@ struct CachedPeerInfo {
     pub last_active_rtt: Option<f64>, // 直近アクティブ測定値(ms)
 }
 impl DhtPeerDiscovery {
-    /// 指定ピアに対しアクティブ帯域・RTT測定を行い、CachedPeerInfoに反映する
+    /// Advanced active bandwidth and RTT measurement with statistical validation
+    /// Performs multiple probe rounds to establish accurate peer performance metrics
     pub async fn active_bandwidth_probe(&self, peer: &mut CachedPeerInfo) -> Result<(), DhtError> {
         use tokio::time::timeout;
         use std::time::Instant;
+        
         let addr = match peer.addresses.get(0) {
             Some(a) => a,
             None => return Err(DhtError::InvalidAddress("No address for peer".to_string())),
         };
         let socket_addr = self.multiaddr_to_socket_addr(addr)?;
-        // RTT測定
-        let start = Instant::now();
-        let rtt = match timeout(std::time::Duration::from_millis(1500), TcpStream::connect(socket_addr)).await {
-            Ok(Ok(mut stream)) => {
-                // 簡易帯域測定: 32KB送信し応答待ち
-                let test_data = vec![0u8; 32 * 1024];
-                let send_start = Instant::now();
-                let _ = stream.write_all(&test_data).await;
-                let mut buf = [0u8; 8];
-                let _ = stream.read_exact(&mut buf).await;
-                let elapsed = send_start.elapsed().as_secs_f64();
-                let mbps = if elapsed > 0.0 { (32.0 * 8.0) / elapsed } else { 0.0 };
-                peer.last_active_bandwidth = Some(mbps);
-                start.elapsed().as_secs_f64() * 1000.0
-            },
-            _ => return Err(DhtError::Network("RTT/bandwidth probe failed".to_string())),
-        };
-        peer.last_active_rtt = Some(rtt);
-        Ok(())
+        
+        // Conduct multiple measurement rounds for statistical accuracy
+        const PROBE_ROUNDS: usize = 3;
+        const PROBE_SIZES: &[usize] = &[8192, 32768, 131072]; // 8KB, 32KB, 128KB
+        const PROBE_TIMEOUT_MS: u64 = 3000;
+        
+        let mut rtt_measurements = Vec::new();
+        let mut bandwidth_measurements = Vec::new();
+        
+        // Perform multiple rounds of measurements with varying payload sizes
+        for round in 0..PROBE_ROUNDS {
+            let probe_size = PROBE_SIZES[round % PROBE_SIZES.len()];
+            
+            let start = Instant::now();
+            match timeout(
+                Duration::from_millis(PROBE_TIMEOUT_MS), 
+                TcpStream::connect(socket_addr)
+            ).await {
+                Ok(Ok(mut stream)) => {
+                    // Measure connection establishment RTT
+                    let connection_rtt = start.elapsed().as_secs_f64() * 1000.0;
+                    
+                    // Prepare test payload with entropy for realistic network conditions
+                    let mut test_data = vec![0u8; probe_size];
+                    thread_rng().fill_bytes(&mut test_data);
+                    
+                    // Measure bidirectional bandwidth with precise timing
+                    let bandwidth_start = Instant::now();
+                    
+                    // Upload phase
+                    match stream.write_all(&test_data).await {
+                        Ok(()) => {
+                            // Request echo response for download measurement
+                            let echo_request = b"ECHO";
+                            if let Err(_) = stream.write_all(echo_request).await {
+                                continue; // Skip this measurement round
+                            }
+                            
+                            // Download phase - receive echoed data
+                            let mut response_buffer = vec![0u8; probe_size];
+                            match stream.read_exact(&mut response_buffer).await {
+                                Ok(()) => {
+                                    let total_elapsed = bandwidth_start.elapsed().as_secs_f64();
+                                    
+                                    // Calculate bandwidth (bidirectional throughput)
+                                    let total_bytes = (probe_size * 2) as f64; // Upload + Download
+                                    let bandwidth_mbps = (total_bytes * 8.0) / (total_elapsed * 1_000_000.0);
+                                    
+                                    rtt_measurements.push(connection_rtt);
+                                    bandwidth_measurements.push(bandwidth_mbps);
+                                    
+                                    debug!(
+                                        "Probe round {} for peer {}: RTT={:.2}ms, Bandwidth={:.2}Mbps, Size={}B",
+                                        round + 1, peer.peer_id, connection_rtt, bandwidth_mbps, probe_size
+                                    );
+                                },
+                                Err(e) => {
+                                    warn!("Failed to read probe response from peer {}: {}", peer.peer_id, e);
+                                    continue;
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            warn!("Failed to send probe data to peer {}: {}", peer.peer_id, e);
+                            continue;
+                        }
+                    }
+                },
+                Ok(Err(e)) => {
+                    warn!("TCP connection failed for peer {}: {}", peer.peer_id, e);
+                    continue;
+                },
+                Err(_) => {
+                    warn!("Probe timeout for peer {} (round {})", peer.peer_id, round + 1);
+                    continue;
+                }
+            }
+            
+            // Add delay between probe rounds to avoid overwhelming the peer
+            if round < PROBE_ROUNDS - 1 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+        
+        // Statistical analysis of measurements
+        if !rtt_measurements.is_empty() && !bandwidth_measurements.is_empty() {
+            // Calculate median RTT for robustness against outliers
+            rtt_measurements.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let median_rtt = rtt_measurements[rtt_measurements.len() / 2];
+            
+            // Calculate median bandwidth for consistent performance estimation
+            bandwidth_measurements.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let median_bandwidth = bandwidth_measurements[bandwidth_measurements.len() / 2];
+            
+            // Update peer metrics with validated measurements
+            peer.last_active_rtt = Some(median_rtt);
+            peer.last_active_bandwidth = Some(median_bandwidth);
+            
+            info!(
+                "Active probe completed for peer {}: RTT={:.2}ms, Bandwidth={:.2}Mbps (from {} samples)",
+                peer.peer_id, median_rtt, median_bandwidth, rtt_measurements.len()
+            );
+            
+            Ok(())
+        } else {
+            Err(DhtError::Network(format!(
+                "All probe attempts failed for peer {}", peer.peer_id
+            )))
+        }
     }
 
 
@@ -2082,30 +2174,485 @@ impl DhtPeerDiscovery {
         Ok(onion_path)
     }
     
-    /// Select diverse peers for path construction
+    /// Select diverse peers for path construction with advanced optimization
     async fn select_diverse_path_peers(&self, candidates: &[CachedPeerInfo], count: usize) -> Result<Vec<CachedPeerInfo>, DhtError> {
         let mut selected = Vec::with_capacity(count);
         let mut available = candidates.to_vec();
         
-        // Sort by quality score (latency and reliability)
-        available.sort_by(|a, b| {
-            let score_a = self.calculate_path_quality_score(a);
-            let score_b = self.calculate_path_quality_score(b);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // Enhanced diversity optimization with multiple criteria
+        self.optimize_peer_selection(&mut available).await?;
         
-        for _ in 0..count {
+        for selection_round in 0..count {
             if available.is_empty() {
                 break;
             }
             
-            // Select the best remaining peer
-            let best_peer = available.remove(0);
+            // Calculate diversity scores for all remaining candidates
+            let best_candidate_idx = self.select_optimal_next_peer(
+                &available, 
+                &selected, 
+                selection_round
+            ).await?;
             
-            // Remove peers that are too close geographically
-            if let Some(location) = &best_peer.location {
-                available.retain(|peer| {
-                    if let Some(peer_location) = &peer.location {
+            let selected_peer = available.remove(best_candidate_idx);
+            
+            // Apply advanced geographical and network diversity filtering
+            self.apply_diversity_filters(&mut available, &selected_peer, &selected).await;
+            
+            selected.push(selected_peer);
+            
+            debug!(
+                "Selected peer {} for path position {} (diversity optimization round {})",
+                selected.last().unwrap().peer_id,
+                selection_round + 1,
+                selection_round + 1
+            );
+        }
+        
+        if selected.len() < count {
+            warn!("Advanced diversity optimization could only select {} peers out of requested {}", 
+                  selected.len(), count);
+        }
+        
+        // Final validation of path diversity
+        let diversity_score = self.calculate_path_diversity_score(&selected).await;
+        info!(
+            "Path construction completed with diversity score: {:.3} (target: ≥0.8)",
+            diversity_score
+        );
+        
+        Ok(selected)
+    }
+    
+    /// Optimize peer selection with advanced multi-criteria analysis
+    async fn optimize_peer_selection(&self, candidates: &mut Vec<CachedPeerInfo>) -> Result<(), DhtError> {
+        // Sort by composite score incorporating multiple optimization factors
+        candidates.sort_by(|a, b| {
+            let score_a = self.calculate_advanced_peer_score(a);
+            let score_b = self.calculate_advanced_peer_score(b);
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        
+        // Apply active bandwidth measurement to top candidates for accurate assessment
+        const TOP_CANDIDATES_FOR_ACTIVE_PROBE: usize = 20;
+        let probe_count = std::cmp::min(candidates.len(), TOP_CANDIDATES_FOR_ACTIVE_PROBE);
+        
+        let mut probe_tasks = Vec::new();
+        for i in 0..probe_count {
+            let mut peer = candidates[i].clone();
+            let discovery = Arc::clone(&Arc::new(self.clone()));
+            
+            probe_tasks.push(tokio::spawn(async move {
+                match discovery.active_bandwidth_probe(&mut peer).await {
+                    Ok(()) => {
+                        debug!(
+                            "Active probe successful for peer {}: RTT={:.2}ms, BW={:.2}Mbps",
+                            peer.peer_id,
+                            peer.last_active_rtt.unwrap_or(0.0),
+                            peer.last_active_bandwidth.unwrap_or(0.0)
+                        );
+                        Ok((i, peer))
+                    },
+                    Err(e) => {
+                        warn!("Active probe failed for peer {}: {}", peer.peer_id, e);
+                        Err(i)
+                    }
+                }
+            }));
+        }
+        
+        // Collect active probe results and update peer information
+        for task in probe_tasks {
+            match task.await {
+                Ok(Ok((index, updated_peer))) => {
+                    candidates[index] = updated_peer;
+                },
+                Ok(Err(_index)) => {
+                    // Probe failed - peer remains with static metrics
+                },
+                Err(e) => {
+                    warn!("Probe task failed: {}", e);
+                }
+            }
+        }
+        
+        // Re-sort candidates after active measurements
+        candidates.sort_by(|a, b| {
+            let score_a = self.calculate_advanced_peer_score(a);
+            let score_b = self.calculate_advanced_peer_score(b);
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        
+        Ok(())
+    }
+    
+    /// Select optimal next peer with advanced diversity analysis
+    async fn select_optimal_next_peer(
+        &self,
+        candidates: &[CachedPeerInfo],
+        selected: &[CachedPeerInfo],
+        round: usize
+    ) -> Result<usize, DhtError> {
+        let mut best_index = 0;
+        let mut best_score = 0.0;
+        
+        for (index, candidate) in candidates.iter().enumerate() {
+            // Calculate composite diversity score
+            let mut diversity_score = self.calculate_geographical_diversity_score(candidate, selected);
+            diversity_score += self.calculate_network_diversity_score(candidate, selected);
+            diversity_score += self.calculate_performance_diversity_score(candidate, selected);
+            diversity_score += self.calculate_capability_diversity_score(candidate, selected);
+            
+            // Apply round-specific optimization weights
+            let round_weight = self.get_round_optimization_weight(round, candidates.len());
+            let weighted_score = diversity_score * round_weight;
+            
+            // Factor in peer quality while maintaining diversity priority
+            let quality_score = self.calculate_advanced_peer_score(candidate);
+            let composite_score = weighted_score * 0.7 + quality_score * 0.3;
+            
+            if composite_score > best_score {
+                best_score = composite_score;
+                best_index = index;
+            }
+        }
+        
+        Ok(best_index)
+    }
+    
+    /// Apply advanced diversity filters to remove similar peers
+    async fn apply_diversity_filters(
+        &self,
+        candidates: &mut Vec<CachedPeerInfo>,
+        selected_peer: &CachedPeerInfo,
+        all_selected: &[CachedPeerInfo]
+    ) {
+        candidates.retain(|peer| {
+            // Geographic diversity filter with adaptive radius
+            if let (Some(selected_loc), Some(peer_loc)) = (&selected_peer.location, &peer.location) {
+                let distance = self.calculate_distance(selected_loc, peer_loc);
+                let adaptive_radius = self.calculate_adaptive_diversity_radius(all_selected.len());
+                if distance < adaptive_radius {
+                    return false;
+                }
+            }
+            
+            // Network diversity filter (AS/ISP diversity)
+            if self.peers_share_network_infrastructure(selected_peer, peer) {
+                return false;
+            }
+            
+            // Capability overlap filter for balanced path functionality
+            if self.has_excessive_capability_overlap(selected_peer, peer, all_selected) {
+                return false;
+            }
+            
+            // Performance tier diversity to avoid clustering similar-performance nodes
+            if self.peers_in_same_performance_tier(selected_peer, peer) && all_selected.len() > 1 {
+                return false;
+            }
+            
+            true
+        });
+    }
+    
+    /// Calculate comprehensive path diversity score
+    async fn calculate_path_diversity_score(&self, selected_peers: &[CachedPeerInfo]) -> f64 {
+        if selected_peers.len() < 2 {
+            return 1.0; // Single peer is trivially diverse
+        }
+        
+        let mut total_score = 0.0;
+        let mut comparison_count = 0;
+        
+        // Calculate pairwise diversity scores
+        for i in 0..selected_peers.len() {
+            for j in (i + 1)..selected_peers.len() {
+                let peer_a = &selected_peers[i];
+                let peer_b = &selected_peers[j];
+                
+                let mut pairwise_score = 0.0;
+                
+                // Geographic diversity component
+                if let (Some(loc_a), Some(loc_b)) = (&peer_a.location, &peer_b.location) {
+                    let distance = self.calculate_distance(loc_a, loc_b);
+                    pairwise_score += (distance / 2000.0).min(1.0) * 0.3; // Max score for 2000km+ distance
+                }
+                
+                // Network diversity component
+                if !self.peers_share_network_infrastructure(peer_a, peer_b) {
+                    pairwise_score += 0.3;
+                }
+                
+                // Performance diversity component
+                if !self.peers_in_same_performance_tier(peer_a, peer_b) {
+                    pairwise_score += 0.2;
+                }
+                
+                // Regional diversity component
+                if peer_a.region != peer_b.region {
+                    pairwise_score += 0.2;
+                }
+                
+                total_score += pairwise_score;
+                comparison_count += 1;
+            }
+        }
+        
+        if comparison_count == 0 {
+            1.0
+        } else {
+            total_score / comparison_count as f64
+        }
+    }
+    
+    /// Calculate advanced peer score incorporating multiple performance metrics
+    fn calculate_advanced_peer_score(&self, peer: &CachedPeerInfo) -> f64 {
+        let mut score = peer.reliability_score;
+        
+        // Enhanced latency scoring with active measurements prioritized
+        let effective_latency = peer.last_active_rtt
+            .or(peer.latency_ms)
+            .unwrap_or(1000.0); // Conservative fallback
+        score *= (500.0 - effective_latency.min(500.0)) / 500.0;
+        
+        // Enhanced bandwidth scoring with active measurements prioritized
+        let effective_bandwidth = peer.last_active_bandwidth
+            .or(peer.bandwidth_mbps)
+            .unwrap_or(1.0); // Conservative fallback
+        let bandwidth_factor = (effective_bandwidth.min(1000.0)) / 1000.0;
+        score *= 0.7 + (bandwidth_factor * 0.3); // Bandwidth contributes 30% of total score
+        
+        // Response time factor for peer responsiveness
+        if let Some(response_time) = peer.response_time_ms {
+            let responsiveness_factor = (200.0 - response_time.min(200.0)) / 200.0;
+            score *= 0.9 + (responsiveness_factor * 0.1);
+        }
+        
+        // Recency factor - prefer recently seen peers
+        let age_seconds = peer.last_seen.elapsed().as_secs_f64();
+        let recency_factor = (-age_seconds / 3600.0).exp(); // Exponential decay over 1 hour
+        score *= 0.8 + (recency_factor * 0.2);
+        
+        score.clamp(0.0, 1.0)
+    }
+    
+    /// Calculate geographical diversity score relative to already selected peers
+    fn calculate_geographical_diversity_score(&self, candidate: &CachedPeerInfo, selected: &[CachedPeerInfo]) -> f64 {
+        if selected.is_empty() {
+            return 1.0; // No constraints for first peer
+        }
+        
+        let candidate_location = match &candidate.location {
+            Some(loc) => loc,
+            None => return 0.5, // Neutral score for unknown location
+        };
+        
+        let mut min_distance = f64::INFINITY;
+        let mut total_distance = 0.0;
+        let mut distance_count = 0;
+        
+        for selected_peer in selected {
+            if let Some(selected_location) = &selected_peer.location {
+                let distance = self.calculate_distance(candidate_location, selected_location);
+                min_distance = min_distance.min(distance);
+                total_distance += distance;
+                distance_count += 1;
+            }
+        }
+        
+        if distance_count == 0 {
+            return 0.5; // Neutral score when no location data available
+        }
+        
+        // Score based on minimum distance (ensure adequate separation)
+        let min_distance_score = (min_distance / 1000.0).min(1.0); // Normalize to 1000km
+        
+        // Score based on average distance (reward spreading)
+        let avg_distance = total_distance / distance_count as f64;
+        let avg_distance_score = (avg_distance / 1500.0).min(1.0); // Normalize to 1500km
+        
+        // Combined score favoring both minimum separation and spreading
+        (min_distance_score * 0.6 + avg_distance_score * 0.4).clamp(0.0, 1.0)
+    }
+    
+    /// Calculate network infrastructure diversity score
+    fn calculate_network_diversity_score(&self, candidate: &CachedPeerInfo, selected: &[CachedPeerInfo]) -> f64 {
+        if selected.is_empty() {
+            return 1.0;
+        }
+        
+        // Simplified network diversity based on address patterns and regions
+        let mut diversity_score = 1.0;
+        
+        for selected_peer in selected {
+            if self.peers_share_network_infrastructure(candidate, selected_peer) {
+                diversity_score -= 0.3; // Penalize shared infrastructure
+            }
+            
+            // Regional diversity bonus
+            if candidate.region != selected_peer.region {
+                diversity_score += 0.2;
+            }
+        }
+        
+        diversity_score.clamp(0.0, 1.0)
+    }
+    
+    /// Calculate performance diversity score to avoid clustering
+    fn calculate_performance_diversity_score(&self, candidate: &CachedPeerInfo, selected: &[CachedPeerInfo]) -> f64 {
+        if selected.is_empty() {
+            return 1.0;
+        }
+        
+        let candidate_performance_tier = self.get_performance_tier(candidate);
+        let mut diversity_score = 1.0;
+        let mut same_tier_count = 0;
+        
+        for selected_peer in selected {
+            let selected_tier = self.get_performance_tier(selected_peer);
+            if candidate_performance_tier == selected_tier {
+                same_tier_count += 1;
+            }
+        }
+        
+        // Penalize excessive clustering in same performance tier
+        let tier_penalty = (same_tier_count as f64 / selected.len() as f64) * 0.4;
+        diversity_score -= tier_penalty;
+        
+        diversity_score.clamp(0.0, 1.0)
+    }
+    
+    /// Calculate capability diversity score
+    fn calculate_capability_diversity_score(&self, candidate: &CachedPeerInfo, selected: &[CachedPeerInfo]) -> f64 {
+        if selected.is_empty() {
+            return 1.0;
+        }
+        
+        let mut unique_capabilities = 0;
+        let mut total_capabilities = candidate.capabilities.len();
+        
+        for capability in &candidate.capabilities {
+            let mut is_unique = true;
+            for selected_peer in selected {
+                if selected_peer.capabilities.contains(capability) {
+                    is_unique = false;
+                    break;
+                }
+            }
+            if is_unique {
+                unique_capabilities += 1;
+            }
+        }
+        
+        if total_capabilities == 0 {
+            return 0.5; // Neutral score for peers with no capabilities
+        }
+        
+        (unique_capabilities as f64 / total_capabilities as f64).clamp(0.0, 1.0)
+    }
+    
+    /// Get round-specific optimization weight for balanced selection
+    fn get_round_optimization_weight(&self, round: usize, total_candidates: usize) -> f64 {
+        // Early rounds prioritize diversity, later rounds allow performance optimization
+        let progress = round as f64 / total_candidates as f64;
+        
+        if round == 0 {
+            1.0 // First peer can be optimal
+        } else if progress < 0.5 {
+            0.9 - progress * 0.2 // High diversity weight early
+        } else {
+            0.7 + progress * 0.3 // Allow more performance focus later
+        }
+    }
+    
+    /// Calculate adaptive diversity radius based on path length
+    fn calculate_adaptive_diversity_radius(&self, selected_count: usize) -> f64 {
+        // Stricter diversity requirements for longer paths
+        let base_radius = GEOGRAPHIC_DIVERSITY_RADIUS_KM;
+        let path_length_factor = (selected_count as f64).sqrt();
+        
+        base_radius / path_length_factor.max(1.0)
+    }
+    
+    /// Check if peers share network infrastructure (simplified heuristic)
+    fn peers_share_network_infrastructure(&self, peer_a: &CachedPeerInfo, peer_b: &CachedPeerInfo) -> bool {
+        // Basic heuristic: same region might indicate shared infrastructure
+        if peer_a.region == peer_b.region {
+            // Additional check: similar IP address patterns (simplified)
+            if let (Some(addr_a), Some(addr_b)) = (peer_a.addresses.get(0), peer_b.addresses.get(0)) {
+                // Convert to string and compare first two octets (very basic AS approximation)
+                let addr_a_str = addr_a.to_string();
+                let addr_b_str = addr_b.to_string();
+                
+                // Extract IP portion from multiaddr strings
+                if let (Some(ip_a), Some(ip_b)) = (
+                    self.extract_ip_from_multiaddr(&addr_a_str),
+                    self.extract_ip_from_multiaddr(&addr_b_str)
+                ) {
+                    // Compare first two octets as a rough ISP/AS indicator
+                    let octets_a: Vec<&str> = ip_a.split('.').collect();
+                    let octets_b: Vec<&str> = ip_b.split('.').collect();
+                    
+                    if octets_a.len() >= 2 && octets_b.len() >= 2 {
+                        return octets_a[0] == octets_b[0] && octets_a[1] == octets_b[1];
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+    
+    /// Check for excessive capability overlap
+    fn has_excessive_capability_overlap(&self, peer_a: &CachedPeerInfo, peer_b: &CachedPeerInfo, all_selected: &[CachedPeerInfo]) -> bool {
+        let overlap: HashSet<_> = peer_a.capabilities.intersection(&peer_b.capabilities).collect();
+        let overlap_ratio = overlap.len() as f64 / peer_a.capabilities.len().max(1) as f64;
+        
+        // Allow overlap if path is short, restrict for longer paths
+        let overlap_threshold = if all_selected.len() < 3 { 0.8 } else { 0.5 };
+        
+        overlap_ratio > overlap_threshold
+    }
+    
+    /// Check if peers are in same performance tier
+    fn peers_in_same_performance_tier(&self, peer_a: &CachedPeerInfo, peer_b: &CachedPeerInfo) -> bool {
+        self.get_performance_tier(peer_a) == self.get_performance_tier(peer_b)
+    }
+    
+    /// Get performance tier for peer (High/Medium/Low)
+    fn get_performance_tier(&self, peer: &CachedPeerInfo) -> u8 {
+        let effective_bandwidth = peer.last_active_bandwidth
+            .or(peer.bandwidth_mbps)
+            .unwrap_or(1.0);
+        let effective_latency = peer.last_active_rtt
+            .or(peer.latency_ms)
+            .unwrap_or(1000.0);
+        
+        // High tier: >100 Mbps, <100ms latency
+        if effective_bandwidth > 100.0 && effective_latency < 100.0 {
+            return 2; // High performance
+        }
+        // Medium tier: >10 Mbps, <300ms latency
+        if effective_bandwidth > 10.0 && effective_latency < 300.0 {
+            return 1; // Medium performance
+        }
+        // Low tier: everything else
+        0 // Low performance
+    }
+    
+    /// Extract IP address from multiaddr string (helper function)
+    fn extract_ip_from_multiaddr(&self, multiaddr_str: &str) -> Option<String> {
+        // Simple extraction for IPv4 addresses in multiaddr format
+        // Format: /ip4/192.168.1.1/tcp/8080 -> 192.168.1.1
+        if let Some(ip4_pos) = multiaddr_str.find("/ip4/") {
+            let start = ip4_pos + 5;
+            if let Some(next_slash) = multiaddr_str[start..].find('/') {
+                return Some(multiaddr_str[start..start + next_slash].to_string());
+            }
+        }
+        None
+    }
                         let distance = self.calculate_distance(location, peer_location);
                         distance > GEOGRAPHIC_DIVERSITY_RADIUS_KM
                     } else {

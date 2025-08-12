@@ -243,8 +243,22 @@ impl DhtPeerDiscovery {
             return Ok(cached_peer);
         }
         
-    // DHT disabled: no direct fetch
-    Err(DhtError::NoPeersFound)
+        // Attempt to read from DummyDhtHandle (InMemoryDht wrapper)
+        if let Some(bytes) = self.dht_client.get(&cache_key).await {
+            match bincode::deserialize::<crate::proto::PeerInfo>(&bytes) {
+                Ok(peer) => {
+                    // Populate cache and return
+                    self.cache_discovered_peers(&DiscoveryCriteria::All, &vec![peer.clone()]).await;
+                    return Ok(peer);
+                }
+                Err(e) => {
+                    warn!("Failed to deserialize PeerInfo from DHT for {}: {}", cache_key, e);
+                    return Err(DhtError::InvalidPeerData(format!("deserialize error: {}", e)));
+                }
+            }
+        }
+        
+        Err(DhtError::NoPeersFound)
     }
     
     /// Update peer information in cache and DHT
@@ -267,8 +281,15 @@ impl DhtPeerDiscovery {
             }
         });
         
-        // Update DHT (fire and forget)
-    // DHT disabled: skip network update
+        // Update DHT (fire and forget) via DummyDhtHandle
+        let dht = self.dht_client.clone();
+        let key = format!("node:{}", peer.node_id.clone());
+        let value = match bincode::serialize(&peer) { Ok(v) => v, Err(_) => Vec::new() };
+        tokio::spawn(async move {
+            if !value.is_empty() {
+                if let Err(e) = dht.put(&key, value).await { let _ = e; }
+            }
+        });
     }
     
     /// Get cached peers matching criteria

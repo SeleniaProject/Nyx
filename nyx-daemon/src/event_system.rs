@@ -207,6 +207,8 @@ pub struct EventSystem {
     event_queue: Arc<Mutex<VecDeque<PrioritizedEvent>>>,
     subscribers: Arc<RwLock<HashMap<String, EventSubscriber>>>,
     statistics: Arc<RwLock<EventStatistics>>,
+    // Persistent in-memory event history for query APIs
+    history: Arc<Mutex<Vec<Event>>>,
     
     // Event broadcasting
     broadcast_tx: broadcast::Sender<Event>,
@@ -230,6 +232,7 @@ impl EventSystem {
             event_queue: Arc::new(Mutex::new(VecDeque::new())),
             subscribers: Arc::new(RwLock::new(HashMap::new())),
             statistics: Arc::new(RwLock::new(EventStatistics::default())),
+            history: Arc::new(Mutex::new(Vec::new())),
             broadcast_tx,
             processor_handle: None,
             cleanup_handle: None,
@@ -332,11 +335,32 @@ impl EventSystem {
         
         // Also broadcast immediately for real-time subscribers
         let _ = self.broadcast_tx.send(event.clone());
+        // Append to history (bounded)
+        {
+            const MAX_HISTORY: usize = 10_000;
+            let mut hist = self.history.lock().await;
+            hist.push(event.clone());
+            if hist.len() > MAX_HISTORY {
+                let overflow = hist.len() - MAX_HISTORY;
+                hist.drain(0..overflow);
+            }
+        }
         
         // Update statistics
         self.record_event(&event).await;
         
         Ok(())
+    }
+
+    /// Query stored events with filter and optional limit.
+    pub async fn query(&self, filter: &EventFilter, limit: Option<usize>) -> Vec<Event> {
+        let internal = InternalEventFilter::from_proto(filter);
+        let hist = self.history.lock().await;
+        let iter = hist.iter().rev().filter(|e| internal.matches(e));
+        match limit {
+            Some(n) => iter.take(n).cloned().collect(),
+            None => iter.cloned().collect(),
+        }
     }
     
     /// Subscribe to events with a filter
@@ -665,6 +689,7 @@ impl Clone for EventSystem {
             event_queue: Arc::clone(&self.event_queue),
             subscribers: Arc::clone(&self.subscribers),
             statistics: Arc::clone(&self.statistics),
+            history: Arc::clone(&self.history),
             broadcast_tx: self.broadcast_tx.clone(),
             processor_handle: None, // Don't clone background tasks
             cleanup_handle: None,
