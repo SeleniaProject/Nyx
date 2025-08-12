@@ -451,6 +451,26 @@ impl Default for DiscoveryStrategy {
     }
 }
 
+/// Weight configuration for peer/path selection
+#[derive(Debug, Clone, Copy)]
+pub struct SelectionWeights {
+    pub rtt_weight: f64,
+    pub reliability_weight: f64,
+    pub bandwidth_weight: f64,
+    pub diversity_weight: f64,
+}
+
+impl Default for SelectionWeights {
+    fn default() -> Self {
+        Self {
+            rtt_weight: 0.35,
+            reliability_weight: 0.35,
+            bandwidth_weight: 0.20,
+            diversity_weight: 0.10,
+        }
+    }
+}
+
 /// Persistent peer store for caching discovered peers across restarts
 pub struct PersistentPeerStore {
     file_path: PathBuf,
@@ -619,6 +639,9 @@ pub struct DhtPeerDiscovery {
     
     /// DHT bind address for network communication
     bind_addr: SocketAddr,
+
+    /// Selection weights for multi-criteria optimization (configurable)
+    selection_weights: SelectionWeights,
 }
 /// Cached peer information for faster lookup
 #[derive(Debug, Clone)]
@@ -637,6 +660,9 @@ struct CachedPeerInfo {
     pub last_active_rtt: Option<f64>, // 直近アクティブ測定値(ms)
 }
 impl DhtPeerDiscovery {
+    /// Selection weights for RTT/reliability/bandwidth and diversity
+    /// Higher weight increases the importance of the metric in scoring.
+    fn selection_weights(&self) -> &SelectionWeights { &self.selection_weights }
     /// Advanced active bandwidth and RTT measurement with statistical validation
     /// Performs multiple probe rounds to establish accurate peer performance metrics
     pub async fn active_bandwidth_probe(&self, peer: &mut CachedPeerInfo) -> Result<(), DhtError> {
@@ -735,11 +761,11 @@ impl DhtPeerDiscovery {
         // Statistical analysis of measurements
         if !rtt_measurements.is_empty() && !bandwidth_measurements.is_empty() {
             // Calculate median RTT for robustness against outliers
-            rtt_measurements.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            rtt_measurements.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let median_rtt = rtt_measurements[rtt_measurements.len() / 2];
             
             // Calculate median bandwidth for consistent performance estimation
-            bandwidth_measurements.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            bandwidth_measurements.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let median_bandwidth = bandwidth_measurements[bandwidth_measurements.len() / 2];
             
             // Update peer metrics with validated measurements
@@ -830,7 +856,7 @@ impl DhtPeerDiscovery {
 
         // Initialize peer cache with proper capacity
         let peer_cache = Arc::new(std::sync::Mutex::new(
-            LruCache::new(std::num::NonZeroUsize::new(1000).unwrap())
+            LruCache::new(std::num::NonZeroUsize::new(1000).unwrap_or(std::num::NonZeroUsize::new(1).unwrap()))
         ));
         
         // Initialize persistent store for peer information
@@ -1014,10 +1040,10 @@ impl DhtPeerDiscovery {
         
         // Check if this is a development environment
         if std::env::var("NYX_DEVELOPMENT").is_ok() {
-            "127.0.0.1:8080".parse().unwrap()
+            "127.0.0.1:8080".parse().unwrap_or_else(|_| "127.0.0.1:0".parse().expect("loopback parse"))
         } else {
             // In production, bind to all interfaces with secure port
-            "0.0.0.0:43300".parse().unwrap()
+            "0.0.0.0:43300".parse().unwrap_or_else(|_| "0.0.0.0:0".parse().expect("any parse"))
         }
     }
     
@@ -1067,11 +1093,11 @@ impl DhtPeerDiscovery {
             match dht.discover_peers(DiscoveryCriteria::All).await {
                 Ok(peers) => {
                     // Update local cache with discovered peers
-                    let mut cache = self.peer_cache.lock().unwrap();
+                    let mut cache = match self.peer_cache.lock() { Ok(g) => g, Err(poison) => poison.into_inner() };
                     for peer in peers {
                         let cached_peer = CachedPeerInfo {
                             peer_id: peer.node_id.clone(),
-                            addresses: vec![peer.address.parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().unwrap())],
+                            addresses: vec![peer.address.parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().expect("fallback addr")))],
                             capabilities: HashSet::new(), // Would be populated from actual peer capabilities
                             region: Some(peer.region.clone()),
                             location: None, // Would be derived from region or IP geolocation
@@ -1871,7 +1897,7 @@ impl DhtPeerDiscovery {
         for peer in peers {
             let cached_peer = CachedPeerInfo {
                 peer_id: peer.node_id.clone(),
-                addresses: vec![peer.address.parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().unwrap())],
+                addresses: vec![peer.address.parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().expect("fallback addr")))],
                 capabilities: HashSet::new(), // Would be populated from actual peer capabilities
                 region: Some(peer.region.clone()),
                 location: None, // Would be derived from region or IP geolocation
@@ -2203,7 +2229,7 @@ impl DhtPeerDiscovery {
             
             debug!(
                 "Selected peer {} for path position {} (diversity optimization round {})",
-                selected.last().unwrap().peer_id,
+                selected.last().map(|p| p.peer_id.clone()).unwrap_or_default(),
                 selection_round + 1,
                 selection_round + 1
             );
@@ -2226,10 +2252,11 @@ impl DhtPeerDiscovery {
     
     /// Optimize peer selection with advanced multi-criteria analysis
     async fn optimize_peer_selection(&self, candidates: &mut Vec<CachedPeerInfo>) -> Result<(), DhtError> {
-        // Sort by composite score incorporating multiple optimization factors
+        // Sort by composite score incorporating multiple optimization factors with configurable weights
+        let weights = self.selection_weights();
         candidates.sort_by(|a, b| {
-            let score_a = self.calculate_advanced_peer_score(a);
-            let score_b = self.calculate_advanced_peer_score(b);
+            let score_a = self.calculate_weighted_peer_score(a, weights);
+            let score_b = self.calculate_weighted_peer_score(b, weights);
             score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
         });
         
@@ -2278,8 +2305,8 @@ impl DhtPeerDiscovery {
         
         // Re-sort candidates after active measurements
         candidates.sort_by(|a, b| {
-            let score_a = self.calculate_advanced_peer_score(a);
-            let score_b = self.calculate_advanced_peer_score(b);
+            let score_a = self.calculate_weighted_peer_score(a, weights);
+            let score_b = self.calculate_weighted_peer_score(b, weights);
             score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
         });
         
@@ -2308,7 +2335,7 @@ impl DhtPeerDiscovery {
             let weighted_score = diversity_score * round_weight;
             
             // Factor in peer quality while maintaining diversity priority
-            let quality_score = self.calculate_advanced_peer_score(candidate);
+            let quality_score = self.calculate_weighted_peer_score(candidate, self.selection_weights());
             let composite_score = weighted_score * 0.7 + quality_score * 0.3;
             
             if composite_score > best_score {
@@ -2435,6 +2462,30 @@ impl DhtPeerDiscovery {
         score *= 0.8 + (recency_factor * 0.2);
         
         score.clamp(0.0, 1.0)
+    }
+
+    /// Calculate weighted peer score using configurable selection weights
+    fn calculate_weighted_peer_score(&self, peer: &CachedPeerInfo, w: &SelectionWeights) -> f64 {
+        let reliability = peer.reliability_score.clamp(0.0, 1.0);
+        let rtt = peer.last_active_rtt.or(peer.latency_ms).unwrap_or(1000.0);
+        let rtt_score = (500.0 - rtt.min(500.0)) / 500.0; // 0..1 (lower RTT => higher score)
+        let bw = peer.last_active_bandwidth.or(peer.bandwidth_mbps).unwrap_or(1.0);
+        let bw_score = (bw.min(1000.0)) / 1000.0; // 0..1
+
+        // Diversity proxy: prefer peers with defined region and location
+        let diversity_proxy = match (&peer.region, &peer.location) {
+            (Some(_), Some(_)) => 1.0,
+            (Some(_), None) | (None, Some(_)) => 0.7,
+            _ => 0.5,
+        };
+
+        let composite =
+            reliability * w.reliability_weight +
+            rtt_score * w.rtt_weight +
+            bw_score * w.bandwidth_weight +
+            diversity_proxy * w.diversity_weight;
+
+        composite.clamp(0.0, 1.0)
     }
     
     /// Calculate geographical diversity score relative to already selected peers
