@@ -668,10 +668,11 @@ mod tests {
     }
 
     fn create_test_frame_data(stream_id: u32, offset: u32, data: &[u8]) -> Vec<u8> {
-        // Simple frame format: [stream_id][offset][data_len][data]
+        // Simple frame format used by parser: [stream_id][offset][fin][data_len][data]
         let mut frame_data = Vec::new();
         frame_data.extend_from_slice(&stream_id.to_be_bytes());
         frame_data.extend_from_slice(&offset.to_be_bytes());
+        frame_data.push(0); // fin = false
         frame_data.extend_from_slice(&(data.len() as u32).to_be_bytes());
         frame_data.extend_from_slice(data);
         frame_data

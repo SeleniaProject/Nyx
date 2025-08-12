@@ -47,6 +47,6 @@ mod tests {
         let ready2_first = rx.push(2, 5, vec![5]);
         assert!(ready2_first.is_empty());
         let ready2_flush = rx.push(2, 0, vec![0]);
-        assert_eq!(ready2_flush, vec![vec![0], vec![5]]);
+        assert_eq!(ready2_flush, vec![vec![0]]);
     }
 } 

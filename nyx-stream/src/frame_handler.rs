@@ -231,6 +231,11 @@ impl FrameHandler {
             .map_err(|e| FrameHandlerError::FrameParsing(format!("Failed to parse frame: {:?}", e)))?
             .1;
 
+        // Enforce max frame size constraint for parsed frames
+        if frame.data.len() > self.max_frame_size {
+            return Err(FrameHandlerError::BufferOverflow(frame.stream_id));
+        }
+
         debug!("Handling frame: stream_id={}, offset={}, fin={}, data_len={}", 
                frame.stream_id, frame.offset, frame.fin, frame.data.len());
 

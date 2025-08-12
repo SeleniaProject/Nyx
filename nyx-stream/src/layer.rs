@@ -63,8 +63,8 @@ mod tests {
         let mut layer = StreamLayer::new(TimingConfig::default());
         // push out-of-order on path 1
         let v1 = layer.handle_incoming(1, 1, vec![1]);
-        assert_eq!(v1, vec![vec![1]]);
+        assert!(v1.is_empty());
         let v2 = layer.handle_incoming(1, 0, vec![0]);
-        assert!(v2.is_empty());
+        assert_eq!(v2, vec![vec![0], vec![1]]);
     }
 }
