@@ -861,6 +861,15 @@ impl StreamManager {
         
         if matches!(session.state, StreamState::Open) {
             // Update bandwidth utilization, latency measurements, etc.
+            // Example: push a small heartbeat frame via zero-copy egress for path[0] if available
+            if let Some(path) = session.paths.first() {
+                if let Some(sender) = self.egress_senders.get(&path.path_id) {
+                    // Heartbeat payload (could be replaced by real framed data)
+                    let mut hb = Vec::with_capacity(16);
+                    hb.extend_from_slice(b"NYX\x01\x00\x00\x00");
+                    let _ = sender.value().try_send(hb);
+                }
+            }
         }
     }
 }
