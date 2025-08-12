@@ -79,13 +79,13 @@ impl FrameCrypter {
 
     /// Encrypt `plaintext` with given 32-bit direction id and implicit seq counter.
     /// Returns `ciphertext || tag`.
-    pub fn encrypt(&mut self, dir: u32, plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
+    pub fn encrypt(&mut self, dir: u32, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, AeadError> {
         let seq = self.send_seq;
         self.send_seq = self.send_seq.wrapping_add(1);
         let nonce = Self::make_nonce(dir, seq);
         self.cipher
             .encrypt(Nonce::from_slice(&nonce), Payload { msg: plaintext, aad })
-            .expect("encryption failure")
+            .map_err(|e| AeadError::EncryptionFailed(format!("ChaCha20Poly1305 encryption failed: {:?}", e)))
     }
 
     /// Decrypt frame using direction id.  Rejects out-of-window or duplicate nonces.
@@ -180,11 +180,11 @@ impl FrameCrypter {
     /// Testing/benchmark helper: encrypt using an explicit sequence number without
     /// mutating the internal send sequence counter. Safe for test usage only; production
     /// code should prefer `encrypt` to preserve monotonically increasing nonces.
-    pub fn encrypt_at(&self, dir: u32, seq: u64, plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
+    pub fn encrypt_at(&self, dir: u32, seq: u64, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, AeadError> {
         let nonce = Self::make_nonce(dir, seq);
         self.cipher
             .encrypt(Nonce::from_slice(&nonce), Payload { msg: plaintext, aad })
-            .expect("encryption failure")
+            .map_err(|e| AeadError::EncryptionFailed(format!("ChaCha20Poly1305 encryption failed: {:?}", e)))
     }
 }
 
@@ -421,9 +421,7 @@ impl NyxAead {
         #[cfg(feature="telemetry")] {
             if out.capacity() > expected { // 余剰容量を再割当由来とみなす簡易ヒューリスティック
                 self.alloc_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if self.alloc_counter.load(std::sync::atomic::Ordering::Relaxed) % 100 == 0 {
-                    tracing::trace!(extra_allocations = self.alloc_counter.load(std::sync::atomic::Ordering::Relaxed), "nyx_aead_extra_allocations");
-                }
+                // Avoid optional tracing dependency unless enabled upstream
             }
         }
         Ok(out)
@@ -579,7 +577,8 @@ impl KeyRotationManager {
                         &callback,
                         &event_sender,
                     ).await {
-                        eprintln!("Key rotation failed for context {}: {:?}", context_id, e);
+                        #[cfg(feature = "telemetry")]
+                        tracing::error!(target = "nyx-crypto::aead", context_id = context_id, error = ?e, "Key rotation failed");
                     }
                 }
             }
@@ -1011,14 +1010,14 @@ mod tests {
         let mut a = FrameCrypter::new(SessionKey([7u8; 32]));
         let mut b = FrameCrypter::new(SessionKey([7u8; 32]));
         // First frame (seq=0)
-        let first_ct = a.encrypt(0, b"hi", b"hdr");
+        let first_ct = a.encrypt(0, b"hi", b"hdr").unwrap();
         let first_pt = b.decrypt(0, 0, &first_ct, b"hdr").unwrap();
         assert_eq!(first_pt, b"hi");
         // Immediate replay of first frame (seq=0)
         assert_eq!(b.decrypt(0, 0, &first_ct, b"hdr").unwrap_err(), AeadError::Replay);
         // More frames (ensure normal operation continues)
         for i in 1..100 {
-            let ct = a.encrypt(0, b"hi", b"hdr");
+            let ct = a.encrypt(0, b"hi", b"hdr").unwrap();
             let pt = b.decrypt(0, i, &ct, b"hdr").unwrap();
             assert_eq!(pt, b"hi");
         }
