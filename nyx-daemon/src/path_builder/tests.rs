@@ -272,7 +272,7 @@ async fn test_dht_error_handling() {
             }
             Ok(Err(e)) => {
                 // Graceful error handling
-                println!("Expected error: {:?}", e);
+                tracing::info!(target = "nyx-daemon::path_builder_test", error = ?e, "Expected error");
             }
             Err(_) => {
                 // Timeout occurred - acceptable for unreachable peers
