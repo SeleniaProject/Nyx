@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, VecDeque};
 use bytes::{Bytes, BytesMut};
-use tracing::{debug, error, warn, trace};
-use std::time::{Duration, Instant};
+use tracing::{debug, error};
+use std::time::{Duration};
 
 use crate::stream_frame::{StreamFrame, parse_stream_frame};
 
@@ -199,18 +199,27 @@ pub struct FrameHandler {
 }
 
 impl FrameHandler {
-    pub fn new(max_frame_size: usize, _reassembly_timeout: Duration) -> Self {
+    /// Create a new handler with explicit buffer limits.
+    pub fn new(max_frame_size: usize, max_buffer_per_stream: usize, max_total_buffer: usize) -> Self {
         Self {
             streams: HashMap::new(),
             max_streams: 1000,
-            max_buffer_per_stream: max_frame_size * 100,
+            max_buffer_per_stream,
             total_buffered: 0,
-            max_total_buffer: max_frame_size * 10000,
+            max_total_buffer,
             max_frame_size,
         }
     }
 
-    /// Process incoming frame and return reassembled data
+    /// Create a new handler using a reassembly timeout hint and derived buffer limits.
+    pub fn with_timeout(max_frame_size: usize, _reassembly_timeout: Duration) -> Self {
+        // Derive conservative buffer limits from frame size
+        let per_stream = max_frame_size.saturating_mul(100);
+        let total = max_frame_size.saturating_mul(10000);
+        Self::new(max_frame_size, per_stream, total)
+    }
+
+    /// Process incoming frame and return reassembled data as a list
     pub fn process_frame(&mut self, frame: StreamFrame<'static>) -> Result<Vec<ReassembledData>, FrameHandlerError> {
         self.process_frame_internal(frame)
     }
@@ -240,10 +249,7 @@ impl FrameHandler {
         }
     }
 
-    /// Process a stream frame
-    pub fn process_frame(&mut self, frame: StreamFrame<'static>) -> Result<Vec<ReassembledData>, FrameHandlerError> {
-        self.process_frame_internal(frame)
-    }
+    // (Removed duplicate `process_frame` definition)
 
     /// Process a frame for performance testing (async compatible)
     pub async fn process_frame_async(&mut self, _stream_id: u64, data: Vec<u8>) -> crate::errors::StreamResult<Option<Vec<u8>>> {
@@ -283,7 +289,7 @@ impl FrameHandler {
             FrameValidation::Valid => {}
             FrameValidation::Duplicate => {
                 debug!("Ignoring duplicate frame for stream {}, offset {}", stream_id, frame.offset);
-                return Ok(None);
+                return Ok(Vec::new());
             }
             FrameValidation::OutOfOrder => {
                 return Err(FrameHandlerError::OutOfOrder {
@@ -302,18 +308,18 @@ impl FrameHandler {
         self.total_buffered += frame_data_len;
 
         // Try to get contiguous data
-        let result = stream_state.get_contiguous_data();
-        
-        if let Some(ref data) = result {
+        let result_opt = stream_state.get_contiguous_data();
+        if let Some(ref data) = result_opt {
             self.total_buffered = self.total_buffered.saturating_sub(data.data.len());
-            
-            // Clean up completed stream
             if data.is_complete {
                 self.streams.remove(&stream_id);
             }
         }
-
-        Ok(result)
+        let results_vec = match result_opt {
+            Some(d) => vec![d],
+            None => Vec::new(),
+        };
+        Ok(results_vec)
     }
 
     /// Parse and validate an incoming frame without processing
@@ -362,8 +368,9 @@ impl FrameHandler {
             fin,
         };
 
-        // Use the existing process_frame method
-        self.process_frame(frame)
+        // Use the existing process_frame method and adapt Vec -> Option
+        let mut results = self.process_frame(frame)?;
+        Ok(results.pop())
     }
 
     /// Create a data frame for transmission
@@ -541,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_frame_handler_basic() {
-        let mut handler = FrameHandler::new(10, 4096, 40960);
+        let mut handler = FrameHandler::with_timeout(10, Duration::from_millis(4096));
         
         let frame = StreamFrame {
             stream_id: 1,
@@ -563,7 +570,7 @@ mod tests {
 
     #[test]
     fn test_frame_reassembly() {
-        let mut handler = FrameHandler::new(10, 4096, 40960);
+        let mut handler = FrameHandler::with_timeout(10, Duration::from_millis(4096));
         
         // Send frames out of order
         let frame2 = StreamFrame {
@@ -596,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_duplicate_frame_detection() {
-        let mut handler = FrameHandler::new(10, 4096, 40960);
+        let mut handler = FrameHandler::with_timeout(10, Duration::from_millis(4096));
         
         let frame = StreamFrame {
             stream_id: 1,
@@ -617,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_fin_frame_handling() {
-        let mut handler = FrameHandler::new(10, 4096, 40960);
+        let mut handler = FrameHandler::with_timeout(10, Duration::from_millis(4096));
         
         let frame = StreamFrame {
             stream_id: 1,
@@ -641,7 +648,7 @@ mod tests {
 
     #[test]
     fn test_buffer_overflow() {
-        let mut handler = FrameHandler::new(10, 100, 1000);
+        let mut handler = FrameHandler::with_timeout(10, Duration::from_millis(100));
         
         let large_data = vec![b'A'; 200];
         let frame = StreamFrame {
@@ -658,7 +665,7 @@ mod tests {
 
     #[test]
     fn test_frame_validation() {
-        let handler = FrameHandler::new(10, 4096, 40960);
+        let handler = FrameHandler::with_timeout(10, Duration::from_millis(4096));
         
         let frame = StreamFrame {
             stream_id: 1,

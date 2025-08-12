@@ -282,10 +282,22 @@ impl IntegratedFrameProcessor {
         // Apply flow control
         self.apply_flow_control(stream_id, frame.data.len()).await?;
 
-        // Process frame through frame handler
+        // Process frame through simple frame handler (async)
         let reassembled_data = {
             let mut handler = self.frame_handler.lock().await;
-            handler.process_frame(frame)?
+            match handler.process_frame_async(stream_id as u64, frame.data.to_vec()).await {
+                Ok(Some(buf)) => vec![ReassembledData {
+                    stream_id,
+                    data: buf,
+                    offset: frame.offset,
+                    is_final: frame.fin,
+                }],
+                Ok(None) => Vec::new(),
+                Err(e) => {
+                    error!("Frame handler error: {}", e);
+                    return Err(IntegratedFrameError::FrameParsing(e.to_string()));
+                }
+            }
         };
 
         // Update stream context
@@ -387,7 +399,6 @@ impl IntegratedFrameProcessor {
     /// Start flow control update task
     async fn start_flow_control_updater(&self) {
         let streams = Arc::clone(&self.streams);
-        let global_fc = Arc::clone(&self.global_flow_controller);
         let event_sender = self.event_sender.clone();
         let update_interval = self.config.flow_control_update_interval;
         let shutdown_signal = Arc::clone(&self.shutdown_signal);
@@ -412,22 +423,21 @@ impl IntegratedFrameProcessor {
                     let mut ctx = stream_context.lock().await;
                     
                     // Update flow control windows
-                    if let stats = ctx.flow_controller.get_stats() {
-                        // Check for flow control unblocking
-                        if ctx.state == StreamState::FlowControlBlocked && stats.flow_window_size > 0 {
-                            ctx.state = StreamState::Active;
-                            let _ = event_sender.send(FrameProcessingEvent::FlowControlUnblocked { 
-                                stream_id: *stream_id 
-                            });
-                        }
-                        
-                        // Check for congestion
-                        if stats.congestion_window < stats.flow_window_size / 2 {
-                            let _ = event_sender.send(FrameProcessingEvent::CongestionDetected {
-                                stream_id: *stream_id,
-                                severity: 1.0 - (stats.congestion_window as f64 / stats.flow_window_size as f64),
-                            });
-                        }
+                    let stats = ctx.flow_controller.get_stats();
+                    // Check for flow control unblocking
+                    if ctx.state == StreamState::FlowControlBlocked && stats.flow_window_size > 0 {
+                        ctx.state = StreamState::Active;
+                        let _ = event_sender.send(FrameProcessingEvent::FlowControlUnblocked { 
+                            stream_id: *stream_id 
+                        });
+                    }
+                    
+                    // Check for congestion
+                    if stats.congestion_window < stats.flow_window_size / 2 {
+                        let _ = event_sender.send(FrameProcessingEvent::CongestionDetected {
+                            stream_id: *stream_id,
+                            severity: 1.0 - (stats.congestion_window as f64 / stats.flow_window_size as f64),
+                        });
                     }
                 }
             }
@@ -528,9 +538,8 @@ impl IntegratedFrameProcessor {
 
                 // Update global flow control stats
                 if let Ok(global_fc_guard) = global_fc.try_lock() {
-                    if let fc_stats = global_fc_guard.get_stats() {
-                        stats_guard.flow_control_stats = fc_stats;
-                    }
+                    let fc_stats = global_fc_guard.get_stats();
+                    stats_guard.flow_control_stats = fc_stats;
                 }
             }
             
@@ -597,9 +606,8 @@ impl IntegratedFrameProcessor {
         let streams = self.streams.read().await;
         if let Some(stream_context) = streams.get(&stream_id) {
             if let Ok(ctx) = stream_context.try_lock() {
-                if let fc_stats = ctx.flow_controller.get_stats() {
-                    return Some((ctx.state.clone(), fc_stats));
-                }
+                let fc_stats = ctx.flow_controller.get_stats();
+                return Some((ctx.state.clone(), fc_stats));
             }
         }
         None

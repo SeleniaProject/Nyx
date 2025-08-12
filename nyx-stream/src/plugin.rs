@@ -54,7 +54,6 @@ pub struct PluginHeader {
     /// Plugin-specific flags (8-bit)
     pub flags: u8,
     /// Plugin payload data
-    #[serde(with = "serde_bytes")]
     pub data: Vec<u8>,
 }
 
