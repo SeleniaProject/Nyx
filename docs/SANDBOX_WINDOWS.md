@@ -1,61 +1,75 @@
-# Windows Sandboxing Plan (NyxNet)
+# Windows Sandboxing (NyxNet)
 
-This document outlines the planned Windows sandboxing approach for NyxNet components (not yet fully implemented in code). It complements Linux seccomp / OpenBSD pledge/unveil style restrictions described in the broader security design.
+This document describes the current Windows sandboxing implementation for NyxNet, complementing Linux seccomp and OpenBSD pledge/unveil described elsewhere.
+
+## Status
+- Core process isolation via Windows Job Objects is implemented in `nyx-core` and available behind a safe wrapper API.
+- Additional restrictions (restricted token launch path for plugins, granular UI/job limits, policy from config) are planned and will extend the current foundation.
 
 ## Goals
-- Constrain daemon / plugin processes to least privilege
+- Constrain daemon and plugin processes to least privilege
 - Limit resource abuse (CPU time, memory, handle count, process spawning)
 - Provide defense‑in‑depth against plugin compromise
 
-## Mechanisms
-1. Job Object confinement
-   - `CreateJobObject` + `AssignProcessToJobObject`
-   - Limits: `JOB_OBJECT_LIMIT_PROCESS_TIME`, `JOB_OBJECT_LIMIT_PROCESS_MEMORY`, `JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION`, `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`
-   - UI restrictions: `JOB_OBJECT_UILIMIT_DESKTOP`, `JOB_OBJECT_UILIMIT_DISPLAYSETTINGS`
-2. Restricted token
-   - `CreateRestrictedToken` removing admin / high integrity SIDs
-   - Deny write to sensitive registry hives & system dirs (via integrity level + ACL)
-3. Filesystem sandbox root
-   - Per‑instance data directory only; no write outside (enforced by ACL + code path discipline)
-4. Inter‑process communication filtering
-   - Named pipes prefixed with `\\.\pipe\nyx_` and randomized suffix
-   - Broker pattern for plugin access to network / filesystem capabilities
-5. Memory scrubbing & key material isolation
-   - Continue to leverage `zeroize` on secret types
+## Implemented Mechanism: Job Object Confinement
+- Safe wrapper location: `nyx-core/src/windows.rs`
+- Public API: `nyx_core::apply_process_isolation(Option<WindowsIsolationConfig>) -> io::Result<()>`
+- Configuration type: `WindowsIsolationConfig` (fields shown below)
 
-## Implementation Phases
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 1 | Planned | Introduce `sandbox::windows` module providing safe wrapper API (behind `windows_sandbox` feature) |
-| 2 | Planned | Job object creation + assignment for daemon child plugin processes |
-| 3 | Planned | Restricted token launch path for plugins |
-| 4 | Planned | Resource limit configuration from `nyx.toml` (`[security]` section) |
-| 5 | Planned | Telemetry integration: export sandbox limit hits / terminations |
-
-## Minimal API (Planned)
 ```rust
-pub struct WindowsSandboxConfig {
-    pub max_processes: u32,
-    pub memory_limit_bytes: u64,
-    pub cpu_time_ms: Option<u64>,
+/// Configuration for Windows process isolation using Job Objects.
+pub struct WindowsIsolationConfig {
+    /// Per-process memory limit in megabytes (working set bound)
+    pub max_process_memory_mb: usize,
+    /// Total job memory limit in megabytes (reserved for future use)
+    pub max_job_memory_mb: usize,
+    /// Working set size limit in megabytes (applied via Job ExtendedLimitInfo)
+    pub max_working_set_mb: usize,
+    /// Maximum allowed CPU time per process in seconds (0 = unlimited)
+    pub max_process_time_seconds: u64,
+    /// Kill all associated processes when the job handle is closed
+    pub kill_on_job_close: bool,
 }
-
-pub fn launch_sandboxed(cmd: &str, args: &[&str], cfg: &WindowsSandboxConfig) -> anyhow::Result<ChildHandle> { /* windows only */ }
 ```
 
+### Behavior
+- A Job Object is created and configured using `ExtendedLimitInfo`.
+- Working set bound is applied; when `kill_on_job_close` is set, all associated processes are terminated when the job is torn down.
+- The current process is assigned to the job (child processes inherit restrictions).
+- The job handle is intentionally kept alive for the process lifetime.
+
+### Usage
+```rust
+use nyx_core::{apply_process_isolation, windows::WindowsIsolationConfig};
+
+fn main() -> std::io::Result<()> {
+    // Apply default, safe limits
+    apply_process_isolation(None)?;
+
+    // Or apply custom bounds
+    let cfg = WindowsIsolationConfig { max_working_set_mb: 256, ..Default::default() };
+    apply_process_isolation(Some(cfg))?;
+    Ok(())
+}
+```
+
+## Planned Extensions
+1. Restricted token
+   - Launch child processes with a restricted token (reduced SIDs/integrity level)
+   - Deny writes to sensitive registry hives and system directories via integrity level + ACL
+2. UI and handle limits
+   - `JOB_OBJECT_UILIMIT_*` and handle count constraints where applicable
+3. Filesystem sandbox root
+   - Per‑instance data directory only; no write outside (enforced by ACL + code path discipline)
+4. IPC filtering
+   - Named pipes with `\\.\pipe\nyx_` prefix and broker pattern for privileged operations
+5. Telemetry integration
+   - Export limit hits and termination events for observability
+
 ## Fallback Behavior
-- Non‑Windows builds: stub module returns `Unsupported` error.
-- Windows without feature enabled: processes launch normally (opt‑in safety).
+- Non‑Windows builds: the module is gated by `cfg(target_os = "windows")` and is not compiled.
+- Windows: if isolation is not applied explicitly, processes run without Job Object restrictions.
 
 ## Security Notes
-- Exact syscall filtering parity with seccomp is not practical on Windows; focus shifts to handle / token / job limits.
-- Audit logging: on sandbox violation, emit telemetry event `sandbox.violation` with process id, rule, action.
-
-## Next Steps
-1. Add feature flag + stub module
-2. Integrate into plugin launch path
-3. Add tests (Windows only) verifying enforced memory/process limits using synthetic plugin
-4. Document configuration schema in main docs
-
----
-(Generated: 2025-08-10)
+- Parity with seccomp is not feasible on Windows; focus is on job/token limits and ACLs.
+- Sensitive material continues to rely on memory zeroization primitives in the cryptographic layers.
