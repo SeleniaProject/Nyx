@@ -37,20 +37,20 @@ Traditional anonymous networks face an impossible choice between **privacy**, **
 ### ⚡ High Performance (In Development)
 - **Multipath Communication**: Concurrent data transmission over multiple routes (foundation implemented)
 - **Adaptive Congestion Control**: BBR-derived algorithm optimized for mix networks (in development)
-- **Forward Error Correction**: Reed-Solomon / RaptorQ による損失耐性 (部分実装・テスト整備中)
-- **0-RTT Handshake**: 再送攻撃耐性付きの即時送信 (設計→実装移行中)
+- **Forward Error Correction**: RaptorQ (adaptive) 実装済み／Reed-Solomon は互換用途で提供
+- **0-RTT Handshake**: 初期実装（AEAD の大規模 anti-replay ウィンドウにより early data を保護）。ストリーム層での early-data 統合強化を進行中
 - **Efficient Transport**: UDP primary, QUIC datagrams, TCP fallback (partial implementation)
 
 ### 🛡️ Enterprise Security (Implementation In Progress)
 - **Memory Safety**: Rust implementation with `#![forbid(unsafe_code)]` (✅ implemented)
 - **Sandboxing**: Linux seccomp (✅ implemented), OpenBSD pledge/unveil (✅ implemented) system call restrictions
-- **Formal Verification**: TLA+ models with comprehensive security proofs (in development)
+- **Formal Verification**: TLA+ models, automated TLC model checking, property-based tests, and CI integration (✅ implemented)
 - **Cryptographic Auditing**: Third-party security audits and penetration testing (planned)
 - **Zero-Knowledge Architecture**: No metadata collection or user tracking (designing)
 
 ### 🌐 Cross-Platform Support (Staged Implementation)
 - **Universal Compatibility**: Native support for major platforms (foundation being built)
-- **Mobile Optimization**: Battery-efficient algorithms for iOS/Android (planned)
+- **Mobile Optimization**: 省電力/バックグラウンド運用ポリシーを設計確定、実装を段階的に進行中（`docs/LOW_POWER_MODE.md`, `docs/MOBILE_POWER_PUSH_INTEGRATION.md`）
 - **Container Ready**: Docker and Kubernetes deployment configurations (in development)
 - **Plugin Architecture**: Extensible design for custom protocol features (implementing)
 - **Cloud Integration**: AWS, GCP, Azure deployment templates (planned)
@@ -591,6 +591,36 @@ cargo run --bin nyx-daemon -- --config ~/.config/nyx/config.toml --dry-run
 - **Model Checking**: Exhaustive state space exploration
 - **Property Testing**: QuickCheck-style property verification
 
+##### Running Formal Verification
+
+Prerequisites:
+- Java (for TLC), Python 3, and `formal/tla2tools.jar` present
+
+Quick run (development):
+```bash
+cargo verify --quick
+```
+
+Note: To enable `cargo verify`, make `scripts/cargo-verify` executable and put it on your PATH (see `scripts/README.md`).
+
+Full pipeline (TLA+ + Rust property tests + reporting):
+```bash
+python3 scripts/verify.py --timeout 600 --output verification_report.json
+```
+
+TLA+ only (from `formal/`):
+```bash
+cd formal
+java -Xmx4g -cp tla2tools.jar tlc2.TLC -config basic.cfg nyx_multipath_plugin.tla
+```
+
+CI integration example:
+```yaml
+- name: Run formal verification
+  run: |
+    python3 scripts/verify.py --timeout 600
+```
+
 ### Threat Model Coverage
 
 | Adversary Type | Capabilities | Countermeasures |
@@ -692,7 +722,7 @@ Reliability Metrics:
 
 #### Adaptive Algorithms
 - **Dynamic FEC**: Adjust redundancy based on network conditions
-- **Path Selection**: Machine learning-based route optimization
+- **Path Selection**: ヒューリスティック（非AI）に基づく重み付き経路最適化
 - **Congestion Control**: BBR-derived algorithm optimized for mix networks
 - **Buffer Management**: Adaptive buffer sizing with backpressure control
 
@@ -737,7 +767,7 @@ Reliability Metrics:
 | Target | Status | Size | Use Case |
 |--------|--------|------|---------|
 | **WASI** | ✅ Production | 8MB | Server-side WASM |
-| **Browser** | 🧪 Beta | 12MB | Client-side privacy |
+| **Browser** | 🧪 Beta (subset) | 12MB | Client-side privacy (Noiseデモ/Push登録)。HPKE/Multipath/Pluginは未対応 |
 
 ### Language Bindings
 ```rust
