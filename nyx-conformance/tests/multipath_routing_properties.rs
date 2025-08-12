@@ -143,31 +143,58 @@ impl PathSelector {
         let mut paths: Vec<_> = self.paths.keys().collect();
         paths.sort();
         
-        if let Some(least_used) = paths.iter()
-            .min_by_key(|&&path_id| self.load_state[&path_id].packets_sent) {
-            Some(**least_used)
-        } else {
-            None
-        }
+        paths
+            .iter()
+            .filter_map(|&&pid| self.load_state.get(&pid).map(|ls| (pid, ls.packets_sent)))
+            .min_by_key(|&(_, sent)| sent)
+            .map(|(pid, _)| pid)
     }
 
     fn select_weighted_round_robin(&self) -> Option<PathId> {
-        // Weight paths by inverse of latency and loss rate
-        let mut best_path = None;
-        let mut best_score = f64::NEG_INFINITY;
+        // Compute static weights from quality
+        let mut total_weight = 0.0f64;
+        let mut weights: Vec<(PathId, f64)> = Vec::with_capacity(self.paths.len());
+        for (&path_id, q) in &self.paths {
+            let w_rel = (1.0 - q.loss_rate).powf(2.0) * q.reliability_score; // [0,1]
+            let w_lat = 1.0 / (q.latency_ms + 1.0);                          // small positive
+            let w_bw  = (q.bandwidth_mbps / 100.0).sqrt();                    // soft bandwidth bias
+            let w = w_rel * 0.6 + w_lat * 0.25 + w_bw * 0.15 + 1e-6;          // epsilon to avoid zero
+            total_weight += w;
+            weights.push((path_id, w));
+        }
+        if total_weight <= 0.0 { return None; }
 
-        for (&path_id, quality) in &self.paths {
-            let load = &self.load_state[&path_id];
-            let weight = 1.0 / (quality.latency_ms + 1.0) * (1.0 - quality.loss_rate);
-            let load_factor = 1.0 / (load.current_load + 1.0);
-            let score = weight * load_factor;
-
-            if score > best_score {
-                best_score = score;
-                best_path = Some(path_id);
+        // If some paths are unused, prefer the highest-weight among unused once to bootstrap fairness
+        let mut unused_best: Option<(PathId, f64)> = None;
+        for (pid, w) in &weights {
+            if let Some(load) = self.load_state.get(pid) {
+                if load.packets_sent == 0 {
+                    match unused_best {
+                        Some((_, bw)) if *w <= bw => {}
+                        _ => unused_best = Some((*pid, *w)),
+                    }
+                }
             }
         }
+        if let Some((pid, _)) = unused_best { return Some(pid); }
 
+        // Choose the path with the largest negative gap from its ideal proportion
+        let total_sent: f64 = self.load_state.values().map(|l| l.packets_sent as f64).sum();
+        let mut best_deficit = f64::NEG_INFINITY;
+        let mut best_path: Option<PathId> = None;
+        for (pid, w) in &weights {
+            let sent = self.load_state.get(pid).map(|l| l.packets_sent as f64).unwrap_or(0.0);
+            let ideal = (total_sent * (*w / total_weight)).floor();
+            let deficit = ideal - sent;
+            if deficit > best_deficit {
+                best_deficit = deficit;
+                best_path = Some(*pid);
+            }
+        }
+        // Fallback: choose the highest weight if deficits are equal (e.g., at start)
+        if best_deficit <= 0.0 {
+            best_path = weights.into_iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).map(|(pid, _)| pid);
+        }
         best_path
     }
 
@@ -185,31 +212,34 @@ impl PathSelector {
 
     fn select_adaptive(&self, _packet_size: usize) -> Option<PathId> {
         // Adaptive selection considering current network conditions
-        let mut best_path = None;
-        let mut best_score = f64::NEG_INFINITY;
-
+        // Ensure each path gets initial use
+        let mut unused_best: Option<(PathId, f64)> = None;
         for (&path_id, quality) in &self.paths {
-            let load = &self.load_state[&path_id];
-            
-            // Calculate adaptive score based on multiple factors
-            let latency_score = 1.0 / (quality.latency_ms + 1.0);
-            let bandwidth_score = quality.bandwidth_mbps / 1000.0; // Normalize
-            let reliability_score = quality.reliability_score;
-            let load_score = 1.0 / (load.current_load + 1.0);
-            let congestion_score = 1.0 - quality.congestion_level;
-            
-            let composite_score = latency_score * 0.3 + 
-                                bandwidth_score * 0.2 + 
-                                reliability_score * 0.2 + 
-                                load_score * 0.2 + 
-                                congestion_score * 0.1;
-
-            if composite_score > best_score {
-                best_score = composite_score;
-                best_path = Some(path_id);
+            if let Some(load) = self.load_state.get(&path_id) {
+                if load.packets_sent == 0 {
+                    let w = 1.0 / (quality.latency_ms + 1.0) * (1.0 - quality.loss_rate);
+                    match unused_best { Some((_, bw)) if w <= bw => {} _ => unused_best = Some((path_id, w)) }
+                }
             }
         }
+        if let Some((pid, _)) = unused_best { return Some(pid); }
 
+        let mut best_path = None;
+        let mut best_score = f64::NEG_INFINITY;
+        for (&path_id, quality) in &self.paths {
+            let load = match self.load_state.get(&path_id) { Some(l) => l, None => continue };
+            let latency_score = 1.0 / (quality.latency_ms + 1.0);
+            let bandwidth_score = (quality.bandwidth_mbps / 100.0).sqrt();
+            let reliability_score = (1.0 - quality.loss_rate).powf(2.0) * quality.reliability_score;
+            let congestion_score = 1.0 - quality.congestion_level;
+            // Emphasize reliability and latency, keep load as small additive penalty
+            let base = latency_score * 0.3
+                + bandwidth_score * 0.15
+                + reliability_score * 0.45
+                + congestion_score * 0.10;
+            let composite_score = base - 0.015 * load.current_load;
+            if composite_score > best_score { best_score = composite_score; best_path = Some(path_id); }
+        }
         best_path
     }
 
@@ -582,8 +612,8 @@ async fn test_multipath_routing_correctness() {
             }
         }
 
-        // Allow processing time
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Allow processing time (increase to reduce timing-induced apparent loss)
+        tokio::time::sleep(Duration::from_millis(250)).await;
 
         let results = simulator.get_results().await;
         

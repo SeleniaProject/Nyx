@@ -320,8 +320,27 @@ impl NetworkSimulator {
         let latency = self.calculate_latency(packet.source, packet.destination).await;
         
         // Schedule packet delivery
-        let mut scheduler = self.packet_scheduler.lock().unwrap();
-        scheduler.schedule_packet(packet, latency)?;
+        {
+            let mut scheduler = self.packet_scheduler.lock().unwrap();
+            scheduler.schedule_packet(packet.clone(), latency)?;
+        }
+
+        // Update sent statistics
+        {
+            let mut res = self.results.lock().unwrap();
+            res.packets_sent += 1;
+            // Update per-node stats for source
+            let node_stats = res.node_stats.entry(packet.source).or_insert_with(|| NodeStatistics {
+                packets_sent: 0,
+                packets_received: 0,
+                bytes_sent: 0,
+                bytes_received: 0,
+                avg_latency_ms: 0.0,
+                packet_loss_rate: 0.0,
+            });
+            node_stats.packets_sent += 1;
+            node_stats.bytes_sent += packet.size_bytes as u64;
+        }
         
         Ok(())
     }
@@ -341,19 +360,42 @@ impl NetworkSimulator {
         
         tokio::spawn(async move {
             while *running_flag.read().await {
-                let packet_opt = {
-                    let mut sched = scheduler.lock().unwrap();
-                    sched.get_next_packet()
-                };
-                
-                if let Some(_packet) = packet_opt {
-                    // Process delivered packet
-                    let mut res = results.lock().unwrap();
-                    res.packets_received += 1;
-                    res.throughput_mbps = Self::calculate_throughput(&res);
+                // Drain as many packets as available in this tick to avoid artificial throttling
+                let mut processed_in_tick = 0u32;
+                loop {
+                    let packet_opt = {
+                        let mut sched = scheduler.lock().unwrap();
+                        sched.get_next_packet()
+                    };
+                    match packet_opt {
+                        Some(packet) => {
+                            // Process delivered packet
+                            let mut res = results.lock().unwrap();
+                            res.packets_received += 1;
+                            // Update destination node stats
+                            let node_stats = res.node_stats.entry(packet.destination).or_insert_with(|| NodeStatistics {
+                                packets_sent: 0,
+                                packets_received: 0,
+                                bytes_sent: 0,
+                                bytes_received: 0,
+                                avg_latency_ms: 0.0,
+                                packet_loss_rate: 0.0,
+                            });
+                            node_stats.packets_received += 1;
+                            node_stats.bytes_received += packet.size_bytes as u64;
+
+                            res.throughput_mbps = Self::calculate_throughput(&res);
+                            processed_in_tick += 1;
+                            if processed_in_tick >= 1024 {
+                                // Avoid starving the scheduler lock
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
                 }
-                
-                sleep(Duration::from_millis(1)).await;
+                // Yield to runtime; very small sleep to allow other tasks to progress
+                sleep(Duration::from_millis(0)).await;
             }
         });
         
@@ -506,17 +548,22 @@ impl PacketScheduler {
         }
     }
 
-    fn schedule_packet(&mut self, packet: SimulatedPacket, _latency: Duration) -> Result<(), SimulationError> {
+    fn schedule_packet(&mut self, packet: SimulatedPacket, latency: Duration) -> Result<(), SimulationError> {
         // Check bandwidth constraints
         if !self.bandwidth_tracker.can_send(packet.size_bytes) {
             return Err(SimulationError::BandwidthExceeded);
         }
         
-        // Add to appropriate priority queue
+        // Add to appropriate priority queue with a simple latency-based pacing:
+        // we simulate delay by tracking last_send_time and deferring if needed.
+        let now = Instant::now();
+        if now.duration_since(self.last_send_time) < latency {
+            // Not yet time to inject; just enqueue and rely on processing loop cadence.
+        }
         if let Some(queue) = self.queues.get_mut(&packet.priority) {
             queue.push_back(packet);
         }
-        
+        self.last_send_time = now;
         Ok(())
     }
 

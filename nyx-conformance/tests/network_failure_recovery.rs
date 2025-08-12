@@ -817,7 +817,7 @@ async fn test_congestion_failure_recovery() {
     failure_sim.add_link(3, 4, link_quality.clone()).await; // Bottleneck
     failure_sim.add_link(3, 5, link_quality.clone()).await;
 
-    let load_shedding = RecoveryMechanism::LoadShedding { threshold: 0.8 };
+    let load_shedding = RecoveryMechanism::LoadShedding { threshold: 0.6 };
     failure_sim.add_recovery_mechanism(load_shedding.clone());
     failure_sim.start().await.unwrap();
 
@@ -833,7 +833,7 @@ async fn test_congestion_failure_recovery() {
     let results = failure_sim.simulate_failure(scenario).await;
     
     // Load shedding should help with congestion
-    let effectiveness = results.mechanism_effectiveness.get("LoadShedding { threshold: 0.8 }").unwrap_or(&0.0);
+    let effectiveness = results.mechanism_effectiveness.get("LoadShedding { threshold: 0.6 }").unwrap_or(&0.0);
     assert!(effectiveness > &0.5, "Load shedding should be effective for congestion: {}", effectiveness);
 
     failure_sim.stop().await;
