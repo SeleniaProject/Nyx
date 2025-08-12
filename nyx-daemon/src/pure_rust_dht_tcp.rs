@@ -782,7 +782,7 @@ impl PureRustDht {
         let ping_message = DhtMessage::Ping {
             node_id,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
-                .unwrap().as_secs(),
+                .unwrap_or_default().as_secs(),
         };
         
         match self.send_message_to_peer(peer_addr, ping_message).await {
@@ -791,7 +791,7 @@ impl PureRustDht {
                 let peer_info = PeerInfo {
                     peer_id: hex::encode(peer_node_id),
                     address: format!("/ip4/{}/tcp/{}", peer_addr.ip(), peer_addr.port())
-                        .parse().unwrap(),
+                        .parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().expect("fallback multiaddr")),
                     public_key: vec![], // Would be exchanged during handshake
                     last_seen: SystemTime::now(),
                     avg_response_time: Duration::from_millis(100),
@@ -956,9 +956,22 @@ impl PureRustDht {
                     
                     let task = tokio::spawn(async move {
                         if find_value_flag {
-                            // Try to find value first
-                            // Implementation would query for specific value
-                            None // Placeholder for value query
+                            // Try to find value first via FindValue
+                            if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
+                                let msg = DhtMessage::FindValue { key: target_id_owned.clone(), requester_id: "anonymous".to_string() };
+                                if let Ok(bytes) = serde_json::to_vec(&msg) {
+                                    if stream.write_all(&bytes).await.is_ok() {
+                                        let mut buf = vec![0u8; 4096];
+                                        if let Ok(n) = stream.read(&mut buf).await { buf.truncate(n);
+                                            if let Ok(DhtMessage::FindValueResponse { value: Some(_), .. }) = serde_json::from_slice::<DhtMessage>(&buf) {
+                                                // Peer has value; no new nodes from this
+                                                return None;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            None
                         } else {
                             // Query for closer nodes
                             Self::query_peer_for_closest_nodes(addr, &target_id_owned).await
@@ -1366,7 +1379,14 @@ impl PureRustDht {
     /// Create a signed record
     fn create_signed_record(&self, key: &str, value: Vec<u8>) -> Result<DhtRecord, DhtError> {
         let timestamp = SystemTime::now();
-        let ttl = Duration::from_secs(3600); // 1 hour default TTL
+        // Adaptive TTL by key namespace
+        let ttl = if key.starts_with("nyx:session:") {
+            Duration::from_secs(600)
+        } else if key.starts_with("nyx:peer:") {
+            Duration::from_secs(3600)
+        } else {
+            Duration::from_secs(3600)
+        };
         
         // Create record content for signing
         let record_content = format!("{}:{:?}:{:?}:{:?}", 
@@ -1419,7 +1439,8 @@ impl PureRustDht {
         let mut sig_bytes = [0u8; 64];
         sig_bytes.copy_from_slice(signature_bytes);
         let signature = Signature::from_bytes(&sig_bytes);
-        
+        // Reject expired records even if signature verifies
+        if record.timestamp + record.ttl <= SystemTime::now() { return Ok(false); }
         Ok(public_key.verify(record_content.as_bytes(), &signature).is_ok())
     }
     
@@ -2061,8 +2082,9 @@ impl PureRustDht {
         .map_err(|e| DhtError::Connection(format!("Bootstrap connection failed: {}", e)))?;
 
         // Send ping message to verify connectivity
+        // Build real ping message using our local node id
         let ping_msg = DhtMessage::Ping {
-            node_id: [0u8; 32], // Placeholder node ID
+            node_id: Self::calculate_node_id(&Self::public_key_bytes(&self.keypair)),
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
                 .unwrap_or_default().as_secs(),
         };
@@ -2071,13 +2093,27 @@ impl PureRustDht {
         let serialized = serde_json::to_vec(&ping_msg)
             .map_err(|e| DhtError::Serialization(Box::new(bincode::ErrorKind::Custom(e.to_string()))))?;
 
-        // For simplicity, we'll consider connection successful if TCP connection works
-        // In a full implementation, we'd complete the ping/pong handshake
-
-        debug!("Bootstrap connection to {} successful in {:?}", 
-               node_addr, connection_start.elapsed());
-
-        Ok(())
+        // Send ping and await pong to verify bootstrap liveness
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = stream;
+        stream.write_all(&serialized).await
+            .map_err(|e| DhtError::Connection(format!("Write failed: {}", e)))?;
+        let mut buf = vec![0u8; 2048];
+        let n = tokio::time::timeout(timeout, stream.read(&mut buf)).await
+            .map_err(|_| DhtError::Connection("Bootstrap read timeout".to_string()))
+            .and_then(|r| r.map_err(|e| DhtError::Connection(format!("Read error: {}", e))))?;
+        buf.truncate(n);
+        if let Ok(resp) = serde_json::from_slice::<DhtMessage>(&buf) {
+            match resp {
+                DhtMessage::Pong { .. } => {
+                    debug!("Bootstrap connection to {} successful in {:?}", node_addr, connection_start.elapsed());
+                    return Ok(());
+                }
+                _ => return Err(DhtError::Protocol("Unexpected bootstrap response".to_string())),
+            }
+        } else {
+            return Err(DhtError::Deserialization("Invalid bootstrap response".to_string()));
+        }
     }
 
     /// Perform initial DHT queries to populate routing table
