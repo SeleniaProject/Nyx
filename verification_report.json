@@ -1,0 +1,347 @@
+{
+  "timestamp": "2025-08-11T19:13:45.142776",
+  "total_duration": 28.79523801803589,
+  "summary": {
+    "total_verifications": 5,
+    "successful_verifications": 5,
+    "failed_verifications": 0,
+    "success_rate": 100.0,
+    "tla_verifications": 0,
+    "rust_verifications": 5,
+    "total_duration_seconds": 28.79523801803589
+  },
+  "results": [
+    {
+      "name": "rust_multipath_selection",
+      "type": "rust_test",
+      "success": true,
+      "duration": 2.7674477100372314,
+      "details": {
+        "tests_run": 12,
+        "tests_passed": 12,
+        "tests_failed": 0,
+        "return_code": 0
+      },
+      "error_message": null,
+      "timestamp": "2025-08-11T19:13:22.882375"
+    },
+    {
+      "name": "rust_capability_negotiation",
+      "type": "rust_test",
+      "success": true,
+      "duration": 2.272165060043335,
+      "details": {
+        "tests_run": 16,
+        "tests_passed": 16,
+        "tests_failed": 0,
+        "return_code": 0
+      },
+      "error_message": null,
+      "timestamp": "2025-08-11T19:13:25.154673"
+    },
+    {
+      "name": "rust_protocol_state_machine",
+      "type": "rust_test",
+      "success": true,
+      "duration": 1.9424896240234375,
+      "details": {
+        "tests_run": 22,
+        "tests_passed": 22,
+        "tests_failed": 0,
+        "return_code": 0
+      },
+      "error_message": null,
+      "timestamp": "2025-08-11T19:13:27.097314"
+    },
+    {
+      "name": "rust_cryptographic_operations",
+      "type": "rust_test",
+      "success": true,
+      "duration": 3.3765480518341064,
+      "details": {
+        "tests_run": 12,
+        "tests_passed": 12,
+        "tests_failed": 0,
+        "return_code": 0
+      },
+      "error_message": null,
+      "timestamp": "2025-08-11T19:13:30.473990"
+    },
+    {
+      "name": "rust_network_simulation",
+      "type": "rust_test",
+      "success": true,
+      "duration": 2.6173431873321533,
+      "details": {
+        "tests_run": 10,
+        "tests_passed": 10,
+        "tests_failed": 0,
+        "return_code": 0
+      },
+      "error_message": null,
+      "timestamp": "2025-08-11T19:13:33.091404"
+    }
+  ],
+  "coverage_metrics": {
+    "tla_coverage": {
+      "configurations_tested": 0,
+      "configurations_passed": 0,
+      "total_states_explored": 0,
+      "coverage_percentage": 0,
+      "properties_verified": {
+        "safety_invariants": 0,
+        "liveness_properties": 0,
+        "temporal_properties": 0
+      }
+    },
+    "rust_coverage": {
+      "test_categories": 5,
+      "categories_passed": 5,
+      "total_property_tests": 72,
+      "passed_property_tests": 72,
+      "test_success_rate": 100.0
+    },
+    "integration_coverage": {
+      "multipath_selection": {
+        "required_tests": [
+          "tla_basic",
+          "tla_comprehensive",
+          "rust_multipath_selection"
+        ],
+        "covered_tests": [
+          "rust_multipath_selection"
+        ],
+        "coverage_percentage": 33.33333333333333
+      },
+      "capability_negotiation": {
+        "required_tests": [
+          "tla_capability_stress",
+          "rust_capability_negotiation"
+        ],
+        "covered_tests": [
+          "rust_capability_negotiation"
+        ],
+        "coverage_percentage": 50.0
+      },
+      "state_machine": {
+        "required_tests": [
+          "tla_liveness_focus",
+          "rust_protocol_state_machine"
+        ],
+        "covered_tests": [
+          "rust_protocol_state_machine"
+        ],
+        "coverage_percentage": 50.0
+      },
+      "cryptographic": {
+        "required_tests": [
+          "rust_cryptographic_operations"
+        ],
+        "covered_tests": [
+          "rust_cryptographic_operations"
+        ],
+        "coverage_percentage": 100.0
+      },
+      "network_behavior": {
+        "required_tests": [
+          "tla_scalability",
+          "rust_network_simulation"
+        ],
+        "covered_tests": [
+          "rust_network_simulation"
+        ],
+        "coverage_percentage": 50.0
+      }
+    },
+    "requirements_coverage": {
+      "requirements_mapping": {
+        "1.1": {
+          "required_tests": [
+            "tla_basic",
+            "tla_comprehensive"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "1.2": {
+          "required_tests": [
+            "tla_capability_stress",
+            "rust_capability_negotiation"
+          ],
+          "covered_tests": [
+            "rust_capability_negotiation"
+          ],
+          "coverage_percentage": 50.0,
+          "fully_covered": false
+        },
+        "1.3": {
+          "required_tests": [
+            "tla_basic",
+            "rust_multipath_selection"
+          ],
+          "covered_tests": [
+            "rust_multipath_selection"
+          ],
+          "coverage_percentage": 50.0,
+          "fully_covered": false
+        },
+        "1.4": {
+          "required_tests": [
+            "tla_liveness_focus",
+            "rust_protocol_state_machine"
+          ],
+          "covered_tests": [
+            "rust_protocol_state_machine"
+          ],
+          "coverage_percentage": 50.0,
+          "fully_covered": false
+        },
+        "1.5": {
+          "required_tests": [
+            "tla_liveness_focus"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "2.1": {
+          "required_tests": [
+            "tla_comprehensive"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "2.2": {
+          "required_tests": [
+            "tla_scalability"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "2.3": {
+          "required_tests": [
+            "tla_capability_stress"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "2.4": {
+          "required_tests": [
+            "tla_basic",
+            "tla_comprehensive"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "2.5": {
+          "required_tests": [
+            "tla_liveness_focus"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "2.6": {
+          "required_tests": [
+            "tla_basic",
+            "tla_comprehensive",
+            "tla_scalability"
+          ],
+          "covered_tests": [],
+          "coverage_percentage": 0.0,
+          "fully_covered": false
+        },
+        "3.1": {
+          "required_tests": [
+            "rust_multipath_selection"
+          ],
+          "covered_tests": [
+            "rust_multipath_selection"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        },
+        "3.2": {
+          "required_tests": [
+            "rust_capability_negotiation"
+          ],
+          "covered_tests": [
+            "rust_capability_negotiation"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        },
+        "3.3": {
+          "required_tests": [
+            "rust_protocol_state_machine"
+          ],
+          "covered_tests": [
+            "rust_protocol_state_machine"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        },
+        "3.4": {
+          "required_tests": [
+            "rust_cryptographic_operations"
+          ],
+          "covered_tests": [
+            "rust_cryptographic_operations"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        },
+        "3.5": {
+          "required_tests": [
+            "rust_network_simulation"
+          ],
+          "covered_tests": [
+            "rust_network_simulation"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        },
+        "3.6": {
+          "required_tests": [
+            "rust_capability_negotiation",
+            "rust_network_simulation"
+          ],
+          "covered_tests": [
+            "rust_capability_negotiation",
+            "rust_network_simulation"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        },
+        "3.7": {
+          "required_tests": [
+            "rust_multipath_selection",
+            "rust_capability_negotiation",
+            "rust_protocol_state_machine",
+            "rust_network_simulation"
+          ],
+          "covered_tests": [
+            "rust_multipath_selection",
+            "rust_capability_negotiation",
+            "rust_protocol_state_machine",
+            "rust_network_simulation"
+          ],
+          "coverage_percentage": 100.0,
+          "fully_covered": true
+        }
+      },
+      "total_requirements": 18,
+      "fully_covered_requirements": 7,
+      "overall_coverage_percentage": 38.88888888888889
+    },
+    "traceability": {
+      "keyword_coverage_percent": 100.0,
+      "section_coverage_percent": 100.0
+    }
+  }
+}
