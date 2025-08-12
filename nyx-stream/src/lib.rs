@@ -14,6 +14,7 @@ pub mod tx;
 pub mod stream_frame;
 pub mod ack;
 pub mod zero_copy_tx;
+pub mod egress_zero_copy;
 pub mod state;
 pub mod async_stream;  // Re-enabled
 pub mod error_handler;
