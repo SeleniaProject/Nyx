@@ -577,14 +577,15 @@ impl EnhancedAlertSystem {
     async fn handle_alert(&self, alert: &Alert, handler: &AlertHandler) {
         match handler {
             AlertHandler::Console => {
-                println!("[ALERT] {} - {} - {}", 
-                    match alert.severity {
-                        AlertSeverity::Info => "INFO",
-                        AlertSeverity::Warning => "WARN",
-                        AlertSeverity::Critical => "CRIT",
-                    },
-                    alert.title,
-                    alert.description
+                tracing::warn!(
+                    target = "nyx-daemon::alert_enhanced",
+                    severity = %match alert.severity { AlertSeverity::Info => "INFO", AlertSeverity::Warning => "WARN", AlertSeverity::Critical => "CRIT" },
+                    title = %alert.title,
+                    description = %alert.description,
+                    metric = %alert.metric,
+                    value = alert.current_value,
+                    threshold = alert.threshold,
+                    "ALERT"
                 );
             },
             AlertHandler::Log => {
