@@ -307,7 +307,8 @@ impl NyxDaemon {
         use ed25519_dalek::{SigningKey, VerifyingKey};
         use blake3::hash;
         let pk_hex = {
-            if let Some(seed) = &self.config.identity_seed {
+            // identity_seed is not part of SDK config; derive from endpoint when absent
+            if let Some(seed) = self.config.daemon.endpoint.as_ref() {
                 let digest = hash(seed.as_bytes());
                 let mut seed32 = [0u8;32];
                 seed32.copy_from_slice(&digest.as_bytes()[..32]);
