@@ -10,7 +10,7 @@
 //! - Resource limits and permission restrictions
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::fs::{self, File};
 use std::io::Write;
@@ -73,18 +73,25 @@ pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Chil
         return Err(io::Error::new(io::ErrorKind::NotFound, "plugin binary not found"));
     }
 
+    // Enforce allowlist: plugin must be under ./plugins (canonicalized absolute)
+    let exe_abs: PathBuf = exe.canonicalize()?;
+    let allowed_dir = std::env::current_dir()?.join("plugins").canonicalize().unwrap_or_else(|_| PathBuf::from("plugins"));
+    if !exe_abs.starts_with(&allowed_dir) {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "plugin path not in allowlisted directory"));
+    }
+
     // Create temporary sandbox profile
     let profile_path = create_sandbox_profile(exe)?;
     
     // Attempt to use sandbox-exec for enhanced security
-    let child = match spawn_with_sandbox_exec(exe, &profile_path) {
+    let child = match spawn_with_sandbox_exec(&exe_abs, &profile_path) {
         Ok(child) => {
             debug!("Plugin spawned with sandbox-exec: {}", exe.display());
             child
         },
         Err(e) => {
             warn!("Failed to spawn with sandbox-exec, falling back to basic spawn: {}", e);
-            spawn_basic_sandboxed(exe)?
+            spawn_basic_sandboxed(&exe_abs)?
         }
     };
 
@@ -130,14 +137,18 @@ fn create_sandbox_profile(plugin_path: &Path) -> io::Result<std::path::PathBuf> 
 
 /// Spawn plugin using macOS sandbox-exec command.
 fn spawn_with_sandbox_exec(plugin_path: &Path, profile_path: &Path) -> io::Result<Child> {
-    let child = Command::new("sandbox-exec")
+    let mut cmd = Command::new("sandbox-exec");
+    cmd
         .arg("-f")
         .arg(profile_path)
         .arg(plugin_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    // Sanitize environment
+    cmd.env_clear();
+    if let Some(dir) = plugin_path.parent() { cmd.env("PATH", dir.as_os_str()); }
+    let child = cmd.spawn()?;
 
     debug!("Plugin {} spawned with PID {} under sandbox-exec", 
            plugin_path.display(), child.id());
@@ -147,11 +158,13 @@ fn spawn_with_sandbox_exec(plugin_path: &Path, profile_path: &Path) -> io::Resul
 
 /// Basic sandboxed spawn without sandbox-exec (fallback).
 fn spawn_basic_sandboxed(plugin_path: &Path) -> io::Result<Child> {
-    let child = Command::new(plugin_path)
-        .stdin(Stdio::null())
+    let mut cmd = Command::new(plugin_path);
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    cmd.env_clear();
+    if let Some(dir) = plugin_path.parent() { cmd.env("PATH", dir.as_os_str()); }
+    let child = cmd.spawn()?;
 
     debug!("Plugin {} spawned with basic sandboxing, PID: {}", 
            plugin_path.display(), child.id());
