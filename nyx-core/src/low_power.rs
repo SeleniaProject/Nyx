@@ -491,6 +491,8 @@ impl LowPowerManager {
         let stats = Arc::clone(&self.stats);
     #[cfg(feature = "telemetry")]
     let telemetry = Arc::clone(&self.telemetry);
+        // Clone sink handle to avoid capturing &self into the spawned task
+        let cover_packet_sink = Arc::clone(&self.cover_packet_sink);
     // Baseline assumption: full power mode would have intensity=1.0 with same interval.
     // We'll approximate suppressed cover packets as ( (1.0 - intensity)/intensity ) * generated_each_loop.
         
@@ -556,6 +558,8 @@ impl LowPowerManager {
         let message_queue = Arc::clone(&self.message_queue);
         let push_service = self.push_service.clone();
         let device_token = Arc::clone(&self.device_token);
+        // Clone sink to avoid capturing &self into 'static task
+        let message_packet_sink = Arc::clone(&self.message_packet_sink);
         
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));

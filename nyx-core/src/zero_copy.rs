@@ -43,7 +43,7 @@ use std::sync::{Arc, Mutex, atomic::{AtomicU64, AtomicUsize, Ordering}};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, error};
 
 /// Reference guard that decrements the internal reference counter on drop
 pub struct ZeroCopyRef {

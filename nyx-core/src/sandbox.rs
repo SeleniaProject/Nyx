@@ -9,61 +9,73 @@ pub fn install_seccomp() -> Result<()> {
     
     info!("Installing seccomp filter for Nyx daemon");
     
-    // Define allowed syscalls for network daemon operation
+    // Define allowed syscalls for asynchronous network daemon operations.
+    // This list aims to be permissive enough for Tokio-based runtimes while
+    // keeping a strong default-deny policy for anything not explicitly needed.
     let allowed_syscalls = vec![
-        // Essential syscalls
-        "read", "write", "close", "openat", "lseek",
+        // Process lifecycle and basic I/O
+        "read", "write", "close", "openat", "lseek", "dup", "dup2", "dup3",
         // Memory management
-        "mmap", "munmap", "brk", "mprotect",
-        // Process management
-        "getpid", "gettid", "getuid", "getgid",
-        // Time operations
-        "clock_gettime", "nanosleep",
-        // Network operations
-        "socket", "bind", "listen", "accept", "connect",
-        "sendto", "recvfrom", "setsockopt", "getsockopt",
-        // File system (restricted)
-        "stat", "fstat", "access", "readlink",
-        // Threading
-        "clone", "futex", "set_robust_list",
-        // Signal handling
-        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "mmap", "munmap", "brk", "mprotect", "mremap", "madvise",
+        // Threading and synchronization
+        "clone", "set_robust_list", "futex", "sched_yield", "gettid",
+        // Signals
+        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn", "tgkill",
+        // Time
+        "clock_gettime", "nanosleep", "timerfd_create", "timerfd_settime",
+        // Randomness
+        "getrandom",
+        // File metadata and limited FS ops
+        "stat", "fstat", "lstat", "newfstatat", "access", "readlink",
+        "getcwd", "mkdirat", "unlinkat", "renameat2",
+        // File descriptor operations
+        "fcntl", "ioctl", "pread64", "pwrite64",
+        // Networking
+        "socket", "bind", "listen", "accept", "accept4", "connect",
+        "getsockname", "getpeername", "shutdown",
+        "sendto", "recvfrom", "sendmsg", "recvmsg", "sendmmsg", "recvmmsg",
+        "getsockopt", "setsockopt",
+        // Eventing (Tokio epoll backend)
+        "epoll_create1", "epoll_ctl", "epoll_wait",
+        // Event/notification fds
+        "eventfd", "eventfd2", "pipe", "pipe2",
+        // Process and limits
+        "getpid", "getppid", "getuid", "getgid", "geteuid", "getegid",
+        "prlimit64",
         // Exit
         "exit", "exit_group",
     ];
-    
-    // In a real implementation, we would use libseccomp-rs here
-    // For now, we'll use a simplified approach
-    
-    #[cfg(feature = "seccomp")]
-    {
-        use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, SeccompRule};
-        use std::convert::TryInto;
-        
-        let mut rules = HashMap::new();
-        
-        // Allow essential syscalls
-        for syscall in allowed_syscalls {
-            rules.insert(syscall.to_string(), vec![SeccompRule::new(vec![])?]);
-        }
-        
-        // Create and install filter
-        let filter = SeccompFilter::new(
-            rules,
-            SeccompAction::KillProcess, // Default action for disallowed syscalls
-            SeccompAction::Allow,       // Default action for allowed syscalls
-            std::env::consts::ARCH.try_into()?,
-        )?;
-        
-        let bpf_prog: BpfProgram = filter.try_into()?;
-        bpf_prog.apply()?;
-        
-        info!("Seccomp filter installed successfully");
+
+    // Apply seccomp filter using seccompiler. If installation fails, fall back
+    // to running without the filter but emit a warning so operators are aware.
+    use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, SeccompRule};
+    use std::convert::TryInto;
+
+    let mut rules = HashMap::new();
+
+    // Allow the listed syscalls without additional argument constraints.
+    for syscall in allowed_syscalls {
+        rules.insert(syscall.to_string(), vec![SeccompRule::new(Vec::new())?]);
     }
-    
-    #[cfg(not(feature = "seccomp"))]
-    {
-        warn!("Seccomp support not compiled in, running without syscall filtering");
+
+    // Build a default-deny filter (KillProcess) with explicit allows.
+    match SeccompFilter::new(
+        rules,
+        SeccompAction::KillProcess,
+        SeccompAction::Allow,
+        std::env::consts::ARCH.try_into()?,
+    ) {
+        Ok(filter) => {
+            let bpf: BpfProgram = filter.try_into()?;
+            if let Err(e) = bpf.apply() {
+                warn!("Failed to apply seccomp filter, continuing without it: {}", e);
+            } else {
+                info!("Seccomp filter installed successfully");
+            }
+        }
+        Err(e) => {
+            warn!("Failed to build seccomp filter, continuing without it: {}", e);
+        }
     }
     
     Ok(())
