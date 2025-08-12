@@ -46,7 +46,7 @@ pub mod advanced_routing {
     impl Default for PathQuality {
         fn default() -> Self {
             Self {
-                endpoint: NodeEndpoint::new("0.0.0.0:0".parse().unwrap()),
+                endpoint: NodeEndpoint::new("0.0.0.0:0".parse().unwrap_or_else(|_| "127.0.0.1:0".parse().expect("fallback parse"))),
                 latency: Duration::from_millis(100),
                 bandwidth: 1_000_000, // 1 Mbps default
                 packet_loss: 0.0,
@@ -314,8 +314,8 @@ pub mod advanced_routing {
                 .map(|(endpoint, _)| endpoint.clone())
                 .ok_or(RoutingError::NoPaths)?;
 
-            debug!("Selected path via latency-based: {} (latency: {:?})", 
-                   selected, paths.get(&selected).unwrap().latency);
+            let lat = paths.get(&selected).map(|q| q.latency).unwrap_or_default();
+            debug!("Selected path via latency-based: {} (latency: {:?})", selected, lat);
             Ok(selected)
         }
 
@@ -328,8 +328,8 @@ pub mod advanced_routing {
                 .map(|(endpoint, _)| endpoint.clone())
                 .ok_or(RoutingError::NoPaths)?;
 
-            debug!("Selected path via bandwidth-based: {} (bandwidth: {} bps)", 
-                   selected, paths.get(&selected).unwrap().bandwidth);
+            let bw = paths.get(&selected).map(|q| q.bandwidth).unwrap_or(0);
+            debug!("Selected path via bandwidth-based: {} (bandwidth: {} bps)", selected, bw);
             Ok(selected)
         }
 
@@ -345,8 +345,8 @@ pub mod advanced_routing {
                 .map(|(endpoint, _)| endpoint.clone())
                 .ok_or(RoutingError::NoPaths)?;
 
-            debug!("Selected path via adaptive: {} (score: {:.3})", 
-                   selected, self.calculate_adaptive_score(paths.get(&selected).unwrap()));
+            let score = paths.get(&selected).map(|q| self.calculate_adaptive_score(q)).unwrap_or(0.0);
+            debug!("Selected path via adaptive: {} (score: {:.3})", selected, score);
             Ok(selected)
         }
 
@@ -523,7 +523,7 @@ pub mod advanced_routing {
         use std::net::SocketAddr;
 
         fn create_test_endpoint(port: u16) -> NodeEndpoint {
-            let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+            let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().expect("parse addr");
             NodeEndpoint::new(addr)
         }
 
