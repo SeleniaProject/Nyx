@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -290,10 +290,11 @@ impl MultipathDataPlane {
         path_id: PathId, 
         header: &MultipathPacketHeader
     ) -> Result<(), MultipathError> {
-        let current_time = SystemTime::now();
-        let rtt = Duration::from_nanos(
-            current_time.duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64 - header.timestamp
-        );
+        let now_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let rtt = if now_ns >= header.timestamp { Duration::from_nanos(now_ns - header.timestamp) } else { Duration::from_nanos(0) };
         
         // Update path info
         {
@@ -406,8 +407,8 @@ impl MultipathDataPlane {
             loop {
                 interval.tick().await;
                 
-                let mut monitor = monitor.lock().unwrap();
-                if let Err(e) = monitor.update_quality_scores() {
+                let mut guard = monitor.lock().unwrap();
+                if let Err(e) = guard.update_quality_scores() {
                     warn!("Quality monitoring update failed: {}", e);
                 }
             }
@@ -563,7 +564,11 @@ impl ReorderingBuffer {
         
         while let Some(packet) = self.buffer.front() {
             if packet.sequence == self.expected_sequence {
-                let packet = self.buffer.pop_front().unwrap();
+                // Pop is safe due to previous check on front()
+                let packet = match self.buffer.pop_front() {
+                    Some(p) => p,
+                    None => break,
+                };
                 ordered_packets.push(packet.data);
                 self.expected_sequence += 1;
             } else {
@@ -580,7 +585,7 @@ impl ReorderingBuffer {
         
         while let Some(packet) = self.buffer.front() {
             if now.duration_since(packet.received_at) > self.timeout {
-                expired.push(self.buffer.pop_front().unwrap());
+                if let Some(p) = self.buffer.pop_front() { expired.push(p); } else { break; }
             } else {
                 break;
             }
@@ -649,10 +654,8 @@ impl PathQualityMonitor {
         
         // Keep only recent samples
         let cutoff = Instant::now() - self.measurement_window;
-        while let Some(&front_time) = metrics.rtt_samples.front().map(|_| cutoff) {
-            if metrics.last_update.duration_since(cutoff) > Duration::from_secs(0) {
-                break;
-            }
+        // Drop old samples conservatively if we have an excessive backlog
+        while metrics.last_update < cutoff && metrics.rtt_samples.len() > 0 {
             metrics.rtt_samples.pop_front();
         }
         
