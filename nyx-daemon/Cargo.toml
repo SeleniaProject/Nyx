@@ -112,13 +112,13 @@ log = "0.4"
 
 # Metrics and telemetry
 metrics = "0.22"
-metrics-exporter-prometheus = "0.13"
-opentelemetry = { version = "0.21", features = ["metrics", "trace"] }
-opentelemetry-otlp = { version = "0.14", features = ["tokio"] }
-opentelemetry-semantic-conventions = "0.13"
+metrics-exporter-prometheus = { version = "0.13", default-features = false }
+opentelemetry = { version = "0.21", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.14", default-features = false }
+opentelemetry-semantic-conventions = { version = "0.13", default-features = false }
 
 # HTTP server for Prometheus metrics
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "matched-path", "original-uri", "tokio"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "matched-path", "original-uri", "tokio", "query"] }
 
 # Crypto and security
 # blake3 = "1.5" # Moved to P2P section above
@@ -149,12 +149,8 @@ hickory-resolver = "0.24"
 redb = { version = "2.1", features = ["logging"] }
 
 # DHT and networking - Pure Rust implementation (100% Pure Rust, no C/C++ deps)
-# Avoiding ALL ring dependencies including rustls, tokio-rustls
-# Using plain TCP/TLS with pure Rust crypto
+# Avoiding ALL ring dependencies; use plain TCP and application-level crypto only
 trust-dns-resolver = "0.23"
-# Pure Rust TLS alternative (no ring dependency)
-native-tls = "0.2"  # Pure Rust TLS implementation
-tokio-native-tls = "0.3"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
