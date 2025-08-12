@@ -245,17 +245,31 @@ impl HealthMonitor {
     
     /// Register a new health check
     pub fn register_check(&mut self, name: String, check_fn: HealthCheckFn) {
-        // Add the check function
-        tokio::spawn({
+        // Perform synchronous insertion to avoid startup races.
+        // This function may be called during initialization; blocking write locks here are acceptable.
+        // Rationale: Consumers frequently read checks immediately after construction.
+        if let Ok(mut funcs) = self.check_functions.try_write() {
+            funcs.insert(name.clone(), check_fn);
+        } else {
+            // Fallback to async path if a writer is already holding the lock; this should be rare.
             let check_functions = Arc::clone(&self.check_functions);
+            let name_clone = name.clone();
+            let check_fn_box: HealthCheckFn = check_fn;
+            let _ = tokio::task::spawn(async move {
+                check_functions.write().await.insert(name_clone, check_fn_box);
+            });
+        }
+
+        if let Ok(mut cks) = self.checks.try_write() {
+            cks.insert(name.clone(), HealthCheck::new(name.clone()));
+        } else {
             let checks = Arc::clone(&self.checks);
             let name_clone = name.clone();
-            
-            async move {
-                check_functions.write().await.insert(name.clone(), check_fn);
-                checks.write().await.insert(name_clone, HealthCheck::new(name));
-            }
-        });
+            let _ = tokio::task::spawn(async move {
+                let mut guard = checks.write().await;
+                guard.insert(name_clone.clone(), HealthCheck::new(name_clone));
+            });
+        }
     }
     
     /// Run all registered health checks
