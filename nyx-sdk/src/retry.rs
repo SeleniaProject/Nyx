@@ -7,6 +7,7 @@
 //! robust error handling and recovery.
 
 use crate::error::{NyxError, NyxResult, ErrorSeverity};
+use crate::config::RetryConfig as SdkRetryConfig;
 use std::time::{Duration, Instant};
 use std::future::Future;
 use tokio::time::sleep;
@@ -39,6 +40,19 @@ impl Default for RetryStrategy {
             backoff_multiplier: 2.0,
             jitter: true,
             max_total_time: Some(Duration::from_secs(300)), // 5 minutes
+        }
+    }
+}
+
+impl From<&SdkRetryConfig> for RetryStrategy {
+    fn from(cfg: &SdkRetryConfig) -> Self {
+        RetryStrategy {
+            max_attempts: cfg.max_attempts,
+            initial_delay: cfg.initial_delay,
+            max_delay: cfg.max_delay,
+            backoff_multiplier: if cfg.backoff_multiplier > 1.0 { cfg.backoff_multiplier } else { 1.01 },
+            jitter: cfg.jitter,
+            max_total_time: Some(cfg.max_delay * cfg.max_attempts),
         }
     }
 }
