@@ -11,7 +11,7 @@ fn aead_roundtrip_basic() {
     let aad = b"header_data";
     let dir = 0x00000000;
     
-    let ciphertext = crypter.encrypt(dir, plaintext, aad);
+    let ciphertext = crypter.encrypt(dir, plaintext, aad).unwrap();
     let recovered = crypter.decrypt(dir, 0, &ciphertext, aad).unwrap();
     
     assert_eq!(recovered, plaintext);
@@ -28,10 +28,10 @@ fn aead_direction_separation() {
     let aad = b"header";
     
     // Encrypt with direction 0
-    let ct_dir0 = crypter_a.encrypt(0x00000000, plaintext, aad);
+    let ct_dir0 = crypter_a.encrypt(0x00000000, plaintext, aad).unwrap();
     
     // Encrypt with direction 1
-    let ct_dir1 = crypter_a.encrypt(0xFFFFFFFF, plaintext, aad);
+    let ct_dir1 = crypter_a.encrypt(0xFFFFFFFF, plaintext, aad).unwrap();
     
     // Ciphertexts should be different
     assert_ne!(ct_dir0, ct_dir1);
@@ -55,7 +55,7 @@ fn aead_replay_protection() {
     let aad = b"header";
     let dir = 0x00000000;
     
-    let ciphertext = crypter_a.encrypt(dir, plaintext, aad);
+    let ciphertext = crypter_a.encrypt(dir, plaintext, aad).unwrap();
     
     // First decryption should succeed
     let result1 = crypter_b.decrypt(dir, 0, &ciphertext, aad);
@@ -77,9 +77,9 @@ fn aead_out_of_order() {
     let dir = 0x00000000;
     
     // Encrypt multiple packets
-    let ct0 = crypter_a.encrypt(dir, b"packet 0", aad);
-    let ct1 = crypter_a.encrypt(dir, b"packet 1", aad);
-    let ct2 = crypter_a.encrypt(dir, b"packet 2", aad);
+    let ct0 = crypter_a.encrypt(dir, b"packet 0", aad).unwrap();
+    let ct1 = crypter_a.encrypt(dir, b"packet 1", aad).unwrap();
+    let ct2 = crypter_a.encrypt(dir, b"packet 2", aad).unwrap();
     
     // Decrypt out of order: 1, 0, 2
     let pt1 = crypter_b.decrypt(dir, 1, &ct1, aad).unwrap();
@@ -104,11 +104,11 @@ fn aead_stale_packets() {
     // Simulate large jump by decrypting a fabricated packet near WINDOW advance using helper.
     // Choose high sequence safely within u64 without allocating massive memory.
     let high_seq = 1_500_000u64; // > WINDOW_SIZE (1_048_576) ensuring seq 0 becomes stale
-    let ct_recent = crypter_a.encrypt_at(dir, high_seq, b"recent", aad);
+    let ct_recent = crypter_a.encrypt_at(dir, high_seq, b"recent", aad).unwrap();
     let _ = crypter_b.decrypt(dir, high_seq, &ct_recent, aad).unwrap();
 
     // Now decrypt an old sequence (0) which should be stale
-    let ct_old = crypter_a.encrypt_at(dir, 0, b"old", aad);
+    let ct_old = crypter_a.encrypt_at(dir, 0, b"old", aad).unwrap();
     let result = crypter_b.decrypt(dir, 0, &ct_old, aad);
     
     assert_eq!(result.unwrap_err(), AeadError::Stale);
@@ -125,7 +125,7 @@ fn aead_invalid_tag() {
     let aad = b"header";
     let dir = 0x00000000;
     
-    let mut ciphertext = crypter_a.encrypt(dir, plaintext, aad);
+    let mut ciphertext = crypter_a.encrypt(dir, plaintext, aad).unwrap();
     
     // Corrupt the last byte (authentication tag)
     let last_idx = ciphertext.len() - 1;
@@ -147,7 +147,7 @@ fn aead_aad_mismatch() {
     let aad_decrypt = b"decrypt_header";
     let dir = 0x00000000;
     
-    let ciphertext = crypter_a.encrypt(dir, plaintext, aad_encrypt);
+    let ciphertext = crypter_a.encrypt(dir, plaintext, aad_encrypt).unwrap();
     
     // Decrypt with different AAD should fail
     let result = crypter_b.decrypt(dir, 0, &ciphertext, aad_decrypt);
@@ -164,7 +164,7 @@ fn aead_empty_plaintext() {
     let aad = b"header";
     let dir = 0x00000000;
     
-    let ciphertext = crypter.encrypt(dir, plaintext, aad);
+    let ciphertext = crypter.encrypt(dir, plaintext, aad).unwrap();
     let recovered = crypter.decrypt(dir, 0, &ciphertext, aad).unwrap();
     
     assert_eq!(recovered, plaintext);
@@ -181,7 +181,7 @@ fn aead_large_plaintext() {
     let aad = b"large_header";
     let dir = 0x00000000;
     
-    let ciphertext = crypter.encrypt(dir, &plaintext, aad);
+    let ciphertext = crypter.encrypt(dir, &plaintext, aad).unwrap();
     let recovered = crypter.decrypt(dir, 0, &ciphertext, aad).unwrap();
     
     assert_eq!(recovered, plaintext);
@@ -200,8 +200,8 @@ fn aead_sequence_wraparound() {
     
     // Simulate high sequence numbers explicitly without iterating through entire range.
     let high_seq = u64::MAX - 2;
-    let ct1 = crypter_a.encrypt_at(dir, high_seq, plaintext, aad);
-    let ct2 = crypter_a.encrypt_at(dir, high_seq + 1, plaintext, aad);
+    let ct1 = crypter_a.encrypt_at(dir, high_seq, plaintext, aad).unwrap();
+    let ct2 = crypter_a.encrypt_at(dir, high_seq + 1, plaintext, aad).unwrap();
 
     // Decrypt with high sequence numbers (these are new so accepted)
     let result1 = crypter_b.decrypt(dir, high_seq, &ct1, aad);
@@ -227,7 +227,7 @@ fn aead_performance() {
     let start = Instant::now();
     
     for i in 0..iterations {
-        let ciphertext = crypter.encrypt(dir, &plaintext, aad);
+        let ciphertext = crypter.encrypt(dir, &plaintext, aad).unwrap();
         let _recovered = crypter.decrypt(dir, i, &ciphertext, aad).unwrap();
     }
     
