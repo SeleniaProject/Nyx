@@ -25,7 +25,7 @@ nyx-daemon
 - [x] layer_recovery_test: 一時劣化ハンドリング/回復の実テスト整備(`nyx-daemon/src/layer_recovery_test.rs`)
  - [x] metrics: 一時的アラートシステム(temporary)を本番アラートへ置換(`nyx-daemon/src/metrics.rs`)
  - [x] push: Push 通知モジュールの mock を実実装へ置換（FCM/APNS 抽象の確立）(`nyx-daemon/src/push.rs`, `nyx-daemon/src/lib.rs`)
- - [ ] low_power: デスクトップ stub を実機能へ拡張（モバイル電源状態イベント連携）(`nyx-daemon/src/low_power.rs`)
+ - [x] low_power: デスクトップ stub を実機能へ拡張（モバイル電源状態イベント連携）(`nyx-daemon/src/low_power.rs`)
 
 nyx-transport
 - [x] QUIC 非有効時のスタブ群を実装または機能フラグ設計を見直し(`nyx-transport/src/lib.rs`)
@@ -36,7 +36,7 @@ nyx-fec
 - [x] SIMD feature 非有効時挙動の整備(`nyx-fec/src/lib.rs`)
 
 nyx-crypto
-- [ ] Hybrid KEM: BIKE は placeholder/unsupported → 実装方針(採用/非採用)を確定(`nyx-crypto/src/hybrid.rs`)
+ - [x] Hybrid KEM: BIKE は placeholder/unsupported → 実装方針(非採用)を確定（feature指定時は明確にコンパイルエラー、APIはUnsupportedAlgorithmを返す）(`nyx-crypto/src/hybrid.rs`, `nyx-crypto/src/noise.rs`)
 - [x] Hybrid: X25519 共有鍵 placeholder 派生の本実装化(設計に応じて修正)(`nyx-crypto/src/hybrid.rs`)
 - [x] Noise: BIKE policy-disabled の恒久方針反映(`nyx-crypto/src/noise.rs`)
  - [x] Noise: Kyber 併用時の一時キー/リモート鍵 placeholder を実装に置換（テスト専用処理の排除）(`nyx-crypto/src/noise.rs`)
