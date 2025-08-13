@@ -17,7 +17,7 @@ mod proto;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use std::collections::HashMap;
+// (already imported above) use std::collections::HashMap;
 
 use anyhow::Result;
 use nyx_daemon::GLOBAL_PATH_PERFORMANCE_REGISTRY; // lib側で定義したグローバルレジストリを利用
@@ -118,6 +118,13 @@ use nyx_mix::cover_adaptive::{AdaptiveCoverGenerator, AdaptiveCoverConfig};
 use axum::{Router, routing::{get, post}, extract::{Path, State, Query}, Json};
 use serde::{Deserialize, Serialize};
 use axum::http::HeaderMap;
+use std::collections::HashMap;
+#[cfg(feature = "plugin")]
+use notify::{Watcher, RecommendedWatcher, EventKind, RecursiveMode};
+#[cfg(feature = "plugin")]
+use std::sync::Arc as StdArc;
+#[cfg(feature = "plugin")]
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering2};
 
 // Global stream manager handle for inbound packet routing (feature-gated)
 #[cfg(feature = "experimental-metrics")]
@@ -231,6 +238,23 @@ impl ControlService {
             prometheus_exporter.start_server().await?;
             prometheus_exporter.start_collection().await?;
             info!("Prometheus metrics server started on {}", prometheus_addr);
+
+            // Initialize OTLP exporter if configured via environment (NYX_OTLP_ENABLED / NYX_OTLP_ENDPOINT)
+            if std::env::var("NYX_OTLP_ENABLED").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+                let endpoint = std::env::var("NYX_OTLP_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:4317".to_string());
+                #[cfg(feature="experimental-metrics")]
+                {
+                    #[cfg(feature="otlp_exporter")]
+                    {
+                        use nyx_telemetry::opentelemetry_integration::{TelemetryConfig as OCfg, NyxTelemetry};
+                        if let Err(e) = NyxTelemetry::init_with_exporter(OCfg { endpoint: endpoint.clone(), service_name: "nyx-daemon".into(), sampling_ratio: 0.1 }) {
+                            tracing::warn!("Failed to initialize OTLP exporter: {}", e);
+                        } else {
+                            tracing::info!("OTLP exporter initialized for endpoint {}", endpoint);
+                        }
+                    }
+                }
+            }
 
             // Initialize stream manager
             let stream_config = StreamManagerConfig::default();
@@ -1381,6 +1405,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = std::sync::Arc::new(ControlService::new(config).await?);
     // Spawn HTTP control API server compatible with nyx-cli
     spawn_http_server(service.clone()).await?;
+
+    // Start plugin manifest watcher if feature and env configured
+    #[cfg(feature = "plugin")]
+    {
+        if let Ok(path) = std::env::var("NYX_PLUGIN_MANIFEST") {
+            if !path.is_empty() {
+                tracing::info!("Starting plugin manifest watcher for {}", path);
+                start_plugin_manifest_watcher(path);
+            }
+        }
+    }
     
     tracing::info!(target = "nyx-daemon", address = %addr, "Nyx daemon starting");
     
@@ -1388,6 +1423,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
+}
+#[cfg(feature = "plugin")]
+fn start_plugin_manifest_watcher(path: String) {
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+    // Debounce reload requests to avoid thrash on editors writing temp files
+    let (tx, mut rx) = mpsc::unbounded_channel::<()>();
+
+    // Spawn a background task to perform reloads
+    tokio::spawn(async move {
+        let mut last_reload = std::time::Instant::now() - Duration::from_secs(10);
+        while let Some(_) = rx.recv().await {
+            if last_reload.elapsed() < Duration::from_millis(250) { continue; }
+            match nyx_stream::plugin_handshake::reload_plugin_manifest_from_path(&path) {
+                Ok(count) => tracing::info!("Reloaded plugin manifest ({} entries)", count),
+                Err(e) => tracing::warn!("Failed to reload plugin manifest: {}", e),
+            }
+            last_reload = std::time::Instant::now();
+        }
+    });
+
+    // Native watcher runs in a blocking thread; forward events into channel
+    std::thread::spawn(move || {
+        let (event_tx, event_rx) = std::sync::mpsc::channel();
+        let mut watcher: RecommendedWatcher = notify::recommended_watcher(event_tx).expect("watcher");
+        let p = std::path::Path::new(&path);
+        let parent = p.parent().unwrap_or_else(|| std::path::Path::new("."));
+        watcher.watch(parent, RecursiveMode::NonRecursive).expect("watch path");
+        for evt in event_rx {
+            match evt {
+                Ok(event) => {
+                    // Accept Modify/Create/Remove on the target file
+                    let is_target = event.paths.iter().any(|ep| ep.ends_with(&path));
+                    if !is_target { continue; }
+                    match event.kind {
+                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                            let _ = tx.send(());
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    eprintln!("notify error: {e}");
+                }
+            }
+        }
+    });
 }
 
 // ---------------- HTTP API (Axum) ----------------
@@ -1421,7 +1503,49 @@ async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::R
         .route("/api/v1/stream/:id/stats", get(http_get_stream_stats))
         .route("/api/v1/stream/:id/close", post(http_close_stream))
         .route("/api/v1/stream/:id/recv", get(http_receive_data))
-        .with_state(state);
+        .route("/api/v1/events", get(http_get_events))
+        .route("/api/v1/events", post(http_publish_event))
+        .route("/api/v1/events/stats", get(http_get_event_stats))
+        .with_state(state)
+        // Diagnostics for plugin registry (feature=plugin)
+        .route(
+            "/api/v1/plugin/registry",
+            get(|| async move {
+                #[cfg(feature = "plugin")]
+                {
+                    let snap = nyx_stream::plugin_handshake::get_plugin_registry_snapshot();
+                    return Json(serde_json::json!({"plugins": snap}));
+                }
+                #[cfg(not(feature = "plugin"))]
+                {
+                    return Json(serde_json::json!({"plugins": []}));
+                }
+            })
+        )
+        .route(
+            "/api/v1/plugin/reload",
+            post(|Json(body): Json<serde_json::Value>| async move {
+                #[cfg(feature = "plugin")]
+                {
+                    // Optional raw JSON manifest in request body {"manifest": [...]} for remote update
+                    if let Some(m) = body.get("manifest") {
+                        let s = serde_json::to_string(m).unwrap_or("[]".to_string());
+                        match nyx_stream::plugin_handshake::reload_plugin_manifest_from_json(&s) {
+                            Ok(n) => return Json(serde_json::json!({"reloaded": true, "source": "body", "count": n})),
+                            Err(e) => return Json(serde_json::json!({"reloaded": false, "error": e})),
+                        }
+                    }
+                    match nyx_stream::plugin_handshake::reload_plugin_manifest() {
+                        Ok(n) => Json(serde_json::json!({"reloaded": true, "count": n})),
+                        Err(e) => Json(serde_json::json!({"reloaded": false, "error": e})),
+                    }
+                }
+                #[cfg(not(feature = "plugin"))]
+                {
+                    Json(serde_json::json!({"reloaded": false, "error": "plugin feature disabled"}))
+                }
+            })
+        );
 
     let listener = tokio::net::TcpListener::bind(&http_addr).await?;
     tracing::info!(target = "nyx-daemon", address = %http_addr, "HTTP control API listening");
@@ -1464,6 +1588,29 @@ async fn http_get_info(State(st): State<AppState>) -> Json<serde_json::Value> {
         "total_received_bytes": info.bytes_in,
         "connected_peers": info.connected_peers,
     }))
+}
+
+// ---- Events API ----
+
+async fn http_get_events(State(st): State<AppState>, Query(q): Query<HashMap<String, String>>) -> Json<Vec<proto::Event>> {
+    let (filter, _limit) = parse_event_filter_from_query(&q);
+    match st.service.subscribe_events(filter).await {
+        Ok(events) => Json(events),
+        Err(_) => Json(Vec::new()),
+    }
+}
+
+async fn http_publish_event(State(st): State<AppState>, headers: HeaderMap, Json(event): Json<proto::Event>) -> Json<serde_json::Value> {
+    let meta = auth_metadata_from_headers(&headers);
+    match st.service.publish_event_internal(&meta, event).await {
+        Ok(_) => Json(serde_json::json!({"success": true})),
+        Err(e) => Json(serde_json::json!({"success": false, "error": e})),
+    }
+}
+
+async fn http_get_event_stats(State(st): State<AppState>) -> Json<serde_json::Value> {
+    let stats = st.service.get_event_statistics_snapshot().await;
+    Json(stats)
 }
 
 async fn http_open_stream(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<HttpOpenRequest>) -> Json<HttpStreamResponse> {
@@ -1516,6 +1663,79 @@ async fn http_receive_data(State(st): State<AppState>, Path(id): Path<String>, _
         Err(_e) => {
             let id_u32 = id.parse::<u32>().unwrap_or(0);
             Json(HttpReceiveResponse { stream_id: id_u32, data: Vec::new(), more_data: false })
+        }
+    }
+}
+
+fn parse_event_filter_from_query(q: &HashMap<String, String>) -> (proto::EventFilter, Option<usize>) {
+    let types = q.get("types").or_else(|| q.get("event_types")).map(|s| {
+        s.split(',').filter(|x| !x.is_empty()).map(|s| s.trim().to_string()).collect::<Vec<_>>()
+    }).unwrap_or_default();
+    let severity = q.get("severity").cloned().unwrap_or_default();
+    let severity_levels = q.get("severity_levels").map(|s| {
+        s.split(',').filter(|x| !x.is_empty()).map(|s| s.trim().to_string()).collect::<Vec<_>>()
+    }).unwrap_or_default();
+    let stream_ids = q.get("stream_ids").map(|s| {
+        s.split(',')
+            .filter_map(|x| x.trim().parse::<u32>().ok())
+            .collect::<Vec<_>>()
+    }).unwrap_or_default();
+    let limit = q.get("limit").and_then(|v| v.parse::<usize>().ok());
+    let filter = proto::EventFilter {
+        event_types: types.clone(),
+        types,
+        severity_levels,
+        severity,
+        time_range_seconds: limit.map(|l| l as u64),
+        stream_ids,
+    };
+    (filter, limit)
+}
+
+impl ControlService {
+    async fn publish_event_internal(&self, meta: &HashMap<String, String>, event: proto::Event) -> Result<(), String> {
+        self.ensure_authorized(Some(meta))?;
+        let _ = self.event_tx.send(event.clone());
+        #[cfg(feature = "experimental-events")]
+        {
+            let _ = self.event_system.publish_event(event).await;
+        }
+        Ok(())
+    }
+
+    async fn get_event_statistics_snapshot(&self) -> serde_json::Value {
+        #[cfg(feature = "experimental-events")]
+        {
+            let stats = self.event_system.get_statistics().await;
+            serde_json::json!({
+                "total_events": stats.total_events,
+                "events_by_type": stats.events_by_type,
+                "events_by_severity": stats.events_by_severity,
+                "events_by_priority": stats.events_by_priority,
+                "filtered_events": stats.filtered_events,
+                "subscriber_count": stats.subscriber_count,
+                "active_subscriber_count": stats.active_subscriber_count,
+                "failed_deliveries": stats.failed_deliveries,
+                "queue_size": stats.queue_size,
+                "processing_errors": stats.processing_errors,
+                "average_processing_time_ms": stats.average_processing_time_ms
+            })
+        }
+        #[cfg(not(feature = "experimental-events"))]
+        {
+            serde_json::json!({
+                "total_events": 0,
+                "events_by_type": {},
+                "events_by_severity": {},
+                "events_by_priority": {},
+                "filtered_events": 0,
+                "subscriber_count": 0,
+                "active_subscriber_count": 0,
+                "failed_deliveries": 0,
+                "queue_size": 0,
+                "processing_errors": 0,
+                "average_processing_time_ms": 0.0
+            })
         }
     }
 }
