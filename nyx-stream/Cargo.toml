@@ -30,6 +30,7 @@ libloading = { version = "0.8", optional = true }
 thiserror = "1.0"
 fastrand = "2.0"
 ed25519-dalek = { version = "2", features = ["std"] }
+base64 = "0.21"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.27", optional = true, default-features = false, features = ["sched", "hostname", "fs"] }
