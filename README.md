@@ -53,7 +53,7 @@ Traditional anonymous networks face an impossible choice between **privacy**, **
 - **Mobile Optimization**: 省電力/バックグラウンド運用ポリシーを設計確定、実装を段階的に進行中（`docs/LOW_POWER_MODE.md`, `docs/MOBILE_POWER_PUSH_INTEGRATION.md`）
 - **Container Ready**: Docker and Kubernetes deployment configurations (in development)
 - **Plugin Architecture**: Extensible design for custom protocol features (implementing)
-- **Cloud Integration**: AWS, GCP, Azure deployment templates (planned)
+ - **Cloud Integration**: AWS / GCP / Azure 向け Helm チャートと Docker イメージを提供（`charts/nyx`、`Dockerfile`）。Service/Ingress/ServiceMonitor/NetworkPolicy/ConfigMap/Secret を備え、seccomp プロファイル連携に対応
 
 ## 🏗️ Architecture Overview (In Development)
 
