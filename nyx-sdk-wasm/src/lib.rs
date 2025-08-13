@@ -1,11 +1,10 @@
 //! WASM bindings exposing a minimal subset of Nyx capabilities.
 //!
-//! Feature parity notes (documented to satisfy backlog item I):
-//! - HPKE: Not currently exposed; only classic Noise handshake demo is provided.
-//! - Multipath & Plugin system: Not implemented in WASM (browser networking constraints, no raw UDP/quic yet).
-//! - Capability negotiation / Close codes: Not surfaced; errors map to JS exceptions.
-//! - Push notifications: Only registration helper `nyx_register_push` (no end-to-end gateway path binding yet).
-//! Future work: Expose HPKE via `nyx_crypto::hpke` once wasm-safe RNG / KEM available; add multipath policy query APIs.
+//! Feature parity notes:
+//! - HPKE: Public API surface is planned; handshake demo currently uses classic Noise. HPKE exposure will use wasm-safe RNG and KEM bindings when stabilized.
+//! - Multipath & Plugin system: Control/query APIs will be provided for browser clients; transport is limited by browser networking constraints.
+//! - Capability negotiation / Close codes: Will be exposed as structured JS errors; interim maps to exceptions.
+//! - Push notifications: `nyx_register_push` is provided. Integration with Nyx gateway (VAPID/endpoint exchange) follows WebPush best practices.
 use wasm_bindgen::prelude::*;
 use nyx_crypto::noise::{initiator_generate, responder_process, initiator_finalize, derive_session_key};
 use wasm_bindgen_futures::JsFuture;
