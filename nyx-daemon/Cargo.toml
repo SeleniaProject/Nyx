@@ -37,7 +37,7 @@ experimental-all = [
 async-trait = "0.1"
 prost = "0.12"
 prost-types = "0.12"
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.47", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # tonic = { version = "0.10", default-features = false, features = ["transport", "prost", "codegen"] } # DISABLED: uses ring/openssl

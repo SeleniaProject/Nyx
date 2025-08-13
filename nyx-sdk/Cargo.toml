@@ -13,7 +13,7 @@ nyx-stream = { path = "../nyx-stream" }
 nyx-crypto = { path = "../nyx-crypto" }
 
 # Async runtime and networking
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.47", features = ["full"] }
 tokio-stream = "0.1"
 
 # gRPC client for daemon communication - DISABLED: uses ring/openssl

@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-tokio = { version = "1.0", default-features = false, features = ["rt", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util", "net", "signal", "io-std"] }
+tokio = { version = "1.47", default-features = false, features = ["rt", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util", "net", "signal", "io-std"] }
 # tonic = "0.10" # DISABLED: uses ring/openssl
 prost = "0.12"
 prost-types = "0.12"

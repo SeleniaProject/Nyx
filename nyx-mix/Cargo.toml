@@ -27,6 +27,6 @@ tracing = "0.1"
 num-bigint = { version = "0.4", features=["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
-tokio = { version = "1.37", features = ["sync", "time", "rt", "macros"] }
+tokio = { version = "1.47", features = ["sync", "time", "rt", "macros"] }
 lazy_static = "1"
 tokio-stream = { version = "0.1", features=["sync"] }

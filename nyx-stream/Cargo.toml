@@ -12,7 +12,7 @@ build = "build.rs"
 nom = { version = "7", default-features = false, features = ["std"] }
 nyx-core = { path = "../nyx-core" }
 nyx-fec = { path = "../nyx-fec", optional = true }
-tokio = { version = "1.37", features = ["sync", "time", "rt", "macros", "io-util"] }
+tokio = { version = "1.47", features = ["sync", "time", "rt", "macros", "io-util"] }
 tokio-util = { version = "0.7" }
 serde = { version = "1", features=["derive"] }
 serde_bytes = "0.11"
