@@ -24,14 +24,12 @@ pub mod stun_server;
 pub mod quic;
 #[cfg(feature = "quic")]
 pub use quic::{QuicEndpoint, QuicConnection};
-#[cfg(feature = "quic")]
+
+// Always provide TCP fallback and path validation regardless of QUIC feature
 pub mod tcp_fallback;
-#[cfg(feature = "quic")]
 pub use tcp_fallback::{TcpEncapListener, TcpEncapConnection};
 
-#[cfg(feature = "quic")]
 pub mod path_validation;
-#[cfg(feature = "quic")]
 pub use path_validation::PathValidator;
 
 #[cfg(not(feature = "quic"))]
@@ -68,8 +66,7 @@ impl QuicConnection {
         None
     }
 }
-#[cfg(not(feature = "quic"))]
-pub struct PathValidator;
+// PathValidator is provided by path_validation module unconditionally
 
 pub mod teredo;
 

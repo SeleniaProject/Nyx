@@ -198,7 +198,8 @@ impl PathValidator {
         packet.extend_from_slice(&header_bytes);
         packet.extend_from_slice(&payload);
 
-        self.transport.send(addr, &packet).await;
+        // Best-effort send; errors are logged by transport
+        let _ = self.transport.send(addr, &packet).await;
     }
 
     /// Build and transmit a `PATH_RESPONSE` replying to a given token.
@@ -225,12 +226,7 @@ impl PathValidator {
         packet.extend_from_slice(&header_bytes);
         packet.extend_from_slice(&payload);
         
-        self.transport.send(addr, &packet).await;
-    }
-        let mut packet = Vec::with_capacity(header.len() + payload.len());
-        packet.extend_from_slice(&header);
-        packet.extend_from_slice(&payload);
-        self.transport.send(addr, &packet).await;
+        let _ = self.transport.send(addr, &packet).await;
     }
 
     /// Process inbound datagram; called from [`PacketHandler`] implementation.
