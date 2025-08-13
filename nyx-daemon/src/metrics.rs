@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicU64, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, Instant};
 use std::collections::HashMap;
+use crate::push::{PushManager, PushMessage};
 
 use sysinfo::{System, Pid};
 use tokio::sync::{broadcast, RwLock};
@@ -696,6 +697,9 @@ pub struct ComprehensiveMetrics {
     
     // Base metrics collector for compatibility
     base_collector: Arc<MetricsCollector>,
+
+    // Optional push manager for alert notifications
+    push_manager: Option<PushManager>,
 }
 
 impl Default for LayerType {
@@ -752,7 +756,14 @@ impl ComprehensiveMetrics {
             system: Arc::new(RwLock::new(system)),
             start_time: SystemTime::now(),
             base_collector,
+            push_manager: None,
         }
+    }
+
+    /// Attach a push manager to send critical alerts to mobile endpoints.
+    pub fn with_push_manager(mut self, push: PushManager) -> Self {
+        self.push_manager = Some(push);
+        self
     }
     
     /// Collect all metrics from all layers
@@ -1002,6 +1013,15 @@ impl ComprehensiveMetrics {
                 log::info!("Would send webhook to {}: {}", url, alert.title);
             },
         }
+
+        // Send critical alerts to push manager if attached
+        if alert.severity == AlertSeverity::Critical {
+            if let Some(pm) = &self.push_manager {
+                let topic = format!("alerts/{}", alert.metric);
+                let payload = format!("{}: {} (value={}, threshold={})", alert.title, alert.description, alert.current_value, alert.threshold);
+                pm.publish(&topic, &payload);
+            }
+        }
     }
     
     /// Record an error for metrics tracking
@@ -1186,6 +1206,30 @@ impl ComprehensiveMetrics {
     pub async fn add_alert_route(&self, route: AlertRoute) {
         let mut routes = self.alert_routes.write().await;
         routes.push(route);
+    }
+
+    /// Convenience: send an explicit critical alert (also pushes via PushManager when attached)
+    pub async fn send_critical_alert(&self, title: &str, description: &str, metric: &str, value: f64, threshold: f64, layer: Option<LayerType>) {
+        let alert = Alert {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: SystemTime::now(),
+            severity: AlertSeverity::Critical,
+            title: title.to_string(),
+            description: description.to_string(),
+            metric: metric.to_string(),
+            current_value: value,
+            threshold,
+            layer,
+            context: HashMap::new(),
+            resolved: false,
+            resolved_at: None,
+        };
+        {
+            let mut active = self.active_alerts.write().await;
+            active.insert(alert.id.clone(), alert.clone());
+        }
+        self.route_alert(&alert).await;
+        let _ = self.alert_sender.send(alert);
     }
     
     /// Add suppression rule

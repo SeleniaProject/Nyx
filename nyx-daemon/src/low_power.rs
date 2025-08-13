@@ -56,6 +56,13 @@ impl LowPowerManager {
             dynamic_low_power: Arc::new(AtomicBool::new(false)),
         })
     }
+    
+    /// Initialize mobile monitoring (noop on desktop); safe to call multiple times
+    pub fn init_mobile_monitoring(&self) {
+        // Best-effort initialize mobile FFI and monitoring; ignore failures on non-mobile
+        let _ = nyx_mobile_ffi::nyx_mobile_init();
+        let _ = nyx_mobile_ffi::nyx_mobile_start_monitoring();
+    }
     pub fn with_event_system(mut self: Arc<Self>, es: crate::event_system::EventSystem) -> Arc<Self> {
         Arc::get_mut(&mut Arc::clone(&self)).map(|inner| inner.event_system = Some(es));
         self

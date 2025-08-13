@@ -28,6 +28,14 @@
 * Transmission scheduler: Weighted Round Robin of paths, weight = inverse RTT.
 * Dynamic reordering buffer size (RTT diff + jitter *2).
 
+### 2.1 Early-Data and 0-RTT Reception Requirements
+
+- Direction Identifier: Each half-duplex direction uses a distinct 32-bit direction identifier in AEAD nonce construction to prevent overlap.
+- Anti-Replay Window: Receivers MUST maintain a sliding window of size \(2^{20}\) for per-direction nonces. Frames outside the window or already seen MUST be rejected with a replay error.
+- Early Data Scope: 0-RTT application data MAY be accepted after the client first CRYPTO message, but before full handshake confirmation, provided the anti-replay checks above are enforced.
+- Rekey Interaction: On rekey, nonces reset to zero; the anti-replay window MUST be reset accordingly to avoid false positives.
+- Telemetry: Implementations SHOULD expose counters for replay drops and early-data acceptance to assist in auditing.
+
 ## 3. Hybrid Post-Quantum Handshake
 ```
 <- s

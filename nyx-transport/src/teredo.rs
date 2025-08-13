@@ -85,8 +85,8 @@ impl TeredoAddr {
 #[instrument(name = "teredo_discover", skip(server), fields(teredo_server = %server))]
 pub async fn discover(server: &str) -> Result<TeredoAddr> {
     let srv: SocketAddr = server.parse()?;
-    // bind ephemeral UDP socket
-    let sock = UdpSocket::bind("0.0.0.0:0").await?;
+    // bind ephemeral UDP socket (default loopback)
+    let sock = UdpSocket::bind("127.0.0.1:0").await?;
     sock.connect(srv).await?;
     // send bubble (4 bytes zeros per RFC)
     sock.send(&[0u8; 4]).await?;

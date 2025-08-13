@@ -11,7 +11,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use console::style;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // HTTP client for Pure Rust communication
 use ureq;
@@ -91,6 +91,13 @@ pub struct DataResponse {
     pub success: bool,
     pub bytes_sent: u64,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ReceiveResponse {
+    pub stream_id: u32,
+    pub data: Vec<u8>,
+    pub more_data: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -219,6 +226,27 @@ impl NyxControlClient {
         Ok(Response::new(node_info))
     }
 
+    pub async fn receive_data(&self, stream_id: u32) -> anyhow::Result<Response<ReceiveResponse>> {
+        let url = format!("{}/api/v1/stream/{}/recv", self.base_url, stream_id);
+        let agent = self.agent.clone();
+        let auth_token = self.auth_token.clone();
+        let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut http_request = agent.get(&url);
+            if let Some(token) = auth_token {
+                http_request = http_request.set("Authorization", &format!("Bearer {}", token));
+            }
+            let response = http_request.call()
+                .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response.into_string()
+                .map_err(|e| anyhow!("Failed to read response body: {}", e))
+        }).await
+            .map_err(|e| anyhow!("Task join error: {}", e))??;
+
+        let rr: ReceiveResponse = serde_json::from_str(&response_text)
+            .map_err(|e| anyhow!("Failed to parse ReceiveResponse: {}", e))?;
+        Ok(Response::new(rr))
+    }
+
     pub async fn open_stream(&self, request: Request<OpenRequest>) -> anyhow::Result<Response<StreamResponse>> {
         let url = format!("{}/api/v1/stream/open", self.base_url);
         let agent = self.agent.clone();
@@ -341,7 +369,7 @@ fn create_authenticated_request<T>(cli: &Cli, request: T) -> Request<T> {
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// Daemon endpoint
-    #[arg(long, default_value = "http://127.0.0.1:8080")]
+    #[arg(long, default_value = "http://127.0.0.1:50051")]
     pub endpoint: String,
 
     /// Authentication token
@@ -699,6 +727,51 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
             }
             
             if !message.is_empty() {
+                if let Some(dir) = message.strip_prefix("download ") {
+                    let dir_path = PathBuf::from(dir.trim());
+                    if !dir_path.exists() {
+                        if let Err(e) = std::fs::create_dir_all(&dir_path) {
+                            println!("❌ Failed to create directory: {}", e);
+                            continue;
+                        }
+                    }
+                    if !dir_path.is_dir() { println!("❌ Path is not a directory: {}", dir_path.display()); continue; }
+                    // Create output file
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                    let file_name = format!("nyx_recv_{}_{:09}.bin", now.as_secs(), now.subsec_nanos());
+                    let out_path = dir_path.join(file_name);
+                    match std::fs::File::create(&out_path) {
+                        Ok(mut f) => {
+                            let mut total_written: u64 = 0;
+                            let start = std::time::Instant::now();
+                            let max_secs = 30u64;
+                            loop {
+                                match self::NyxControlClient::receive_data(&client, stream_info.stream_id).await {
+                                    Ok(resp) => {
+                                        let rr = resp.into_inner();
+                                        if !rr.data.is_empty() {
+                                            if let Err(e) = std::io::Write::write_all(&mut f, &rr.data) { println!("❌ Write error: {}", e); break; }
+                                            total_written = total_written.saturating_add(rr.data.len() as u64);
+                                        }
+                                        if !rr.more_data {
+                                            if rr.data.is_empty() { // no data and no more flag → stop
+                                                break;
+                                            }
+                                            // Small wait to allow next arrival
+                                            sleep(Duration::from_millis(150)).await;
+                                        }
+                                    }
+                                    Err(e) => { println!("❌ Receive error: {}", e); break; }
+                                }
+                                if start.elapsed().as_secs() >= max_secs { break; }
+                            }
+                            let _ = f.flush();
+                            println!("✅ Receive finished: {} bytes written to {}", total_written, out_path.display());
+                        }
+                        Err(e) => println!("❌ Failed to create file: {}", e),
+                    }
+                    continue;
+                }
                 let data_request = DataRequest {
                     stream_id: stream_info.stream_id,
                     data: message.as_bytes().to_vec(),

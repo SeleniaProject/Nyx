@@ -44,6 +44,36 @@ pub struct NyxFec {
     rs: ReedSolomon, // GF(2^8) codec
 }
 
+// Bridge: Provide an adapter implementing `nyx_core::zero_copy::integration::fec_integration::FecCodec`
+// to enable zero-copy integration without introducing a direct type dependency in nyx-core.
+impl nyx_core::zero_copy::integration::fec_integration::FecCodec for RaptorQCodec {
+    fn encode(&self, data: &[u8]) -> Vec<Vec<u8>> {
+        // Convert raptorq::EncodingPacket into raw Vec<u8> representation.
+        // The first packet is a sentinel carrying original length; keep it as the first symbol for downstream handling.
+        let packets = RaptorQCodec::encode(self, data);
+        packets.into_iter().map(|p| p.data().to_vec()).collect()
+    }
+
+    fn decode(&self, symbols: &[Vec<u8>]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+        use ::raptorq::{EncodingPacket, PayloadId};
+        // Rebuild EncodingPacket list; assume sentinel remains at index 0 if present.
+        let mut packets: Vec<EncodingPacket> = Vec::with_capacity(symbols.len());
+        for (i, s) in symbols.iter().enumerate() {
+            // Derive a synthetic PayloadId if unknown. Reserve (0xFF, 0xFFFFFF) for sentinel at index 0.
+            let pid = if i == 0 {
+                PayloadId::new(0xFF, 0xFFFFFF)
+            } else {
+                // Map sequentially; in practice callers should carry true (block, esi) meta alongside payloads.
+                PayloadId::new(0, i as u32 - 1)
+            };
+            packets.push(EncodingPacket::new(pid, s.clone()));
+        }
+        RaptorQCodec::decode(self, &packets).ok_or_else(|| "RaptorQ decode failed".into())
+    }
+
+    fn current_redundancy(&self) -> f32 { self.get_stats().redundancy_history.last().copied().unwrap_or(0.0) }
+}
+
 impl NyxFec {
     /// Create codec with default parameters.
     pub fn new() -> Self {

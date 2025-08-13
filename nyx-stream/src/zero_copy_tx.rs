@@ -41,12 +41,16 @@ impl ZeroCopyTxAdapter {
     }
 
     /// Send a packet to `target`. If `target` is None, uses the default target.
-    pub async fn send(&self, data: &[u8], target: Option<SocketAddr>) -> Result<usize> {
+    pub async fn send(&mut self, data: &[u8], target: Option<SocketAddr>) -> Result<usize> {
         let dest = if let Some(t) = target { t } else {
             self.target.lock().await.ok_or_else(|| anyhow::anyhow!("no target configured"))?
         };
         // Use the end-to-end pipeline. AEAD/FEC are optional (not configured here).
-        let bytes_sent = self.pipeline.process_complete_packet(data, dest).await?;
+        let bytes_sent = self
+            .pipeline
+            .process_complete_packet(data, dest)
+            .await
+            .map_err(|e| anyhow::anyhow!("zero-copy pipeline error: {}", e))?;
         Ok(bytes_sent)
     }
 

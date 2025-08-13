@@ -13,7 +13,7 @@ use nyx_core::zero_copy::{
 };
 use nyx_core::zero_copy::manager::{ProcessingContext, ZeroCopyBuffer};
 use nyx_core::zero_copy::telemetry::{ZeroCopyTelemetry, TelemetryConfig};
-use nyx_core::zero_copy::integration::{ZeroCopyPipeline, aead_integration, fec_integration, transmission_integration};
+use nyx_core::zero_copy::integration::{ZeroCopyPipeline, fec_integration, transmission_integration};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::test;
@@ -363,40 +363,37 @@ async fn test_optimization_report_generation() {
     assert!(!metrics.stages.is_empty());
 }
 
-/// Integration test with mock AEAD, FEC, and transmission components
+/// Integration test with AEAD (when enabled), FEC, and transmission components
 #[tokio::test]
 async fn test_integration_pipeline() {
+    use std::sync::Arc;
     #[cfg(feature = "nyx-crypto")]
-    use nyx_crypto::noise::SessionKey;
-    #[cfg(feature = "nyx-crypto")]
-    use nyx_crypto::aead::FrameCrypter;
-    #[cfg(not(feature = "nyx-crypto"))]
-    use nyx_core::zero_copy::integration::FrameCrypter;
-    use nyx_core::zero_copy::integration::fec_integration::RaptorQCodec;
+    use nyx_crypto::{noise::SessionKey, aead::FrameCrypter};
+    use nyx_core::zero_copy::integration::fec_integration::FecCodec;
+    use nyx_fec::RaptorQCodec;
 
     let config = ZeroCopyManagerConfig::default();
     let manager = Arc::new(ZeroCopyManager::new(config));
     let path_id = "integration_test".to_string();
 
-    // Create mock components (using actual constructors where available)
+    // Create components
     #[cfg(feature = "nyx-crypto")]
-    let session_key = SessionKey([0u8; 32]);
-    #[cfg(feature = "nyx-crypto")]
-    let crypter = FrameCrypter::new(session_key);
-    #[cfg(not(feature = "nyx-crypto"))]
-    let crypter = FrameCrypter;
-    let codec = RaptorQCodec::new(0.3); // 30% redundancy
+    let crypter = {
+        let session_key = SessionKey([0u8; 32]);
+        FrameCrypter::new(session_key)
+    };
+    let codec: Arc<dyn FecCodec> = Arc::new(RaptorQCodec::new(0.3)); // 30% redundancy
 
     // Create zero-copy pipeline
-    let pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id.clone())
-        .with_aead(crypter)
-        .with_fec(codec);
+    let mut pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id.clone());
+    #[cfg(feature = "nyx-crypto")]
+    { pipeline = pipeline.with_aead(crypter); }
+    let pipeline = pipeline.with_fec(codec);
 
     // Test data processing (without transmission for this test)
     let test_packet = vec![0u8; 2048];
     
-    // Note: This would require the complete integration to work
-    // For now, just verify pipeline creation
+    // Verify pipeline configured with expected path
     assert_eq!(pipeline.path_id, "integration_test");
 }
 

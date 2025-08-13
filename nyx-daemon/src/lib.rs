@@ -2,7 +2,16 @@
 pub mod proto; // always available
 pub mod capability; // capability management
 pub mod push; // push notification mock
-#[cfg(feature = "experimental-metrics")] pub mod metrics; // metrics collector
+// Metrics collector: real module when feature enabled, otherwise provide a minimal stub for tests/integration.
+#[cfg(feature = "experimental-metrics")]
+pub mod metrics;
+#[cfg(not(feature = "experimental-metrics"))]
+pub mod metrics {
+    #[derive(Clone, Default)]
+    pub struct MetricsCollector;
+    impl MetricsCollector { pub fn new() -> Self { Self } }
+}
+pub mod layer_manager; // expose layer manager for integration/tests
 #[cfg(feature = "path-builder")] pub mod path_builder_broken; // heavy module guarded by feature
 #[cfg(feature = "path-builder")] pub use path_builder_broken as path_builder; // maintain expected name
 pub mod pure_rust_dht; // always expose minimal DHT for integration

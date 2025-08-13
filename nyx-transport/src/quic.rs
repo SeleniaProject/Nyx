@@ -48,8 +48,24 @@ fn generate_or_load_cert() -> anyhow::Result<(rustls::Certificate, rustls::Priva
         let key = rustls::PrivateKey(cert.serialize_private_key_der());
         let cert_der = cert.serialize_der()?;
         let cert_path = cert_path();
-        std::fs::write(&cert_path, &cert_der)?;
-        std::fs::write(cert_path.with_extension("key"), &key.0)?;
+        // Write cert/key with restricted permissions (0600)
+        use std::fs::{File, OpenOptions};
+        use std::io::Write as _;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut cert_file = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&cert_path)?;
+            cert_file.write_all(&cert_der)?;
+            let mut key_file = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(cert_path.with_extension("key"))?;
+            key_file.write_all(&key.0)?;
+        }
+        #[cfg(not(unix))]
+        {
+            let mut cert_file = OpenOptions::new().create(true).write(true).truncate(true).open(&cert_path)?;
+            cert_file.write_all(&cert_der)?;
+            let mut key_file = OpenOptions::new().create(true).write(true).truncate(true).open(cert_path.with_extension("key"))?;
+            key_file.write_all(&key.0)?;
+        }
         Ok((rustls::Certificate(cert_der), key))
     }
 }
@@ -67,7 +83,9 @@ impl QuicEndpoint {
         let (cert, key) = generate_or_load_cert()?;
         let mut server_config = ServerConfig::with_single_cert(vec![cert], key)?;
         let mut transport_config = TransportConfig::default();
-        transport_config.max_idle_timeout(Some(std::time::Duration::from_millis(MAX_IDLE_TIMEOUT_MS).try_into().unwrap()));
+        if let Ok(t) = std::time::Duration::from_millis(MAX_IDLE_TIMEOUT_MS).try_into() {
+            transport_config.max_idle_timeout(Some(t));
+        }
         transport_config.datagram_receive_buffer_size(Some(1 << 20));
         server_config.transport = Arc::new(transport_config);
 

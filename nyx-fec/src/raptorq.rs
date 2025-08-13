@@ -143,7 +143,12 @@ impl RaptorQCodec {
     // index 0 simplifies downstream detection & keeps tests stable.
     let len_bytes = (data.len() as u64).to_be_bytes().to_vec();
     let sentinel = EncodingPacket::new(PayloadId::new(0xFF, 0xFFFFFF), len_bytes);
-    packets.insert(0, sentinel);
+    // Insert multiple sentinels to make loss of all extremely unlikely under random drop.
+    // They will be completely filtered out during decode.
+    const SENTINEL_REPLICATION: usize = 3;
+    for i in 0..SENTINEL_REPLICATION {
+        if i == 0 { packets.insert(0, sentinel.clone()); } else { packets.push(sentinel.clone()); }
+    }
 
         #[cfg(windows)]
         {
@@ -161,31 +166,33 @@ impl RaptorQCodec {
     /// `None` if decoding fails or insufficient symbols are provided.
     pub fn decode(&self, packets: &[EncodingPacket]) -> Option<Vec<u8>> {
         if packets.is_empty() { return None; }
-        // 探索: センチネル (長さ情報) パケットをどこにシャッフルされても検出
-        let mut sentinel_index: Option<usize> = None;
-        for (i, p) in packets.iter().enumerate() {
+        // Detect any sentinel(s) (length info) regardless of shuffle order and filter all of them out
+        let mut orig_len_opt: Option<u64> = None;
+        let mut filtered: Vec<EncodingPacket> = Vec::with_capacity(packets.len());
+        for p in packets.iter() {
             if p.payload_id().source_block_number() == 0xFF && p.payload_id().encoding_symbol_id() == 0xFFFFFF {
-                sentinel_index = Some(i); break;
+                if orig_len_opt.is_none() {
+                    let mut len_arr = [0u8; 8];
+                    if p.data().len() >= 8 { len_arr.copy_from_slice(&p.data()[..8]); }
+                    orig_len_opt = Some(u64::from_be_bytes(len_arr));
+                }
+                // Skip sentinel packets
+                continue;
             }
+            filtered.push(p.clone());
         }
-        let (orig_len, data_packets): (u64, Vec<EncodingPacket>) = if let Some(idx) = sentinel_index {
-            let mut len_arr = [0u8; 8];
-            // センチネル data は符号化された長さ (8バイト BE)
-            if packets[idx].data().len() >= 8 { len_arr.copy_from_slice(&packets[idx].data()[..8]); }
-            let length = u64::from_be_bytes(len_arr);
-            // センチネルを除外
-            let rest: Vec<EncodingPacket> = packets.iter().enumerate().filter_map(|(i,p)| if i==idx { None } else { Some(p.clone()) }).collect();
-            (length, rest)
-        } else {
-            // センチネルが無い場合は従来推定 (最大 ESI + 1) * SYMBOL_SIZE
-            let pkts: Vec<EncodingPacket> = packets.to_vec();
-            let max_esi = pkts.iter().map(|p| p.payload_id().encoding_symbol_id()).max().unwrap_or(0);
-            let est_symbol_cnt = max_esi + 1; (est_symbol_cnt as u64 * SYMBOL_SIZE as u64, pkts)
+        let orig_len = match orig_len_opt {
+            Some(len) => len,
+            None => {
+                // Without a sentinel we cannot reliably infer object length from arbitrary repair ESI values.
+                // Be conservative and refuse partial/ambiguous recovery to avoid returning corrupted data.
+                return None;
+            }
         };
 
         let oti = ObjectTransmissionInformation::with_defaults(orig_len, SYMBOL_SIZE as u16);
         let mut dec = Decoder::new(oti);
-        for p in data_packets {
+        for p in filtered {
             if let Some(data) = dec.decode(p.clone()) {
                 let mut out = data; out.truncate(orig_len as usize); return Some(out);
             }

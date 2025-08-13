@@ -7,18 +7,18 @@ proptest! {
         // Increase redundancy slightly to accommodate randomized truncation variability
         let codec = RaptorQCodec::new(0.35);
         let mut packets = codec.encode(&data);
-        // Simulate packet loss: drop first N% of packets randomly.
+        // Simulate packet loss: drop first N% of packets randomly (including possible sentinels).
         use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
         packets.shuffle(&mut rng);
-        let drop_cnt = ((loss_frac as f32 / 100.0) * packets.len() as f32) as usize;
+        let drop_cnt = ((loss_frac as f32 / 100.0) * packets.len() as f32).floor() as usize;
         packets.truncate(packets.len() - drop_cnt);
 
         if let Some(recovered) = codec.decode(&packets) {
             prop_assert_eq!(recovered, data);
         } else {
-            // Recovery may fail if too many packets dropped (> redundancy ).
-            // With randomized truncation, allow failures above a slightly lower bound to reduce flakiness.
+            // Recovery may fail if too many packets dropped (> redundancy).
+            // With randomized truncation and sentinel replication, allow failures above a slightly lower bound.
             prop_assume!((loss_frac as f32) > 25.0);
         }
     }

@@ -24,9 +24,13 @@ const STUN_BINDING_RESPONSE: u16 = 0x0101;
 const STUN_MAGIC_COOKIE: u32 = 0x2112A442;
 const XOR_MAPPED_ADDR: u16 = 0x0020;
 
-/// Start a background STUN server on `0.0.0.0:port`.
+/// Start a background STUN server on the specified port.
+/// Default bind address is loopback `127.0.0.1` unless `NYX_STUN_PUBLIC=1` is set.
 pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
-    let socket = UdpSocket::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port))).await?;
+    let public = std::env::var("NYX_STUN_PUBLIC").ok().map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+    let bind_addr = if public { SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) }
+                    else { SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)) };
+    let socket = UdpSocket::bind(bind_addr).await?;
     info!("STUN server listening on {}", socket.local_addr()?);
     Ok(tokio::spawn(async move {
         let mut buf = [0u8; 1500];
@@ -90,7 +94,7 @@ mod tests {
         let handle = start_stun_server(3480).await.unwrap();
         // simple client send binding request (reuse existing code path in ice.rs?)
         use tokio::net::UdpSocket;
-        let sock = UdpSocket::bind("0.0.0.0:0").await.unwrap();
+        let sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut req = [0u8;20];
         // minimal binding request
         req[0..2].copy_from_slice(&STUN_BINDING_REQUEST.to_be_bytes());

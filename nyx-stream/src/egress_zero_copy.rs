@@ -26,15 +26,15 @@ pub async fn spawn_zero_copy_egress(
     path_id: String,
     mut rx: mpsc::Receiver<Vec<u8>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let adapter = Arc::new(ZeroCopyTxAdapter::new(bind_addr, path_id).await?);
-    adapter.set_target(target).await;
+    let adapter = Arc::new(tokio::sync::Mutex::new(ZeroCopyTxAdapter::new(bind_addr, path_id).await?));
+    adapter.lock().await.set_target(target).await;
 
     let handle = tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {
             if frame.is_empty() {
                 continue;
             }
-            match adapter.send(&frame, None).await {
+            match adapter.lock().await.send(&frame, None).await {
                 Ok(n) => {
                     debug!(bytes = n, "zero-copy egress sent");
                 }

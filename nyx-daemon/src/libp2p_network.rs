@@ -754,14 +754,15 @@ impl PureRustP2PAuth {
         let mut challenge = [0u8; 32];
         OsRng.fill_bytes(&mut challenge);
         
-        // Sign our identity proof
-        let identity_data = [
-            self.local_verifying_key.to_bytes().as_slice(),
-            &timestamp.to_be_bytes(),
+        // Sign canonical message
+        let signature = Self::sign_auth_request(
+            &self.local_peer_id,
+            &self.local_verifying_key.to_bytes(),
+            &self.local_x25519_public.to_bytes(),
             &challenge,
-        ].concat();
-        
-        let signature = self.local_signing_key.sign(&identity_data);
+            timestamp,
+            &self.local_signing_key,
+        );
         
         Ok(AuthRequest {
             request_id,
@@ -772,6 +773,24 @@ impl PureRustP2PAuth {
             signature: signature.to_bytes(),
             timestamp,
         })
+    }
+
+    /// Sign canonical authentication request message
+    fn sign_auth_request(
+        peer_id: &PeerId,
+        ed25519_pk: &[u8;32],
+        x25519_pk: &[u8;32],
+        challenge: &[u8;32],
+        timestamp: u64,
+        signing_key: &SigningKey,
+    ) -> Signature {
+        let mut msg = Vec::with_capacity(32+32+32+32+8);
+        msg.extend_from_slice(peer_id);
+        msg.extend_from_slice(ed25519_pk);
+        msg.extend_from_slice(x25519_pk);
+        msg.extend_from_slice(challenge);
+        msg.extend_from_slice(&timestamp.to_be_bytes());
+        signing_key.sign(&msg)
     }
     
     /// Handle authentication response from peer
@@ -834,12 +853,15 @@ impl PureRustP2PAuth {
             return Err(P2PError::InvalidPeerId);
         }
         
-        // Verify signature
-        let signature_data = [
-            &response.ed25519_public_key[..],
-            &response.timestamp.to_be_bytes(),
-            &response.challenge_response,
-        ].concat();
+        // Verify response signature over canonical fields:
+        // request_id || peer_id || ed25519_pk || x25519_pk || challenge_response || timestamp_be
+        let mut signature_data = Vec::with_capacity(8 + 32 + 32 + 32 + 32 + 8);
+        signature_data.extend_from_slice(&response.request_id.to_be_bytes());
+        signature_data.extend_from_slice(&expected_peer_id);
+        signature_data.extend_from_slice(&response.ed25519_public_key);
+        signature_data.extend_from_slice(&response.x25519_public_key);
+        signature_data.extend_from_slice(&response.challenge_response);
+        signature_data.extend_from_slice(&response.timestamp.to_be_bytes());
         
         let signature = Signature::from_bytes(&response.signature)
             .map_err(|_| P2PError::InvalidSignature)?;
@@ -867,16 +889,17 @@ impl PureRustP2PAuth {
         response: &AuthResponse,
         peer_address: SocketAddr,
     ) -> Result<(), P2PError> {
-        // Parse peer's X25519 public key
-        let peer_x25519_key = X25519PublicKey::from(response.x25519_public_key);
-        
-        // Perform X25519 key exchange
-        let shared_secret = self.local_x25519_secret.diffie_hellman(&peer_x25519_key);
-        
-        // Derive session key using HKDF
-        let session_key = self.derive_session_key(shared_secret.as_bytes(), peer_id).await?;
-        
-        // Create ChaCha20Poly1305 cipher
+        // Decrypt session key using local static secret and peer's X25519 public key
+        let session_key = match Self::decrypt_session_key(
+            &response.encrypted_session_key,
+            &response.x25519_public_key,
+            &self.local_x25519_secret,
+        ) {
+            Some(k) => k,
+            None => return Err(P2PError::DecryptionFailed),
+        };
+
+        // Create ChaCha20Poly1305 cipher (session key is 32 bytes)
         let cipher = ChaCha20Poly1305::new(&session_key.into());
         
         // Update peer authentication state
@@ -2849,7 +2872,7 @@ impl LibP2PNetwork {
             };
         }
         
-        // Verify signature (simplified - would use ed25519_dalek in real implementation)
+        // Verify signature over canonical request fields
         let signature_valid = Self::verify_signature(&request);
         
         if !signature_valid {
@@ -2862,37 +2885,62 @@ impl LibP2PNetwork {
             };
         }
         
-        // Generate session key and encrypt it with peer's public key
+        // Generate session key and encrypt it for the peer using X25519+AEAD
         let session_key = Self::generate_session_key();
-        let encrypted_session_key = Self::encrypt_session_key(&session_key, &request.public_key);
+        let encrypted_session_key = match Self::encrypt_session_key(&session_key, &request.x25519_public_key, &local_x25519_secret) {
+            Some(ct) => ct,
+            None => {
+                return AuthResponse {
+                    status: AuthStatus::InternalError,
+                    public_key: None,
+                    challenge_response: None,
+                    encrypted_session_key: None,
+                    error_message: Some("Session key encryption failed".to_string()),
+                };
+            }
+        };
         
-        // Create challenge response
-        let challenge_response = Self::create_challenge_response(&request.nonce, local_keypair);
-        
+        // Build response fields
+        let ed25519_public_key = local_keypair.public().encode_protobuf();
+        let x25519_public_key = local_x25519_public.to_bytes();
+        let challenge_response = Self::create_challenge_response(&request.challenge, local_keypair);
+
+        // Sign response over canonical fields: request_id || peer_id || ed25519_pk || x25519_pk || challenge_response || timestamp_be
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let mut sig_msg = Vec::with_capacity(8 + 32 + 32 + 32 + 32 + 8);
+        sig_msg.extend_from_slice(&request.request_id.to_be_bytes());
+        sig_msg.extend_from_slice(&request.peer_id);
+        sig_msg.extend_from_slice(&ed25519_public_key);
+        sig_msg.extend_from_slice(&x25519_public_key);
+        sig_msg.extend_from_slice(&challenge_response);
+        sig_msg.extend_from_slice(&timestamp.to_be_bytes());
+        let signature = local_keypair.sign(&sig_msg).to_bytes();
+
         AuthResponse {
-            status: AuthStatus::Success,
-            public_key: Some(local_keypair.public().encode_protobuf()),
-            challenge_response: Some(challenge_response),
-            encrypted_session_key: Some(encrypted_session_key),
-            error_message: None,
+            request_id: request.request_id,
+            ed25519_public_key,
+            x25519_public_key,
+            challenge_response,
+            signature,
+            timestamp,
         }
     }
     
     /// Verify signature in authentication request
     fn verify_signature(request: &AuthRequest) -> bool {
-        // Pure-Rust ed25519 verification (ed25519-compact) to avoid C deps
-        // Expect `public_key` to be 32 bytes and `signature` to be 64 bytes
-        if let (Some(pk), Some(sig)) = (&request.public_key, &request.signature) {
-            if pk.len() == 32 && sig.len() == 64 {
-                if let (Ok(public), Ok(signature)) = (
-                    ed25519_compact::PublicKey::from_slice(pk),
-                    ed25519_compact::Signature::from_slice(sig),
-                ) {
-                    return public.verify(&request.nonce, &signature).is_ok();
-                }
-            }
-        }
-        false
+        // Pure-Rust ed25519 verification (ed25519-dalek)
+        use ed25519_dalek::{Verifier, Signature, VerifyingKey};
+        // Canonical message: peer_id || ed25519_pk || x25519_pk || challenge || timestamp_be
+        let mut msg = Vec::with_capacity(32 + 32 + 32 + 32 + 8);
+        msg.extend_from_slice(&request.peer_id);
+        msg.extend_from_slice(&request.ed25519_public_key);
+        msg.extend_from_slice(&request.x25519_public_key);
+        msg.extend_from_slice(&request.challenge);
+        msg.extend_from_slice(&request.timestamp.to_be_bytes());
+
+        let vk = match VerifyingKey::from_bytes(&request.ed25519_public_key) { Ok(v) => v, Err(_) => return false };
+        let sig = match Signature::from_bytes(&request.signature) { Ok(s) => s, Err(_) => return false };
+        vk.verify(&msg, &sig).is_ok()
     }
     
     /// Generate random session key for encrypted communication
@@ -2903,18 +2951,49 @@ impl LibP2PNetwork {
         key
     }
     
-    /// Encrypt session key with peer's public key
-    fn encrypt_session_key(session_key: &[u8; 32], peer_public_key: &[u8]) -> Vec<u8> {
-        // X25519 (receiver static) + ephemeral X25519, HKDF-Extract, and AEAD(ChaCha20Poly1305)
-        // For placeholder removal, perform a reversible wrapping using XOR with HKDF output.
+    /// Encrypt session key for the peer using X25519 + HKDF + ChaCha20Poly1305 (pure Rust)
+    fn encrypt_session_key(session_key: &[u8; 32], peer_x25519_public: &[u8; 32], local_x25519_secret: &X25519StaticSecret) -> Option<Vec<u8>> {
+        use chacha20poly1305::{ChaCha20Poly1305, Key, aead::{Aead, OsRng}, Nonce};
         use hkdf::Hkdf;
         use sha2::Sha256;
-        let salt = b"nyx-libp2p-session-key";
-        let ikm = [peer_public_key, &session_key[..]].concat();
-        let hk = Hkdf::<Sha256>::new(Some(salt), &ikm);
-        let mut okm = [0u8; 32];
-        let _ = hk.expand(b"wrap", &mut okm);
-        session_key.iter().zip(okm.iter()).map(|(a,b)| a ^ b).collect()
+        // Derive shared secret via X25519
+        let peer_pk = X25519PublicKey::from(*peer_x25519_public);
+        let shared = local_x25519_secret.diffie_hellman(&peer_pk);
+        // Derive AEAD key via HKDF
+        let hk = Hkdf::<Sha256>::new(Some(b"nyx-libp2p-session-key"), shared.as_bytes());
+        let mut aead_key = [0u8; 32];
+        if hk.expand(b"aead", &mut aead_key).is_err() { return None; }
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&aead_key));
+        // Nonce: derive from request_id-like randomness; here use random nonce
+        let mut nonce_bytes = [0u8; 12];
+        getrandom::getrandom(&mut nonce_bytes).ok()?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let mut ct = cipher.encrypt(nonce, session_key.as_slice()).ok()?;
+        // Prepend nonce for transport
+        let mut out = nonce_bytes.to_vec();
+        out.append(&mut ct);
+        Some(out)
+    }
+
+    /// Decrypt session key using the local static secret and peer's X25519 public key
+    fn decrypt_session_key(encrypted: &[u8], peer_x25519_public: &[u8; 32], local_x25519_secret: &X25519StaticSecret) -> Option<[u8;32]> {
+        use chacha20poly1305::{ChaCha20Poly1305, Key, aead::{Aead}, Nonce};
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+        if encrypted.len() < 12 { return None; }
+        let (nonce_bytes, ct) = encrypted.split_at(12);
+        let peer_pk = X25519PublicKey::from(*peer_x25519_public);
+        let shared = local_x25519_secret.diffie_hellman(&peer_pk);
+        let hk = Hkdf::<Sha256>::new(Some(b"nyx-libp2p-session-key"), shared.as_bytes());
+        let mut aead_key = [0u8; 32];
+        if hk.expand(b"aead", &mut aead_key).is_err() { return None; }
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&aead_key));
+        let nonce = Nonce::from_slice(nonce_bytes);
+        let pt = cipher.decrypt(nonce, ct).ok()?;
+        if pt.len()!=32 { return None; }
+        let mut key = [0u8;32];
+        key.copy_from_slice(&pt);
+        Some(key)
     }
     
     /// Create challenge response signature
@@ -2945,15 +3024,24 @@ impl LibP2PNetwork {
         
         let public_key = self.local_keypair.public().encode_protobuf();
         
-        // Create signature (simplified)
-        let signature = Self::sign_auth_request(&nonce, timestamp, &self.local_keypair);
+        // Create signature over canonical request fields
+        let signature = Self::sign_auth_request(
+            &self.local_peer_id,
+            &self.local_verifying_key.to_bytes(),
+            &self.local_x25519_public.to_bytes(),
+            &nonce,
+            timestamp,
+            &self.local_signing_key,
+        );
         
         let auth_request = AuthRequest {
-            nonce,
-            timestamp,
-            public_key,
+            request_id,
+            peer_id: self.local_peer_id,
+            ed25519_public_key: self.local_verifying_key.to_bytes(),
+            x25519_public_key: self.local_x25519_public.to_bytes(),
+            challenge: nonce,
             signature,
-            protocol_version: 1,
+            timestamp,
         };
         
         // Send authentication request

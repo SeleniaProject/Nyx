@@ -55,6 +55,7 @@ use mock_telemetry::{TelemetryCollector, MetricType, now};
 #[cfg(feature = "telemetry")]
 fn now() -> std::time::Instant { std::time::Instant::now() }
 use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 use tracing::{debug, info};
@@ -143,15 +144,48 @@ impl ZeroCopyTelemetry {
                 }
 
                 // Record buffer pool metrics if enabled
-                // Collect pool stats from all paths when enabled. We attempt to read
-                // per-path buffer pool statistics via the public API on each path.
                 let mut pool_stats = HashMap::new();
                 if config.enable_pool_metrics {
-                    // WARNING: ZeroCopyTelemetry holds only the manager; we do a best-effort
-                    // snapshot by iterating over known paths. Since paths are internal to the
-                    // manager, expose aggregated stats only when available.
-                    // For now, we store an empty map; detailed per-path stats are merged in
-                    // AggregatedMetrics::per_path_metrics by callers.
+                    // Query manager for per-path BufferPool statistics.
+                    pool_stats = manager.get_all_pool_stats().await;
+
+                    // Emit pool stats to the telemetry backend as gauges.
+                    for (path_id, stats) in &pool_stats {
+                        let mut labels = HashMap::new();
+                        labels.insert("path_id".to_string(), path_id.clone());
+
+                        collector.record_metric(
+                            "zero_copy_pool_total_buffers",
+                            MetricType::Gauge,
+                            stats.total_buffers as f64,
+                            timestamp,
+                            Some(labels.clone()),
+                        ).await;
+
+                        collector.record_metric(
+                            "zero_copy_pool_hit_ratio",
+                            MetricType::Gauge,
+                            stats.hit_ratio,
+                            timestamp,
+                            Some(labels.clone()),
+                        ).await;
+
+                        collector.record_metric(
+                            "zero_copy_pool_hits",
+                            MetricType::Counter,
+                            stats.hits as f64,
+                            timestamp,
+                            Some(labels.clone()),
+                        ).await;
+
+                        collector.record_metric(
+                            "zero_copy_pool_misses",
+                            MetricType::Counter,
+                            stats.misses as f64,
+                            timestamp,
+                            Some(labels.clone()),
+                        ).await;
+                    }
                 }
 
                 // Store in history for trend analysis

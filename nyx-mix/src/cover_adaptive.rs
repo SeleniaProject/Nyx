@@ -16,14 +16,15 @@ use tokio::sync::{RwLock, broadcast, watch};
 use tokio::time::{interval, sleep_until, Instant as TokioInstant};
 use serde::{Serialize, Deserialize};
 use tracing::{debug, info, trace};
-use rand::{Rng, SeedableRng};
-use rand_distr::{Poisson, Distribution};
+use rand::Rng;
+use crate::cover::CoverGenerator;
 
 // Import mobile types
 use nyx_core::mobile::{PowerProfile, NetworkState, AppState};
 
 /// Configuration for adaptive cover traffic generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AdaptiveCoverConfig {
     /// Base lambda value for Poisson distribution (packets per second)
     pub base_lambda: f64,
@@ -37,6 +38,16 @@ pub struct AdaptiveCoverConfig {
     pub adaptation_speed: f64,
     /// Time window for traffic analysis (seconds)
     pub analysis_window: u64,
+    /// Target cover ratio C/(C+R) in 0.0..=1.0 (e.g. 0.35 = 35% cover)
+    pub target_cover_ratio: f64,
+    /// Exponential moving average beta for ratio smoothing (0..1, higher = smoother)
+    pub ema_beta: f64,
+    /// Proportional gain for ratio error to lambda update (α in spec)
+    pub alpha_gain: f64,
+    /// Heartbeat bump interval (seconds) when long-term real traffic is nearly zero
+    pub heartbeat_bump_sec: u64,
+    /// Exponential decay factor k for low-power transitions
+    pub low_power_decay_k: f64,
     /// Enable mobile power state adaptation
     pub mobile_adaptation: bool,
     /// Enable time-based adaptation
@@ -55,9 +66,14 @@ impl Default for AdaptiveCoverConfig {
             base_lambda: 2.0,           // 2 packets/second base rate
             max_lambda: 10.0,           // Max 10 packets/second
             min_lambda: 0.1,            // Min 0.1 packets/second
-            target_utilization: 0.35,   // 35% bandwidth for cover traffic
+            target_utilization: 0.35,   // deprecated semantic; kept for compat
+            target_cover_ratio: 0.35,   // 35% cover share target
             adaptation_speed: 0.1,      // Moderate adaptation speed
             analysis_window: 60,        // 1 minute analysis window
+            ema_beta: 0.3,              // Ratio smoothing beta
+            alpha_gain: 0.5,            // Control proportional gain
+            heartbeat_bump_sec: 60,     // Periodic micro bump when idle
+            low_power_decay_k: 0.18,    // ~10-15s to 80% convergence
             mobile_adaptation: true,
             time_based_adaptation: true,
             network_adaptation: true,
@@ -119,6 +135,14 @@ pub struct AdaptiveCoverGenerator {
     last_packet_time: Arc<RwLock<Instant>>,
     /// Running statistics
     stats: Arc<RwLock<TrafficStats>>,
+    /// Sliding window of generated cover bytes
+    cover_bytes_window: Arc<RwLock<SlidingWindow>>, 
+    /// Sliding window of real bytes recorded by upper layers
+    real_bytes_window: Arc<RwLock<SlidingWindow>>, 
+    /// Smoothed cover ratio (EMA of C/(C+R))
+    cover_ratio_ema: Arc<RwLock<f64>>,
+    /// Last time real bytes were recorded (for heartbeat bump)
+    last_real_activity: Arc<RwLock<Instant>>,
 }
 
 /// Running statistics for traffic analysis.
@@ -166,6 +190,7 @@ impl AdaptiveCoverGenerator {
         };
 
         let base_lambda = config.base_lambda;
+        let analysis_len = Duration::from_secs(config.analysis_window.max(1));
         Self {
             config: Arc::new(RwLock::new(config)),
             current_lambda: Arc::new(RwLock::new(base_lambda)),
@@ -175,6 +200,10 @@ impl AdaptiveCoverGenerator {
             lambda_tx,
             last_packet_time: Arc::new(RwLock::new(Instant::now())),
             stats: Arc::new(RwLock::new(TrafficStats::default())),
+            cover_bytes_window: Arc::new(RwLock::new(SlidingWindow::new(analysis_len))),
+            real_bytes_window: Arc::new(RwLock::new(SlidingWindow::new(analysis_len))),
+            cover_ratio_ema: Arc::new(RwLock::new(0.0)),
+            last_real_activity: Arc::new(RwLock::new(Instant::now())),
         }
     }
 
@@ -192,6 +221,17 @@ impl AdaptiveCoverGenerator {
         self.start_traffic_generation().await;
 
         Ok(())
+    }
+
+    /// Record number of real (non-cover) bytes sent by upper layers.
+    /// This updates the utilization estimator used by the control loop.
+    pub async fn record_real_bytes(&self, bytes: usize) {
+        {
+            let mut w = self.real_bytes_window.write().await;
+            w.record(bytes);
+        }
+        let mut last = self.last_real_activity.write().await;
+        *last = Instant::now();
     }
 
     /// Get current traffic metrics.
@@ -235,9 +275,16 @@ impl AdaptiveCoverGenerator {
         let lambda_tx = self.lambda_tx.clone();
         let metrics_tx = self.metrics_tx.clone();
         let stats = Arc::clone(&self.stats);
+        let cover_bytes_window = Arc::clone(&self.cover_bytes_window);
+        let real_bytes_window = Arc::clone(&self.real_bytes_window);
+        let cover_ratio_ema = Arc::clone(&self.cover_ratio_ema);
+        let last_real_activity = Arc::clone(&self.last_real_activity);
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(config.read().await.adaptation_interval_ms));
+            // Track low-power decay state and previous power scale to apply smooth transition
+            let mut last_power_scale: f64 = 1.0;
+            let mut decay_state: Option<(Instant, f64, f64)> = None; // (start, from, to)
 
             loop {
                 interval.tick().await;
@@ -252,25 +299,92 @@ impl AdaptiveCoverGenerator {
                 let network_scale = Self::calculate_network_scale(&cfg).await;
                 let time_scale = Self::calculate_time_scale(&cfg).await;
 
-                // Calculate new lambda
+                // Base feedforward lambda before feedback (ratio control)
                 let manual = cfg.manual_scale.unwrap_or(1.0);
-                let target_lambda = cfg.base_lambda * manual * power_scale * network_scale * time_scale;
-                let clamped_lambda = target_lambda.clamp(cfg.min_lambda, cfg.max_lambda);
+                let mut ff_lambda = cfg.base_lambda * manual * power_scale * network_scale * time_scale;
 
-                // Apply adaptation speed
-                let new_lambda = *lambda + (clamped_lambda - *lambda) * cfg.adaptation_speed;
+                // Apply low-power exponential decay when power scale drops significantly
+                if power_scale + 1e-6 < last_power_scale {
+                    decay_state = Some((Instant::now(), *lambda, ff_lambda));
+                } else if power_scale > last_power_scale + 1e-6 {
+                    // Clear decay when exiting low power
+                    decay_state = None;
+                }
+                last_power_scale = power_scale;
+
+                if let Some((start, from, to)) = decay_state {
+                    let t = Instant::now().saturating_duration_since(start).as_secs_f64();
+                    let k = cfg.low_power_decay_k.max(0.01).min(1.0);
+                    // λ_decay(t) = from*e^{-k t} + to*(1 - e^{-k t})
+                    let e = (-k * t).exp();
+                    ff_lambda = from * e + to * (1.0 - e);
+                }
+
+                // Ensure analysis window duration is respected by sliding windows
+                {
+                    let desired = Duration::from_secs(cfg.analysis_window.max(1));
+                    cover_bytes_window.write().await.set_window_len(desired);
+                    real_bytes_window.write().await.set_window_len(desired);
+                }
+
+                // Compute cover ratio over the window: C/(C+R)
+                let c_bytes = cover_bytes_window.write().await.total_bytes();
+                let r_bytes = real_bytes_window.write().await.total_bytes();
+                let total_bytes = c_bytes + r_bytes;
+                let target_cover = cfg.target_cover_ratio.clamp(0.0, 1.0);
+                // If we have no observations yet, assume ratio at target to avoid biasing control
+                let cover_ratio_raw = if total_bytes == 0 {
+                    target_cover
+                } else {
+                    c_bytes as f64 / (total_bytes as f64)
+                };
+
+                // Update EMA of cover ratio
+                {
+                    let mut ema = cover_ratio_ema.write().await;
+                    let beta = cfg.ema_beta.clamp(0.0, 1.0);
+                    if *ema == 0.0 { *ema = cover_ratio_raw; }
+                    else { *ema = *ema * (1.0 - beta) + cover_ratio_raw * beta; }
+                }
+                let cover_ratio_smoothed = *cover_ratio_ema.read().await;
+
+                // Ratio error: target - achieved
+                let e_ratio = target_cover - cover_ratio_smoothed;
+
+                // Feedback update: λ_new = clamp(λ_old * (1 + α * e), min, max)
+                let alpha = if e_ratio >= 0.0 { cfg.alpha_gain } else { cfg.alpha_gain * 0.7 };
+                let fb_lambda = (*lambda * (1.0 + alpha * e_ratio)).clamp(cfg.min_lambda, cfg.max_lambda);
+
+                // If caller requested immediate adaptation, converge to feedforward target directly.
+                let mut new_lambda = if cfg.adaptation_speed >= 1.0 {
+                    ff_lambda.clamp(cfg.min_lambda, cfg.max_lambda)
+                } else {
+                    // Blend feedforward and feedback for stability
+                    // Move a fraction toward ff_lambda while respecting bounds
+                    let toward_ff = *lambda + (ff_lambda - *lambda) * cfg.adaptation_speed.clamp(0.0, 1.0);
+                    let blended = 0.5 * fb_lambda + 0.5 * toward_ff;
+                    blended.clamp(cfg.min_lambda, cfg.max_lambda)
+                };
+
+                // Heartbeat bump if no real activity for prolonged time
+                let idle_for = Instant::now().saturating_duration_since(*last_real_activity.read().await);
+                if idle_for.as_secs() >= cfg.heartbeat_bump_sec && new_lambda < (cfg.min_lambda * 1.5) {
+                    new_lambda = (cfg.min_lambda * 1.5).min(cfg.max_lambda);
+                }
 
                 if (*lambda - new_lambda).abs() > 0.01 {
                     *lambda = new_lambda;
                     stats_guard.adaptation_count += 1;
-                    debug!("Lambda adapted: {:.3} (power: {:.2}, network: {:.2}, time: {:.2})", 
-                           new_lambda, power_scale, network_scale, time_scale);
+                    debug!(
+                        "Lambda adapted: {:.3} (ff: {:.3}, power: {:.2}, network: {:.2}, time: {:.2}, cover_ratio_ema: {:.3}, e: {:.3})",
+                        new_lambda, ff_lambda, power_scale, network_scale, time_scale, cover_ratio_smoothed, e_ratio
+                    );
                     let _ = lambda_tx.send(new_lambda);
                 }
 
                 // Update metrics
                 metrics_guard.current_lambda = *lambda;
-                metrics_guard.target_rate = *lambda;
+                metrics_guard.target_rate = ff_lambda.clamp(cfg.min_lambda, cfg.max_lambda);
                 metrics_guard.power_scale = power_scale;
                 metrics_guard.network_scale = network_scale;
                 metrics_guard.time_scale = time_scale;
@@ -342,28 +456,25 @@ impl AdaptiveCoverGenerator {
         let history = Arc::clone(&self.history);
         let last_packet_time = Arc::clone(&self.last_packet_time);
         let stats = Arc::clone(&self.stats);
+        let cover_bytes_window = Arc::clone(&self.cover_bytes_window);
 
         tokio::spawn(async move {
-            let mut rng = rand::rngs::StdRng::from_entropy();
             let start_time = Instant::now();
 
             loop {
                 let lambda = *current_lambda.read().await;
-                
-                // Generate next packet delay using Poisson distribution
-                let delay = if lambda > 0.0 {
-                    let poisson = Poisson::new(lambda).unwrap_or_else(|_| Poisson::new(1.0).unwrap());
-                    let samples = poisson.sample(&mut rng);
-                    Duration::from_secs_f64(samples.max(0.1))
-                } else {
-                    Duration::from_secs(10) // Fallback delay
-                };
+                // Use exponential inter-arrival with mean 1/λ to generate Poisson process
+                let gen = CoverGenerator::new(lambda.max(0.0001));
+                let delay = gen.next_delay().max(Duration::from_millis(50));
 
                 let next_packet_time = TokioInstant::now() + delay;
                 sleep_until(next_packet_time).await;
 
                 // Generate cover packet
-                let packet_size = Self::generate_packet_size(&mut rng);
+                let packet_size = {
+                    let mut rng = rand::thread_rng();
+                    Self::generate_packet_size(&mut rng)
+                };
                 
                 // Update history
                 let sample = TrafficSample {
@@ -376,6 +487,9 @@ impl AdaptiveCoverGenerator {
 
                 history.write().await.push_back(sample);
                 *last_packet_time.write().await = Instant::now();
+
+                // Update sliding window for cover bytes
+                cover_bytes_window.write().await.record(packet_size);
 
                 // Update statistics
                 let mut stats_guard = stats.write().await;
@@ -481,6 +595,49 @@ impl AdaptiveCoverGenerator {
         } else {
             // Fixed size packets (1280 bytes) - 10%
             1280
+        }
+    }
+}
+
+/// Sliding window accumulator for byte counts with automatic expiry.
+#[derive(Debug, Clone)]
+struct SlidingWindow {
+    window: VecDeque<(Instant, usize)>,
+    window_len: Duration,
+    accumulated: usize,
+}
+
+impl SlidingWindow {
+    fn new(window_len: Duration) -> Self {
+        Self { window: VecDeque::new(), window_len, accumulated: 0 }
+    }
+
+    fn set_window_len(&mut self, len: Duration) {
+        self.window_len = len.max(Duration::from_secs(1));
+        self.purge_old(Instant::now());
+    }
+
+    fn record(&mut self, bytes: usize) {
+        let now = Instant::now();
+        self.window.push_back((now, bytes));
+        self.accumulated = self.accumulated.saturating_add(bytes);
+        self.purge_old(now);
+    }
+
+    fn total_bytes(&mut self) -> usize {
+        let now = Instant::now();
+        self.purge_old(now);
+        self.accumulated
+    }
+
+    fn purge_old(&mut self, now: Instant) {
+        while let Some(&(ts, bytes)) = self.window.front() {
+            if now.duration_since(ts) > self.window_len {
+                self.window.pop_front();
+                self.accumulated = self.accumulated.saturating_sub(bytes);
+            } else {
+                break;
+            }
         }
     }
 }
@@ -781,5 +938,61 @@ mod tests {
         let lambda2 = generator.current_lambda().await;
         assert!(lambda2 > lambda1 + 0.5, "lambda should increase after manual_scale up ({} -> {})", lambda1, lambda2);
         assert!(lambda2 <= 10.0);
+    }
+
+    #[tokio::test]
+    async fn ratio_feedback_increases_lambda_under_real_load() {
+        // Fast control to observe effect quickly
+        let config = AdaptiveCoverConfig {
+            base_lambda: 2.0,
+            max_lambda: 20.0,
+            min_lambda: 0.1,
+            adaptation_speed: 0.8,
+            alpha_gain: 0.6,
+            ema_beta: 0.4,
+            adaptation_interval_ms: 50,
+            mobile_adaptation: false,
+            time_based_adaptation: false,
+            network_adaptation: false,
+            ..AdaptiveCoverConfig::default()
+        };
+
+        let generator = AdaptiveCoverGenerator::new(config);
+        generator.start().await.unwrap();
+
+        // Baseline after a few cycles
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let baseline = generator.current_lambda().await;
+
+        // Inject heavy real traffic so cover ratio becomes low and controller increases λ
+        for _ in 0..10 {
+            generator.record_real_bytes(20000).await;
+            tokio::time::sleep(Duration::from_millis(60)).await;
+        }
+
+        let increased = generator.current_lambda().await;
+        assert!(increased > baseline, "lambda should increase under heavy real load ({} -> {})", baseline, increased);
+    }
+
+    #[tokio::test]
+    async fn heartbeat_bump_when_idle_applies_minimum_activity() {
+        let config = AdaptiveCoverConfig {
+            base_lambda: 1.0,
+            max_lambda: 5.0,
+            min_lambda: 0.2,
+            heartbeat_bump_sec: 1,
+            adaptation_speed: 1.0,
+            adaptation_interval_ms: 100,
+            mobile_adaptation: false,
+            time_based_adaptation: false,
+            network_adaptation: false,
+            ..AdaptiveCoverConfig::default()
+        };
+        let generator = AdaptiveCoverGenerator::new(config);
+        generator.start().await.unwrap();
+
+        tokio::time::sleep(Duration::from_millis(1200)).await; // exceed heartbeat window
+        let lambda_after_idle = generator.current_lambda().await;
+        assert!(lambda_after_idle >= 0.2 * 1.5 - 0.01, "heartbeat bump should raise lambda near 1.5x min; got {}", lambda_after_idle);
     }
 } 

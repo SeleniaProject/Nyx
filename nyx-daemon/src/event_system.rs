@@ -242,6 +242,12 @@ impl EventSystem {
         }
     }
 
+    /// Runtime check for whether event system is compiled in and should emit events
+    #[inline]
+    pub fn is_enabled() -> bool {
+        cfg!(feature = "experimental-events")
+    }
+
     /// Build a simple event (helper used by external subsystems) with standard field population.
     /// This reduces boilerplate at call sites and centralizes any future schema evolutions.
     pub fn build_simple_event<S: Into<String>>(event_type: S, severity: S, detail: S) -> Event {

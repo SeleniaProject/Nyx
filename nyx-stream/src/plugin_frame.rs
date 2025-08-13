@@ -22,8 +22,10 @@
 //! - Plugin IPC channels provide sandboxed execution environment
 
 use std::collections::HashMap;
+#[cfg(feature = "plugin")]
 use bytes::{Bytes, BytesMut};
 use tracing::{debug, error, warn, trace};
+#[cfg(feature = "plugin")]
 use nom::{IResult, number::complete::u8 as parse_u8, bytes::complete::take};
 
 #[cfg(feature = "plugin")]
@@ -86,7 +88,8 @@ pub struct ParsedPluginFrame<'a> {
     pub frame_header: FrameHeader,
     /// Optional path ID if multipath extension present
     pub path_id: Option<u8>,
-    /// Decoded CBOR plugin header
+    /// Decoded CBOR plugin header (only in plugin-enabled builds)
+    #[cfg(feature = "plugin")]
     pub plugin_header: PluginHeader<'a>,
     /// Raw plugin payload data
     pub payload: &'a [u8],
@@ -156,41 +159,40 @@ impl PluginFrameProcessor {
         
         // Parse CBOR header - this consumes the beginning of frame_payload
         #[cfg(feature = "plugin")]
-        let plugin_header = PluginHeader::decode(frame_payload)
-            .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
-        
+        {
+            let plugin_header = PluginHeader::decode(frame_payload)
+                .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
+
+            // Calculate CBOR header size to determine payload split
+            let cbor_header_bytes = plugin_header.encode()
+                .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
+            let payload_start = cbor_header_bytes.len();
+
+            // Split payload: remaining data after CBOR header
+            let payload = if payload_start < frame_payload.len() {
+                &frame_payload[payload_start..]
+            } else {
+                &[]
+            };
+
+            debug!(
+                "Parsed plugin frame: type=0x{:02X}, plugin_id={}, payload_len={}",
+                parsed_header.hdr.frame_type, plugin_header.id, payload.len()
+            );
+
+            return Ok(ParsedPluginFrame {
+                frame_header: parsed_header.hdr,
+                path_id: parsed_header.path_id,
+                plugin_header,
+                payload,
+            });
+        }
+
         #[cfg(not(feature = "plugin"))]
-        let plugin_header = {
-            // Minimal parsing for non-plugin builds - just extract plugin ID
-            return Err(PluginFrameError::ValidationError("Plugin support not enabled".to_string()));
-        };
-
-        // Calculate CBOR header size to determine payload split
-        #[cfg(feature = "plugin")]
-        let cbor_header_bytes = plugin_header.encode()
-            .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
-        #[cfg(feature = "plugin")]
-        let payload_start = cbor_header_bytes.len();
-        
-        #[cfg(not(feature = "plugin"))]
-        let payload_start = 0;
-
-        // Split payload: remaining data after CBOR header
-        let payload = if payload_start < frame_payload.len() {
-            &frame_payload[payload_start..]
-        } else {
-            &[]
-        };
-
-        debug!("Parsed plugin frame: type=0x{:02X}, plugin_id={}, payload_len={}", 
-               parsed_header.hdr.frame_type, plugin_header.id, payload.len());
-
-        Ok(ParsedPluginFrame {
-            frame_header: parsed_header.hdr,
-            path_id: parsed_header.path_id,
-            plugin_header,
-            payload,
-        })
+        {
+            // Non-plugin builds do not support parsing plugin frames fully
+            Err(PluginFrameError::ValidationError("Plugin support not enabled".to_string()))
+        }
     }
 
     /// Process a parsed plugin frame through validation and dispatch

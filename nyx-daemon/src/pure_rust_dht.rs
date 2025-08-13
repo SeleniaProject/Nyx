@@ -1,28 +1,63 @@
 #![forbid(unsafe_code)]
-//! Minimal in-process DHT stub replacing placeholder; supports put/get with TTL and
-//! region/capability indexing for path builder integration tests.
+//! Minimal in-process DHT with optional persistence. Supports put/get with TTL and
+//! region/capability indexing; can persist KVS and indices to a redb database when enabled.
 
-use std::{collections::{HashMap, HashSet}, time::{Instant, Duration}, sync::Arc};
+use std::{collections::{HashMap, HashSet}, time::{Instant, Duration, SystemTime}, sync::Arc};
+use serde::{Serialize, Deserialize};
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use redb::{Database, TableDefinition};
 use tokio::sync::RwLock as AsyncRw;
 
 #[derive(Clone, Debug)]
 pub struct DhtValue { pub data: Vec<u8>, pub inserted: Instant, pub ttl: Duration }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct InMemoryDht {
 	inner: Arc<AsyncRw<HashMap<String, DhtValue>>>,
 	region_index: Arc<AsyncRw<HashMap<String, HashSet<String>>>>,
 	cap_index: Arc<AsyncRw<HashMap<String, HashSet<String>>>>,
 	listen_addr: Arc<String>,
+    db: Option<Arc<Database>>,
+}
+
+impl Default for InMemoryDht {
+    fn default() -> Self { Self::new() }
+}
+
+#[derive(Serialize, Deserialize)]
+struct PersistentRecord {
+    data_b64: String,
+    expire_unix: u64,
+    region: Option<String>,
+    caps: Vec<String>,
 }
 
 impl InMemoryDht {
-	pub fn new() -> Self { Self { listen_addr: Arc::new("127.0.0.1:4330".to_string()), ..Default::default() } }
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(AsyncRw::new(HashMap::new())),
+            region_index: Arc::new(AsyncRw::new(HashMap::new())),
+            cap_index: Arc::new(AsyncRw::new(HashMap::new())),
+            listen_addr: Arc::new("127.0.0.1:4330".to_string()),
+            db: None,
+        }
+    }
 
-	pub async fn put(&self, key: String, data: Vec<u8>, ttl: Duration, region: Option<String>, caps: &[String]) {
+    /// Create a DHT with persistence enabled at the given path. Loads existing entries.
+    pub fn new_with_persistence<P: Into<String>>(path: P) -> Self {
+        let mut dht = Self::new();
+        let path_str = path.into();
+        dht.db = Database::create(path_str).ok().map(Arc::new);
+        // Best-effort load from store
+        let _ = dht.load_from_store();
+        dht
+    }
+
+    pub async fn put(&self, key: String, data: Vec<u8>, ttl: Duration, region: Option<String>, caps: &[String]) {
 		self.inner.write().await.insert(key.clone(), DhtValue { data, inserted: Instant::now(), ttl });
-		if let Some(r) = region { self.region_index.write().await.entry(r).or_default().insert(key.clone()); }
+        if let Some(ref r) = region { self.region_index.write().await.entry(r.clone()).or_default().insert(key.clone()); }
 		for c in caps { self.cap_index.write().await.entry(c.clone()).or_default().insert(key.clone()); }
+        let _ = self.save_one_to_store(&key, region, caps).ok();
 	}
 
 	// Compatibility helper: simplified put without ttl/indices (default 5m TTL)
@@ -33,6 +68,67 @@ impl InMemoryDht {
 		if let Some(v) = guard.get(key) { if v.inserted.elapsed() > v.ttl { guard.remove(key); return None; } }
 		guard.get(key).map(|v| v.data.clone())
 	}
+
+    /// Enable persistence using environment variable `NYX_DHT_DB` or default path.
+    pub fn enable_persistence_from_env(&mut self) {
+        let path = std::env::var("NYX_DHT_DB").unwrap_or_else(|_| "nyx_dht.redb".to_string());
+        self.db = Database::create(path).ok().map(Arc::new);
+        let _ = self.load_from_store();
+    }
+
+    fn table_def() -> TableDefinition<'static, &'static str, &'static str> {
+        TableDefinition::new("dht_kvs")
+    }
+
+    fn save_one_to_store(&self, key: &str, region: Option<String>, caps: &[String]) -> anyhow::Result<()> {
+        let db = match &self.db { Some(db) => db.clone(), None => return Ok(()) };
+        let guard = futures::executor::block_on(self.inner.read());
+        if let Some(val) = guard.get(key) {
+            // Compute expiry as unix seconds
+            let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+            let expire_unix = now.saturating_add(val.ttl.as_secs());
+            let rec = PersistentRecord {
+                data_b64: B64.encode(&val.data),
+                expire_unix,
+                region,
+                caps: caps.to_vec(),
+            };
+            let json = serde_json::to_string(&rec)?;
+            let wtx = db.begin_write()?;
+            // Open existing table; if missing, skip persistence silently
+            if let Ok(mut table) = wtx.open_table(Self::table_def()) {
+                table.insert(key, json.as_str())?;
+            }
+            wtx.commit()?;
+        }
+        Ok(())
+    }
+
+    fn load_from_store(&mut self) -> anyhow::Result<()> {
+        let db = match &self.db { Some(db) => db.clone(), None => return Ok(()) };
+        let rtx = db.begin_read()?;
+        use redb::ReadableTable;
+        let table = rtx.open_table(Self::table_def())?;
+        for item in table.iter()? {
+            let entry = item?;
+            let key = entry.0.value();
+            let json = entry.1.value();
+            if let Ok(rec) = serde_json::from_str::<PersistentRecord>(json) {
+                // Reconstruct TTL based on expire time
+                let now_sec = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                if rec.expire_unix <= now_sec { continue; }
+                let ttl_secs = rec.expire_unix - now_sec;
+                let data = match B64.decode(rec.data_b64.as_bytes()) { Ok(d) => d, Err(_) => continue };
+                // Insert into maps
+                futures::executor::block_on(async {
+                    self.inner.write().await.insert(key.to_string(), DhtValue { data, inserted: Instant::now(), ttl: Duration::from_secs(ttl_secs) });
+                    if let Some(r) = rec.region.clone() { self.region_index.write().await.entry(r).or_default().insert(key.to_string()); }
+                    for c in rec.caps.iter() { self.cap_index.write().await.entry(c.clone()).or_default().insert(key.to_string()); }
+                });
+            }
+        }
+        Ok(())
+    }
 
 	// Enumerate keys inside backing store matching a prefix (internal helper for discovery strategies)
 	pub async fn keys_with_prefix(&self, prefix: &str) -> Vec<String> {

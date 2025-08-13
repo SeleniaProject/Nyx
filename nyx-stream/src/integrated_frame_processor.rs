@@ -15,6 +15,12 @@ use thiserror::Error;
 use crate::simple_frame_handler::FrameHandler;
 use crate::flow_controller::{FlowController, FlowControlError, FlowControlStats, NetworkStats};
 use crate::stream_frame::{StreamFrame, parse_stream_frame};
+#[cfg(feature = "plugin")]
+use crate::plugin_frame::{PluginFrameProcessor, PluginFrameResult};
+#[cfg(feature = "plugin")]
+use crate::plugin_registry::PluginRegistry;
+#[cfg(feature = "plugin")]
+fn error_or(err: impl std::fmt::Display) -> String { err.to_string() }
 
 /// Data that has been successfully reassembled from frames
 #[derive(Debug, Clone)]
@@ -173,6 +179,8 @@ pub struct IntegratedFrameProcessor {
     processing_tasks: Arc<Mutex<HashMap<u32, tokio::task::JoinHandle<()>>>>,
     global_flow_controller: Arc<Mutex<FlowController>>,
     shutdown_signal: Arc<Mutex<bool>>,
+    #[cfg(feature = "plugin")]
+    plugin_processor: Arc<Mutex<PluginFrameProcessor>>,
 }
 
 impl IntegratedFrameProcessor {
@@ -184,6 +192,12 @@ impl IntegratedFrameProcessor {
         let frame_handler = Arc::new(Mutex::new(
             FrameHandler::new(config.max_frame_size, config.reassembly_timeout)
         ));
+        #[cfg(feature = "plugin")]
+        let plugin_processor = {
+            // Minimal registry; in integration, this should be shared from outer context
+            let registry = PluginRegistry::new();
+            Arc::new(Mutex::new(PluginFrameProcessor::new(registry)))
+        };
         
         let initial_stats = IntegratedStats {
             total_frames_processed: 0,
@@ -233,6 +247,8 @@ impl IntegratedFrameProcessor {
                 FlowController::new(config.default_stream_window)
             )),
             shutdown_signal: Arc::new(Mutex::new(false)),
+            #[cfg(feature = "plugin")]
+            plugin_processor,
         }
     }
 
@@ -253,7 +269,44 @@ impl IntegratedFrameProcessor {
     pub async fn process_frame(&self, frame_data: &[u8]) -> Result<Vec<ReassembledData>, IntegratedFrameError> {
         let start_time = Instant::now();
         
-        // Parse frame
+        // First try plugin frame range parsing when feature is enabled
+        #[cfg(feature = "plugin")]
+        {
+            if crate::plugin_frame::PluginFrameProcessor::is_plugin_frame_type(frame_data[0] >> 6) {
+                // Use plugin_frame parser which understands extended header and CBOR
+                let mut proc = self.plugin_processor.lock().await;
+                match proc.parse_plugin_frame(frame_data) {
+                    Ok(parsed) => {
+                        match proc.process_plugin_frame(parsed).await {
+                            Ok(PluginFrameResult::Dispatched { .. }) |
+                            Ok(PluginFrameResult::Ignored { .. }) => {
+                                // Plugin frames do not yield stream data; accounted and return empty
+                                self.update_processing_stats(start_time, frame_data.len(), 0).await;
+                                return Ok(Vec::new());
+                            }
+                            Ok(PluginFrameResult::RequireClose { plugin_id, reason }) => {
+                                error!("Required plugin {} unsupported: {}", plugin_id, reason);
+                                return Err(IntegratedFrameError::FrameParsing(
+                                    format!("Required plugin {} unsupported: {}", plugin_id, reason)
+                                ));
+                            }
+                            Ok(PluginFrameResult::Error { error }) | Err(err) => {
+                                return Err(IntegratedFrameError::FrameParsing(
+                                    format!("Plugin frame processing error: {}", error_or(err))
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Err(IntegratedFrameError::FrameParsing(
+                            format!("Plugin frame parse error: {}", e)
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Parse data/management stream frame otherwise
         let (_, frame) = match parse_stream_frame(frame_data) {
             Ok(result) => result,
             Err(e) => {

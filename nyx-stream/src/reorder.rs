@@ -90,6 +90,18 @@ impl<T> ReorderBuffer<T> {
         if self.pending.is_empty() { return None; }
         Some(self.pending.remove(0))
     }
+
+    /// Advance the internal expected sequence to `next_seq`, clearing any buffered state.
+    /// This is used by higher-level receivers that decide to accept a non-zero initial
+    /// sequence number and want to prevent retroactive delivery of earlier packets.
+    pub fn advance_to(&mut self, next_seq: u64) {
+        self.next_seq = next_seq;
+        self.initial_seq = next_seq;
+        self.pending.clear();
+        self.window.clear();
+        self.delivered_any = true;
+        self.rebased = false;
+    }
 }
 
 impl<T> ReorderBuffer<T> {

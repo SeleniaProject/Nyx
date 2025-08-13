@@ -290,8 +290,6 @@ impl PathValidator {
             _ => {}
         }
     }
-        }
-    }
 }
 
 /// Helpers wrapping existing parsers to operate on token-only payload.

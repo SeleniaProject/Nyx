@@ -778,13 +778,12 @@ impl PureRustDht {
     async fn connect_to_peer(&self, peer_addr: SocketAddr) -> Result<(), DhtError> {
         let node_id = Self::calculate_node_id(&self.keypair.verifying_key().to_bytes());
         
-        // Send ping message
+        // Send ping message (bincode-framed)
         let ping_message = DhtMessage::Ping {
             node_id,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
                 .unwrap_or_default().as_secs(),
         };
-        
         match self.send_message_to_peer(peer_addr, ping_message).await {
             Ok(DhtMessage::Pong { node_id: peer_node_id, .. }) => {
                 // Add peer to routing table
@@ -956,16 +955,21 @@ impl PureRustDht {
                     
                     let task = tokio::spawn(async move {
                         if find_value_flag {
-                            // Try to find value first via FindValue
+                            // Try to find value first via FindValue using bincode framing
                             if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
                                 let msg = DhtMessage::FindValue { key: target_id_owned.clone(), requester_id: "anonymous".to_string() };
-                                if let Ok(bytes) = serde_json::to_vec(&msg) {
-                                    if stream.write_all(&bytes).await.is_ok() {
-                                        let mut buf = vec![0u8; 4096];
-                                        if let Ok(n) = stream.read(&mut buf).await { buf.truncate(n);
-                                            if let Ok(DhtMessage::FindValueResponse { value: Some(_), .. }) = serde_json::from_slice::<DhtMessage>(&buf) {
-                                                // Peer has value; no new nodes from this
-                                                return None;
+                                if let Ok(bytes) = bincode::serialize(&msg) {
+                                    let len = (bytes.len() as u32).to_be_bytes();
+                                    if stream.write_all(&len).await.is_ok() && stream.write_all(&bytes).await.is_ok() {
+                                        let mut len_buf = [0u8; 4];
+                                        if stream.read_exact(&mut len_buf).await.is_ok() {
+                                            let resp_len = u32::from_be_bytes(len_buf) as usize;
+                                            let mut buf = vec![0u8; resp_len];
+                                            if stream.read_exact(&mut buf).await.is_ok() {
+                                                if let Ok(DhtMessage::FindValueResponse { value: Some(_), .. }) = bincode::deserialize::<DhtMessage>(&buf) {
+                                                    // Peer has value; no new nodes from this
+                                                    return None;
+                                                }
                                             }
                                         }
                                     }
@@ -1018,61 +1022,41 @@ impl PureRustDht {
     
     /// Query a peer for closest nodes to target
     async fn query_peer_for_closest_nodes(peer_addr: std::net::SocketAddr, target_id: &str) -> Option<Vec<PeerInfo>> {
-        match tokio::net::TcpStream::connect(peer_addr).await {
-            Ok(mut stream) => {
-                let message = DhtMessage::FindNode {
-                    target_id: target_id.to_string(),
-                    requester_id: "anonymous".to_string(),
-                };
-                
-                if let Ok(serialized) = serde_json::to_vec(&message) {
-                    if let Ok(_) = stream.write_all(&serialized).await {
-                        let mut buffer = vec![0; 4096];
-                        if let Ok(n) = stream.read(&mut buffer).await {
-                            buffer.truncate(n);
-                            if let Ok(response) = serde_json::from_slice::<DhtMessage>(&buffer) {
-                                if let DhtMessage::FindNodeResponse { nodes } = response {
-                                    return Some(nodes);
-                                }
+        // Use the same length-prefixed bincode framing as the daemon handler
+        if let Ok(mut stream) = tokio::net::TcpStream::connect(peer_addr).await {
+            let message = DhtMessage::FindNode {
+                target_id: target_id.to_string(),
+                requester_id: "anonymous".to_string(),
+            };
+            if let Ok(msg_data) = bincode::serialize(&message) {
+                let len = (msg_data.len() as u32).to_be_bytes();
+                if stream.write_all(&len).await.is_ok() && stream.write_all(&msg_data).await.is_ok() {
+                    let mut len_buf = [0u8; 4];
+                    if stream.read_exact(&mut len_buf).await.is_ok() {
+                        let resp_len = u32::from_be_bytes(len_buf) as usize;
+                        let mut resp_buf = vec![0u8; resp_len];
+                        if stream.read_exact(&mut resp_buf).await.is_ok() {
+                            if let Ok(DhtMessage::FindNodeResponse { nodes }) = bincode::deserialize::<DhtMessage>(&resp_buf) {
+                                return Some(nodes);
                             }
                         }
                     }
                 }
             }
-            Err(_) => {}
         }
         None
     }
     
     /// Query a peer for a specific value
     async fn query_peer_for_value(&self, peer_addr: &std::net::SocketAddr, key: &str) -> Result<Option<Vec<u8>>, DhtError> {
-        let mut stream = tokio::net::TcpStream::connect(peer_addr).await
-            .map_err(|e| DhtError::Connection(e.to_string()))?;
-            
-        let message = DhtMessage::FindValue {
+        let find_value = DhtMessage::FindValue {
             key: key.to_string(),
-            requester_id: hex::encode(&self.local_addr.to_string()),
+            requester_id: hex::encode(Self::calculate_node_id(&self.keypair.verifying_key().to_bytes())),
         };
-        
-        let serialized = serde_json::to_vec(&message)
-            .map_err(|e| DhtError::Serialization(Box::new(bincode::ErrorKind::Custom(e.to_string()))))?;
-            
-        stream.write_all(&serialized).await
-            .map_err(|e| DhtError::Connection(e.to_string()))?;
-            
-        let mut buffer = vec![0; 8192];
-        let n = stream.read(&mut buffer).await
-            .map_err(|e| DhtError::Connection(e.to_string()))?;
-            
-        buffer.truncate(n);
-        let response = serde_json::from_slice::<DhtMessage>(&buffer)
-            .map_err(|e| DhtError::Deserialization(e.to_string()))?;
-            
-        match response {
-            DhtMessage::FindValueResponse { value: Some(value), .. } => Ok(Some(value)),
+        match self.send_message_to_peer(*peer_addr, find_value).await? {
+            DhtMessage::FindValueResponse { value: Some(v), .. } => Ok(Some(v)),
             DhtMessage::FindValueResponse { value: None, .. } => Ok(None),
-            DhtMessage::FindNodeResponse { nodes: _ } => Ok(None), // Peer doesn't have value, returned closest nodes
-            _ => Err(DhtError::Protocol("Unexpected response".to_string())),
+            _ => Ok(None),
         }
     }
     
@@ -2084,35 +2068,36 @@ impl PureRustDht {
         // Send ping message to verify connectivity
         // Build real ping message using our local node id
         let ping_msg = DhtMessage::Ping {
-            node_id: Self::calculate_node_id(&Self::public_key_bytes(&self.keypair)),
+            node_id: Self::calculate_node_id(&self.keypair.verifying_key().to_bytes()),
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
                 .unwrap_or_default().as_secs(),
         };
 
-        // Serialize and send ping
-        let serialized = serde_json::to_vec(&ping_msg)
-            .map_err(|e| DhtError::Serialization(Box::new(bincode::ErrorKind::Custom(e.to_string()))))?;
-
-        // Send ping and await pong to verify bootstrap liveness
+        // Serialize and send ping with bincode framing
+        let msg_data = bincode::serialize(&ping_msg)?;
+        let len = (msg_data.len() as u32).to_be_bytes();
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut stream = stream;
-        stream.write_all(&serialized).await
+        stream.write_all(&len).await
             .map_err(|e| DhtError::Connection(format!("Write failed: {}", e)))?;
-        let mut buf = vec![0u8; 2048];
-        let n = tokio::time::timeout(timeout, stream.read(&mut buf)).await
+        stream.write_all(&msg_data).await
+            .map_err(|e| DhtError::Connection(format!("Write failed: {}", e)))?;
+        let mut len_buf = [0u8; 4];
+        tokio::time::timeout(timeout, stream.read_exact(&mut len_buf)).await
             .map_err(|_| DhtError::Connection("Bootstrap read timeout".to_string()))
             .and_then(|r| r.map_err(|e| DhtError::Connection(format!("Read error: {}", e))))?;
-        buf.truncate(n);
-        if let Ok(resp) = serde_json::from_slice::<DhtMessage>(&buf) {
-            match resp {
-                DhtMessage::Pong { .. } => {
-                    debug!("Bootstrap connection to {} successful in {:?}", node_addr, connection_start.elapsed());
-                    return Ok(());
-                }
-                _ => return Err(DhtError::Protocol("Unexpected bootstrap response".to_string())),
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        let mut resp_buf = vec![0u8; resp_len];
+        tokio::time::timeout(timeout, stream.read_exact(&mut resp_buf)).await
+            .map_err(|_| DhtError::Connection("Bootstrap read timeout".to_string()))
+            .and_then(|r| r.map_err(|e| DhtError::Connection(format!("Read error: {}", e))))?;
+        match bincode::deserialize::<DhtMessage>(&resp_buf) {
+            Ok(DhtMessage::Pong { .. }) => {
+                debug!("Bootstrap connection to {} successful in {:?}", node_addr, connection_start.elapsed());
+                Ok(())
             }
-        } else {
-            return Err(DhtError::Deserialization("Invalid bootstrap response".to_string()));
+            Ok(_) => Err(DhtError::Protocol("Unexpected bootstrap response".to_string())),
+            Err(_) => Err(DhtError::Deserialization("Invalid bootstrap response".to_string())),
         }
     }
 

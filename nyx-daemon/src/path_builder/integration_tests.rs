@@ -15,9 +15,8 @@ mod integration_tests {
         ];
         
         let config = PathBuilderConfig::default();
-        let mut path_builder = PathBuilder::new(bootstrap_peers, config).await.unwrap();
+        let path_builder = Arc::new(PathBuilder::new(bootstrap_peers, config));
         path_builder.start().await.unwrap();
-        let path_builder = Arc::new(path_builder);
         
         let success_count = Arc::new(AtomicUsize::new(0));
         let mut handles = Vec::new();
@@ -36,7 +35,7 @@ mod integration_tests {
                     preferences: std::collections::HashMap::new(),
                 };
                 
-                match timeout(Duration::from_secs(15), pb.build_path(&request)).await {
+                match timeout(Duration::from_secs(15), pb.build_path(request)).await {
                     Ok(Ok(_response)) => {
                         sc.fetch_add(1, Ordering::SeqCst);
                     }

@@ -22,3 +22,10 @@ resolver = "2"
 codegen-units = 1
 lto = "fat"
 opt-level = "z" 
+
+# Reduce link-time memory usage for tests on Windows/MSVC by disabling debug symbols
+# and minimizing object fragmentation.
+[profile.test]
+debug = 0
+codegen-units = 1
+opt-level = 0

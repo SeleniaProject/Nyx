@@ -349,8 +349,22 @@ pub trait KeyExchange {
 | Linux | Primary | Full feature support |
 | Windows | Supported | WinAPI integration |
 | macOS | Supported | Network extension requirements |
-| Mobile (iOS/Android) | Planned | Power management, background operation |
-| WebAssembly | Research | Browser integration possibilities |
+| Mobile (iOS/Android) | Planned → Implementing | Power management, background operation (see Mobile section) |
+| WebAssembly | Research → Policy | Browser limitations; feature subset via `nyx-sdk-wasm` |
+
+##### WebAssembly Policy (Browser/WASI)
+
+- Scope: Provide a browser-compatible subset through `nyx-sdk-wasm` without relying on raw UDP/QUIC datagrams.
+- Supported (browser):
+  - Noise handshake demo (`noise_handshake_demo`) for cryptographic showcase
+  - Push registration helper (`nyx_register_push`) returning endpoint for Nyx Gateway integration
+- Unsupported (browser):
+  - HPKE (until wasm-safe primitives and stable RNG/KEM are exposed)
+  - Multipath data plane (no low-level socket access; QUIC datagrams not available universally)
+  - Plugin system (no dynamic loading sandbox in standard browser environment)
+  - Close-code mapping/capability negotiation (requires full stream/protocol layer)
+- WASI target: server-side WASM may enable broader capabilities; mapping follows native feature-gating.
+- Security: All cryptographic operations are constrained to wasm-safe APIs and avoid non-deterministic host dependencies.
 
 ### 9.2 Development Methodology
 #### Safety-First Development
@@ -536,6 +550,55 @@ criterion_main!(benches);
 - **Android**: VPN service for traffic routing
 - **Battery Optimization**: Adaptive protocols for power efficiency
 - **Background Operation**: Maintain connections during app suspension
+
+##### Mobile (iOS/Android) — Power Management & Background Operation
+
+This section specifies the concrete implementation policy for mobile power management and background operation. It aligns with the internal guides in `docs/LOW_POWER_MODE.md` and `docs/MOBILE_POWER_PUSH_INTEGRATION.md`, and defines stable integration surfaces for `nyx-mobile-ffi/`.
+
+• Objectives
+- Maintain anonymity properties while reducing energy consumption during background or idle states
+- Minimize wake-to-availability latency when new data arrives
+- Preserve NAT bindings and path viability using the lowest necessary background traffic
+
+• Unified State Model
+- ACTIVE: Full functionality, normal cover traffic and probing
+- BACKGROUND: Reduced cover ratio, low-frequency keepalive, extended rekey intervals
+- INACTIVE: Suspend active probing; rely on push-triggered resume
+- CRITICAL: Aggressive suppression for low battery, minimal keepalive only
+
+• iOS Strategy
+- Background execution relies on a combination of:
+  - Push-triggered resume via APNs remote notifications with `content-available` for wake signals (silent notifications are not guaranteed and may be coalesced by the system)
+  - Background tasks scheduled with the BackgroundTasks framework (e.g., `BGAppRefreshTask`/`BGProcessingTask`) for maintenance operations within OS quotas
+  - Network extension or app-scoped operation depending on product form factor; networking work must respect background execution budgets
+- On receiving a wake signal, the app requests a fast resume path: one control path plus one data path. Connection re-establishment must be bounded with exponential backoff and debouncing to avoid budget exhaustion.
+- Payloads in push wake are minimal (topic + nonce). Application-level keys provide AEAD protection; failed decryptions are ignored.
+
+• Android Strategy
+- Respect Doze and App Standby:
+  - Use FCM high-priority data messages only for truly time-sensitive wake signals
+  - Use WorkManager for deferred maintenance and periodic tasks; use constraints to avoid waking radio unnecessarily
+  - For immediate user-visible work, switch to a foreground service with the proper service type and notification policy
+- Resume flow mirrors iOS: debounce, capped retries with backoff, and minimal initial path set. Keepalives are adaptive to radio state and policies.
+
+• FFI/API Integration
+- `nyx-mobile-ffi` must expose:
+  - Power/app lifecycle events into the daemon (`nyx_power_set_state`, screen on/off, charging state, low power mode)
+  - Push wake entry point (`nyx_push_wake`) that feeds the resume controller
+  - Explicit resume trigger (`nyx_resume_low_power_session`) used by the mobile glue when the OS grants execution time
+- The daemon's LowPowerManager attaches a PushGatewayManager to coordinate wake-driven reconnection and record telemetry (wake counts, reconnect attempts, latency p50/p95).
+
+• Cover Traffic and Rekey Adaptation
+- BACKGROUND: reduce cover ratio and probing frequency; increase HPKE rekey intervals moderately
+- INACTIVE/CRITICAL: suspend probing, keep minimal NAT keepalive traffic; increase rekey interval further
+- Maintain a minimum Poisson λ for indistinguishability; apply random jitter to state transitions to avoid synchronization spikes
+
+• Observability & Safety
+- Record state transitions, wake events, reconnect success/failure, and latency quantiles
+- Enforce guardrails for retry/backoff and execution windows to avoid violating OS background restrictions
+- Ensure all sensitive push payloads are minimized and encrypted end-to-end
+
+For detailed operational guidance and API examples, see `docs/LOW_POWER_MODE.md` and `docs/MOBILE_POWER_PUSH_INTEGRATION.md`.
 
 ### 11.3 Operational Considerations
 #### Monitoring and Metrics

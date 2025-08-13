@@ -1,6 +1,7 @@
 /// Zero-copy critical path manager and pipeline orchestration
 use super::*;
 use tokio::task::JoinHandle;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -525,12 +526,26 @@ impl ZeroCopyManager {
         let paths = self.paths.read().await;
         let mut aggregated = AggregatedMetrics::default();
 
-        for path in paths.values() {
+        for (path_id, path) in paths.iter() {
             let metrics = path.get_metrics().await;
-            aggregated.merge(metrics);
+            aggregated.merge(metrics.clone());
+            // Preserve per-path metrics for detailed telemetry recording
+            aggregated.per_path_metrics.insert(path_id.clone(), metrics);
         }
 
         aggregated
+    }
+
+    /// Collect BufferPool statistics for all active paths.
+    /// Returns a map of `path_id` -> `BufferPoolStats`.
+    pub async fn get_all_pool_stats(&self) -> HashMap<String, BufferPoolStats> {
+        let paths = self.paths.read().await;
+        let mut out: HashMap<String, BufferPoolStats> = HashMap::new();
+        for (path_id, path) in paths.iter() {
+            let stats = path.get_pool_stats().await;
+            out.insert(path_id.clone(), stats);
+        }
+        out
     }
 
     /// Start background management tasks

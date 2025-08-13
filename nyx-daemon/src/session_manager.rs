@@ -86,6 +86,8 @@ pub struct SessionStatistics {
 /// Comprehensive session manager
 pub struct SessionManager {
     pub(crate) sessions: Arc<DashMap<[u8; 12], Session>>,
+	/// Index from peer `NodeId` to associated session CIDs for fast lookup
+	peer_sessions: Arc<DashMap<NodeId, Vec<[u8; 12]>>>,
     config: SessionManagerConfig,
     statistics: Arc<RwLock<SessionStatistics>>,
     _cleanup_task: Option<tokio::task::JoinHandle<()>>,
@@ -121,6 +123,7 @@ impl SessionManager {
     pub fn new(config: SessionManagerConfig) -> Self {
         Self {
             sessions: Arc::new(DashMap::new()),
+			peer_sessions: Arc::new(DashMap::new()),
             config,
             statistics: Arc::new(RwLock::new(SessionStatistics::default())),
             _cleanup_task: None,
@@ -178,6 +181,11 @@ impl SessionManager {
         
         self.sessions.insert(cid, session);
 
+        // If peer is provided, index this session under the peer for quick retrieval
+        if let Some(peer) = _peer_node_id {
+            self.add_cid_to_peer_index(peer, cid);
+        }
+
         #[cfg(feature = "experimental-events")]
         if let Some(es) = &self.event_system {
             let es = es.clone();
@@ -208,6 +216,8 @@ impl SessionManager {
     /// Remove session by connection ID
     pub async fn remove_session(&self, cid: &[u8; 12]) -> Option<Session> {
         let removed = self.sessions.remove(cid).map(|(_, session)| session);
+        // Remove CID from peer index to keep mappings consistent
+        self.remove_cid_from_index(cid);
         #[cfg(feature = "experimental-events")]
         if let Some(ref es) = self.event_system {
             if removed.is_some() {
@@ -310,6 +320,8 @@ impl SessionManager {
         if let Some(session) = self.sessions.get(cid) {
             info!("Closing session {}", hex::encode(session.id));
             self.sessions.remove(cid);
+			// Keep peer index in sync
+			self.remove_cid_from_index(cid);
             
             // Update statistics
             {
@@ -326,16 +338,23 @@ impl SessionManager {
     /// Get sessions for a specific peer
     #[allow(dead_code)]
     pub async fn get_peer_sessions(&self, _peer_id: &NodeId) -> Vec<Session> {
-        // This would filter sessions by peer ID
-        // For now, return empty vector
+        // Look up indexed CIDs for this peer and materialize current Session snapshots
+        if let Some(entry) = self.peer_sessions.get(_peer_id) {
+            let cids = entry.value();
+            let mut out = Vec::with_capacity(cids.len());
+            for cid in cids.iter() {
+                if let Some(sess) = self.sessions.get(cid) { out.push(sess.clone()); }
+            }
+            return out;
+        }
         Vec::new()
     }
     
     /// Associate session with peer
     #[allow(dead_code)]
     pub async fn associate_session_with_peer(&self, _cid: &ConnectionId, _peer_id: NodeId) -> anyhow::Result<()> {
-        // This would update the peer association
-        // For now, just return Ok
+        // Update index and ensure uniqueness of CID per peer
+        self.add_cid_to_peer_index(_peer_id, *_cid);
         Ok(())
     }
     
@@ -361,6 +380,28 @@ impl SessionManager {
         
         cid
     }
+
+	/// Add a CID to the peer->sessions index, ensuring uniqueness
+	fn add_cid_to_peer_index(&self, peer: NodeId, cid: ConnectionId) {
+		let mut entry = self.peer_sessions.entry(peer).or_insert_with(|| Vec::new());
+		let vec_ref = entry.value_mut();
+		if !vec_ref.iter().any(|c| c == &cid) {
+			vec_ref.push(cid);
+		}
+	}
+
+	/// Remove a CID from all peer index entries; drop empty vectors
+	fn remove_cid_from_index(&self, cid: &ConnectionId) {
+		let mut to_prune: Vec<NodeId> = Vec::new();
+		for mut kv in self.peer_sessions.iter_mut() {
+			let vec_ref = kv.value_mut();
+			vec_ref.retain(|c| c != cid);
+			if vec_ref.is_empty() { to_prune.push(*kv.key()); }
+		}
+		for peer in to_prune {
+			self.peer_sessions.remove(&peer);
+		}
+	}
     
     /// Cleanup expired sessions
     async fn cleanup_expired_sessions(&self) {
@@ -444,6 +485,7 @@ impl Clone for SessionManager {
     fn clone(&self) -> Self {
         Self {
             sessions: Arc::clone(&self.sessions),
+            peer_sessions: Arc::clone(&self.peer_sessions),
             config: self.config.clone(),
             statistics: Arc::clone(&self.statistics),
             _cleanup_task: None,

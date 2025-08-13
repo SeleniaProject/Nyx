@@ -210,8 +210,21 @@ stateDiagram-v2
 ---
 
 ## 13. 移植性
-* **WASM**: `nyx-sdk-wasm` targeting WebTransport; compile with `wasm32-unknown-unknown`。
+* **WASM**: `nyx-sdk-wasm` targeting WebTransport; compile with `wasm32-unknown-unknown`。現状は機能サブセット（Noiseデモ/Push登録）。HPKE/Multipath/Plugin/Close Codeは未提供。
 * **Embedded**: `no_std` subset (`nyx-lite`) ビルドフラグで動的メモリ削減。
+
+### Mobile(iOS/Android): Power management / Background operation（実装方針確定）
+
+本節では、`docs/LOW_POWER_MODE.md` および `docs/MOBILE_POWER_PUSH_INTEGRATION.md` に基づくモバイル電源管理/バックグラウンド運用の実装方針を確定する。
+
+- 目的: バックグラウンド/アイドル時にエネルギーを節約しつつ、匿名性と再開レイテンシを最小化する。
+- 状態モデル: ACTIVE / BACKGROUND / INACTIVE / CRITICAL を採用し、各状態で cover 比率、プロービング頻度、HPKE 再鍵間隔を段階的に適応。
+- iOS: APNs の `content-available` によるサイレント通知で wake シグナルを受け取り、必要に応じて BackgroundTasks フレームワーク (`BGAppRefreshTask`/`BGProcessingTask`) を利用。ネットワーク処理は OS の実行予算内で実施し、初期は最小経路セット(制御1 + データ1)で再確立。通知ペイロードは最小+アプリ鍵で AEAD 包装。
+- Android: Doze / App Standby を尊重し、即時性が必要な wake は FCM 高優先度データメッセージでトリガ。定期/保守は WorkManager を利用。ユーザ可視作業は前景サービスへ昇格。再開時はデバウンス、指数バックオフ、最小経路セットで接続。
+- FFI/API: `nyx-mobile-ffi` は電源/画面/充電/アプリライフサイクルイベントを `nyx_power_set_state` で供給し、`nyx_push_wake`/`nyx_resume_low_power_session` を公開。Daemon 側 LowPowerManager は PushGatewayManager を接続し、メトリクス（wake、再接続成功/失敗、p50/p95）を収集。
+- 匿名性/可用性: BACKGROUND/INACTIVE/CRITICAL でも Poisson λ の最小値とランダムジッタを保持し、NAT 維持の最小 keepalive を送出。過剰再試行を避けるためガードレール（最大試行、窓、デバウンス）を実装。
+
+運用上の詳細は `docs/LOW_POWER_MODE.md` および `docs/MOBILE_POWER_PUSH_INTEGRATION.md` を参照。
 
 ---
 

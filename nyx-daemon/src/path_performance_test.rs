@@ -213,8 +213,8 @@ mod tests {
         let config = PathBuilderConfig::default();
         let bootstrap_peers = vec!["127.0.0.1:8000".to_string()];
         
-        // Create PathBuilder (this will fail without actual DHT, but we can test structure)
-    let result: Result<PathBuilder, anyhow::Error> = Ok(PathBuilder::new(bootstrap_peers, config));
+        // Create PathBuilder facade (no await in constructor)
+        let result: Result<PathBuilder, anyhow::Error> = Ok(PathBuilder::new(bootstrap_peers, config));
         
         // If DHT is not available, we expect an error, which is fine for this test
         // We're mainly testing that the PathBuilder structure compiles correctly

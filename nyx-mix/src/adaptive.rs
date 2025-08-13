@@ -6,6 +6,7 @@
 use crate::cover::CoverGenerator;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+use nyx_core::low_power::LOW_POWER_COVER_RATIO;
 use super::anonymity::{AnonymityEvaluator, DEFAULT_WINDOW_SEC as ANON_WINDOW_SEC};
 
 /// Sliding-window utilization estimator (bytes per second).
@@ -133,8 +134,8 @@ impl AdaptiveCoverGenerator {
         // Low Power Mode: either explicit flag or battery discharging. Scale λ to 0.3×.
         let low_power_detected = self.manual_low_power || matches!(self.power_state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
         if low_power_detected {
-            if self.gen.lambda > self.base_lambda * 0.15 { // avoid recreating every call
-                self.gen = CoverGenerator::new(self.base_lambda * 0.15);
+            if self.gen.lambda > self.base_lambda * LOW_POWER_COVER_RATIO { // align with spec constant
+                self.gen = CoverGenerator::new(self.base_lambda * LOW_POWER_COVER_RATIO);
             }
         }
     let util_bps = self.estimator.throughput_bps();
@@ -173,8 +174,10 @@ impl AdaptiveCoverGenerator {
         } else if util_smoothed > band_high {
             1.3
         } else { 1.0 };
-        let new_lambda = ((self.base_lambda.max(target_cover_pps) + reactive_boost) * band_adjust)
-            .clamp(self.base_lambda * 0.5, self.base_lambda * 4.0); // bounds
+        let min_bound = if low_power_detected { self.base_lambda * LOW_POWER_COVER_RATIO } else { self.base_lambda * 0.5 };
+        let base_for_max = if low_power_detected { self.base_lambda * LOW_POWER_COVER_RATIO } else { self.base_lambda };
+        let new_lambda = ((base_for_max.max(target_cover_pps) + reactive_boost) * band_adjust)
+            .clamp(min_bound, self.base_lambda * 4.0); // bounds
         // Re-initialize internal generator if λ change is >10%
         if (new_lambda - self.gen.lambda).abs() / self.gen.lambda > 0.1 {
             self.gen = CoverGenerator::new(new_lambda);
@@ -231,8 +234,8 @@ impl AdaptiveCoverGenerator {
         // this call (as in e2e_full_stack test) see the reduced value without waiting
         // for next_delay() to be invoked.
         if on {
-            if self.gen.lambda != self.base_lambda * 0.15 {
-                self.gen = CoverGenerator::new(self.base_lambda * 0.15);
+            if self.gen.lambda != self.base_lambda * LOW_POWER_COVER_RATIO {
+                self.gen = CoverGenerator::new(self.base_lambda * LOW_POWER_COVER_RATIO);
             }
         } else if self.gen.lambda != self.base_lambda {
             self.gen = CoverGenerator::new(self.base_lambda);

@@ -31,6 +31,7 @@ use nyx_core::{types::*, config::NyxConfig};
 use nyx_mix::{cmix::*};
 use nyx_control::{init_control, ControlManager};
 use nyx_transport::{Transport, PacketHandler};
+#[cfg(feature = "experimental-metrics")] use once_cell::sync::OnceCell;
 
 // Internal modules
 #[cfg(feature = "experimental-metrics")] mod metrics;
@@ -40,6 +41,7 @@ use nyx_transport::{Transport, PacketHandler};
 #[cfg(feature = "experimental-metrics")] mod path_performance_test;
 #[cfg(feature = "experimental-metrics")] mod prometheus_exporter;
 #[cfg(feature = "experimental-metrics")] mod stream_manager;
+#[cfg(feature = "low_power")] mod low_power;
 // Provide path_builder module name for existing imports by re-exporting
 #[cfg(feature = "path-builder")] pub mod path_builder_broken; // re-export behind feature
 #[cfg(feature = "path-builder")] pub use path_builder_broken as path_builder;
@@ -80,6 +82,14 @@ impl PacketHandler for DaemonPacketHandler {
         // - Security validation
         // - Routing decisions
         // - Metrics collection
+
+        // Route inbound packet into stream buffers when metrics subsystem is enabled
+        #[cfg(feature = "experimental-metrics")]
+        {
+            if let Some(sm) = STREAM_MANAGER_INSTANCE.get() {
+                let _ = sm.route_incoming(src, data).await;
+            }
+        }
     }
 }
 
@@ -102,6 +112,16 @@ use health_monitor::{HealthMonitor};
 #[cfg(feature = "experimental-p2p")] use pure_rust_p2p::{PureRustP2P, P2PConfig, P2PNetworkEvent};
 use crate::proto::EventFilter;
 use std::borrow::Cow;
+use std::sync::atomic::Ordering as AtomicOrdering;
+use nyx_mix::cover_adaptive::{AdaptiveCoverGenerator, AdaptiveCoverConfig};
+// HTTP server (Axum) to serve pure-Rust JSON API for CLI
+use axum::{Router, routing::{get, post}, extract::{Path, State, Query}, Json};
+use serde::{Deserialize, Serialize};
+use axum::http::HeaderMap;
+
+// Global stream manager handle for inbound packet routing (feature-gated)
+#[cfg(feature = "experimental-metrics")]
+static STREAM_MANAGER_INSTANCE: OnceCell<Arc<stream_manager::StreamManager>> = OnceCell::new();
 
 /// Convert SystemTime to proto::Timestamp
 fn system_time_to_proto_timestamp(time: SystemTime) -> proto::Timestamp {
@@ -133,6 +153,8 @@ pub struct ControlService {
     metrics: Arc<MetricsCollector>,
     #[cfg(feature = "experimental-metrics")]
     stream_manager: Arc<StreamManager>,
+    #[cfg(all(feature = "experimental-metrics", feature = "low_power"))]
+    cover_generator: Option<AdaptiveCoverGenerator>,
     #[cfg(feature = "path-builder")]
     path_builder: Arc<PathBuilder>,
     session_manager: Arc<SessionManager>,
@@ -140,6 +162,7 @@ pub struct ControlService {
     health_monitor: Arc<HealthMonitor>,
     #[cfg(feature = "experimental-events")] event_system: Arc<EventSystem>,
     #[cfg(feature = "experimental-metrics")] layer_manager: Arc<RwLock<LayerManager>>,
+    #[cfg(feature = "low_power")] low_power_manager: Arc<low_power::LowPowerManager>,
     
     // P2P networking
     #[cfg(feature = "experimental-dht")] pure_rust_dht: Arc<PureRustDht>,
@@ -218,7 +241,75 @@ impl ControlService {
             ).await?;
             let stream_manager = Arc::new(stream_manager);
             stream_manager.clone().start().await;
+
+            // Publish global instance for packet handler routing
+            if STREAM_MANAGER_INSTANCE.set(Arc::clone(&stream_manager)).is_err() {
+                tracing::warn!("STREAM_MANAGER_INSTANCE was already set; inbound routing may be duplicated");
+            }
+            // Dynamically export low power metrics if feature enabled
+            #[cfg(feature = "low_power")]
+            {
+                let lpm = low_power_manager.clone();
+                let metrics_clone = Arc::clone(&metrics);
+                tokio::spawn(async move {
+                    let mut rx = lpm.subscribe();
+                    loop {
+                        if rx.changed().await.is_ok() {
+                            let is_lp = lpm.is_low_power();
+                            let ratio = lpm.recommended_cover_ratio() as f64;
+                            metrics_clone.record_custom_metric("low_power_cover_ratio", ratio);
+                            metrics_clone.record_custom_metric("low_power_state", if is_lp { 1.0 } else { 0.0 });
+                        } else {
+                            break;
+                        }
+                    }
+                });
+            }
+
             (metrics, stream_manager)
+        };
+
+        // Initialize adaptive cover generator and bind to low power state (if available)
+        #[cfg(all(feature = "experimental-metrics", feature = "low_power"))]
+        let cover_generator = {
+            let mut cfg = AdaptiveCoverConfig::default();
+            cfg.base_lambda = 2.0; // default base rate
+            cfg.target_cover_ratio = self.low_power_manager.recommended_cover_ratio() as f64;
+            let gen = AdaptiveCoverGenerator::new(cfg);
+            gen.start().await.ok();
+            // Watch low-power state and update target cover ratio accordingly
+            let lpm = self.low_power_manager.clone();
+            let gen_clone = gen.clone();
+            tokio::spawn(async move {
+                let mut rx = lpm.subscribe();
+                while rx.changed().await.is_ok() {
+                    let mut cfg = AdaptiveCoverConfig::default();
+                    cfg.base_lambda = 2.0;
+                    cfg.target_cover_ratio = lpm.recommended_cover_ratio() as f64;
+                    gen_clone.update_config(cfg).await;
+                }
+            });
+
+            // Also subscribe to lambda updates and spawn/adjust transport cover tasks
+            let lambda_rx = gen.subscribe_lambda();
+            let transport_clone = Arc::clone(&transport);
+            let stream_manager_clone = stream_manager.clone();
+            tokio::spawn(async move {
+                let mut rx = lambda_rx;
+                let mut last_lambda: f64 = 0.0;
+                loop {
+                    if rx.changed().await.is_err() { break; }
+                    let lambda = *rx.borrow();
+                    if (lambda - last_lambda).abs() < 1e-3 { continue; }
+                    last_lambda = lambda;
+                    // Choose first active path as cover target (best-effort)
+                    let addrs = stream_manager_clone.list_active_path_addrs();
+                    if let Some(addr) = addrs.first().cloned() {
+                        transport_clone.spawn_cover_task(addr, lambda.max(0.0));
+                    }
+                }
+            });
+            Some(gen)
         };
         
         #[cfg(feature = "path-builder")]
@@ -297,6 +388,19 @@ impl ControlService {
             }
             info!("Event system initialized and bridged to broadcast");
             es
+        };
+
+        // Initialize low power manager (optional)
+        #[cfg(feature = "low_power")]
+        let low_power_manager = {
+            let lpm = low_power::LowPowerManager::new(low_power::LowPowerConfig::default());
+            // Initialize mobile monitoring (on mobile builds this hooks OS APIs)
+            lpm.init_mobile_monitoring();
+            #[cfg(feature = "experimental-events")]
+            let lpm = lpm.with_event_system(event_system.clone());
+            let lpm_spawn = lpm.clone();
+            tokio::spawn(async move { lpm_spawn.run().await; });
+            lpm
         };
     // NOTE: SessionManager re-instantiation with event system omitted to keep minimal diff;
     // future enhancement: builder pattern to inject at construction.
@@ -409,12 +513,14 @@ impl ControlService {
             control_manager,
             #[cfg(feature = "experimental-metrics")] metrics,
             #[cfg(feature = "experimental-metrics")] stream_manager,
+            #[cfg(all(feature = "experimental-metrics", feature = "low_power"))] cover_generator,
             #[cfg(feature = "path-builder")] path_builder,
             session_manager,
             config_manager,
             health_monitor,
             #[cfg(feature = "experimental-events")] event_system,
             #[cfg(feature = "experimental-metrics")] layer_manager,
+            #[cfg(feature = "low_power")] low_power_manager,
             #[cfg(feature = "experimental-dht")] pure_rust_dht,
             #[cfg(feature = "experimental-p2p")] pure_rust_p2p,
             cmix_controller,
@@ -944,6 +1050,57 @@ impl NyxControl for ControlService {
             }
         }
     }
+
+    /// Receive data for a stream (chunked)
+    #[instrument(skip(self))]
+    async fn receive_data(
+        &self,
+        request: StreamId,
+    ) -> Result<ReceiveResponse, String> {
+        self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Read-only from buffer; allow without token
+        let stream_id = request.id;
+        #[cfg(feature = "experimental-metrics")]
+        {
+            let max_bytes = 64 * 1024usize; // default chunk size
+            let (data, more) = self.stream_manager.read_incoming(stream_id, max_bytes)
+                .await
+                .map_err(|e| format!("{}", e))?;
+            return Ok(ReceiveResponse { stream_id: stream_id.to_string(), data, more_data: more });
+        }
+        #[cfg(not(feature = "experimental-metrics"))]
+        {
+            let _ = stream_id;
+            Ok(ReceiveResponse { stream_id: "0".to_string(), data: Vec::new(), more_data: false })
+        }
+    }
+
+    /// Send data for a stream
+    #[instrument(skip(self))]
+    async fn send_data(
+        &self,
+        request: DataRequest,
+    ) -> Result<DataResponse, String> {
+        self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Mutating operation requires authorization when token configured.
+        let meta = None::<&std::collections::HashMap<String, String>>;
+        self.ensure_authorized(meta)?;
+
+        #[cfg(feature = "experimental-metrics")]
+        {
+            let stream_id = request.stream_id.parse::<u32>().map_err(|e| format!("Invalid stream ID: {}", e))?;
+            let written = self.stream_manager
+                .send_data(stream_id, request.data)
+                .await
+                .map_err(|e| format!("{}", e))?;
+            return Ok(DataResponse { success: true, bytes_written: written });
+        }
+        #[cfg(not(feature = "experimental-metrics"))]
+        {
+            let _ = request;
+            Ok(DataResponse { success: false, bytes_written: 0 })
+        }
+    }
     
     /// List all streams
     #[instrument(skip(self))]
@@ -1035,6 +1192,15 @@ impl NyxControl for ControlService {
         let mut custom_metrics = HashMap::new();
         custom_metrics.insert("cpu_usage".to_string(), performance_metrics.cpu_usage);
         custom_metrics.insert("memory_usage".to_string(), resource_usage.memory_percent);
+        #[cfg(feature = "low_power")]
+        {
+            // Low power cover ratio metric (0.1 in low power, 1.0 otherwise)
+            let lp_ratio = self.low_power_manager.recommended_cover_ratio() as f64;
+            custom_metrics.insert("low_power_cover_ratio".to_string(), lp_ratio);
+            // Low power state as 1.0 (Low) / 0.0 (Normal)
+            let lp_state = if self.low_power_manager.is_low_power() { 1.0 } else { 0.0 };
+            custom_metrics.insert("low_power_state".to_string(), lp_state);
+        }
         
         let node_info = NodeInfo {
             node_id: hex::encode(self.node_id),
@@ -1210,14 +1376,146 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = nyx_core::apply_process_isolation(Some(cfg));
     }
 
-    let addr = "[::1]:50051";
+    let addr = "127.0.0.1:50051";
     let config = Default::default();
-    let _service = ControlService::new(config).await?;
+    let service = std::sync::Arc::new(ControlService::new(config).await?);
+    // Spawn HTTP control API server compatible with nyx-cli
+    spawn_http_server(service.clone()).await?;
     
     tracing::info!(target = "nyx-daemon", address = %addr, "Nyx daemon starting");
     
     // Start the server (simplified non-tonic version)
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
+}
+
+// ---------------- HTTP API (Axum) ----------------
+
+#[derive(Clone)]
+struct AppState { service: std::sync::Arc<ControlService> }
+
+#[derive(Debug, Deserialize)]
+struct HttpOpenRequest { destination: String, #[allow(dead_code)] options: Option<serde_json::Value> }
+
+#[derive(Debug, Serialize)]
+struct HttpStreamResponse { stream_id: u32, success: bool, error: Option<String> }
+
+#[derive(Debug, Deserialize)]
+struct HttpDataRequest { stream_id: u32, data: Vec<u8>, #[allow(dead_code)] metadata: Option<String> }
+
+#[derive(Debug, Serialize)]
+struct HttpDataResponse { success: bool, bytes_sent: u64, error: Option<String> }
+
+#[derive(Debug, Serialize)]
+struct HttpStreamStats { stream_id: u32, bytes_sent: u64, bytes_received: u64, packets_sent: u64, packets_received: u64, avg_rtt_ms: f64, packet_loss_rate: f64 }
+
+async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::Result<()> {
+    let http_addr = std::env::var("NYX_HTTP_ADDR").unwrap_or_else(|_| "127.0.0.1:50051".to_string());
+    let state = AppState { service };
+
+    let app = Router::new()
+        .route("/api/v1/info", get(http_get_info))
+        .route("/api/v1/stream/open", post(http_open_stream))
+        .route("/api/v1/stream/data", post(http_send_data))
+        .route("/api/v1/stream/:id/stats", get(http_get_stream_stats))
+        .route("/api/v1/stream/:id/close", post(http_close_stream))
+        .route("/api/v1/stream/:id/recv", get(http_receive_data))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(&http_addr).await?;
+    tracing::info!(target = "nyx-daemon", address = %http_addr, "HTTP control API listening");
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, app).await {
+            tracing::error!("HTTP server error: {}", e);
+        }
+    });
+    Ok(())
+}
+
+fn auth_metadata_from_headers(headers: &HeaderMap) -> std::collections::HashMap<String, String> {
+    let mut m = std::collections::HashMap::new();
+    if let Some(v) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        m.insert("authorization".to_string(), v.to_string());
+    }
+    m
+}
+
+async fn http_get_info(State(st): State<AppState>) -> Json<serde_json::Value> {
+    let info = st.service.get_info(proto::Empty {}).await.unwrap_or_else(|_| NodeInfo {
+        node_id: String::new(), version: String::new(), uptime_sec: 0, bytes_in: 0, bytes_out: 0, pid: 0,
+        active_streams: 0, connected_peers: 0, mix_routes: Vec::new(), performance: None, resources: None,
+        topology: None, compliance_level: None, capabilities: None,
+    });
+    // Map to CLI-friendly shape
+    let (cpu_usage_percent, memory_usage_bytes, rx, tx) = if let (Some(p), Some(r)) = (info.performance.clone(), info.resources.clone()) {
+        ((p.cpu_usage * 100.0), r.memory_bytes, r.network_rx_bytes, r.network_tx_bytes)
+    } else { (0.0, 0, 0, 0) };
+    Json(serde_json::json!({
+        "node_id": info.node_id,
+        "version": info.version,
+        "uptime_seconds": info.uptime_sec,
+        "cpu_usage_percent": cpu_usage_percent,
+        "memory_usage_bytes": memory_usage_bytes,
+        "network_rx_bytes": rx,
+        "network_tx_bytes": tx,
+        "active_connections": info.active_streams,
+        "total_sent_bytes": info.bytes_out,
+        "total_received_bytes": info.bytes_in,
+        "connected_peers": info.connected_peers,
+    }))
+}
+
+async fn http_open_stream(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<HttpOpenRequest>) -> Json<HttpStreamResponse> {
+    let mut metadata = auth_metadata_from_headers(&headers);
+    let open = OpenRequest { destination: req.destination.clone(), target_address: req.destination, options: None, metadata };
+    match st.service.open_stream(open).await {
+        Ok(resp) => {
+            let id_u32 = resp.stream_id.parse::<u32>().unwrap_or(0);
+            Json(HttpStreamResponse { stream_id: id_u32, success: resp.success, error: if resp.success { None } else { Some(resp.message) } })
+        }
+        Err(e) => Json(HttpStreamResponse { stream_id: 0, success: false, error: Some(e) })
+    }
+}
+
+async fn http_send_data(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<HttpDataRequest>) -> Json<HttpDataResponse> {
+    let _metadata = auth_metadata_from_headers(&headers);
+    let data_req = DataRequest { stream_id: req.stream_id.to_string(), data: req.data };
+    match st.service.send_data(data_req).await {
+        Ok(dr) => Json(HttpDataResponse { success: dr.success, bytes_sent: dr.bytes_written, error: None }),
+        Err(e) => Json(HttpDataResponse { success: false, bytes_sent: 0, error: Some(e) })
+    }
+}
+
+async fn http_get_stream_stats(State(st): State<AppState>, Path(id): Path<String>) -> Json<HttpStreamStats> {
+    let sid = StreamId { id: id.clone() };
+    match st.service.get_stream_stats(sid).await {
+        Ok(s) => {
+            let id_u32 = s.stream_id.parse::<u32>().unwrap_or(0);
+            Json(HttpStreamStats { stream_id: id_u32, bytes_sent: s.bytes_sent, bytes_received: s.bytes_received, packets_sent: s.packets_sent, packets_received: s.packets_received, avg_rtt_ms: s.rtt_ms, packet_loss_rate: s.packet_loss_rate })
+        }
+        Err(_) => Json(HttpStreamStats { stream_id: id.parse().unwrap_or(0), bytes_sent: 0, bytes_received: 0, packets_sent: 0, packets_received: 0, avg_rtt_ms: 0.0, packet_loss_rate: 0.0 })
+    }
+}
+
+async fn http_close_stream(State(st): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Json<serde_json::Value> {
+    let mut _metadata = auth_metadata_from_headers(&headers);
+    let _ = st.service.close_stream(StreamId { id }).await;
+    Json(serde_json::json!({}))
+}
+
+#[derive(Debug, Serialize)]
+struct HttpReceiveResponse { stream_id: u32, data: Vec<u8>, more_data: bool }
+
+async fn http_receive_data(State(st): State<AppState>, Path(id): Path<String>, _q: Option<Query<std::collections::HashMap<String, String>>>) -> Json<HttpReceiveResponse> {
+    match st.service.receive_data(StreamId { id: id.clone() }).await {
+        Ok(rr) => {
+            let id_u32 = id.parse::<u32>().unwrap_or(0);
+            Json(HttpReceiveResponse { stream_id: id_u32, data: rr.data, more_data: rr.more_data })
+        }
+        Err(_e) => {
+            let id_u32 = id.parse::<u32>().unwrap_or(0);
+            Json(HttpReceiveResponse { stream_id: id_u32, data: Vec::new(), more_data: false })
+        }
     }
 }

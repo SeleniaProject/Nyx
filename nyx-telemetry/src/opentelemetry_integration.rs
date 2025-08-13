@@ -64,6 +64,25 @@ impl NyxTelemetry {
         register_export_sender(tx);
         let endpoint = cfg.endpoint.clone();
         let service_name = cfg.service_name.clone();
+        // Monotonic counters to derive non-zero, process-unique IDs without external deps
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static TRACE_SEQ: AtomicU64 = AtomicU64::new(1);
+        static SPAN_SEQ: AtomicU64 = AtomicU64::new(1);
+
+        // ID generators
+        fn next_trace_id() -> [u8; 16] {
+            let seq = TRACE_SEQ.fetch_add(1, Ordering::Relaxed);
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u128;
+            let mixed = now ^ (seq as u128);
+            mixed.to_be_bytes()
+        }
+        fn next_span_id() -> [u8; 8] {
+            let seq = SPAN_SEQ.fetch_add(1, Ordering::Relaxed);
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+            let mixed = ((now as u64) << 32) ^ seq;
+            mixed.to_be_bytes()
+        }
+
         tokio::spawn(async move {
             // Build static resource attributes once.
             let resource_attrs = vec![OTLPKeyValue { key: semcov::resource::SERVICE_NAME.to_string(), value: Some(AnyValue { value: Some(opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(service_name)) }) }];
@@ -71,8 +90,8 @@ impl NyxTelemetry {
                 // Build a minimal OTLP Span from CapturedSpan
                 let attributes: Vec<OTLPKeyValue> = cspan.attributes.iter().map(|(k,v)| OTLPKeyValue { key: k.clone(), value: Some(AnyValue { value: Some(opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(v.clone())) }) }).collect();
                 let span = Span {
-                    trace_id: vec![0;16], // placeholder deterministic
-                    span_id: vec![0;8],
+                    trace_id: next_trace_id().to_vec(),
+                    span_id: next_span_id().to_vec(),
                     parent_span_id: vec![],
                     name: cspan.name.clone(),
                     kind: SpanKind::Internal as i32,
@@ -128,7 +147,13 @@ impl NyxTelemetry {
 
     /// Flush & shutdown global tracer provider (safe to call multiple times).
     #[cfg(any(feature = "otlp_exporter", feature = "otlp"))]
-    pub fn shutdown() { /* no-op */ }
+    pub fn shutdown() {
+        // Best-effort flush of captured spans
+        #[cfg(feature = "otlp")]
+        {
+            crate::otlp::force_flush();
+        }
+    }
 
     pub fn test_span() {
         let span = tracing::span!(tracing::Level::INFO, "nyx.stream.send", path_id = 1, cid = "test");

@@ -127,25 +127,29 @@ impl DhtHandle {
 /// Spawn DHT node; returns handle to interact.
 #[cfg(feature = "dht")]
 pub async fn spawn_dht() -> DhtHandle {
-    // Pure Rust DHT implementation - stub for now
+    // Pure Rust DHT implementation - shared in-memory store to simulate network propagation
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+    static GLOBAL_DHT: Lazy<Mutex<HashMap<String, Vec<u8>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
     let (tx, mut rx) = mpsc::channel::<DhtCmd>(32);
     let listen_addr: Multiaddr = "127.0.0.1:0".to_string();
 
     // Background task to handle DHT commands
     tokio::spawn(async move {
-        let mut storage: HashMap<String, Vec<u8>> = HashMap::new();
-        
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 DhtCmd::Put { key, value } => {
-                    storage.insert(key, value);
+                    let mut g = GLOBAL_DHT.lock().unwrap();
+                    g.insert(key, value);
                 }
                 DhtCmd::Get { key, resp } => {
-                    let value = storage.get(&key).cloned();
+                    let g = GLOBAL_DHT.lock().unwrap();
+                    let value = g.get(&key).cloned();
                     let _ = resp.send(value);
                 }
                 DhtCmd::Bootstrap(_addr) => {
-                    // Stub bootstrap implementation
+                    // No-op in shared in-memory model
                 }
             }
         }

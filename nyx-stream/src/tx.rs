@@ -16,41 +16,53 @@ use nyx_telemetry::{inc_hpke_rekey_initiated, inc_hpke_rekey_applied};
 #[cfg(feature = "telemetry")]
 use nyx_telemetry::record_stream_send;
 
-// Minimal fallback when `fec` feature is disabled
+// Compatibility implementation used when the `fec` feature is disabled.
+// Mirrors the public surface and timing semantics of `nyx_fec::timing` so that
+// higher layers behave consistently regardless of the feature flag.
 #[cfg(not(feature = "fec"))]
 mod fec_compat {
     use super::mpsc;
+    use std::f64::consts::PI;
     use tokio::time::{sleep, Duration};
 
+    /// Timing parameters for obfuscation delay.
     #[derive(Clone, Copy, Debug)]
     pub struct TimingConfig {
+        /// Mean delay in milliseconds.
         pub mean_ms: f64,
+        /// Standard deviation of delay in milliseconds.
         pub sigma_ms: f64,
     }
 
     impl Default for TimingConfig {
-        fn default() -> Self { Self { mean_ms: 0.0, sigma_ms: 0.0 } }
+        fn default() -> Self {
+            // Keep defaults aligned with `nyx_fec::timing::TimingConfig` for parity.
+            Self { mean_ms: 20.0, sigma_ms: 10.0 }
+        }
     }
 
+    /// Obfuscated packet wrapper to match FEC timing API.
     #[derive(Clone)]
     pub struct Packet(pub Vec<u8>);
 
+    /// Queue that releases packets after randomized delay.
     pub struct TimingObfuscator {
         in_tx: mpsc::Sender<Packet>,
         out_rx: mpsc::Receiver<Packet>,
     }
 
     impl TimingObfuscator {
+        /// Create a timing obfuscator. When `sigma_ms > 0`, delays are sampled from
+        /// a normal distribution N(mean_ms, sigma_ms). The delay is clamped to >= 0ms.
         pub fn new(cfg: TimingConfig) -> Self {
             let (in_tx, mut in_rx) = mpsc::channel::<Packet>(1024);
             let (out_tx, out_rx) = mpsc::channel::<Packet>(1024);
 
-            // Simple deterministic delay ~= mean_ms (ignores sigma for fallback)
             tokio::spawn(async move {
-                let delay = if cfg.mean_ms <= 0.0 { 0 } else { cfg.mean_ms as u64 };
                 while let Some(pkt) = in_rx.recv().await {
-                    if delay > 0 {
-                        sleep(Duration::from_millis(delay)).await;
+                    let delay_ms = sample_non_negative_normal_ms(cfg.mean_ms, cfg.sigma_ms);
+                    if delay_ms > 0.0 {
+                        sleep(Duration::from_millis(delay_ms as u64)).await;
                     }
                     if out_tx.send(pkt).await.is_err() {
                         break;
@@ -60,8 +72,52 @@ mod fec_compat {
 
             Self { in_tx, out_rx }
         }
+
+        /// Get a clone of the internal sender so producers can enqueue packets.
         pub fn sender(&self) -> mpsc::Sender<Packet> { self.in_tx.clone() }
+
+        /// Receive next obfuscated packet.
         pub async fn recv(&mut self) -> Option<Packet> { self.out_rx.recv().await }
+    }
+
+    /// Sample a non-negative delay in milliseconds from N(mean, sigma).
+    /// Uses the Box-Muller transform with `fastrand` as the RNG backend.
+    fn sample_non_negative_normal_ms(mean_ms: f64, sigma_ms: f64) -> f64 {
+        if sigma_ms <= 0.0 {
+            return mean_ms.max(0.0);
+        }
+        // Box-Muller transform: Z0 ~ N(0,1) from two independent U(0,1].
+        // Clamp u1 away from 0 to avoid ln(0).
+        let u1 = loop {
+            let v = fastrand::f64();
+            if v > f64::MIN_POSITIVE { break v; }
+        };
+        let u2 = fastrand::f64();
+        let z0 = (-2.0_f64 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
+        let sample = mean_ms + z0 * sigma_ms;
+        sample.max(0.0)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use tokio::time::Instant;
+
+        #[tokio::test]
+        async fn delay_not_excessive_for_reasonable_params() {
+            // This is a soft timing check to ensure the compat layer behaves similarly
+            // to the main `nyx_fec` timing implementation.
+            let cfg = TimingConfig { mean_ms: 15.0, sigma_ms: 5.0 };
+            let obf = TimingObfuscator::new(cfg);
+            let start = Instant::now();
+            let tx = obf.sender();
+            let mut rx = obf;
+            // Enqueue a single packet and expect delivery not far beyond ~mean+3*sigma.
+            tx.send(Packet(vec![1, 2, 3])).await.ok();
+            let _ = rx.recv().await.expect("packet should be delivered");
+            let elapsed = start.elapsed().as_millis();
+            assert!(elapsed <= 80, "elapsed {}ms too large", elapsed);
+        }
     }
 }
 

@@ -3262,6 +3262,7 @@ dependencies = [
  "multiaddr",
  "nyx-core",
  "nyx-stream",
+ "once_cell",
  "pasetors",
  "protoc-bin-vendored",
  "rand 0.8.5",
@@ -3387,6 +3388,7 @@ dependencies = [
  "nyx-crypto",
  "nyx-fec",
  "nyx-mix",
+ "nyx-mobile-ffi",
  "nyx-stream",
  "nyx-telemetry",
  "nyx-transport",
@@ -3534,6 +3536,8 @@ dependencies = [
 name = "nyx-stream"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "base64 0.21.7",
  "bitflags 2.9.1",
  "bytes",
  "caps",
@@ -3608,6 +3612,7 @@ dependencies = [
  "criterion",
  "futures",
  "nix 0.27.1",
+ "nom 7.1.3",
  "nyx-core",
  "nyx-mix",
  "nyx-stream",

@@ -44,6 +44,40 @@ impl PacketHandler for LayerPacketHandler {
 }
 use crate::proto::Event;
 
+/// Runtime policy controlling layer behavior under degrade/bypass.
+#[derive(Debug, Clone)]
+struct RuntimePolicy {
+    /// Crypto processing mode
+    crypto_mode: CryptoMode,
+    /// Whether FEC processing is enabled
+    fec_enabled: bool,
+    /// Target FEC redundancy ratio in the range 0.0..=1.0
+    fec_redundancy: f32,
+    /// Whether Mix (anonymity) processing is enabled
+    mix_enabled: bool,
+    /// Restrict stream layer to a single logical stream (reduced functionality)
+    stream_single_mode: bool,
+    /// Power saving hint for cross-layer tuning
+    power_saving: bool,
+}
+
+impl Default for RuntimePolicy {
+    fn default() -> Self {
+        Self {
+            crypto_mode: CryptoMode::Normal,
+            fec_enabled: true,
+            fec_redundancy: 0.30, // Default redundancy ≈30%
+            mix_enabled: true,
+            stream_single_mode: false,
+            power_saving: false,
+        }
+    }
+}
+
+/// Crypto processing mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CryptoMode { Normal, Degraded }
+
 /// Layer integration status
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayerStatus {
@@ -110,6 +144,9 @@ pub struct LayerManager {
     health_monitor_task: Option<tokio::task::JoinHandle<()>>,
     integration_task: Option<tokio::task::JoinHandle<()>>,
     layer_coordination_task: Option<tokio::task::JoinHandle<()>>,
+
+    // Runtime policy toggles (degrade/bypass actual behavior)
+    policy: Arc<RwLock<RuntimePolicy>>,
 }
 
 impl LayerManager {
@@ -205,6 +242,7 @@ impl LayerManager {
             health_monitor_task: None,
             integration_task: None,
             layer_coordination_task: None,
+            policy: Arc::new(RwLock::new(RuntimePolicy::default())),
         })
     }
     
@@ -269,7 +307,11 @@ impl LayerManager {
         
         // Initialize key store and prepare for sessions
         let _crypto = self.crypto_layer.write().await;
-        // crypto.initialize()?; // Placeholder - would initialize actual crypto layer
+        // In a complete implementation, initialize key material, load persisted sessions,
+        // and verify integrity here. For now we ensure the active session map is ready.
+        {
+            let _sessions = self.active_sessions.read().await;
+        }
         
         self.update_layer_status("crypto", LayerStatus::Active).await;
         info!("Crypto layer started successfully");
@@ -292,7 +334,8 @@ impl LayerManager {
         
         // Initialize stream management
         let _stream = self.stream_layer.write().await;
-        // stream.start().await?; // Placeholder - would start actual stream layer
+        // In a complete implementation, boot the stream multiplexer and attach
+        // crypto contexts for per-stream protection. Interfaces are prepared.
         
         self.update_layer_status("stream", LayerStatus::Active).await;
         info!("Stream layer started successfully");
@@ -523,7 +566,7 @@ impl LayerManager {
     }
     
     /// Process data through the complete protocol stack
-    async fn process_data_pipeline(&self) -> Result<()> {
+pub async fn process_data_pipeline(&self) -> Result<()> {
         // Actual data flow: Transport -> FEC -> Crypto -> Stream -> Mix
         debug!("Processing data through complete protocol stack");
         
@@ -569,20 +612,33 @@ impl LayerManager {
     async fn process_fec_layer(&self, data: &[u8]) -> Result<Vec<u8>> {
         debug!("Processing {} bytes through FEC layer", data.len());
         
-        let encoder = self.fec_encoder.read().await;
-        
-        // Add FEC redundancy
-        let mut processed = Vec::with_capacity(data.len() + 32);
-        processed.extend_from_slice(&[0x02, 0x00]); // FEC header
+        let _encoder = self.fec_encoder.read().await;
+
+        // Read current runtime policy
+        let policy = self.policy.read().await.clone();
+
+        // Bypass FEC entirely if disabled
+        if !policy.fec_enabled {
+            let mut processed = Vec::with_capacity(data.len() + 2);
+            processed.extend_from_slice(&[0x02, 0xFF]); // FEC header (bypass marker)
+            processed.extend_from_slice(data);
+            self.update_layer_metrics("fec", data.len() as f64, 0.5).await;
+            return Ok(processed);
+        }
+
+        // Apply redundancy according to policy (simulate parity payload length)
+        let redundancy = policy.fec_redundancy.clamp(0.0, 1.0);
+        let parity_size = ((data.len() as f32) * redundancy).ceil() as usize;
+
+        let mut processed = Vec::with_capacity(data.len() + 2 + parity_size);
+        processed.extend_from_slice(&[0x02, 0x00]); // FEC header (active)
         processed.extend_from_slice(data);
-        
-        // Add Reed-Solomon parity data (simulated)
-        let parity_size = std::cmp::min(32, data.len() / 4);
-        processed.extend(vec![0xAA; parity_size]); // Simulated parity data
-        
-        // Update FEC metrics
-        self.update_layer_metrics("fec", data.len() as f64, 1.5).await;
-        
+        processed.extend(std::iter::repeat(0xAA).take(parity_size));
+
+        // Update FEC metrics (latency scales lightly with redundancy)
+        let fec_latency = 1.0 + (redundancy * 3.0) as f64;
+        self.update_layer_metrics("fec", data.len() as f64, fec_latency).await;
+
         Ok(processed)
     }
     
@@ -591,17 +647,30 @@ impl LayerManager {
         debug!("Processing {} bytes through crypto layer", data.len());
         
         let _crypto = self.crypto_layer.read().await;
-        
-        // Encrypt data (simulated ChaCha20Poly1305)
+
+        // Read current runtime policy
+        let policy = self.policy.read().await.clone();
+
         let mut processed = Vec::with_capacity(data.len() + 28);
-        processed.extend_from_slice(&[0x03, 0x00]); // Crypto header
-        processed.extend_from_slice(&[0x12; 12]); // Nonce (12 bytes)
-        processed.extend_from_slice(data); // Encrypted payload
-        processed.extend_from_slice(&[0x34; 16]); // Auth tag (16 bytes)
-        
-        // Update crypto metrics
-        self.update_layer_metrics("crypto", data.len() as f64, 3.0).await;
-        
+        match policy.crypto_mode {
+            CryptoMode::Normal => {
+                // Simulate authenticated encryption framing
+                processed.extend_from_slice(&[0x03, 0x00]); // Crypto header (secure)
+                processed.extend_from_slice(&[0x12; 12]); // Nonce (12 bytes)
+                processed.extend_from_slice(data); // Payload (encrypted in real path)
+                processed.extend_from_slice(&[0x34; 16]); // Auth tag (16 bytes)
+                // Slightly higher latency than degraded mode
+                self.update_layer_metrics("crypto", data.len() as f64, 3.0).await;
+            }
+            CryptoMode::Degraded => {
+                // Degraded mode: pass-through with explicit insecure marker
+                processed.extend_from_slice(&[0x03, 0xDE]); // Crypto header (degraded)
+                processed.extend_from_slice(data);
+                // Reduced latency but security compromised
+                self.update_layer_metrics("crypto", data.len() as f64, 1.0).await;
+            }
+        }
+
         Ok(processed)
     }
     
@@ -610,40 +679,53 @@ impl LayerManager {
         debug!("Processing {} bytes through stream layer", data.len());
         
         let _stream = self.stream_layer.read().await;
-        
-        // Add stream multiplexing headers
+
+        // Read current runtime policy
+        let policy = self.policy.read().await.clone();
+
+        // Add stream multiplexing headers (single-mode uses fixed ID/seq = 0)
         let mut processed = Vec::with_capacity(data.len() + 8);
-        processed.extend_from_slice(&[0x04, 0x00]); // Stream header
-        processed.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // Stream ID
-        processed.extend_from_slice(&[0x00, 0x01]); // Sequence number
+        processed.extend_from_slice(&[0x04, if policy.stream_single_mode { 0x01 } else { 0x00 }]);
+        if policy.stream_single_mode {
+            processed.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Stream ID = 0
+            processed.extend_from_slice(&[0x00, 0x00]); // Seq = 0
+        } else {
+            processed.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // Stream ID = 1 (demo)
+            processed.extend_from_slice(&[0x00, 0x01]); // Seq = 1
+        }
         processed.extend_from_slice(data);
-        
-        // Update stream metrics
-        self.update_layer_metrics("stream", data.len() as f64, 4.0).await;
-        
+
+        // Reduced latency in single-mode due to simplified scheduling
+        let latency = if policy.stream_single_mode { 2.0 } else { 4.0 };
+        self.update_layer_metrics("stream", data.len() as f64, latency).await;
+
         Ok(processed)
     }
     
     /// Process data through mix layer
     async fn process_mix_layer(&self, data: &[u8]) -> Result<Vec<u8>> {
         debug!("Processing {} bytes through mix layer", data.len());
-        
-        // Add mix routing headers
+
+        let policy = self.policy.read().await.clone();
+
+        if !policy.mix_enabled {
+            // Bypass mix: minimal routing marker, direct forwarding
+            let mut processed = Vec::with_capacity(data.len() + 2);
+            processed.extend_from_slice(&[0x05, 0xFF]); // Mix header (bypass)
+            processed.extend_from_slice(data);
+            self.update_layer_metrics("mix", data.len() as f64, 1.0).await;
+            return Ok(processed);
+        }
+
+        // Normal mix path: include 3-hop routing header (simulated)
         let mut processed = Vec::with_capacity(data.len() + 64);
         processed.extend_from_slice(&[0x05, 0x00]); // Mix header
         processed.extend_from_slice(&[0x03]); // Hop count
-        
-        // Add routing information for 3 hops (simulated)
-        for i in 0..3 {
-            processed.extend_from_slice(&[0x10 + i; 20]); // Node ID (20 bytes each)
-        }
-        
+        for i in 0..3 { processed.extend_from_slice(&[0x10 + i; 20]); }
         processed.extend_from_slice(&[0xFF]); // End of routing header
         processed.extend_from_slice(data);
-        
-        // Update mix metrics
+
         self.update_layer_metrics("mix", data.len() as f64, 8.0).await;
-        
         Ok(processed)
     }
     
@@ -801,33 +883,37 @@ impl LayerManager {
     /// Enable power saving mode across layers
     async fn enable_power_saving_mode(&self) -> Result<()> {
         debug!("Enabling power saving mode");
-        
-        // Reduce processing frequency
-        // Decrease buffer sizes
-        // Lower crypto strength temporarily
-        
+        let mut policy = self.policy.write().await;
+        policy.power_saving = true;
+        // Reduce FEC cost and disable mix to save CPU
+        policy.fec_enabled = true;
+        policy.fec_redundancy = 0.10; // Lower redundancy
+        policy.mix_enabled = false;   // Disable anonymity layer under power saving
+        // Prefer single stream scheduling to reduce CPU context switching
+        policy.stream_single_mode = true;
         Ok(())
     }
     
     /// Enable performance mode across layers
-    async fn enable_performance_mode(&self) -> Result<()> {
+    pub async fn enable_performance_mode(&self) -> Result<()> {
         debug!("Enabling performance mode");
-        
-        // Increase processing frequency
-        // Larger buffers
-        // Parallel processing where possible
-        
+        let mut policy = self.policy.write().await;
+        policy.power_saving = false;
+        // Restore default redundancy and re-enable mix/streams
+        policy.fec_enabled = true;
+        policy.fec_redundancy = 0.30;
+        policy.mix_enabled = true;
+        policy.stream_single_mode = false;
         Ok(())
     }
     
     /// Increase error correction across layers
     async fn increase_error_correction(&self) -> Result<()> {
         debug!("Increasing error correction due to high error rate");
-        
-        // Increase FEC redundancy
-        // Enable retransmissions
-        // Use more robust crypto
-        
+        let mut policy = self.policy.write().await;
+        policy.fec_enabled = true;
+        policy.fec_redundancy = policy.fec_redundancy.max(0.50).min(0.80); // Raise toward 50-80%
+        // Degraded crypto is not changed here; encryption robustness is outside this scope.
         Ok(())
     }
     
@@ -1211,7 +1297,7 @@ impl LayerManager {
     }
     
     /// Degrade crypto layer functionality
-    async fn degrade_crypto_layer(&self) -> Result<()> {
+    pub async fn degrade_crypto_layer(&self) -> Result<()> {
         info!("Degrading crypto layer - reducing security temporarily");
         self.update_layer_status("crypto", LayerStatus::Degraded).await;
         
@@ -1220,28 +1306,39 @@ impl LayerManager {
             let mut sessions = self.active_sessions.write().await;
             sessions.clear();
         }
-        
+        // Switch runtime crypto mode to degraded (pass-through framing)
+        {
+            let mut policy = self.policy.write().await;
+            policy.crypto_mode = CryptoMode::Degraded;
+        }
         Ok(())
     }
     
     /// Degrade FEC layer functionality
-    async fn degrade_fec_layer(&self) -> Result<()> {
+    pub async fn degrade_fec_layer(&self) -> Result<()> {
         info!("Degrading FEC layer - continuing without error correction");
         self.update_layer_status("fec", LayerStatus::Degraded).await;
+        // Disable FEC processing at runtime
+        let mut policy = self.policy.write().await;
+        policy.fec_enabled = false;
         Ok(())
     }
     
     /// Degrade stream layer functionality
-    async fn degrade_stream_layer(&self) -> Result<()> {
+    pub async fn degrade_stream_layer(&self) -> Result<()> {
         info!("Degrading stream layer - falling back to single stream mode");
         self.update_layer_status("stream", LayerStatus::Degraded).await;
+        let mut policy = self.policy.write().await;
+        policy.stream_single_mode = true;
         Ok(())
     }
     
     /// Degrade mix layer functionality
-    async fn degrade_mix_layer(&self) -> Result<()> {
+    pub async fn degrade_mix_layer(&self) -> Result<()> {
         info!("Degrading mix layer - continuing without anonymity");
         self.update_layer_status("mix", LayerStatus::Degraded).await;
+        let mut policy = self.policy.write().await;
+        policy.mix_enabled = false;
         Ok(())
     }
     
@@ -2178,14 +2275,22 @@ impl LayerManager {
     /// Disable FEC temporarily
     async fn disable_fec_temporarily(&self) -> Result<()> {
         info!("Disabling FEC temporarily");
-        // Implementation would bypass FEC encoding/decoding
+        let mut policy = self.policy.write().await;
+        policy.fec_enabled = false;
         Ok(())
     }
     
     /// Enable generic fallback mode
     async fn enable_generic_fallback_mode(&self, layer_name: &str) -> Result<()> {
         info!("Enabling generic fallback mode for layer: {}", layer_name);
-        // Implementation would enable basic functionality only
+        let mut policy = self.policy.write().await;
+        match layer_name {
+            "crypto" => policy.crypto_mode = CryptoMode::Degraded,
+            "fec" => { policy.fec_enabled = true; policy.fec_redundancy = 0.15; },
+            "mix" => policy.mix_enabled = false,
+            "stream" => policy.stream_single_mode = true,
+            _ => { /* no-op */ }
+        }
         Ok(())
     }
 }
@@ -2215,6 +2320,7 @@ impl Clone for LayerManager {
             health_monitor_task: None,
             integration_task: None,
             layer_coordination_task: None,
+            policy: Arc::clone(&self.policy),
         }
     }
 }

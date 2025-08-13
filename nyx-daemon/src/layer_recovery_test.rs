@@ -16,9 +16,9 @@
 /*
 #[cfg(test)]
 mod tests {
-    use crate::layer_manager::{LayerManager, LayerStatus};
+    use nyx_daemon::layer_manager::{LayerManager, LayerStatus};
     use nyx_core::config::NyxConfig;
-    use crate::metrics::MetricsCollector;
+    use nyx_daemon::metrics::MetricsCollector;
     use std::sync::Arc;
     use tokio::sync::broadcast;
 
@@ -228,11 +228,49 @@ mod tests {
 }
 */
 
-// Add a placeholder test to ensure the file compiles
+// Runtime policy integration smoke tests
 #[cfg(test)]
-mod placeholder_tests {
-    #[test]
-    fn test_placeholder() {
-        assert!(true);
+mod runtime_policy_tests {
+    use super::*;
+    use nyx_daemon::layer_manager::{LayerManager, LayerStatus};
+    use nyx_core::config::NyxConfig;
+    use nyx_daemon::metrics::MetricsCollector;
+    use std::sync::Arc;
+    use tokio::sync::broadcast;
+
+    #[tokio::test]
+    async fn degrade_and_bypass_affect_pipeline() {
+        let config = NyxConfig::default();
+        let metrics = Arc::new(MetricsCollector::new());
+        let (event_tx, _) = broadcast::channel(16);
+        let mut mgr = LayerManager::new(config, metrics, event_tx).await.unwrap();
+
+        // Start baseline
+        mgr.start().await.unwrap();
+
+        // Baseline pipeline
+        let normal = mgr.process_data_pipeline().await; // ensure no error in normal path
+        assert!(normal.is_ok());
+
+        // Degrade FEC and confirm pipeline still works
+        mgr.degrade_fec_layer().await.unwrap();
+        assert!(mgr.process_data_pipeline().await.is_ok());
+
+        // Degrade crypto and confirm pipeline still works
+        mgr.degrade_crypto_layer().await.unwrap();
+        assert!(mgr.process_data_pipeline().await.is_ok());
+
+        // Degrade mix and stream
+        mgr.degrade_mix_layer().await.unwrap();
+        mgr.degrade_stream_layer().await.unwrap();
+        assert!(mgr.process_data_pipeline().await.is_ok());
+
+        // System health should reflect degraded state ratio > 0
+        let ratio = mgr.get_degradation_level().await;
+        assert!(ratio > 0.0);
+
+        // Recovery path: enable performance mode to reset policy
+        mgr.enable_performance_mode().await.unwrap();
+        assert!(mgr.process_data_pipeline().await.is_ok());
     }
 }

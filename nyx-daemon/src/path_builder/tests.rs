@@ -203,11 +203,7 @@ async fn test_path_builder_initialization() {
         "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWGrfVU2HUd65qGM9jdnvYTfL5e4DjX1FgZm8R3S4X5K6Z".to_string(),
     ];
     
-    let result = PathBuilder::new(bootstrap_peers, PathBuilderConfig::default()).await;
-    assert!(result.is_ok(), "PathBuilder initialization should succeed");
-    
-    let mut path_builder = result.unwrap();
-    
+    let path_builder = PathBuilder::new(bootstrap_peers, PathBuilderConfig::default());
     // Test starting DHT services
     let start_result = path_builder.start().await;
     assert!(start_result.is_ok(), "PathBuilder start should succeed");
@@ -220,12 +216,9 @@ async fn test_path_building_with_dht() {
         "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWGrfVU2HUd65qGM9jdnvYTfL5e4DjX1FgZm8R3S4X5K6Z".to_string(),
     ];
     
-    let mut path_builder = PathBuilder::new(bootstrap_peers, PathBuilderConfig::default()).await
-        .expect("PathBuilder initialization should succeed");
-    
+    let path_builder = PathBuilder::new(bootstrap_peers, PathBuilderConfig::default());
     // Start DHT services
-    path_builder.start().await
-        .expect("PathBuilder start should succeed");
+    path_builder.start().await.expect("PathBuilder start should succeed");
     
     // Create path request
     let request = PathRequest {

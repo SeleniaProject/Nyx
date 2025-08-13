@@ -50,6 +50,7 @@ impl StreamLayer {
     /// Handle an incoming frame `data` associated with `path_id` and `seq`.
     /// Returns any frames that are now in-order.
     pub fn handle_incoming(&mut self, path_id: u8, seq: u64, data: Vec<u8>) -> Vec<Vec<u8>> {
+        // Stream layer requires strict base=0 ordering across paths for deterministic delivery.
         self.receiver.push(path_id, seq, data)
     }
 }

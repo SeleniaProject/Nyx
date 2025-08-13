@@ -7,7 +7,7 @@ publish = false
 
 [features]
 # Minimal default: core daemon path builder only
-default = ["path-builder", "windows"]
+ default = ["path-builder", "windows"]
 # Path builder no longer pulls in metrics by default; metrics optional
 path-builder = []
 experimental-dht = []
@@ -29,7 +29,7 @@ experimental-all = [
  hybrid = []
  cmix = []
  plugin = []
- low_power = []
+ low_power = ["dep:nyx-mobile-ffi"]
  # Enable Windows API bindings for metrics on Windows builds
  windows = ["dep:windows"]
 
@@ -53,6 +53,7 @@ nyx-control = { path = "../nyx-control" }
 nyx-telemetry = { path = "../nyx-telemetry" }
 nyx-crypto = { path = "../nyx-crypto" }
 nyx-fec = { path = "../nyx-fec" }
+nyx-mobile-ffi = { path = "../nyx-mobile-ffi", optional = true }
 
 # System information for health checks (pure Rust, cross-platform)
 sysinfo = { version = "0.30", default-features = true }

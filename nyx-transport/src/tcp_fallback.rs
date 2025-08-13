@@ -174,28 +174,29 @@ impl TcpEncapListener {
 
     #[instrument(name="tcp_listener_bind_config", skip(port, config), fields(local_port = port))]
     pub async fn bind_with_config(port: u16, config: TcpFallbackConfig) -> std::io::Result<Self> {
-        let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+        let public = std::env::var("NYX_TCP_PUBLIC").ok().map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        let bind_addr = if public { ("0.0.0.0", port) } else { ("127.0.0.1", port) };
+        let listener = TcpListener::bind(bind_addr).await?;
         let (tx, rx) = mpsc::channel::<(SocketAddr, Vec<u8>)>(config.buffer_size);
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let connection_pool = Arc::new(RwLock::new(ConnectionPool::new()));
         
-        let connections_clone = connections.clone();
-        let connection_pool_clone = connection_pool.clone();
-        let config_clone = config.clone();
+        let connections_for_accept = Arc::clone(&connections);
+        let config_for_accept = config.clone();
         
         tokio::spawn(async move {
             loop {
                 match listener.accept().await {
                     Ok((mut stream, addr)) => {
                         // Check connection limits
-                        if connections_clone.read().await.len() >= config_clone.max_connections {
+                        if connections_for_accept.read().await.len() >= config_for_accept.max_connections {
                             warn!("Maximum connections reached, rejecting {}", addr);
                             continue;
                         }
 
-                        // Configure socket options
+                        // Configure socket options. Tokio TcpStream exposes set_nodelay; keepalive configuration
+                        // is platform-specific and not available uniformly on Tokio's wrapper, so we skip it here.
                         let _ = stream.set_nodelay(true);
-                        let _ = stream.set_keepalive(Some(config_clone.keepalive_interval));
                         
                         info!("tcp_fallback: connection from {}", addr);
                         
@@ -212,11 +213,12 @@ impl TcpEncapListener {
                             is_active: true,
                         }));
                         
-                        connections_clone.write().await.insert(addr, stats.clone());
+                        connections_for_accept.write().await.insert(addr, stats.clone());
                         
                         let tx_clone = tx.clone();
                         let stats_clone = stats.clone();
-                        let config_inner = config_clone.clone();
+                        let config_inner = config_for_accept.clone();
+                        let connections_for_task = Arc::clone(&connections_for_accept);
                         
                         tokio::spawn(async move {
                             let mut last_keepalive = Instant::now();
@@ -269,13 +271,13 @@ impl TcpEncapListener {
                             }
                             
                             // Mark connection as inactive
-                            if let Some(stats) = connections_clone.read().await.get(&addr) {
+                            if let Some(stats) = connections_for_task.read().await.get(&addr) {
                                 stats.lock().await.is_active = false;
                             }
                             
                             // Clean up connection
                             tokio::time::sleep(Duration::from_secs(5)).await;
-                            connections_clone.write().await.remove(&addr);
+                            connections_for_task.write().await.remove(&addr);
                             debug!("Cleaned up connection {}", addr);
                             
                         }.instrument(tracing::info_span!("tcp_recv_loop", peer=%addr)));
@@ -286,7 +288,7 @@ impl TcpEncapListener {
         }.instrument(tracing::info_span!("tcp_accept_loop")));
         
         // Spawn cleanup task
-        let connections_cleanup = connections.clone();
+        let connections_cleanup = Arc::clone(&connections);
         let cleanup_interval = config.max_idle_time;
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
@@ -369,7 +371,6 @@ impl TcpEncapConnection {
         };
         
         let _ = stream.set_nodelay(true);
-        let _ = stream.set_keepalive(Some(config.keepalive_interval));
         
         let peer = stream.peer_addr()?;
         info!("tcp_fallback: connected to {}", peer);
@@ -515,8 +516,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_roundtrip() {
-        let _ = tracing_subscriber::fmt::try_init();
-        let listener = TcpEncapListener::bind(4480).await.unwrap();
+        // Initialize tracing subscriber if available in the test environment.
+        #[allow(unused_must_use)]
+        {
+            #[cfg(feature = "test_tracing")]
+            {
+                let _ = tracing_subscriber::fmt::try_init();
+            }
+        }
+        let mut listener = TcpEncapListener::bind(4480).await.unwrap();
         let conn = TcpEncapConnection::connect("127.0.0.1:4480").await.unwrap();
         conn.send(&[1,2,3]).await.unwrap();
         
@@ -554,7 +562,7 @@ mod tests {
             proxy_support: None,
         };
 
-        let listener = TcpEncapListener::bind_with_config(4481, config.clone()).await.unwrap();
+        let mut listener = TcpEncapListener::bind_with_config(4481, config.clone()).await.unwrap();
         let conn = TcpEncapConnection::connect_with_config("127.0.0.1:4481", config).await.unwrap();
         
         assert!(conn.is_active().await);
@@ -562,13 +570,15 @@ mod tests {
         conn.send(&[42]).await.unwrap();
         if let Some((addr, pkt)) = listener.incoming.recv().await {
             assert_eq!(pkt, vec![42]);
-            assert_eq!(addr.port(), conn.peer_addr().port());
+            // Client remote address is ephemeral; ensure server peer addr is the listener port
+            assert_eq!(conn.peer_addr().port(), 4481);
+            assert_ne!(addr.port(), 0);
         }
     }
 
     #[tokio::test]
     async fn test_connection_stats() {
-        let listener = TcpEncapListener::bind(4482).await.unwrap();
+        let mut listener = TcpEncapListener::bind(4482).await.unwrap();
         let conn = TcpEncapConnection::connect("127.0.0.1:4482").await.unwrap();
         
         let initial_stats = conn.get_stats().await;
@@ -652,7 +662,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bidirectional_communication() {
-        let listener = TcpEncapListener::bind(4485).await.unwrap();
+        let mut listener = TcpEncapListener::bind(4485).await.unwrap();
         let conn = TcpEncapConnection::connect("127.0.0.1:4485").await.unwrap();
         
         // Send from client to server

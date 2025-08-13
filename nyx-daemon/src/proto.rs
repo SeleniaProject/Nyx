@@ -612,6 +612,8 @@ pub trait NyxControl: Send + Sync + 'static {
     async fn subscribe_stats(&self, request: Empty) -> Result<Vec<StatsUpdate>, String>;
     async fn update_config(&self, request: ConfigRequest) -> Result<ConfigResponse, String>;
     async fn reload_config(&self, request: Empty) -> Result<ConfigResponse, String>;
+    async fn receive_data(&self, request: StreamId) -> Result<ReceiveResponse, String>;
+    async fn send_data(&self, request: DataRequest) -> Result<DataResponse, String>;
 }
 
 /// gRPC エラーコード変換ポリシー

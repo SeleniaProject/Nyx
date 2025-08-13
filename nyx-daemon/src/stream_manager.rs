@@ -19,7 +19,7 @@ use nyx_transport::{Transport};
 use nyx_stream::egress_zero_copy::spawn_zero_copy_egress;
 use crate::path_builder::PathBuilder;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -29,6 +29,7 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
+use redb::{Database, TableDefinition};
 
 /// Stream-related errors
 #[derive(Debug, thiserror::Error)]
@@ -215,6 +216,8 @@ pub struct StreamManager {
     // Zero-copy egress channels and tasks keyed by path_id
     egress_senders: Arc<DashMap<u32, mpsc::Sender<Vec<u8>>>>,
     egress_tasks: Arc<DashMap<u32, tokio::task::JoinHandle<()>>>,
+    // Inbound data buffers per stream (FIFO of chunks)
+    incoming_buffers: Arc<DashMap<u32, VecDeque<Vec<u8>>>>,
     
     // Metrics collection
     metrics: Arc<crate::metrics::MetricsCollector>,
@@ -252,6 +255,8 @@ impl Default for PathScheduler {
 }
 
 impl StreamManager {
+    /// Maximum number of buffered inbound chunks per stream to prevent unbounded memory growth
+    const MAX_INCOMING_QUEUE_CHUNKS: usize = 1024;
     /// Create a new stream manager
     pub async fn new(
         transport: Arc<Transport>,
@@ -274,6 +279,7 @@ impl StreamManager {
             active_paths: Arc::new(DashMap::new()),
             egress_senders: Arc::new(DashMap::new()),
             egress_tasks: Arc::new(DashMap::new()),
+            incoming_buffers: Arc::new(DashMap::new()),
             metrics,
             next_stream_id: std::sync::atomic::AtomicU32::new(1),
             event_tx,
@@ -282,9 +288,80 @@ impl StreamManager {
             _monitoring_task: None,
         })
     }
+
+    /// Enqueue inbound data chunk for a stream.
+    pub async fn enqueue_incoming(&self, stream_id: u32, data: Vec<u8>) -> Result<(), StreamError> {
+        // Update per-stream session stats
+        if let Some(mut entry) = self.streams.get_mut(&stream_id) {
+            entry.bytes_received = entry
+                .bytes_received
+                .saturating_add(data.len() as u64);
+            entry.packets_received = entry.packets_received.saturating_add(1);
+            entry.last_activity = SystemTime::now();
+        } else {
+            return Err(StreamError::StreamNotFound { stream_id });
+        }
+
+        // Push into FIFO buffer
+        let mut_q = self
+            .incoming_buffers
+            .entry(stream_id)
+            .or_insert_with(|| VecDeque::new());
+        // Apply simple bounding: keep the most recent items if the queue grows too large
+        if mut_q.len() >= Self::MAX_INCOMING_QUEUE_CHUNKS {
+            let _ = mut_q.pop_front();
+        }
+        mut_q.push_back(data);
+
+        // Emit stream event
+        let _ = self.event_tx.send(Event {
+            timestamp: Some(crate::proto::Timestamp::now()),
+            event_type: "stream".to_string(),
+            data: vec![
+                ("stream_id".to_string(), stream_id.to_string()),
+                ("action".to_string(), "data_received".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            event_data: None,
+            r#type: "stream".to_string(),
+            detail: "data_received".to_string(),
+            severity: "info".to_string(),
+            attributes: HashMap::new(),
+        });
+        Ok(())
+    }
+
+    /// Read up to `max_bytes` from inbound buffer for a stream.
+    pub async fn read_incoming(&self, stream_id: u32, max_bytes: usize) -> Result<(Vec<u8>, bool), StreamError> {
+        let mut out = Vec::with_capacity(max_bytes);
+        let mut more = false;
+
+        if let Some(mut entry) = self.incoming_buffers.get_mut(&stream_id) {
+            while let Some(chunk) = entry.front() {
+                if out.len() + chunk.len() > max_bytes {
+                    // Not enough room for next chunk
+                    more = true;
+                    break;
+                }
+                let c = entry.pop_front().unwrap();
+                out.extend_from_slice(&c);
+            }
+            more |= !entry.is_empty();
+            Ok((out, more))
+        } else {
+            Ok((Vec::new(), false))
+        }
+    }
     
-    /// Get bootstrap peers from environment or configuration
+    /// Get bootstrap peers from persistent store, environment or configuration
     fn get_bootstrap_peers() -> Vec<String> {
+        // 1) Try persistent store (redb) first
+        if let Some(mut v) = Self::load_bootstrap_peers_from_store() {
+            if !v.is_empty() {
+                return v;
+            }
+        }
         // Check environment variable first
         if let Ok(peers_str) = std::env::var("NYX_BOOTSTRAP_PEERS") {
             return peers_str.split(',')
@@ -302,11 +379,44 @@ impl StreamManager {
         }
         
         // Fallback to known Nyx network peers (converted from multiaddr format)
-        vec![
+        let defaults = vec![
             "validator1.nymtech.net:1789".to_string(),
             "validator2.nymtech.net:1789".to_string(),
             "testnet-validator1.nymtech.net:1789".to_string(),
-        ]
+        ];
+        // Save defaults for future runs
+        let _ = Self::save_bootstrap_peers_to_store(&defaults);
+        defaults
+    }
+
+    /// Load bootstrap peers from redb store
+    fn load_bootstrap_peers_from_store() -> Option<Vec<String>> {
+        static TABLE: TableDefinition<&str, &str> = TableDefinition::new("bootstrap");
+        let db_path = std::env::var("NYX_BOOTSTRAP_DB").unwrap_or_else(|_| "nyx_bootstrap.redb".to_string());
+        let db = match Database::open(db_path) { Ok(db) => db, Err(_) => return None };
+        let rtx = match db.begin_read() { Ok(tx) => tx, Err(_) => return None };
+        let table = match rtx.open_table(TABLE) { Ok(t) => t, Err(_) => return None };
+        if let Ok(Some(val)) = table.get("list") {
+            if let Ok(json) = serde_json::from_str::<Vec<String>>(val.value()) {
+                return Some(json);
+            }
+        }
+        None
+    }
+
+    /// Save bootstrap peers to redb store
+    fn save_bootstrap_peers_to_store(peers: &[String]) -> Option<()> {
+        static TABLE: TableDefinition<&str, &str> = TableDefinition::new("bootstrap");
+        let db_path = std::env::var("NYX_BOOTSTRAP_DB").unwrap_or_else(|_| "nyx_bootstrap.redb".to_string());
+        let db = Database::create(db_path).ok()?;
+        let wtx = db.begin_write().ok()?;
+        {
+            let mut table = wtx.open_table(TABLE).or_else(|_| wtx.create_table(TABLE)).ok()?;
+            let json = serde_json::to_string(peers).ok()?;
+            table.insert("list", json.as_str()).ok()?;
+        }
+        let _ = wtx.commit().ok()?;
+        Some(())
     }
     
     /// Start the stream manager
@@ -328,6 +438,92 @@ impl StreamManager {
         // In a real scenario, you might use a Mutex or other interior mutability pattern
         // For now, we just let them run.
         let _ = (cleanup_task, monitoring_task);
+    }
+
+    /// List remote socket addresses of all active paths across streams.
+    pub fn list_active_path_addrs(&self) -> Vec<SocketAddr> {
+        let mut out = Vec::new();
+        for entry in self.active_paths.iter() {
+            if let Some(addr) = entry.value().socket_addr {
+                out.push(addr);
+            }
+        }
+        out
+    }
+
+    /// Route an incoming UDP datagram to the appropriate stream based on source address.
+    ///
+    /// This performs a linear scan over active streams and their paths to locate a
+    /// path whose remote socket address matches the datagram source. On match, the
+    /// payload is enqueued into that stream's inbound FIFO buffer.
+    pub async fn route_incoming(&self, src: SocketAddr, data: &[u8]) -> Result<(), StreamError> {
+        // Fast-path: find a session whose any path has the same remote address
+        let mut matched_stream_id: Option<u32> = None;
+        for entry in self.streams.iter() {
+            let session = entry.value();
+            if session.paths.iter().any(|p| p.socket_addr == Some(src)) {
+                matched_stream_id = Some(session.stream_id);
+                break;
+            }
+        }
+
+        if let Some(stream_id) = matched_stream_id {
+            // Enqueue to the stream buffer
+            let _ = self.enqueue_incoming(stream_id, data.to_vec()).await?;
+        } else {
+            // No stream matched this source; drop silently but log at debug level
+            debug!("dropping inbound datagram from {} (no matching stream)", src);
+        }
+        Ok(())
+    }
+
+    /// Send data over an active path of the stream. Updates statistics on success.
+    pub async fn send_data(&self, stream_id: u32, data: Vec<u8>) -> Result<u64> {
+        // Find stream session
+        let mut session = self
+            .streams
+            .get_mut(&stream_id)
+            .ok_or_else(|| anyhow::anyhow!(StreamError::StreamNotFound { stream_id }))?;
+
+        // Choose an active path with a resolved socket address
+        let target_addr = session
+            .paths
+            .iter()
+            .find(|p| p.status == PathStatus::Active && p.socket_addr.is_some())
+            .and_then(|p| p.socket_addr)
+            .ok_or_else(|| anyhow::anyhow!(StreamError::Configuration(
+                "No active path with a valid address".to_string(),
+            )))?;
+
+        // Send via transport
+        self.transport
+            .send(target_addr, &data)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        // Update statistics
+        session.bytes_sent = session.bytes_sent.saturating_add(data.len() as u64);
+        session.packets_sent = session.packets_sent.saturating_add(1);
+        session.last_activity = SystemTime::now();
+
+        // Emit event
+        let _ = self.event_tx.send(Event {
+            timestamp: Some(crate::proto::Timestamp::now()),
+            event_type: "stream".to_string(),
+            data: vec![
+                ("stream_id".to_string(), stream_id.to_string()),
+                ("action".to_string(), "data_sent".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            event_data: None,
+            r#type: "stream".to_string(),
+            detail: "data_sent".to_string(),
+            severity: "info".to_string(),
+            attributes: HashMap::new(),
+        });
+
+        Ok(data.len() as u64)
     }
     
     /// Open a new stream with complete implementation
@@ -712,9 +908,16 @@ impl StreamManager {
     /// Validate a network path
     async fn validate_path(&self, stream_id: u32, path_id: u32) -> Result<(), StreamError> {
         // Path validation logic would go here
-        // For now, just return success
+        // For now, mark the path as Active and register it into active_paths
         debug!("Validating path {} for stream {}", path_id, stream_id);
-        Ok(())
+        if let Some(mut entry) = self.streams.get_mut(&stream_id) {
+            if let Some(path) = entry.paths.iter_mut().find(|p| p.path_id == path_id) {
+                path.status = PathStatus::Active;
+                self.active_paths.insert(path_id, path.clone());
+                return Ok(());
+            }
+        }
+        Err(StreamError::StreamNotFound { stream_id })
     }
     
     /// Build StreamStats from session

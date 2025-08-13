@@ -22,7 +22,7 @@ pub mod resource_manager;
 pub mod plugin;
 #[cfg(feature = "plugin")]
 mod plugin_ipc;
-#[cfg(feature = "plugin")]
+// Always compile plugin_frame with internal cfgs so non-plugin builds can still parse/validate types minimally
 pub mod plugin_frame;
 #[cfg(feature = "plugin")]
 pub mod plugin_handshake;
@@ -88,9 +88,11 @@ pub use error_handler::{StreamErrorHandler, ErrorContext, ErrorCategory, ErrorSe
 pub use resource_manager::{ResourceManager, ResourceInfo, ResourceType, ResourceError, ResourceLimits, ResourceStats};
 #[cfg(feature = "plugin")]
 pub use plugin::PluginHeader;
-#[cfg(feature = "plugin")]
+// Export plugin frame utilities for both plugin and non-plugin builds.
 pub use plugin_frame::{PluginFrameProcessor, PluginFrameResult, PluginFrameError, ParsedPluginFrame, 
-                      build_plugin_frame, validate_plugin_frame_type, PLUGIN_FRAME_TYPE_MIN, PLUGIN_FRAME_TYPE_MAX};
+                      validate_plugin_frame_type, PLUGIN_FRAME_TYPE_MIN, PLUGIN_FRAME_TYPE_MAX};
+#[cfg(feature = "plugin")]
+pub use plugin_frame::build_plugin_frame;
 #[cfg(feature = "plugin")]
 pub use plugin_handshake::{PluginHandshakeCoordinator, HandshakeResult, PluginHandshakeError};
 #[cfg(feature = "plugin")]

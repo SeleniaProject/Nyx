@@ -475,7 +475,8 @@ impl MultipathManager {
     /// Create new multipath manager with configuration
     pub fn new(config: MultipathConfig) -> Self {
         let mut scheduler = WrrScheduler::new();
-    scheduler.set_fairness_entropy_floor(config.fairness_entropy_floor);
+        // Synchronize fairness entropy floor from configuration
+        scheduler.set_fairness_entropy_floor(config.fairness_entropy_floor);
         // If external higher-level config (nyx-core) provided a fairness floor via env or other wiring,
         // caller may mutate after construction; here we just leave default.
         Self {
@@ -550,6 +551,8 @@ impl MultipathManager {
                 self.scheduler.update_weight(*path_id, 1);
             }
         }
+        // Ensure scheduler reflects latest configured fairness entropy floor
+        self.scheduler.set_fairness_entropy_floor(self.config.fairness_entropy_floor);
         // Fairness entropy floor could be updated dynamically via external config reload; ensure scheduler reflects it
         #[cfg(feature="dynamic_config")]
         {
@@ -558,6 +561,14 @@ impl MultipathManager {
         }
 
         self.scheduler.select_path()
+    }
+
+    /// Update the configured fairness entropy floor and apply it to the scheduler immediately.
+    /// The value is clamped to [0.0, 1.0].
+    pub fn set_fairness_entropy_floor(&mut self, floor: f64) {
+        let clamped = floor.clamp(0.0, 1.0);
+        self.config.fairness_entropy_floor = clamped;
+        self.scheduler.set_fairness_entropy_floor(clamped);
     }
 
     /// Process received packet with reordering
