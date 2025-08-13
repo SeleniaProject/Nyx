@@ -273,6 +273,8 @@ impl NyxError {
             NyxError::Protocol { code: None, message } if message.contains("UNSUPPORTED_CAP") => Some(0x07),
             // Internal maps to INTERNAL_ERROR (0x06)
             NyxError::Internal { .. } => Some(0x06),
+            // Unimplemented maps to HTTP 501; surface as 0x501 for uniform handling across transports
+            NyxError::Protocol { code: None, message } if message.to_ascii_lowercase().contains("unimplemented") => Some(0x501),
             // Timeout / Network: typically no close frame mapping (transport-level) → None
             _ => None,
         }
@@ -473,6 +475,7 @@ impl From<tonic::transport::Error> for NyxError {
 pub fn close_code_category(code: u16) -> &'static str {
     match code {
         0x07 => "FailedPrecondition",
+        0x501 => "Unimplemented",
         0x10..=0x1F => "PermissionDenied",
         0x20..=0x2F => "ResourceExhausted",
         _ => "Unknown",

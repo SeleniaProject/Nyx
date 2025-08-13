@@ -443,10 +443,17 @@ impl DhtPeerDiscovery {
         if let Some(data) = self.dht_client.get(&format!("region:{}", region)).await {
             if let Ok(ids) = serde_json::from_slice::<Vec<String>>(&data) {
                 let mut out = Vec::new();
+                let mut cleaned_ids: Vec<String> = Vec::with_capacity(ids.len());
                 for id in ids {
                     if let Some(raw) = self.dht_client.get(&format!("peer:{}", id)).await {
-                        if let Ok(p) = self.parse_peer_data(&raw) { out.push(p); }
+                        if let Ok(p) = self.parse_peer_data(&raw) { out.push(p); cleaned_ids.push(id); }
                     }
+                }
+                // Write back pruned list if needed
+                if cleaned_ids.len() < out.len() {
+                    let dht = self.dht_client.clone();
+                    let key = format!("region:{}", region.to_string());
+                    if let Ok(buf) = serde_json::to_vec(&cleaned_ids) { tokio::spawn(async move { let _ = dht.put(&key, buf).await; }); }
                 }
                 return out;
             }
@@ -457,10 +464,16 @@ impl DhtPeerDiscovery {
         if let Some(data) = self.dht_client.get(&format!("cap:{}", capability)).await {
             if let Ok(ids) = serde_json::from_slice::<Vec<String>>(&data) {
                 let mut out = Vec::new();
+                let mut cleaned_ids: Vec<String> = Vec::with_capacity(ids.len());
                 for id in ids {
                     if let Some(raw) = self.dht_client.get(&format!("peer:{}", id)).await {
-                        if let Ok(p) = self.parse_peer_data(&raw) { out.push(p); }
+                        if let Ok(p) = self.parse_peer_data(&raw) { out.push(p); cleaned_ids.push(id); }
                     }
+                }
+                if cleaned_ids.len() < out.len() {
+                    let dht = self.dht_client.clone();
+                    let key = format!("cap:{}", capability.to_string());
+                    if let Ok(buf) = serde_json::to_vec(&cleaned_ids) { tokio::spawn(async move { let _ = dht.put(&key, buf).await; }); }
                 }
                 return out;
             }
@@ -477,11 +490,27 @@ impl DhtPeerDiscovery {
             let cache = self.peer_cache.lock().unwrap();
             for (_k, v) in cache.iter() { seen.insert(v.peer.region.clone()); }
         }
-        for region in seen.clone() { if let Some(data) = self.dht_client.get(&format!("region:{}", region)).await { if let Ok(ids)=serde_json::from_slice::<Vec<String>>(&data){ for id in ids { all_ids.insert(id); } } } }
+        for region in seen.clone() {
+            if let Some(data) = self.dht_client.get(&format!("region:{}", region)).await {
+                if let Ok(ids)=serde_json::from_slice::<Vec<String>>(&data){
+                    let mut cleaned: Vec<String> = Vec::new();
+                    for id in ids { if self.dht_client.get(&format!("peer:{}", id)).await.is_some() { all_ids.insert(id.clone()); cleaned.push(id); } }
+                    let dht = self.dht_client.clone(); let key = format!("region:{}", region);
+                    if let Ok(buf) = serde_json::to_vec(&cleaned) { tokio::spawn(async move { let _ = dht.put(&key, buf).await; }); }
+                }
+            }
+        }
         // fallback: try a small list of common regions if empty
         if all_ids.is_empty() {
             for region in ["north_america","europe","asia_pacific","local","global"] {
-                if let Some(data) = self.dht_client.get(&format!("region:{}", region)).await { if let Ok(ids)=serde_json::from_slice::<Vec<String>>(&data){ for id in ids { all_ids.insert(id); } } }
+                if let Some(data) = self.dht_client.get(&format!("region:{}", region)).await {
+                    if let Ok(ids)=serde_json::from_slice::<Vec<String>>(&data){
+                        let mut cleaned: Vec<String> = Vec::new();
+                        for id in ids { if self.dht_client.get(&format!("peer:{}", id)).await.is_some() { all_ids.insert(id.clone()); cleaned.push(id); } }
+                        let dht = self.dht_client.clone(); let key = format!("region:{}", region);
+                        if let Ok(buf) = serde_json::to_vec(&cleaned) { tokio::spawn(async move { let _ = dht.put(&key, buf).await; }); }
+                    }
+                }
             }
         }
         // fetch peer objects
@@ -3698,10 +3727,38 @@ impl PathBuilder {
         _target: &str,
         hops: u32,
     ) -> anyhow::Result<(Vec<NodeId>, PathQuality)> {
-        let candidates = self.get_filtered_candidates(|node| {
+        let mut candidates = self.get_filtered_candidates(|node| {
             node.location.is_some() &&
             node.reliability_score >= self.config.min_reliability_threshold
         }).await;
+        // Boost geodiversity preference dynamically based on recent stats
+        {
+            if let Ok(mut w) = self.quality_evaluator.weights.lock() {
+                let stats = self.recent_net_stats.lock().unwrap().clone();
+                // 多様性不足時に weight を強化 (最大 +0.15)
+                let shortage = (1.0 - stats.avg_geographic_diversity).clamp(0.0, 1.0);
+                w.diversity_weight = (w.diversity_weight + 0.15 * shortage).min(0.5);
+                // 全体正規化
+                let total = w.latency_weight + w.bandwidth_weight + w.reliability_weight + w.diversity_weight + w.load_weight;
+                w.latency_weight /= total; w.bandwidth_weight /= total; w.reliability_weight /= total; w.diversity_weight /= total; w.load_weight /= total;
+            }
+        }
+        // Region over-concentration suppression: stable-sort by ascending per-region count
+        {
+            let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for n in &candidates { *counts.entry(n.region.clone()).or_insert(0) += 1; }
+            candidates.sort_by(|a,b| counts.get(&a.region).unwrap_or(&0).cmp(counts.get(&b.region).unwrap_or(&0)));
+        }
+        // 動的しきい値: 多様性不足の場合は距離しきい値/地域上限を引き上げる
+        let (dynamic_min_km, dynamic_max_hops_per_region) = {
+            let stats = self.recent_net_stats.lock().unwrap().clone();
+            let shortage = (1.0 - stats.avg_geographic_diversity).clamp(0.0, 1.0);
+            let base_km = self.geographic_builder.diversity_config.min_distance_km;
+            let boosted_km = base_km * (1.0 + 0.5 * shortage); // 最大 +50%
+            let base_max = self.geographic_builder.diversity_config.max_hops_per_region;
+            let boosted_max = if shortage > 0.5 && base_max > 1 { base_max - 1 } else { base_max };
+            (boosted_km, boosted_max)
+        };
         
         if candidates.len() < hops as usize {
             return Err(anyhow::anyhow!("Insufficient candidates with location data"));
@@ -3709,7 +3766,59 @@ impl PathBuilder {
         
         // Use the geographic path builder for intelligent selection
         let target_node_id = [0u8; 32]; // Would parse from target string
-        let selected_hops = self.geographic_builder.build_diverse_path(target_node_id, hops, &candidates).await?;
+        let selected_hops = {
+            // ヘルパー実装: 与えた cfg で選定するローカル関数
+            async fn build_with_cfg(
+                builder: &GeographicPathBuilder,
+                cfg: &DiversityConfig,
+                target: NodeId,
+                hops: u32,
+                candidates: &[NetworkNode]
+            ) -> Result<Vec<NodeId>, anyhow::Error> {
+                // 以降は既存 build_diverse_path ロジックを踏襲しつつ cfg を参照
+                let located: Vec<&NetworkNode> = candidates.iter().filter(|n| n.location.is_some()).collect();
+                if located.len() < hops as usize { return Err(anyhow::anyhow!("Insufficient candidates with location data")); }
+                let mut selected_nodes = Vec::new(); let mut used = std::collections::HashSet::new(); let mut locs = Vec::new();
+                let preferred: Vec<&NetworkNode> = located.iter().filter(|n| cfg.preferred_regions.contains(&n.region)).cloned().collect();
+                let start = if !preferred.is_empty() { preferred } else { located.clone() };
+                if let Some(first) = start.choose(&mut thread_rng()) { selected_nodes.push(first.node_id); used.insert(first.node_id); if let Some(l)=first.location{locs.push(l);} }
+                for _ in 1..hops {
+                    let mut best: Option<&NetworkNode> = None; let mut best_score = f64::NEG_INFINITY;
+                    let mut region_counts: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+                    for id in &selected_nodes { if let Some(nn) = candidates.iter().find(|n| n.node_id==*id) { *region_counts.entry(nn.region.as_str()).or_insert(0) += 1; } }
+            for cand in &located {
+                        if used.contains(&cand.node_id) { continue; }
+                        let rc = *region_counts.get(cand.region.as_str()).unwrap_or(&0);
+                        if rc >= cfg.max_hops_per_region { continue; }
+                        let loc = cand.location.unwrap();
+                        let min_d = locs.iter().map(|l| builder.location_service.calculate_distance(*l, loc)).fold(f64::INFINITY, f64::min);
+                        if min_d < cfg.min_distance_km { continue; }
+                let mut score = builder.path_optimizer.calculate_node_score(cand);
+                // Prefer uncovered regions and preferred regions that are not yet included
+                let is_uncovered = !region_counts.contains_key(cand.region.as_str());
+                if is_uncovered { score += 0.15; }
+                if cfg.preferred_regions.contains(&cand.region) && is_uncovered { score += 0.10; }
+                        if score > best_score { best = Some(cand); best_score = score; }
+                    }
+                    if let Some(sel) = best { selected_nodes.push(sel.node_id); used.insert(sel.node_id); if let Some(l)=sel.location { locs.push(l); } }
+                }
+                if !selected_nodes.contains(&target) { selected_nodes.push(target); }
+                Ok(selected_nodes)
+            }
+            // Recompute preferred regions dynamically: prioritize regions with fewer candidates first
+            let mut region_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for n in &candidates { *region_counts.entry(n.region.clone()).or_insert(0) += 1; }
+            let mut dynamic_pref: Vec<(String, usize)> = region_counts.into_iter().collect();
+            dynamic_pref.sort_by(|a,b| a.1.cmp(&b.1));
+            let dynamic_pref_list: Vec<String> = dynamic_pref.into_iter().map(|(r,_)| r).collect();
+            let tmp_cfg = DiversityConfig {
+                min_distance_km: dynamic_min_km,
+                max_hops_per_region: dynamic_max_hops_per_region,
+                preferred_regions: if dynamic_pref_list.is_empty() { self.geographic_builder.diversity_config.preferred_regions.clone() } else { dynamic_pref_list },
+                diversity_weight: self.geographic_builder.diversity_config.diversity_weight,
+            };
+            build_with_cfg(&self.geographic_builder, &tmp_cfg, target_node_id, hops, &candidates).await?
+        };
         
         let quality = self.calculate_path_quality(&selected_hops, &candidates).await;
         Ok((selected_hops, quality))
@@ -3804,7 +3913,8 @@ impl PathBuilder {
     {
         let graph = self.network_graph.read().await;
         let mandatory = self.capability_catalog.mandatory().clone();
-        graph
+        let optional = self.capability_catalog.optional().clone();
+        let mut nodes: Vec<NetworkNode> = graph
             .node_weights()
             .filter(|node| {
                 if !predicate(node) { return false; }
@@ -3814,7 +3924,22 @@ impl PathBuilder {
                 true
             })
             .cloned()
-            .collect()
+            .collect();
+        // Soft-prefer nodes matching optional capabilities and spread regions
+        if !nodes.is_empty() {
+            let mut region_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+            nodes.sort_by(|a, b| {
+                let a_opt = optional.iter().filter(|c| a.supported_features.contains(*c)).count() as i32;
+                let b_opt = optional.iter().filter(|c| b.supported_features.contains(*c)).count() as i32;
+                // Region spread: slightly prefer first-seen regions
+                let a_spread = if region_seen.contains(&a.region) { 0 } else { 1 };
+                let b_spread = if region_seen.contains(&b.region) { 0 } else { 1 };
+                (b_opt*2 + b_spread).cmp(&(a_opt*2 + a_spread))
+            });
+            // Mark regions encountered to guide stable sort preference
+            for n in &nodes { region_seen.insert(n.region.clone()); }
+        }
+        nodes
     }
     
     /// Calculate path quality metrics
@@ -3983,15 +4108,9 @@ impl PathBuilder {
     
     /// Update network topology from DHT peers
     async fn update_network_topology_from_dht_peers(&self, peers: Vec<crate::proto::PeerInfo>) -> anyhow::Result<()> {
-        let mut graph = self.network_graph.write().await;
-        let mut node_map = self.node_index_map.write().await;
-        let mut candidates = self.candidates.write().await;
-        
-        // Clear existing data
-        graph.clear();
-        node_map.clear();
-        candidates.clear();
-        
+        // Prepare nodes outside of locks to avoid awaiting while holding write guards
+        let loc_svc = &self.geographic_builder.location_service;
+        let mut prepared: Vec<(NodeId, NetworkNode, Candidate)> = Vec::new();
         for peer in peers {
             // Convert DHT peer info to network node
             let mut node_id = [0u8; 32];
@@ -4003,10 +4122,12 @@ impl PathBuilder {
                 let p = part.trim();
                 if !p.is_empty() { features.insert(p.to_string()); }
             }
+            // Best-effort location inference for geographic diversity scoring
+            let inferred_location = loc_svc.get_location(&peer.address).await;
             let node = NetworkNode {
                 node_id,
                 address: peer.address.clone(),
-                location: None, // Would be populated from actual location data
+                location: inferred_location,
                 region: peer.region.clone(),
                 latency_ms: peer.latency_ms,
                 bandwidth_mbps: peer.bandwidth_mbps,
@@ -4017,15 +4138,24 @@ impl PathBuilder {
                 supported_features: features,
                 reputation_score: 0.8, // Default value
             };
-            
-            let index = graph.add_node(node.clone());
-            node_map.insert(node_id, index);
-            
-            candidates.push(Candidate {
-                id: node_id,
-                latency_ms: node.latency_ms,
-                bandwidth_mbps: node.bandwidth_mbps,
-            });
+            let cand = Candidate { id: node_id, latency_ms: node.latency_ms, bandwidth_mbps: node.bandwidth_mbps };
+            prepared.push((node_id, node, cand));
+        }
+        
+        // Update graph and indices under write locks
+        let mut graph = self.network_graph.write().await;
+        let mut node_map = self.node_index_map.write().await;
+        let mut candidates = self.candidates.write().await;
+        
+        // Clear existing data
+        graph.clear();
+        node_map.clear();
+        candidates.clear();
+        
+        for (id, node, cand) in prepared {
+            let index = graph.add_node(node);
+            node_map.insert(id, index);
+            candidates.push(cand);
         }
         
         // Add edges between nodes based on network topology

@@ -40,6 +40,7 @@ pub struct QuicEndpoint {
 #[cfg(not(feature = "quic"))]
 impl QuicEndpoint {
     pub async fn bind(_port: u16) -> anyhow::Result<Self> {
+        // Stub endpoint returns an empty channel; upstream must handle feature gating.
         let (_tx, rx) = tokio::sync::mpsc::channel(1024);
         Ok(Self { incoming: rx })
     }

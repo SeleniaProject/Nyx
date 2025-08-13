@@ -39,6 +39,11 @@ pub const SIMD_ACCEL_ENABLED: bool = true;
 #[cfg(not(feature = "simd"))]
 pub const SIMD_ACCEL_ENABLED: bool = false;
 
+/// Return a human-readable runtime description for FEC backend.
+pub fn fec_backend_description() -> &'static str {
+    if SIMD_ACCEL_ENABLED { "SIMD-accelerated (no-std C backend)" } else { "Pure Rust (portable)" }
+}
+
 /// Nyx FEC codec.
 pub struct NyxFec {
     rs: ReedSolomon, // GF(2^8) codec

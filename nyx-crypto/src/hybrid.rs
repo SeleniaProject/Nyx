@@ -117,7 +117,12 @@ impl HybridSecretKey {
 
     /// Expose public key for handshake composition (不変借用のみ)
     pub fn public(&self) -> HybridPublicKey {
-    HybridPublicKey { x25519_pk: self.x25519_sk, pq_pk: self.pq_pk_public.clone(), algorithm: self.algorithm }
+        // Expose the cached public components; never leak secret bytes
+        HybridPublicKey {
+            x25519_pk: self.x25519_pk_public,
+            pq_pk: self.pq_pk_public.clone(),
+            algorithm: self.algorithm,
+        }
     }
 }
 
@@ -196,10 +201,11 @@ pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiph
     use hkdf::Hkdf;
     use sha2::Sha512;
 
-    // X25519 placeholder shared secret derivation (hash of static public + ephemeral public)
+    // X25519 ECDH: ephemeral (this side) × remote static public
     let x25519_ephemeral = EphemeralSecret::random_from_rng(OsRng);
     let x25519_ephemeral_public = PublicKey::from(&x25519_ephemeral);
-    use blake3::Hasher; let mut h=Hasher::new(); h.update(&public_key.x25519_pk); h.update(x25519_ephemeral_public.as_bytes()); let x25519_shared_hash = h.finalize();
+    let remote_pub = PublicKey::from(public_key.x25519_pk);
+    let x25519_shared = x25519_ephemeral.diffie_hellman(&remote_pub);
 
     // Post-quantum encapsulation
     let (pq_shared_secret, pq_ciphertext) = match public_key.algorithm {
@@ -225,7 +231,7 @@ pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiph
 
     // Combine shared secrets using HKDF-Extract with SHA-512
     let mut combined_input = Vec::new();
-    combined_input.extend_from_slice(x25519_shared_hash.as_bytes());
+    combined_input.extend_from_slice(x25519_shared.as_bytes());
     combined_input.extend_from_slice(&pq_shared_secret);
 
     let (_, hkdf) = Hkdf::<Sha512>::extract(None, &combined_input);
@@ -255,7 +261,7 @@ pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiph
 /// * `Ok(shared_secret)` - The 64-byte shared secret
 /// * `Err(HybridError)` - If decapsulation fails
 pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) -> Result<[u8; 64], HybridError> {
-    use x25519_dalek::PublicKey;
+    use x25519_dalek::{PublicKey, StaticSecret};
     use hkdf::Hkdf;
     use sha2::Sha512;
 
@@ -264,9 +270,10 @@ pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) 
         return Err(HybridError::UnsupportedAlgorithm(ciphertext.algorithm));
     }
 
-    // Reconstruct placeholder shared secret via same hash construction used in encapsulate
+    // X25519 ECDH: local static secret × remote ephemeral public
     let peer_pub = PublicKey::from(ciphertext.x25519_ephemeral);
-    use blake3::Hasher; let mut h=Hasher::new(); h.update(&secret_key.x25519_pk_public); h.update(peer_pub.as_bytes()); let x25519_shared_hash = h.finalize();
+    let static_secret = StaticSecret::from(secret_key.x25519_sk);
+    let x25519_shared = static_secret.diffie_hellman(&peer_pub);
 
     // Post-quantum decapsulation
     let pq_shared_secret = match secret_key.algorithm {
@@ -294,7 +301,7 @@ pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) 
 
     // Combine shared secrets using HKDF-Extract with SHA-512
     let mut combined_input = Vec::new();
-    combined_input.extend_from_slice(x25519_shared_hash.as_bytes());
+    combined_input.extend_from_slice(x25519_shared.as_bytes());
     combined_input.extend_from_slice(&pq_shared_secret);
 
     let (_, hkdf) = Hkdf::<Sha512>::extract(None, &combined_input);

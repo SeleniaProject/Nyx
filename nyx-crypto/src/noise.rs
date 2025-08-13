@@ -768,11 +768,8 @@ pub mod kyber {
 // BIKE post-quantum KEM integration is planned but the required Rust
 // crate is not yet available on crates.io. This module is disabled
 // to avoid compilation errors.
-// #[cfg(feature = "bike")]
-// pub mod bike {
-//     //! `--features bike` will therefore raise a compile-time error.
-//     compile_error!("Feature `bike` is not yet supported – awaiting upstream pqcrypto-bike crate");
-// }
+#[cfg(feature = "bike")]
+compile_error!("Feature `bike` is policy-disabled and not supported in NyxNet. Use `--features kyber` or `--features hybrid` as applicable.");
 
 /// -----------------------------------------------------------------------------
 /// Hybrid X25519 + Kyber Handshake (feature "hybrid")

@@ -47,6 +47,7 @@ pub fn validate_settings(json: &[u8]) -> Result<Settings, String> {
     let schema = schemars::schema_for!(Settings);
     let schema_value = serde_json::to_value(&schema.schema).unwrap();
     let compiled = jsonschema::JSONSchema::options()
+        // Latest stable draft supported by jsonschema crate; keep consistent across toolchains
         .with_draft(jsonschema::Draft::Draft7)
         .compile(&schema_value)
         .map_err(|e| e.to_string())?;
@@ -64,6 +65,11 @@ pub fn validate_settings(json: &[u8]) -> Result<Settings, String> {
             return Err(format!("schema error: missing required field '{}'", key));
         }
     }
+
+    // Enforce bounds/relations beyond JSONSchema:
+    if let Some(ms) = val.get("max_streams").and_then(|v| v.as_u64()) { if ms == 0 { return Err("schema error: max_streams must be > 0".into()); } }
+    if let Some(md) = val.get("max_data").and_then(|v| v.as_u64()) { if md < 4096 { return Err("schema error: max_data too small (min 4096)".into()); } }
+    if let Some(idle) = val.get("idle_timeout").and_then(|v| v.as_u64()) { if idle < 5 || idle > 3600 { return Err("schema error: idle_timeout out of range [5, 3600]".into()); } }
 
     Ok(serde_json::from_value(val).unwrap())
 } 
