@@ -1,0 +1,13 @@
+{{- if .Values.config.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nyx.fullname" . }}
+  labels:
+{{ include "nyx.labels" . | indent 4 }}
+data:
+  {{ .Values.config.fileName }}: |-
+{{ .Values.config.data | indent 4 }}
+{{- end }}
+
+

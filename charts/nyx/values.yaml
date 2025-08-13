@@ -1,17 +1,46 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/nyxproject/nyxd
+  repository: ghcr.io/seleniaproject/nyx-daemon
   tag: latest
   pullPolicy: IfNotPresent
+  pullSecrets: []
 
 service:
   type: ClusterIP
   port: 43300
+  metricsPort: 9090
+  annotations: {}
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: Cluster
+  sessionAffinity: None
 
-# Prometheus exporter port used for readiness probe
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: nyx.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: nyx-tls
+  #   hosts:
+  #     - nyx.example.com
+
+# Prometheus exporter / readiness probe port
 exporter:
   port: 9090
+
+# ServiceMonitor (Prometheus Operator) configuration
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}
+  annotations: {}
+  scheme: http
 
 # PodDisruptionBudget configuration
 pdb:
@@ -25,17 +54,98 @@ hpa:
   maxReplicas: 5
   targetCPUUtilizationPercentage: 75
   targetBytesPerSecond: "5Mi"
+  enableCustomPodsMetric: false
 
 # Pod security context (seccomp)
 podSecurity:
   # Localhost seccomp profile name mounted via projected volume or node default path
   seccompProfile: "nyx-seccomp-bpf.json"
 
-# Default resource requests/limits (can be overridden)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: false
+
+podAnnotations: {}
+podLabels: {}
+
 resources:
   limits:
     cpu: 500m
     memory: 512Mi
   requests:
     cpu: 100m
-    memory: 128Mi 
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+terminationGracePeriodSeconds: 30
+
+imagePullSecrets: []
+
+# Nyx daemon configuration projected as ConfigMap and mounted into the pod.
+config:
+  enabled: true
+  mountPath: /etc/nyx
+  fileName: config.toml
+  # Example minimal configuration. Override as needed.
+  data: |
+    listen_port = 43300
+    log_level = "info"
+    [mix]
+    hop_count = 5
+    cover_traffic_rate = 10.0
+    [transport]
+    quic_enabled = true
+    tcp_fallback = true
+
+secrets:
+  create: true
+  name: ""
+  apiTokenKey: NYX_CONTROL_TOKEN
+  apiTokenValue: ""
+  extraEnv: []
+  # - name: SOME_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: my-secret
+  #       key: key
+
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+extraInitContainers: []
+extraContainers: []
+
+# NetworkPolicy baseline: deny-all with explicit allowances
+networkPolicy:
+  enabled: false
+  allowIngressFromNamespaces: []
+  # - name: monitoring
+  #   namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+  allowEgressDNS: true
+  additionalIngressRules: []
+  additionalEgressRules: []
+
+# Cloud provider specific hints (optional)
+cloud:
+  provider: ""
+  # provider: aws|gcp|azure (used only to help with example annotations)
+  annotations: {}

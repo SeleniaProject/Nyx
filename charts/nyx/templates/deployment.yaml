@@ -3,17 +3,22 @@ kind: Deployment
 metadata:
   name: {{ include "nyx.fullname" . }}
   labels:
-    app: {{ include "nyx.name" . }}
+{{ include "nyx.labels" . | indent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "nyx.name" . }}
+{{ include "nyx.selectorLabels" . | indent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "nyx.name" . }}
+{{ include "nyx.selectorLabels" . | indent 8 }}
+      annotations:
+{{ toYaml .Values.podAnnotations | indent 8 }}
     spec:
+{{- if or .Values.serviceAccount.create .Values.serviceAccount.name }}
+      serviceAccountName: {{ default (include "nyx.fullname" .) .Values.serviceAccount.name }}
+{{- end }}
       securityContext:
         seccompProfile:
           type: Localhost
@@ -22,19 +27,64 @@ spec:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+{{ toYaml .Values.securityContext | indent 12 }}
           ports:
             - containerPort: 43300
-            - containerPort: {{ .Values.exporter.port }}
+            - containerPort: {{ .Values.service.metricsPort }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: {{ .Values.config.mountPath }}
+              readOnly: true
+          env:
+            - name: NYX_CONFIG
+              value: "{{ .Values.config.mountPath }}/{{ .Values.config.fileName }}"
+          envFrom:
+{{- if .Values.secrets.create }}
+            - secretRef:
+                name: {{ default (printf "%s-secret" (include "nyx.fullname" .)) .Values.secrets.name }}
+{{- end }}
+{{- range .Values.extraEnvFrom }}
+            - {{ toYaml . | nindent 14 }}
+{{- end }}
           livenessProbe:
             tcpSocket:
               port: 43300
             initialDelaySeconds: 10
             periodSeconds: 15
+{{- if .Values.serviceMonitor.enabled }}
           readinessProbe:
             httpGet:
               path: /metrics
-              port: {{ .Values.exporter.port }}
+              port: {{ .Values.service.metricsPort }}
             initialDelaySeconds: 5
-            periodSeconds: 10 
+            periodSeconds: 10
+{{- else }}
+          readinessProbe:
+            tcpSocket:
+              port: 43300
+            initialDelaySeconds: 5
+            periodSeconds: 10
+{{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nyx.fullname" . }}
+            items:
+              - key: {{ .Values.config.fileName }}
+                path: {{ .Values.config.fileName }}
+{{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+{{- end }}
