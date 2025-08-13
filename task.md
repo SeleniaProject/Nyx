@@ -32,7 +32,7 @@ nyx-transport
   - [x] UDP 受信経路をデーモンへ配線（`Transport` → `DaemonPacketHandler` → `StreamManager::route_incoming`）
 
 nyx-fec
-- [ ] RaptorQ: README/ドキュメント/ベンチマークの最新化（実装済 API と一致）(`nyx-fec/src/raptorq.rs`, `README.md`, `docs/`)
+- [x] RaptorQ: README/ドキュメント/ベンチマークの最新化（実装済 API と一致）(`nyx-fec/src/raptorq.rs`, `README.md`, `docs/`)
 - [x] SIMD feature 非有効時挙動の整備(`nyx-fec/src/lib.rs`)
 
 nyx-crypto
@@ -52,8 +52,8 @@ nyx-sdk
 - [x] error.rs: CLOSE/Status マッピングでの "Unimplemented"/501 取り扱いの仕様化(`nyx-sdk/src/error.rs`)
 
 nyx-sdk-wasm
-- [ ] WASM: Multipath/Plugin system 未実装 → 方針確定し順次実装(`nyx-sdk-wasm/src/lib.rs`)
-- [ ] WASM: HPKE 等の公開API拡張(コメント上未公開)(`nyx-sdk-wasm/src/lib.rs`)
+- [ ] WASM: Multipath/Plugin system 未実装 → API 設計（control/query）を確定し順次実装(`nyx-sdk-wasm/src/lib.rs`)
+- [ ] WASM: HPKE 等の公開API拡張（wasm-safe RNG/KEMの安定化に合わせ公開）(`nyx-sdk-wasm/src/lib.rs`)
 
 nyx-mobile-ffi
 - [ ] iOS/Android 非対象プラットフォーム時のスタブを縮小し、モバイル機能の本実装連携(`nyx-mobile-ffi/src/ios.rs`, `android.rs`, `common.rs`)
@@ -74,7 +74,7 @@ nyx-mobile-ffi
 
 メトリクス/監視
 - [ ] Daemon の全メトリクス(システム/ネットワーク/エラー/レイヤ/アラート)の収集・閾値・アクションを実データに接続(`nyx-daemon/src/metrics.rs`)
-- [ ] Prometheus/OTLP へのエクスポート完全化(`nyx-daemon/src/metrics.rs`, `nyx-telemetry/`)
+- [ ] Prometheus/OTLP へのエクスポート完全化（環境変数でのOTLP起動配線は導入済）(`nyx-daemon/src/metrics.rs`, `nyx-telemetry/`)
 
 セキュリティ/サンドボックス
 - [ ] 暗号鍵管理/キー配送/ローテーションの本運用仕様化(placeholder/固定鍵排除)(`nyx-crypto/`, `nyx-daemon/`)

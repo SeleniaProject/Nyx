@@ -241,14 +241,14 @@ NYX_CONFIG=~/.config/nyx/config.toml RUST_LOG=debug \
   cargo run --bin nyx-daemon --release
 ```
 
-The daemon will:
-- ✅ Initialize crypto subsystems
-- ✅ Start gRPC server on `127.0.0.1:50051`
-- ✅ Begin peer discovery via DHT
-- ✅ Start Prometheus metrics server
-- ✅ Initialize stream management
+  The daemon will:
+  - ✅ Initialize crypto subsystems
+  - ✅ Start HTTP control API on `127.0.0.1:50051`
+  - ✅ Begin peer discovery via DHT
+  - ✅ Start Prometheus metrics server (configurable)
+  - ✅ Initialize stream management
 
-#### 2. Check Daemon Status
+#### 2. Check Daemon Status / Control API
 ```bash
 # Basic status check
 cargo run --bin nyx-cli -- status
@@ -259,8 +259,12 @@ cargo run --bin nyx-cli -- status --format json
 # Continuous monitoring mode
 cargo run --bin nyx-cli -- status --watch --interval 5
 
-# Custom daemon endpoint
+# Custom daemon endpoint (HTTP)
 cargo run --bin nyx-cli -- --endpoint http://127.0.0.1:8080 status
+
+# Direct HTTP examples
+curl http://127.0.0.1:50051/api/v1/info
+curl "http://127.0.0.1:50051/api/v1/events?types=system,stream&severity=info&limit=10"
 ```
 
 #### 3. Establish Anonymous Connections
@@ -318,8 +322,9 @@ curl http://127.0.0.1:9090/metrics
 # Monitor daemon logs
 tail -f ~/.local/share/nyx/daemon.log
 
-# Health check endpoint
-curl http://127.0.0.1:50051/health
+# Control API health and info
+curl http://127.0.0.1:50051/api/v1/info
+curl http://127.0.0.1:50051/api/v1/events/stats
 
 # Network topology visualization
 cargo run --bin nyx-cli -- topology --visualize
@@ -512,7 +517,7 @@ export NYX_DATA_DIR="/path/to/data"
 export NYX_LOG_LEVEL="debug"
 
 # Network
-export NYX_GRPC_ADDR="127.0.0.1:50051"
+export NYX_HTTP_ADDR="127.0.0.1:50051"
 export NYX_LISTEN_PORT="43300"
 
 # Security
@@ -522,6 +527,11 @@ export NYX_SECURE_MEMORY="true"
 # Performance
 export NYX_WORKER_THREADS="8"
 export NYX_MAX_CONNECTIONS="1000"
+
+# Metrics export (optional)
+export NYX_PROMETHEUS_ADDR="127.0.0.1:9090"
+export NYX_OTLP_ENABLED="1"
+export NYX_OTLP_ENDPOINT="http://127.0.0.1:4317"
 ```
 
 ### Configuration Validation
@@ -662,6 +672,31 @@ CI integration example:
 - **Multipath**: Linear scaling with path count (up to 4x)
 - **Aggregate**: 500+ Mbps on modern hardware
 - **Efficiency**: 90%+ of raw UDP performance
+
+### Plugin Manifest (Security)
+
+Nyx Stream のプラグインは署名付きマニフェストで検証されます。環境変数 `NYX_PLUGIN_MANIFEST` に JSON ファイルのパスを設定すると、その内容がロードされ、各エントリは JSON Schema 準拠と Ed25519 署名検証を通過したもののみ有効になります。未指定時は内蔵のデモ鍵にフォールバックします。
+
+- 形式（配列）：
+```json
+[
+  {
+    "id": 1001,
+    "min_version": [1, 0],
+    "max_version": [1, 5],
+    "pubkey_b64": "<base64 32 bytes>",
+    "signature_b64": "<base64 64 bytes>",
+    "caps": ["metrics", "basic"]
+  }
+]
+```
+- 署名対象メッセージ: `plugin:{id}:v1`
+- スキーマ生成: `cargo run -p nyx-stream --features plugin --bin generate_plugin_schema > plugin_manifest.schema.json`
+- 検証は `nyx-stream` の `plugin_manifest` モジュールで実施されます。
+
+#### Hot Reloading
+- `nyx-daemon` は `NYX_PLUGIN_MANIFEST` が指すファイルを監視し、変更時に即時リロードします（`--features plugin` ビルド時）。
+- エラー時はログに警告が出力され、直前の有効レジストリが保持されます。
 
 ### Performance Optimization Features
 
@@ -861,6 +896,7 @@ wireshark capture.pcap
   - **[v1.0 Specification](spec/Nyx_Protocol_v1.0_Spec.md)** - Advanced features and extensions
   - **[Design Document](spec/Nyx_Design_Document.md)** - Comprehensive system design
 - **[API Reference](docs/comprehensive_documentation_en.md)** - Complete API documentation
+- **[RaptorQ FEC Guide](docs/fec_raptorq.md)** - Nyx FEC implementation and usage
 
 ### User Guides
 - **[Quick Start Tutorial](docs/tutorial_chat.md)** - Step-by-step getting started guide
