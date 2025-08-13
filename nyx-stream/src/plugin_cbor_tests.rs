@@ -7,7 +7,7 @@
 //! validation, and integration with the dispatcher.
 
 use super::*;
-use crate::plugin_cbor::*;
+use crate::plugin_cbor::{self, PluginHeader, parse_plugin_header, serialize_plugin_header, MAX_PLUGIN_DATA_SIZE, MAX_CBOR_HEADER_SIZE, PluginCborError};
 use crate::plugin_dispatch::*;
 use crate::plugin_registry::{PluginRegistry, PluginInfo, Permission};
 use crate::frame::*;
@@ -34,8 +34,14 @@ impl PluginCborTestFixture {
             id: plugin_id,
             name: format!("test_plugin_{}", plugin_id),
             version: "1.0.0".to_string(),
+            description: "test".to_string(),
             permissions: vec![Permission::DataAccess, Permission::Handshake, Permission::Control],
-            security_policy: 0x00,
+            author: "test".to_string(),
+            config_schema: Default::default(),
+            supported_frames: vec![FRAME_TYPE_PLUGIN_DATA],
+            required: false,
+            signature_b64: None,
+            registry_pubkey_b64: None,
         };
         
         let mut registry = self.registry.lock().await;
@@ -317,8 +323,14 @@ async fn test_plugin_dispatcher_permission_validation() {
         id: plugin_id,
         name: "limited_plugin".to_string(),
         version: "1.0.0".to_string(),
+        description: "test".to_string(),
         permissions: vec![Permission::DataAccess, Permission::Handshake], // No Control permission
-        security_policy: 0x00,
+        author: "test".to_string(),
+        config_schema: Default::default(),
+        supported_frames: vec![FRAME_TYPE_PLUGIN_DATA],
+        required: false,
+        signature_b64: None,
+        registry_pubkey_b64: None,
     };
     
     {

@@ -16,14 +16,16 @@ use tokio::sync::RwLock;
 use super::plugin::{
     PluginHeader, PluginRegistry, PluginDispatcher, PluginCapability,
     PluginHandshake, PluginFrame, PluginError, PluginId,
-    plugin_flags, FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_DATA,
-    FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR
+    plugin_flags
 };
 use super::frame::{
+    FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_DATA,
+    FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR,
     FRAME_TYPE_PLUGIN_START, FRAME_TYPE_PLUGIN_END, is_plugin_frame
 };
+ 
 use super::settings::{StreamSettings, setting_ids};
-use super::management::{SettingsFrame, Setting};
+    use super::management::{SettingsFrame, Setting, self};
 
 /// Test Plugin Framework Frame Type reservation (0x50-0x5F)
 #[cfg(test)]
@@ -249,7 +251,7 @@ mod settings_plugin_tests {
         assert_eq!(diff, vec![9002]);
 
         // emulate generation of close frame error code (management::ERR_UNSUPPORTED_CAP == 0x07)
-        assert_eq!(crate::nyx_stream::management::ERR_UNSUPPORTED_CAP, 0x07);
+        assert_eq!(management::ERR_UNSUPPORTED_CAP, 0x07);
     }
 }
 
@@ -331,7 +333,7 @@ mod registry_tests {
         // Check for registration event
         let event = event_rx.recv().await.expect("No event received");
         match event {
-            super::plugin::PluginEvent::PluginRegistered { plugin_id, .. } => {
+            crate::plugin::PluginEvent::PluginRegistered { plugin_id, .. } => {
                 assert_eq!(plugin_id, 5001);
             }
             _ => panic!("Unexpected event type"),
@@ -342,7 +344,7 @@ mod registry_tests {
 
         let event = event_rx.recv().await.expect("No event received");
         match event {
-            super::plugin::PluginEvent::PluginUnregistered { plugin_id } => {
+            crate::plugin::PluginEvent::PluginUnregistered { plugin_id } => {
                 assert_eq!(plugin_id, 5001);
             }
             _ => panic!("Unexpected event type"),

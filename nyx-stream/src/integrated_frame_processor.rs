@@ -196,7 +196,9 @@ impl IntegratedFrameProcessor {
         let plugin_processor = {
             // Minimal registry; in integration, this should be shared from outer context
             let registry = PluginRegistry::new();
-            Arc::new(Mutex::new(PluginFrameProcessor::new(registry)))
+            // Minimal dispatcher instance; in production wire actual dispatcher
+            let dispatcher = crate::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(tokio::sync::Mutex::new(registry.clone())));
+            Arc::new(Mutex::new(PluginFrameProcessor::new(registry, dispatcher)))
         };
         
         let initial_stats = IntegratedStats {
@@ -290,9 +292,14 @@ impl IntegratedFrameProcessor {
                                     format!("Required plugin {} unsupported: {}", plugin_id, reason)
                                 ));
                             }
-                            Ok(PluginFrameResult::Error { error }) | Err(err) => {
+                            Ok(PluginFrameResult::Error { error }) => {
                                 return Err(IntegratedFrameError::FrameParsing(
-                                    format!("Plugin frame processing error: {}", error_or(err))
+                                    format!("Plugin frame processing error: {}", error)
+                                ));
+                            }
+                            Err(err) => {
+                                return Err(IntegratedFrameError::FrameParsing(
+                                    format!("Plugin frame processing error: {}", err)
                                 ));
                             }
                         }

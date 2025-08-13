@@ -2,7 +2,8 @@
 #![forbid(unsafe_code)]
 
 use tokio::sync::{watch, watch::Receiver};
-// use std::collections::HashSet; // reserved for future settings validation
+#[cfg(feature = "plugin")]
+use std::collections::HashSet;
 
 use crate::management::{SettingsFrame, Setting};
 #[cfg(feature = "plugin")]

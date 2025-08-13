@@ -245,7 +245,7 @@ pub mod plugin_settings {
     /// Encode a list of plugin IDs as CBOR for PLUGIN_REQUIRED/PLUGIN_OPTIONAL settings
     pub fn encode_plugin_list(plugin_ids: &[u32]) -> Vec<u8> {
         let mut buffer = Vec::new();
-        ciborium::into_writer(plugin_ids, &mut buffer).unwrap_or_else(|_| Vec::new());
+        let _ = ciborium::into_writer(plugin_ids, &mut buffer).map_err(|_| ());
         buffer
     }
     

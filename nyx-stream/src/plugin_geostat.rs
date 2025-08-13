@@ -54,12 +54,14 @@ pub fn plugin_info() -> PluginInfo {
         id: GEO_PLUGIN_ID,
         name: "GeoStat".into(),
         version: "1.0.0".into(),
-        author: "Nyx Team".into(),
         description: "Geographic location statistics plugin".into(),
-        config_schema: HashMap::new(),
-        required: false,
-        supported_frames: vec![0x50, 0x51], // Plugin handshake and data frames
         permissions: vec![Permission::ACCESS_GEO],
+        author: "Nyx Team".into(),
+        config_schema: HashMap::new(),
+        supported_frames: vec![0x50, 0x51],
+        required: false,
+        signature_b64: None,
+        registry_pubkey_b64: None,
     }
 }
 
@@ -70,7 +72,7 @@ mod tests {
     #[test]
     fn roundtrip() {
         let g = GeoStat { lat: 35.0, lon: 139.0, acc: 15.0 };
-        let bytes = g.build_frame();
+        let bytes = g.build_frame().unwrap();
         let parsed = GeoStat::parse_frame(&bytes).unwrap();
         assert_eq!(g, parsed);
     }

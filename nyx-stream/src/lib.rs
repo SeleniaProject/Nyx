@@ -55,6 +55,8 @@ mod cap_negotiator;
 mod plugin_registry;
 #[cfg(feature = "plugin")]
 mod plugin_geostat;
+#[cfg(feature = "plugin")]
+pub mod plugin_manifest;
 pub use cap_negotiator::perform_cap_negotiation;
 
 #[cfg(feature = "mpr_experimental")]
@@ -97,6 +99,8 @@ pub use plugin_frame::build_plugin_frame;
 pub use plugin_handshake::{PluginHandshakeCoordinator, HandshakeResult, PluginHandshakeError};
 #[cfg(feature = "plugin")]
 pub use plugin_registry::{PluginRegistry, PluginInfo, Permission};
+#[cfg(feature = "plugin")]
+pub use plugin_manifest::{ManifestItem as PluginManifestItem};
 #[cfg(feature = "plugin")]
 pub use plugin_cbor::{PluginHeader as CborPluginHeader, PluginId, PluginCborError, 
                      parse_plugin_header, serialize_plugin_header, parse_plugin_header_bytes,

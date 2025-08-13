@@ -90,7 +90,7 @@ pub struct ParsedPluginFrame<'a> {
     pub path_id: Option<u8>,
     /// Decoded CBOR plugin header (only in plugin-enabled builds)
     #[cfg(feature = "plugin")]
-    pub plugin_header: PluginHeader<'a>,
+    pub plugin_header: PluginHeader,
     /// Raw plugin payload data
     pub payload: &'a [u8],
 }
@@ -368,7 +368,7 @@ mod tests {
         let header = PluginHeader {
             id: 12345,
             flags: 0x01,
-            data: b"test_data",
+            data: b"test_data".to_vec(),
         };
 
         let frame = build_plugin_frame(

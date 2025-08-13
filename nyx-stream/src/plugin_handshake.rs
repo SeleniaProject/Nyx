@@ -12,6 +12,10 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
+use std::fs;
+use std::env;
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
 use tracing::{debug, warn, error, trace, info};
 use tokio::time::timeout;
 use serde::{Serialize, Deserialize};
@@ -62,6 +66,153 @@ pub enum HandshakeState {
     Failed,
     /// Handshake aborted due to timeout or critical error
     Aborted,
+}
+
+// ---- Plugin Manifest-backed registry (hot-reload capable) ----
+#[derive(Clone)]
+struct RegistryEntry {
+    min_version: (u16,u16),
+    max_version: (u16,u16),
+    pubkey: ed25519_dalek::VerifyingKey,
+    signature: ed25519_dalek::Signature,
+    caps: Vec<String>,
+}
+
+static REGISTRY: Lazy<RwLock<std::collections::HashMap<u32, RegistryEntry>>> = Lazy::new(|| {
+    // Initialize from env if possible; otherwise start with built-in demo keys
+    let initial = load_registry_from_env_internal().unwrap_or_else(|| builtin_demo_registry());
+    RwLock::new(initial)
+});
+
+fn builtin_demo_registry() -> std::collections::HashMap<u32, RegistryEntry> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use ed25519_dalek::{Signature, VerifyingKey};
+    let mut m = std::collections::HashMap::new();
+    let entries: Vec<(u32,&str,&str,(u16,u16),(u16,u16),&[&str])> = vec![
+        (1001, "WqHsyQ1+Jgdo8W7oVdZk90un0nLBKBPXn1HULICwhf8=", "mJ0K63eFUsVTNff7kwh28ykVfoCENKz7LxyzKDn5XMgLwHxZ34rnOG0r8QwMCKaRZ3eLaxhUJW6Ka7O5Kb/6BA==", (1,0),(1,5), &["metrics","basic"]),
+        (2002, "WqHsyQ1+Jgdo8W7oVdZk90un0nLBKBPXn1HULICwhf8=", "mJ0K63eFUsVTNff7kwh28ykVfoCENKz7LxyzKDn5XMgLwHxZ34rnOG0r8QwMCKaRZ3eLaxhUJW6Ka7O5Kb/6BA==", (0,9),(2,0), &["advanced"]),
+    ];
+    for (pid, pk_b64, sig_b64, min_v, max_v, caps) in entries {
+        let pk_bytes = STANDARD.decode(pk_b64).expect("pubkey b64");
+        let sig_bytes = STANDARD.decode(sig_b64).expect("sig b64");
+        let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().expect("32")).expect("vk");
+        let signature = Signature::from_bytes(&sig_bytes.try_into().expect("64"));
+        m.insert(pid, RegistryEntry { min_version:min_v, max_version:max_v, pubkey, signature, caps: caps.iter().map(|s| s.to_string()).collect() });
+    }
+    m
+}
+
+fn load_registry_from_env_internal() -> Option<std::collections::HashMap<u32, RegistryEntry>> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    let path = env::var("NYX_PLUGIN_MANIFEST").ok()?;
+    let items = match crate::plugin_manifest::read_and_parse_file(&path) {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("invalid plugin manifest: {}", e); return None; }
+    };
+    let mut m = std::collections::HashMap::new();
+    for it in items.into_iter() {
+        let pk_bytes = STANDARD.decode(it.pubkey_b64.as_bytes()).ok()?;
+        let sig_bytes = STANDARD.decode(it.signature_b64.as_bytes()).ok()?;
+        let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().ok()?).ok()?;
+        let signature = Signature::from_bytes(&sig_bytes.try_into().ok()?);
+        let msg = format!("plugin:{}:v1", it.id);
+        if pubkey.verify(msg.as_bytes(), &signature).is_err() {
+            tracing::warn!("skip manifest entry due to bad signature: {}", it.id);
+            continue;
+        }
+        m.insert(it.id, RegistryEntry { min_version: it.min_version, max_version: it.max_version, pubkey, signature, caps: it.caps });
+    }
+    if m.is_empty() { None } else { Some(m) }
+}
+
+/// Reload plugin registry from a manifest file path. Returns number of entries loaded.
+#[cfg(feature = "plugin")]
+pub fn reload_plugin_manifest_from_path(path: &str) -> Result<usize, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    let items = crate::plugin_manifest::read_and_parse_file(path)
+        .map_err(|e| format!("manifest parse error: {}", e))?;
+    let mut new_map: std::collections::HashMap<u32, RegistryEntry> = std::collections::HashMap::new();
+    for it in items.into_iter() {
+        let pk_bytes = STANDARD.decode(it.pubkey_b64.as_bytes()).map_err(|e| format!("pubkey b64 decode: {}", e))?;
+        let sig_bytes = STANDARD.decode(it.signature_b64.as_bytes()).map_err(|e| format!("sig b64 decode: {}", e))?;
+        let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().map_err(|_| "pubkey length".to_string())?)
+            .map_err(|e| format!("pubkey invalid: {}", e))?;
+        let signature = Signature::from_bytes(&sig_bytes.try_into().map_err(|_| "signature length".to_string())?);
+        let msg = format!("plugin:{}:v1", it.id);
+        pubkey.verify(msg.as_bytes(), &signature)
+            .map_err(|_| format!("signature verification failed for {}", it.id))?;
+        new_map.insert(it.id, RegistryEntry { min_version: it.min_version, max_version: it.max_version, pubkey, signature, caps: it.caps });
+    }
+    {
+        let mut guard = REGISTRY.write().expect("registry write lock");
+        *guard = new_map;
+    }
+    Ok(REGISTRY.read().expect("registry read lock").len())
+}
+
+/// Reload plugin manifest from raw JSON string.
+#[cfg(feature = "plugin")]
+pub fn reload_plugin_manifest_from_json(json: &str) -> Result<usize, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    let items = crate::plugin_manifest::validate_and_parse(json)
+        .map_err(|e| format!("manifest parse error: {}", e))?;
+    let mut new_map: std::collections::HashMap<u32, RegistryEntry> = std::collections::HashMap::new();
+    for it in items.into_iter() {
+        let pk_bytes = STANDARD.decode(it.pubkey_b64.as_bytes()).map_err(|e| format!("pubkey b64 decode: {}", e))?;
+        let sig_bytes = STANDARD.decode(it.signature_b64.as_bytes()).map_err(|e| format!("sig b64 decode: {}", e))?;
+        let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().map_err(|_| "pubkey length".to_string())?)
+            .map_err(|e| format!("pubkey invalid: {}", e))?;
+        let signature = Signature::from_bytes(&sig_bytes.try_into().map_err(|_| "signature length".to_string())?);
+        let msg = format!("plugin:{}:v1", it.id);
+        pubkey.verify(msg.as_bytes(), &signature)
+            .map_err(|_| format!("signature verification failed for {}", it.id))?;
+        new_map.insert(it.id, RegistryEntry { min_version: it.min_version, max_version: it.max_version, pubkey, signature, caps: it.caps });
+    }
+    {
+        let mut guard = REGISTRY.write().expect("registry write lock");
+        *guard = new_map;
+    }
+    Ok(REGISTRY.read().expect("registry read lock").len())
+}
+
+/// Reload plugin manifest from NYX_PLUGIN_MANIFEST environment variable.
+#[cfg(feature = "plugin")]
+pub fn reload_plugin_manifest() -> Result<usize, String> {
+    let path = std::env::var("NYX_PLUGIN_MANIFEST").map_err(|_| "NYX_PLUGIN_MANIFEST not set".to_string())?;
+    reload_plugin_manifest_from_path(&path)
+}
+
+/// Snapshot item for external diagnostics
+#[cfg(feature = "plugin")]
+#[derive(Debug, Clone, Serialize)]
+pub struct RegistrySnapshotItem {
+    pub id: u32,
+    pub min_version: (u16,u16),
+    pub max_version: (u16,u16),
+    pub caps: Vec<String>,
+    pub pubkey_fingerprint_b64: String,
+}
+
+/// Get current plugin registry snapshot for diagnostics
+#[cfg(feature = "plugin")]
+pub fn get_plugin_registry_snapshot() -> Vec<RegistrySnapshotItem> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let guard = REGISTRY.read().expect("registry read lock");
+    let mut out = Vec::with_capacity(guard.len());
+    for (id, e) in guard.iter() {
+        let fp = STANDARD.encode(e.pubkey.to_bytes());
+        out.push(RegistrySnapshotItem {
+            id: *id,
+            min_version: e.min_version,
+            max_version: e.max_version,
+            caps: e.caps.clone(),
+            pubkey_fingerprint_b64: fp,
+        });
+    }
+    out
 }
 
 /// Plugin handshake result outcome
@@ -399,34 +550,29 @@ impl PluginHandshakeCoordinator {
 
     /// Validate security permissions for a plugin
     async fn validate_plugin_security(&self, plugin_id: u32) -> Result<(), String> {
-        use once_cell::sync::Lazy;
-        use ed25519_dalek::{Verifier, Signature, VerifyingKey};
-        #[derive(Clone)]
-        struct RegistryEntry { min_version:(u16,u16), max_version:(u16,u16), pubkey: VerifyingKey, signature: Signature, caps:&'static [&'static str] }
-
-        // Hard-coded demo keys (base64): in production load from signed manifest file.
-        static REGISTRY: Lazy<HashMap<u32, RegistryEntry>> = Lazy::new(|| {
-            use base64::{engine::general_purpose::STANDARD, Engine};
-            let mut m = HashMap::new();
-            // For reproducibility we embed a deterministic keypair generated offline; signature is over "plugin:<id>:v1".
-            // Public keys (base64) & signatures (base64) are placeholders for concept validation.
-            let entries: Vec<(u32,&str,&str,(u16,u16),(u16,u16),&[&str])> = vec![
-                (1001, "WqHsyQ1+Jgdo8W7oVdZk90un0nLBKBPXn1HULICwhf8=", "mJ0K63eFUsVTNff7kwh28ykVfoCENKz7LxyzKDn5XMgLwHxZ34rnOG0r8QwMCKaRZ3eLaxhUJW6Ka7O5Kb/6BA==", (1,0),(1,5), &["metrics","basic"]),
-                (2002, "WqHsyQ1+Jgdo8W7oVdZk90un0nLBKBPXn1HULICwhf8=", "mJ0K63eFUsVTNff7kwh28ykVfoCENKz7LxyzKDn5XMgLwHxZ34rnOG0r8QwMCKaRZ3eLaxhUJW6Ka7O5Kb/6BA==", (0,9),(2,0), &["advanced"]),
-            ];
-            for (pid, pk_b64, sig_b64, min_v, max_v, caps) in entries {
-                let pk_bytes = STANDARD.decode(pk_b64).expect("pubkey b64");
-                let sig_bytes = STANDARD.decode(sig_b64).expect("sig b64");
-                let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().expect("32" )).expect("vk");
-                let signature = Signature::from_bytes(&sig_bytes.try_into().expect("64"));
-                m.insert(pid, RegistryEntry { min_version:min_v, max_version:max_v, pubkey: pubkey, signature, caps });
-            }
-            m
-        });
-
+        use ed25519_dalek::Verifier;
         if plugin_id == 0 { return Err("Plugin ID 0 is reserved".into()); }
         if plugin_id >= 0xFFFF0000 { return Err("Plugin ID is in reserved system range".into()); }
-        let entry = REGISTRY.get(&plugin_id).ok_or_else(|| "Plugin not found in registry".to_string())?;
+
+        // Resolve entry from current registry; if empty, fallback to built-in demo registry
+        let maybe_entry = {
+            let guard = REGISTRY.read().expect("registry read lock");
+            guard.get(&plugin_id).cloned()
+        };
+        let entry = if let Some(e) = maybe_entry {
+            e
+        } else {
+            // Try to initialize from env once, then re-check
+            if let Some(env_map) = load_registry_from_env_internal() {
+                let mut w = REGISTRY.write().expect("registry write lock");
+                *w = env_map;
+            } else {
+                let mut w = REGISTRY.write().expect("registry write lock");
+                if w.is_empty() { *w = builtin_demo_registry(); }
+            }
+            let guard = REGISTRY.read().expect("registry read lock");
+            guard.get(&plugin_id).cloned().ok_or_else(|| "Plugin not found in registry".to_string())?
+        };
 
         if let Some(requested) = self.local_settings.get_version_requirement(plugin_id) {
             if requested < entry.min_version || requested > entry.max_version {
@@ -441,10 +587,10 @@ impl PluginHandshakeCoordinator {
         }
 
         if let Some(req_caps) = self.local_settings.get_required_capabilities(plugin_id) {
-            for cap in req_caps { if !entry.caps.contains(&cap.as_str()) { return Err(format!("Capability '{}' missing", cap)); } }
+            for cap in req_caps { if !entry.caps.contains(&cap) { return Err(format!("Capability '{}' missing", cap)); } }
         }
         trace!("Security validation passed (ed25519) for plugin: {}", plugin_id);
-    #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_security_pass(); }
+        #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_security_pass(); }
         Ok(())
     }
 
@@ -677,5 +823,44 @@ mod tests {
             }
             other => panic!("expected IncompatibleRequirements, got {:?}", other)
         }
+    }
+
+    #[cfg(feature = "plugin")]
+    #[tokio::test]
+    async fn test_manifest_reload_and_snapshot() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+        use ed25519_dalek::{SigningKey, Signer};
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        // Generate a signing key and corresponding verifying key
+        let mut rng = rand::rngs::OsRng;
+        let sk = SigningKey::generate(&mut rng);
+        let vk = sk.verifying_key();
+
+        // Prepare manifest entry
+        let pid: u32 = 7777;
+        let msg = format!("plugin:{}:v1", pid);
+        let sig = sk.sign(msg.as_bytes());
+        let pubkey_b64 = STANDARD.encode(vk.to_bytes());
+        let sig_b64 = STANDARD.encode(sig.to_bytes());
+
+        let manifest_json = format!(
+            "[{{\"id\":{},\"min_version\":[1,0],\"max_version\":[1,9],\"pubkey_b64\":\"{}\",\"signature_b64\":\"{}\",\"caps\":[\"basic\"]}}]",
+            pid, pubkey_b64, sig_b64
+        );
+
+        // Write to temp file
+        let mut tf = NamedTempFile::new().expect("tmp file");
+        tf.write_all(manifest_json.as_bytes()).expect("write manifest");
+        let path_str = tf.path().to_string_lossy().to_string();
+
+        // Reload registry from this manifest
+        let count = reload_plugin_manifest_from_path(&path_str).expect("reload ok");
+        assert_eq!(count, 1, "expected exactly one registry entry");
+
+        // Snapshot should contain our plugin and fingerprint should match pubkey
+        let snap = get_plugin_registry_snapshot();
+        assert!(snap.iter().any(|e| e.id == pid && e.pubkey_fingerprint_b64 == pubkey_b64));
     }
 }

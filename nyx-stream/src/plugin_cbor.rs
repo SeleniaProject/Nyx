@@ -77,6 +77,14 @@ pub enum PluginCborError {
     ReservedPluginId(PluginId),
 }
 
+impl From<DeserializeError<std::io::Error>> for PluginCborError {
+    fn from(e: DeserializeError<std::io::Error>) -> Self { PluginCborError::InvalidFormat(CborError::from(e)) }
+}
+
+impl From<SerializeError<std::io::Error>> for PluginCborError {
+    fn from(e: SerializeError<std::io::Error>) -> Self { PluginCborError::InvalidFormat(CborError::from(e)) }
+}
+
 /// Reserved plugin ID ranges that cannot be used by user plugins
 const SYSTEM_PLUGIN_ID_START: PluginId = 0xFFFF0000;
 const SYSTEM_PLUGIN_ID_END: PluginId = 0xFFFFFFFF;

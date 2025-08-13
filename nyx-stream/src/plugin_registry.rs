@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
 use tracing::{debug, warn, info};
+use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+use sha2::{Digest, Sha256};
 
 /// Plugin unique identifier
 pub type PluginId = u32;
@@ -72,6 +74,10 @@ pub struct PluginInfo {
     pub supported_frames: Vec<u8>,
     /// Whether plugin is required for protocol operation
     pub required: bool,
+    /// Optional detached signature (base64) over canonical metadata
+    pub signature_b64: Option<String>,
+    /// Optional registry public key (base64) if not supplied elsewhere
+    pub registry_pubkey_b64: Option<String>,
 }
 
 /// Plugin registration errors
@@ -115,6 +121,10 @@ impl PluginRegistry {
     pub async fn register(&self, info: PluginInfo) -> Result<(), RegistryError> {
         // Validate plugin info
         self.validate_plugin_info(&info)?;
+        // Verify detached signature if provided
+        if let (Some(sig), Some(pk)) = (&info.signature_b64, &info.registry_pubkey_b64) {
+            self.verify_signature(&info, sig, pk)?;
+        }
 
         let mut plugins = self.plugins.lock().unwrap();
         let mut permissions = self.permissions.lock().unwrap();
@@ -222,55 +232,6 @@ impl PluginRegistry {
             })
             .collect()
     }
-
-                    use std::collections::HashMap;
-                    use tokio::runtime::Runtime;
-
-                    fn sample_plugin(id: PluginId) -> PluginInfo {
-                        let mut schema = HashMap::new();
-                        schema.insert("interval_ms".to_string(), "integer >= 10".to_string());
-                        schema.insert("enable_cache".to_string(), "boolean".to_string());
-                        PluginInfo {
-                            id,
-                            name: format!("plugin-{}", id),
-                            version: "1.2.3".to_string(),
-                            description: "Sample test plugin".to_string(),
-                            permissions: vec![Permission::ReceiveFrames, Permission::DataAccess],
-                            author: "Test".to_string(),
-                            config_schema: schema,
-                            supported_frames: vec![1,2,42],
-                            required: false,
-                        }
-                    }
-
-                    #[tokio::test]
-                    async fn register_and_fetch_roundtrip() {
-                        let reg = PluginRegistry::new();
-                        let info = sample_plugin(7);
-                        reg.register(info.clone()).await.unwrap();
-                        let fetched = reg.get_plugin_info(7).await.unwrap();
-                        assert_eq!(fetched.name, info.name);
-                        assert_eq!(fetched.config_schema.get("interval_ms").unwrap(), "integer >= 10");
-                        assert!(reg.is_registered(7).await);
-                    }
-
-                    #[tokio::test]
-                    async fn duplicate_registration_fails() {
-                        let reg = PluginRegistry::new();
-                        let info = sample_plugin(9);
-                        reg.register(info.clone()).await.unwrap();
-                        let err = reg.register(info).await.err().expect("expected duplicate error");
-                        matches!(err, RegistryError::AlreadyExists(9));
-                    }
-
-                    #[tokio::test]
-                    async fn unregister_removes() {
-                        let reg = PluginRegistry::new();
-                        let info = sample_plugin(11);
-                        reg.register(info).await.unwrap();
-                        reg.unregister(11).await.unwrap();
-                        assert!(!reg.is_registered(11).await);
-                    }
     /// Validate plugin information
     fn validate_plugin_info(&self, info: &PluginInfo) -> Result<(), RegistryError> {
         // Plugin ID must be non-zero
@@ -301,11 +262,40 @@ impl PluginRegistry {
         Ok(())
     }
 
+    /// Verify plugin metadata signature using Ed25519
+    fn verify_signature(&self, info: &PluginInfo, signature_b64: &str, pubkey_b64: &str) -> Result<(), RegistryError> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let sig_bytes = STANDARD.decode(signature_b64.as_bytes()).map_err(|e| RegistryError::ValidationFailed(format!("invalid signature b64: {}", e)))?;
+        let pk_bytes = STANDARD.decode(pubkey_b64.as_bytes()).map_err(|e| RegistryError::ValidationFailed(format!("invalid pubkey b64: {}", e)))?;
+        let signature = Signature::from_bytes(&sig_bytes.try_into().map_err(|_| RegistryError::ValidationFailed("invalid signature length".into()))?);
+        let vk = VerifyingKey::from_bytes(&pk_bytes.try_into().map_err(|_| RegistryError::ValidationFailed("invalid pubkey length".into()))?)
+            .map_err(|e| RegistryError::ValidationFailed(format!("invalid pubkey: {}", e)))?;
+
+        // Canonical digest over selected fields
+        let mut ctx = Sha256::new();
+        ctx.update(b"nyx-plugin-info-v1\n");
+        ctx.update(info.id.to_be_bytes());
+        ctx.update(info.name.as_bytes()); ctx.update(b"\n");
+        ctx.update(info.version.as_bytes()); ctx.update(b"\n");
+        ctx.update(info.description.as_bytes()); ctx.update(b"\n");
+        for p in &info.permissions { ctx.update((*p as u32).to_be_bytes()); }
+        ctx.update(b"\n");
+        let mut kv: Vec<_> = info.config_schema.iter().collect();
+        kv.sort_by(|a,b| a.0.cmp(b.0));
+        for (k,v) in kv { ctx.update(k.as_bytes()); ctx.update(b"="); ctx.update(v.as_bytes()); ctx.update(b";\n"); }
+        for f in &info.supported_frames { ctx.update(&[*f]); }
+        ctx.update(&[info.required as u8]);
+        let digest = ctx.finalize();
+        vk.verify(digest.as_slice(), &signature)
+            .map_err(|_| RegistryError::ValidationFailed("signature verification failed".into()))?;
+        Ok(())
+    }
+
     /// Clear all plugins (for testing)
     #[cfg(test)]
     pub fn clear(&self) {
-        self.plugins.write().unwrap().clear();
-        self.permissions.write().unwrap().clear();
+        self.plugins.lock().unwrap().clear();
+        self.permissions.lock().unwrap().clear();
     }
 }
 
@@ -330,26 +320,29 @@ mod tests {
             config_schema: HashMap::new(),
             supported_frames: vec![0x50, 0x51],
             required: false,
+            signature_b64: None,
+            registry_pubkey_b64: None,
         }
     }
 
-    #[test]
-    fn test_register_plugin() {
+    #[tokio::test]
+    async fn test_register_plugin() {
         let registry = PluginRegistry::new();
         let info = test_plugin_info();
         
-        assert!(registry.register(&info).is_ok());
+        assert!(registry.register(info).await.is_ok());
         assert_eq!(registry.count(), 1);
         
         // Duplicate registration should fail
-        assert!(matches!(registry.register(&info), Err(RegistryError::AlreadyRegistered(_))));
+        let dup = test_plugin_info();
+        assert!(matches!(registry.register(dup).await, Err(RegistryError::AlreadyExists(_))));
     }
 
-    #[test]
-    fn test_permission_management() {
+    #[tokio::test]
+    async fn test_permission_management() {
         let registry = PluginRegistry::new();
         let info = test_plugin_info();
-        registry.register(&info).unwrap();
+        registry.register(info.clone()).await.unwrap();
 
         // Check default permissions
         assert!(registry.has_permission(info.id, Permission::ReceiveFrames));
@@ -365,18 +358,18 @@ mod tests {
         assert!(!registry.has_permission(info.id, Permission::NetworkAccess));
     }
 
-    #[test]
-    fn test_validation() {
+    #[tokio::test]
+    async fn test_validation() {
         let registry = PluginRegistry::new();
         
         // Invalid ID
         let mut info = test_plugin_info();
         info.id = 0;
-        assert!(matches!(registry.register(&info), Err(RegistryError::InvalidId(_))));
+        assert!(matches!(registry.register(info.clone()).await, Err(RegistryError::InvalidId(_))));
 
         // Empty name
         info.id = 1002;
         info.name = "".to_string();
-        assert!(matches!(registry.register(&info), Err(RegistryError::ValidationFailed(_))));
+        assert!(matches!(registry.register(info).await, Err(RegistryError::ValidationFailed(_))));
     }
 }
