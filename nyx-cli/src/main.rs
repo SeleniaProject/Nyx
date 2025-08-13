@@ -352,6 +352,72 @@ impl NyxControlClient {
         
         Ok(Response::new(Empty {}))
     }
+
+    pub async fn get_events(
+        &self,
+        event_types: Option<&str>,
+        severity: Option<&str>,
+        stream_ids: Option<&str>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let mut url = format!("{}/api/v1/events", self.base_url);
+        let mut qs: Vec<String> = Vec::new();
+        if let Some(t) = event_types { if !t.is_empty() { qs.push(format!("types={}", urlencoding::encode(t))); } }
+        if let Some(s) = severity { if !s.is_empty() { qs.push(format!("severity={}", urlencoding::encode(s))); } }
+        if let Some(sids) = stream_ids { if !sids.is_empty() { qs.push(format!("stream_ids={}", urlencoding::encode(sids))); } }
+        if let Some(lim) = limit { qs.push(format!("limit={}", lim)); }
+        if !qs.is_empty() { url.push('?'); url.push_str(&qs.join("&")); }
+        let agent = self.agent.clone();
+        let auth_token = self.auth_token.clone();
+        let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut http_request = agent.get(&url);
+            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
+            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+        }).await
+            .map_err(|e| anyhow!("Task join error: {}", e))??;
+        let events: Vec<serde_json::Value> = serde_json::from_str(&response_text)
+            .map_err(|e| anyhow!("Failed to parse events: {}", e))?;
+        Ok(events)
+    }
+
+    pub async fn publish_event(&self, mut event: serde_json::Value) -> anyhow::Result<bool> {
+        let url = format!("{}/api/v1/events", self.base_url);
+        if let serde_json::Value::Object(ref mut map) = event {
+            map.entry("timestamp").or_insert_with(|| serde_json::json!({"seconds": 0, "nanos": 0}));
+            map.entry("data").or_insert_with(|| serde_json::json!({}));
+            map.entry("attributes").or_insert_with(|| serde_json::json!({}));
+            if !map.contains_key("type") { if let Some(et) = map.get("event_type").cloned() { map.insert("type".into(), et); } }
+        }
+        let agent = self.agent.clone();
+        let auth_token = self.auth_token.clone();
+        let body = serde_json::to_string(&event)?;
+        let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut http_request = agent.post(&url).set("Content-Type", "application/json");
+            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
+            let response = http_request.send_string(&body).map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+        }).await
+            .map_err(|e| anyhow!("Task join error: {}", e))??;
+        let v: serde_json::Value = serde_json::from_str(&response_text).unwrap_or_else(|_| serde_json::json!({"success": false}));
+        Ok(v.get("success").and_then(|b| b.as_bool()).unwrap_or(false))
+    }
+
+    pub async fn get_event_stats(&self) -> anyhow::Result<serde_json::Value> {
+        let url = format!("{}/api/v1/events/stats", self.base_url);
+        let agent = self.agent.clone();
+        let auth_token = self.auth_token.clone();
+        let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut http_request = agent.get(&url);
+            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
+            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+        }).await
+            .map_err(|e| anyhow!("Task join error: {}", e))??;
+        let v: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| anyhow!("Failed to parse stats: {}", e))?;
+        Ok(v)
+    }
 }
 
 /// Create authenticated request with token if available
@@ -407,6 +473,10 @@ pub enum Commands {
     Statistics(StatisticsCmd),
     /// Analyze metrics (stubbed / Prometheus optional)
     Metrics(MetricsCmd),
+    /// Events API (list/publish/stats)
+    Events(EventsCmd),
+    /// Plugin management (manifest reload and registry dump)
+    Plugin(PluginCmd),
 }
 
 #[derive(Args, Clone, Debug)]
@@ -497,6 +567,67 @@ pub struct MetricsCmd {
     /// Detailed output
     #[arg(long = "detailed")]
     pub detailed: bool,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum EventSubcommands {
+    /// List events with optional filters
+    List(EventListArgs),
+    /// Publish a custom event
+    Publish(EventPublishArgs),
+    /// Show event statistics snapshot
+    Stats,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct EventsCmd {
+    #[command(subcommand)]
+    pub sub: EventSubcommands,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum PluginSubcommands {
+    /// Reload plugin manifest on daemon
+    Reload,
+    /// Show current plugin registry snapshot
+    Registry,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct PluginCmd {
+    #[command(subcommand)]
+    pub sub: PluginSubcommands,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct EventListArgs {
+    /// Comma-separated event types (alias: types)
+    #[arg(long = "event-types")] 
+    pub event_types: Option<String>,
+    /// Severity level (info/warn/error/critical)
+    #[arg(long)]
+    pub severity: Option<String>,
+    /// Comma-separated stream IDs
+    #[arg(long = "stream-ids")] 
+    pub stream_ids: Option<String>,
+    /// Limit number of events to return
+    #[arg(long)]
+    pub limit: Option<usize>,
+    /// Output format (json/table)
+    #[arg(long = "format", default_value = "table")]
+    pub format: String,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct EventPublishArgs {
+    /// Event type (domain-specific)
+    pub event_type: String,
+    /// Severity (info/warn/error/critical)
+    #[arg(long, default_value = "info")]
+    pub severity: String,
+    /// Human-readable detail message
+    #[arg(long, default_value = "")] 
+    pub detail: String,
 }
 
 async fn create_client(cli: &Cli) -> Result<NyxControlClient> {
@@ -987,6 +1118,82 @@ async fn cmd_metrics(_cli: &Cli, args: &MetricsCmd) -> Result<()> {
     Ok(())
 }
 
+async fn cmd_events(cli: &Cli, args: &EventsCmd) -> Result<()> {
+    let client = create_client(cli).await?;
+    match &args.sub {
+        EventSubcommands::List(list) => {
+            let types = list.event_types.as_deref();
+            let severity = list.severity.as_deref();
+            let sids = list.stream_ids.as_deref();
+            let events = client.get_events(types, severity, sids, list.limit).await?;
+            if list.format == "json" {
+                println!("{}", serde_json::to_string_pretty(&events)?);
+            } else {
+                for e in events.iter().take(list.limit.unwrap_or(usize::MAX)) {
+                    let et = e.get("event_type").and_then(|v| v.as_str()).unwrap_or("");
+                    let sev = e.get("severity").and_then(|v| v.as_str()).unwrap_or("");
+                    let detail = e.get("detail").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("[{}] {} - {}", sev, et, detail);
+                }
+            }
+        }
+        EventSubcommands::Publish(pubargs) => {
+            let event = serde_json::json!({
+                "event_type": pubargs.event_type,
+                "type": pubargs.event_type,
+                "severity": pubargs.severity,
+                "detail": pubargs.detail,
+                "data": {},
+                "attributes": {}
+            });
+            let ok = client.publish_event(event).await?;
+            if ok { println!("Event published"); } else { println!("Failed to publish event"); }
+        }
+        EventSubcommands::Stats => {
+            let stats = client.get_event_stats().await?;
+            println!("{}", serde_json::to_string_pretty(&stats)?);
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_plugin(cli: &Cli, args: &PluginCmd) -> Result<()> {
+    let client = create_client(cli).await?;
+    match &args.sub {
+        PluginSubcommands::Reload => {
+            let url = format!("{}/api/v1/plugin/reload", client.base_url);
+            let agent = client.agent.clone();
+            let token = client.auth_token.clone();
+            let body = "{}".to_string();
+            let resp = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+                let mut req = agent.post(&url).set("Content-Type", "application/json");
+                if let Some(t) = token { req = req.set("Authorization", &format!("Bearer {}", t)); }
+                let r = req.send_string(&body).map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+                r.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+            }).await??;
+            println!("{}", resp);
+        }
+        PluginSubcommands::Registry => {
+            let url = format!("{}/api/v1/plugin/registry", client.base_url);
+            let agent = client.agent.clone();
+            let token = client.auth_token.clone();
+            let resp = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+                let mut req = agent.get(&url);
+                if let Some(t) = token { req = req.set("Authorization", &format!("Bearer {}", t)); }
+                let r = req.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+                r.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+            }).await??;
+            // Pretty-print JSON if possible
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
+                println!("{}", serde_json::to_string_pretty(&v)?);
+            } else {
+                println!("{}", resp);
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn cmd_bench(cli: &Cli, args: &BenchCmd) -> Result<()> {
     println!("{}", style("🏃 Running Nyx Network Benchmark").bold());
     if args.duration == 0 || args.connections == 0 { return Err(anyhow!("Invalid benchmark parameters")); }
@@ -1091,5 +1298,7 @@ async fn main() -> Result<()> {
         Commands::Bench(b) => cmd_bench(&cli, b).await,
         Commands::Statistics(s) => cmd_statistics(&cli, s).await,
         Commands::Metrics(m) => cmd_metrics(&cli, m).await,
+        Commands::Events(e) => cmd_events(&cli, e).await,
+        Commands::Plugin(p) => cmd_plugin(&cli, p).await,
     }
 }
