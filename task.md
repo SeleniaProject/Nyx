@@ -39,7 +39,7 @@ nyx-crypto
 - [ ] Hybrid KEM: BIKE は placeholder/unsupported → 実装方針(採用/非採用)を確定(`nyx-crypto/src/hybrid.rs`)
 - [x] Hybrid: X25519 共有鍵 placeholder 派生の本実装化(設計に応じて修正)(`nyx-crypto/src/hybrid.rs`)
 - [x] Noise: BIKE policy-disabled の恒久方針反映(`nyx-crypto/src/noise.rs`)
- - [ ] Noise: Kyber 併用時の一時キー/リモート鍵 placeholder を実装に置換（テスト専用処理の排除）(`nyx-crypto/src/noise.rs`)
+ - [x] Noise: Kyber 併用時の一時キー/リモート鍵 placeholder を実装に置換（テスト専用処理の排除）(`nyx-crypto/src/noise.rs`)
 
 - nyx-control
 - [x] DHT: `#[cfg(not(feature = "dht"))]` スタブ群の本実装化 or 機能フラグ方針を明確化(`nyx-control/src/lib.rs`)
