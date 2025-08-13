@@ -1232,7 +1232,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.104",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3337,7 +3337,7 @@ dependencies = [
  "pbkdf2",
  "pqc_kyber",
  "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand_chacha 0.9.0",
  "rand_core 0.6.4",
  "rand_core 0.9.3",
  "rpassword",
@@ -3534,6 +3534,7 @@ dependencies = [
 name = "nyx-stream"
 version = "0.1.0"
 dependencies = [
+ "base64 0.21.7",
  "bitflags 2.9.1",
  "bytes",
  "caps",
