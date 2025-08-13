@@ -9,7 +9,13 @@ use redb::{Database, TableDefinition};
 use tokio::sync::RwLock as AsyncRw;
 
 #[derive(Clone, Debug)]
-pub struct DhtValue { pub data: Vec<u8>, pub inserted: Instant, pub ttl: Duration }
+pub struct DhtValue {
+    pub data: Vec<u8>,
+    pub inserted: Instant,
+    pub ttl: Duration,
+    pub region: Option<String>,
+    pub caps: Vec<String>,
+}
 
 #[derive(Clone, Debug)]
 pub struct InMemoryDht {
@@ -54,11 +60,12 @@ impl InMemoryDht {
     }
 
     pub async fn put(&self, key: String, data: Vec<u8>, ttl: Duration, region: Option<String>, caps: &[String]) {
-		self.inner.write().await.insert(key.clone(), DhtValue { data, inserted: Instant::now(), ttl });
+		let caps_vec: Vec<String> = caps.to_vec();
+		self.inner.write().await.insert(key.clone(), DhtValue { data, inserted: Instant::now(), ttl, region: region.clone(), caps: caps_vec.clone() });
         if let Some(ref r) = region { self.region_index.write().await.entry(r.clone()).or_default().insert(key.clone()); }
-		for c in caps { self.cap_index.write().await.entry(c.clone()).or_default().insert(key.clone()); }
-        let _ = self.save_one_to_store(&key, region, caps).ok();
-	}
+		for c in &caps_vec { self.cap_index.write().await.entry(c.clone()).or_default().insert(key.clone()); }
+        let _ = self.save_one_to_store(&key).ok();
+    }
 
 	// Compatibility helper: simplified put without ttl/indices (default 5m TTL)
 	pub async fn put_simple(&self, key: &str, value: Vec<u8>) { self.put(key.to_string(), value, Duration::from_secs(300), None, &[]).await; }
@@ -80,19 +87,14 @@ impl InMemoryDht {
         TableDefinition::new("dht_kvs")
     }
 
-    fn save_one_to_store(&self, key: &str, region: Option<String>, caps: &[String]) -> anyhow::Result<()> {
+    fn save_one_to_store(&self, key: &str) -> anyhow::Result<()> {
         let db = match &self.db { Some(db) => db.clone(), None => return Ok(()) };
         let guard = futures::executor::block_on(self.inner.read());
         if let Some(val) = guard.get(key) {
             // Compute expiry as unix seconds
             let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
             let expire_unix = now.saturating_add(val.ttl.as_secs());
-            let rec = PersistentRecord {
-                data_b64: B64.encode(&val.data),
-                expire_unix,
-                region,
-                caps: caps.to_vec(),
-            };
+            let rec = PersistentRecord { data_b64: B64.encode(&val.data), expire_unix, region: val.region.clone(), caps: val.caps.clone() };
             let json = serde_json::to_string(&rec)?;
             let wtx = db.begin_write()?;
             // Open existing table; if missing, skip persistence silently
@@ -121,13 +123,45 @@ impl InMemoryDht {
                 let data = match B64.decode(rec.data_b64.as_bytes()) { Ok(d) => d, Err(_) => continue };
                 // Insert into maps
                 futures::executor::block_on(async {
-                    self.inner.write().await.insert(key.to_string(), DhtValue { data, inserted: Instant::now(), ttl: Duration::from_secs(ttl_secs) });
+                    self.inner.write().await.insert(key.to_string(), DhtValue { data, inserted: Instant::now(), ttl: Duration::from_secs(ttl_secs), region: rec.region.clone(), caps: rec.caps.clone() });
                     if let Some(r) = rec.region.clone() { self.region_index.write().await.entry(r).or_default().insert(key.to_string()); }
                     for c in rec.caps.iter() { self.cap_index.write().await.entry(c.clone()).or_default().insert(key.to_string()); }
                 });
             }
         }
         Ok(())
+    }
+
+    /// Start a periodic GC task to prune expired entries and clean indices.
+    pub fn start_gc(&self, interval: Duration) {
+        let inner = self.inner.clone();
+        let region_index = self.region_index.clone();
+        let cap_index = self.cap_index.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(interval).await;
+                // Phase 1: remove expired from inner
+                {
+                    let mut guard = inner.write().await;
+                    let now = Instant::now();
+                    let mut to_remove: Vec<String> = Vec::new();
+                    for (k, v) in guard.iter() { if now.duration_since(v.inserted) > v.ttl { to_remove.push(k.clone()); } }
+                    for k in &to_remove { guard.remove(k); }
+                }
+                // Phase 2: scrub indices of non-existent keys
+                let existing: std::collections::HashSet<String> = {
+                    let g = inner.read().await; g.keys().cloned().collect()
+                };
+                {
+                    let mut ridx = region_index.write().await;
+                    ridx.retain(|_, set| { set.retain(|k| existing.contains(k)); !set.is_empty() });
+                }
+                {
+                    let mut cidx = cap_index.write().await;
+                    cidx.retain(|_, set| { set.retain(|k| existing.contains(k)); !set.is_empty() });
+                }
+            }
+        });
     }
 
 	// Enumerate keys inside backing store matching a prefix (internal helper for discovery strategies)

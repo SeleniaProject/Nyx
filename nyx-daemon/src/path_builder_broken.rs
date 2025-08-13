@@ -25,6 +25,8 @@ impl DummyDhtHandle {
         // Enable persistence if configured
         let mut dht = InMemoryDht::new();
         dht.enable_persistence_from_env();
+        // Start background GC for TTL/index cleanup (60s interval)
+        dht.start_gc(Duration::from_secs(60));
         Self { inner: dht }
     }
     pub async fn get(&self, key: &str) -> Option<Vec<u8>> { self.inner.get(key).await }

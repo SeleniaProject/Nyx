@@ -83,6 +83,10 @@ pub struct DhtHandle {
     tx: mpsc::Sender<DhtCmd>,
     #[cfg(feature = "dht")]
     listen_addr: Multiaddr,
+    #[cfg(not(feature = "dht"))]
+    tx: mpsc::Sender<DhtCmd>,
+    #[cfg(not(feature = "dht"))]
+    listen_addr: Multiaddr,
 }
 
 impl DhtHandle {
@@ -112,16 +116,24 @@ impl DhtHandle {
 
     #[cfg(not(feature = "dht"))]
     #[must_use]
-    pub fn listen_addr(&self) {}
+    pub fn listen_addr(&self) -> &Multiaddr { &self.listen_addr }
 
     #[cfg(not(feature = "dht"))]
-    pub async fn put(&self, _key: &str, _val: Vec<u8>) {}
+    pub async fn put(&self, key: &str, val: Vec<u8>) {
+        let _ = self.tx.send(DhtCmd::Put { key: key.to_string(), value: val }).await;
+    }
 
     #[cfg(not(feature = "dht"))]
-    pub async fn get(&self, _key: &str) -> Option<Vec<u8>> { None }
+    pub async fn get(&self, key: &str) -> Option<Vec<u8>> {
+        let (resp_tx, resp_rx) = oneshot::channel();
+        let _ = self.tx.send(DhtCmd::Get { key: key.to_string(), resp: resp_tx }).await;
+        resp_rx.await.ok().flatten()
+    }
 
     #[cfg(not(feature = "dht"))]
-    pub async fn add_bootstrap(&self, _addr: ()) {}
+    pub async fn add_bootstrap(&self, addr: Multiaddr) {
+        let _ = self.tx.send(DhtCmd::Bootstrap(addr)).await;
+    }
 }
 
 /// Spawn DHT node; returns handle to interact.
@@ -161,6 +173,44 @@ pub async fn spawn_dht() -> DhtHandle {
 // Fallback stub when the `dht` feature is disabled.
 #[cfg(not(feature = "dht"))]
 pub async fn spawn_dht() -> DhtHandle {
-    let (_tx, _rx) = mpsc::channel::<DhtCmd>(1);
-    DhtHandle {}
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+    static GLOBAL_DHT: Lazy<Mutex<HashMap<String, Vec<u8>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+    let (tx, mut rx) = mpsc::channel::<DhtCmd>(32);
+    let listen_addr: Multiaddr = "127.0.0.1:0".to_string();
+
+    tokio::spawn(async move {
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                DhtCmd::Put { key, value } => {
+                    let mut g = GLOBAL_DHT.lock().unwrap();
+                    g.insert(key, value);
+                }
+                DhtCmd::Get { key, resp } => {
+                    let g = GLOBAL_DHT.lock().unwrap();
+                    let value = g.get(&key).cloned();
+                    let _ = resp.send(value);
+                }
+                DhtCmd::Bootstrap(_addr) => {
+                    // No-op for stub
+                }
+                DhtCmd::Announce { node_id } => {
+                    let mut g = GLOBAL_DHT.lock().unwrap();
+                    g.insert(format!("announce:{}", node_id), b"online".to_vec());
+                }
+                DhtCmd::FindPeers { key, resp } => {
+                    let g = GLOBAL_DHT.lock().unwrap();
+                    // Simple prefix match as a placeholder discovery
+                    let peers: Vec<String> = g.keys().filter(|k| k.starts_with(&key)).cloned().collect();
+                    let _ = resp.send(peers);
+                }
+                DhtCmd::Ping { peer_id: _, resp } => {
+                    let _ = resp.send(true);
+                }
+            }
+        }
+    });
+
+    DhtHandle { tx, listen_addr }
 }

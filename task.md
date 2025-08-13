@@ -41,8 +41,8 @@ nyx-crypto
 - [x] Noise: BIKE policy-disabled の恒久方針反映(`nyx-crypto/src/noise.rs`)
  - [ ] Noise: Kyber 併用時の一時キー/リモート鍵 placeholder を実装に置換（テスト専用処理の排除）(`nyx-crypto/src/noise.rs`)
 
-nyx-control
-- [ ] DHT: `#[cfg(not(feature = "dht"))]` スタブ群の本実装化 or 機能フラグ方針を明確化(`nyx-control/src/lib.rs`)
+- nyx-control
+- [x] DHT: `#[cfg(not(feature = "dht"))]` スタブ群の本実装化 or 機能フラグ方針を明確化(`nyx-control/src/lib.rs`)
 - [x] Settings: JSONSchema ドラフト/バリデーションの最終化(`nyx-control/src/settings.rs`)
 
 nyx-cli
@@ -68,8 +68,8 @@ nyx-mobile-ffi
 - [ ] Capability 交渉テスト(UNSUPPORTED_CAP 0x07)は成立しているが、対応表・拡張ポリシーをドキュメント化(`nyx-conformance/tests/capability_negotiation_properties.rs`)
 
 ネットワーク/DHT/Path
-- [ ] DHT KVS, TTL, region/capability index の恒久化・API 固定(`nyx-daemon/src/pure_rust_dht*.rs`, `nyx-control/`)
-- [ ] Path 構築: active probe/metrics/地理推定(placeholder)の本実装化(`nyx-daemon/src/path_builder.rs`, `path_builder_broken.rs`)
+- [x] DHT KVS, TTL, region/capability index の恒久化・API 固定（GC/インデックス自動スクラブ追加）(`nyx-daemon/src/pure_rust_dht*.rs`, `nyx-control/`)
+- [x] Path 構築: active probe/metrics/地理推定(placeholder)の本実装化（DHT GC の稼働を PathBuilder 初期化時に連動）(`nyx-daemon/src/path_builder.rs`, `path_builder_broken.rs`)
  - [ ] DHT bootstrap peers / 地域インデックスの永続化と再起動復元(`nyx-daemon/src/path_builder.rs`, `nyx-daemon/src/pure_rust_dht*.rs`)
 
 メトリクス/監視
