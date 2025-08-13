@@ -70,7 +70,7 @@ nyx-mobile-ffi
 ネットワーク/DHT/Path
 - [x] DHT KVS, TTL, region/capability index の恒久化・API 固定（GC/インデックス自動スクラブ追加）(`nyx-daemon/src/pure_rust_dht*.rs`, `nyx-control/`)
 - [x] Path 構築: active probe/metrics/地理推定(placeholder)の本実装化（DHT GC の稼働を PathBuilder 初期化時に連動）(`nyx-daemon/src/path_builder.rs`, `path_builder_broken.rs`)
- - [ ] DHT bootstrap peers / 地域インデックスの永続化と再起動復元(`nyx-daemon/src/path_builder.rs`, `nyx-daemon/src/pure_rust_dht*.rs`)
+  - [x] DHT bootstrap peers / 地域インデックスの永続化と再起動復元（hot/cold セット・学習スコア・TTL/GC 連動）(`nyx-daemon/src/path_builder.rs`, `nyx-daemon/src/pure_rust_dht*.rs`)
 
 メトリクス/監視
 - [ ] Daemon の全メトリクス(システム/ネットワーク/エラー/レイヤ/アラート)の収集・閾値・アクションを実データに接続(`nyx-daemon/src/metrics.rs`)

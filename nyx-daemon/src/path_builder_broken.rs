@@ -31,6 +31,11 @@ impl DummyDhtHandle {
     }
     pub async fn get(&self, key: &str) -> Option<Vec<u8>> { self.inner.get(key).await }
     pub async fn put(&self, key: &str, value: Vec<u8>) -> Result<(), ()> { self.inner.put_simple(key, value).await; Ok(()) }
+    /// Put value with explicit TTL seconds for persistence-sensitive keys
+    pub async fn put_with_ttl(&self, key: &str, value: Vec<u8>, ttl_secs: u64) -> Result<(), ()> {
+        self.inner.put(key.to_string(), value, Duration::from_secs(ttl_secs), None, &[]).await;
+        Ok(())
+    }
     pub fn listen_addr(&self) -> &str { self.inner.listen_addr() }
 }
 use geo::{Point, HaversineDistance};
@@ -564,8 +569,8 @@ impl DhtPeerDiscovery {
             discovered_peers = self.network_discover_peers_by_region(region).await?;
         }
         
-    // Validate and probe discovered peers (associated fn, not method)
-    let validated_peers = DhtPeerDiscovery::validate_discovered_peers(discovered_peers).await;
+        // Validate and probe discovered peers, and persist bootstrap set
+        let validated_peers = self.validate_discovered_peers(discovered_peers).await;
         
         if validated_peers.is_empty() {
             Err(DhtError::NoPeersFound)
@@ -871,6 +876,20 @@ impl DhtPeerDiscovery {
                 }
             }
         }
+
+        // Also merge cold (low-confidence) bootstrap peers with lower priority
+        if let Some(peer_list_data) = self.dht_client.get("bootstrap:peers:cold").await {
+            if let Ok(peer_addresses) = serde_json::from_slice::<Vec<String>>(&peer_list_data) {
+                let mut seen: std::collections::HashSet<String> = dht_peers.iter().map(|p| p.address.clone()).collect();
+                for addr in peer_addresses {
+                    if seen.contains(&addr) { continue; }
+                    if let Ok(peer_info) = self.create_peer_from_address(&addr).await {
+                        dht_peers.push(peer_info);
+                        seen.insert(addr);
+                    }
+                }
+            }
+        }
         
         // Add DHT's own listen address as a peer
         let dht_addr = self.dht_client.listen_addr().to_string();
@@ -1050,8 +1069,8 @@ impl DhtPeerDiscovery {
         Ok(peers)
     }
     
-    /// Validate discovered peers by probing them
-    async fn validate_discovered_peers(peers: Vec<crate::proto::PeerInfo>) -> Vec<crate::proto::PeerInfo> {
+    /// Validate discovered peers by probing them, and update bootstrap set with scores/TTL
+    async fn validate_discovered_peers(&self, peers: Vec<crate::proto::PeerInfo>) -> Vec<crate::proto::PeerInfo> {
         let mut validated_peers = Vec::new();
         
         // Use semaphore to limit concurrent probes
@@ -1060,9 +1079,10 @@ impl DhtPeerDiscovery {
         
         for peer in peers {
             let semaphore = Arc::clone(&semaphore);
+            let this = self.clone();
             let task = tokio::spawn(async move {
                 let _permit = semaphore.acquire().await.unwrap();
-                Self::probe_peer_connectivity(peer).await
+                this.probe_peer_connectivity(peer).await
             });
             probe_tasks.push(task);
         }
@@ -1073,12 +1093,79 @@ impl DhtPeerDiscovery {
                 validated_peers.push(validated_peer);
             }
         }
+
+        // Persist best-known peers as bootstrap candidates with scores and TTL
+        // 1) バッチ瞬間スコア（状態/遅延/リージョン）
+        let mut batch_scored: Vec<(f64, String)> = validated_peers
+            .iter()
+            .map(|p| {
+                let status_bonus = match p.status.as_str() { "active" => 1.0, "testing" => 0.2, _ => -0.5 };
+                let lat_penalty = if p.latency_ms.is_finite() { (p.latency_ms / 1000.0).min(5.0) } else { 10.0 };
+                let region_bonus = if ["north_america","europe","asia_pacific"].contains(&p.region.as_str()) { 0.1 } else { 0.0 };
+                let score = status_bonus + region_bonus - lat_penalty;
+                (score, p.address.clone())
+            })
+            .collect();
+        batch_scored.sort_by(|a,b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let mut batch_hot: Vec<String> = batch_scored.iter().take(32).map(|(_,a)| a.clone()).collect();
+        batch_hot.sort(); batch_hot.dedup();
+
+        // 2) 既存スコアマップを読み込み、強化学習的に更新
+        let mut scores: std::collections::HashMap<String, f64> = if let Some(raw) = self.dht_client.get("bootstrap:scores").await {
+            serde_json::from_slice::<std::collections::HashMap<String,f64>>(&raw).unwrap_or_default()
+        } else { std::collections::HashMap::new() };
+        for p in &validated_peers {
+            let entry = scores.entry(p.address.clone()).or_insert(0.0);
+            let lat_norm = if p.latency_ms.is_finite() { (p.latency_ms/1000.0).min(1.0) } else { 1.0 };
+            match p.status.as_str() {
+                "active" => { *entry += 1.0 - 0.5*lat_norm; }
+                "testing" => { *entry += 0.2 - 0.5*lat_norm; }
+                _ => { *entry -= 0.5; }
+            }
+            if *entry > 5.0 { *entry = 5.0; }
+            if *entry < -5.0 { *entry = -5.0; }
+        }
+        // スコアでソートしてホット/コールド集合を導出
+        let mut score_list: Vec<(String, f64)> = scores.iter().map(|(a,s)| (a.clone(), *s)).collect();
+        score_list.sort_by(|a,b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut score_hot: Vec<String> = score_list.iter().filter(|(_,s)| *s >= -0.1).take(32).map(|(a,_)| a.clone()).collect();
+        let mut score_cold: Vec<String> = score_list.iter().filter(|(_,s)| *s <= -0.3).map(|(a,_)| a.clone()).collect();
+        // バッチとスコアのホット集合を結合して最終ホット集合を作成
+        let mut hot_union = batch_hot;
+        hot_union.extend(score_hot.into_iter());
+        hot_union.sort(); hot_union.dedup(); hot_union.truncate(32);
+
+        if !hot_union.is_empty() {
+            let dht = self.dht_client.clone();
+            let buf = serde_json::to_vec(&hot_union).unwrap_or_default();
+            // 中庸6時間TTL
+            let ttl_secs = 6*60*60;
+            tokio::spawn(async move { let _ = dht.put_with_ttl("bootstrap:peers", buf, ttl_secs).await; });
+        }
+
+        // Cold set: unreachableや低スコアも短TTLで保持
+        let mut cold_from_batch: Vec<String> = validated_peers.iter().filter(|p| p.status != "active").map(|p| p.address.clone()).collect();
+        cold_from_batch.extend(score_cold.into_iter());
+        cold_from_batch.sort(); cold_from_batch.dedup();
+        if !cold_from_batch.is_empty() {
+            let dht = self.dht_client.clone();
+            let buf = serde_json::to_vec(&cold_from_batch).unwrap_or_default();
+            tokio::spawn(async move { let _ = dht.put_with_ttl("bootstrap:peers:cold", buf, 30*60).await; });
+        }
+
+        // スコアマップ自体も長めに保存（24h）
+        {
+            let dht = self.dht_client.clone();
+            if let Ok(buf) = serde_json::to_vec(&scores) {
+                tokio::spawn(async move { let _ = dht.put_with_ttl("bootstrap:scores", buf, 24*60*60).await; });
+            }
+        }
         
         validated_peers
     }
     
     /// Probe peer connectivity
-    async fn probe_peer_connectivity(mut peer: crate::proto::PeerInfo) -> Option<crate::proto::PeerInfo> {
+    async fn probe_peer_connectivity(&self, mut peer: crate::proto::PeerInfo) -> Option<crate::proto::PeerInfo> {
         use tokio::net::TcpStream;
         use tokio::time::timeout;
         
@@ -1091,16 +1178,34 @@ impl DhtPeerDiscovery {
                 peer.latency_ms = start_time.elapsed().as_millis() as f64;
                 peer.status = "active".to_string();
                 peer.last_seen = Some(crate::system_time_to_proto_timestamp(SystemTime::now()));
+                // Positive reinforcement for this address
+                let lat_norm = (peer.latency_ms / 1000.0).min(1.0);
+                let _ = self.adjust_bootstrap_score(&peer.address, 0.5 - 0.25 * lat_norm).await;
                 Some(peer)
             }
             Ok(Err(_)) | Err(_) => {
                 // Connection failed
                 peer.status = "unreachable".to_string();
                 peer.latency_ms = f64::INFINITY;
+                // Negative reinforcement
+                let _ = self.adjust_bootstrap_score(&peer.address, -0.7).await;
                 // Still return the peer but mark as unreachable
                 Some(peer)
             }
         }
+    }
+
+    /// Adjust bootstrap score for an address and persist score map with TTL
+    async fn adjust_bootstrap_score(&self, addr: &str, delta: f64) -> anyhow::Result<()> {
+        let mut scores: std::collections::HashMap<String, f64> = if let Some(raw) = self.dht_client.get("bootstrap:scores").await {
+            serde_json::from_slice::<std::collections::HashMap<String,f64>>(&raw).unwrap_or_default()
+        } else { std::collections::HashMap::new() };
+        let e = scores.entry(addr.to_string()).or_insert(0.0);
+        *e = (*e + delta).clamp(-5.0, 5.0);
+        if let Ok(buf) = serde_json::to_vec(&scores) {
+            let _ = self.dht_client.put_with_ttl("bootstrap:scores", buf, 24*60*60).await;
+        }
+        Ok(())
     }
     
     /// Parse peer information from JSON format
@@ -3422,6 +3527,15 @@ impl PathBuilder {
         config: PathBuilderConfig,
     ) -> Self {
         let dht = Arc::new(DummyDhtHandle::new());
+        // Persist provided bootstrap peers list for future restarts (fire-and-forget)
+        {
+            let dht_clone = dht.clone();
+            let peers_json = serde_json::to_vec(&_bootstrap_peers).unwrap_or_default();
+            tokio::spawn(async move {
+                // Provide a moderate default TTL (6h) so list refreshes over time
+                let _ = dht_clone.put_with_ttl("bootstrap:peers", peers_json, 6*60*60).await;
+            });
+        }
         #[cfg(feature = "experimental-metrics")]
         let metrics = Arc::new(MetricsCollector::new());
         let path_cache = LruCache::new(
