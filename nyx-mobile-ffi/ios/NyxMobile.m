@@ -264,28 +264,32 @@
 // MARK: - Callback Methods
 
 - (void)onBatteryLevelChanged:(NSInteger)level {
-    // This would typically call back into Rust FFI
     NSLog(@"Battery level callback: %ld%%", (long)level);
+    extern void nyx_mobile_notify_event(int event, int value);
+    nyx_mobile_notify_event(2, (int)level);
 }
 
 - (void)onChargingStateChanged:(BOOL)charging {
-    // This would typically call back into Rust FFI
     NSLog(@"Charging state callback: %@", charging ? @"YES" : @"NO");
+    // Charging is indirectly reflected via battery/power-save; no direct code for now.
 }
 
 - (void)onLowPowerModeChanged:(BOOL)lowPowerMode {
-    // This would typically call back into Rust FFI
     NSLog(@"Low power mode callback: %@", lowPowerMode ? @"YES" : @"NO");
+    extern void nyx_mobile_notify_event(int event, int value);
+    nyx_mobile_notify_event(1, lowPowerMode ? 1 : 0);
 }
 
 - (void)onAppStateChanged:(NyxAppState)state {
-    // This would typically call back into Rust FFI
     NSLog(@"App state callback: %ld", (long)state);
+    extern void nyx_mobile_notify_event(int event, int value);
+    nyx_mobile_notify_event(3, (int)state);
 }
 
 - (void)onNetworkStateChanged:(NyxNetworkState)state {
-    // This would typically call back into Rust FFI
     NSLog(@"Network state callback: %ld", (long)state);
+    extern void nyx_mobile_notify_event(int event, int value);
+    nyx_mobile_notify_event(4, (int)state);
 }
 
 @end

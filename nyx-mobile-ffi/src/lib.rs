@@ -66,6 +66,67 @@ pub use common::*;
 /// Global tokio runtime for async operations
 static RUNTIME: OnceCell<Arc<Runtime>> = OnceCell::new();
 
+// ---- Cross-crate event callback bridge ----
+// Allows core (nyx-core) to register a single C-ABI callback to receive
+// immediate mobile events in addition to polling.
+type EventCallback = extern "C" fn(event: i32, value: i32);
+static EVENT_CB: OnceCell<std::sync::Mutex<Option<EventCallback>>> = OnceCell::new();
+
+/// Register a global event callback. Passing NULL clears the callback.
+#[no_mangle]
+pub extern "C" fn nyx_mobile_register_event_callback(cb: Option<EventCallback>) -> c_int {
+    let cell = EVENT_CB.get_or_init(|| std::sync::Mutex::new(None));
+    let mut guard = cell.lock().unwrap();
+    *guard = cb;
+    0
+}
+
+/// Notify an event from platform bridges (Objective-C/Java) into Rust.
+/// event codes: 0=SCREEN(1 on/0 off), 1=LOW_POWER(1/0), 2=BATTERY(level 0..100), 3=APP_STATE(0..2), 4=NETWORK(0..3)
+#[no_mangle]
+pub extern "C" fn nyx_mobile_notify_event(event: i32, value: i32) {
+    // Update local state snapshots where applicable
+    match event {
+        0 => {
+            if let Some(st) = CURRENT_POWER_STATE.get() {
+                let mut w = st.write().unwrap();
+                w.screen_on = value != 0;
+            }
+        }
+        1 => {
+            if let Some(st) = CURRENT_POWER_STATE.get() {
+                let mut w = st.write().unwrap();
+                w.low_power_mode = value != 0;
+            }
+        }
+        2 => {
+            if let Some(st) = CURRENT_POWER_STATE.get() {
+                let mut w = st.write().unwrap();
+                w.battery_level = value.max(0).min(100) as u8;
+            }
+        }
+        3 => {
+            if let Some(st) = CURRENT_APP_STATE.get() {
+                let mut w = st.write().unwrap();
+                *w = match value { 0 => AppState::Active, 1 => AppState::Background, _ => AppState::Inactive };
+            }
+        }
+        4 => {
+            if let Some(st) = CURRENT_NETWORK_STATE.get() {
+                let mut w = st.write().unwrap();
+                *w = match value { 0 => NetworkState::WiFi, 1 => NetworkState::Cellular, 2 => NetworkState::Ethernet, _ => NetworkState::None };
+            }
+        }
+        _ => {}
+    }
+    // Dispatch to registered callback if any
+    if let Some(m) = EVENT_CB.get() {
+        if let Some(cb) = *m.lock().unwrap() {
+            cb(event, value);
+        }
+    }
+}
+
 /// Initialize the mobile FFI runtime
 #[no_mangle]
 pub extern "C" fn nyx_mobile_init() -> c_int {

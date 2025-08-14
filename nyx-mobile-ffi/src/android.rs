@@ -168,6 +168,18 @@ pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeInitAndroidJNI(
     }
 }
 
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeNotifyEvent(
+    _env: JNIEnv,
+    _class: JClass,
+    event: jint,
+    value: jint,
+) {
+    // Forward to common Rust-side notifier to update state and dispatch callback
+    super::nyx_mobile_notify_event(event as i32, value as i32);
+}
+
 /// Android battery level monitoring using BatteryManager
 #[cfg(target_os = "android")]
 #[no_mangle]

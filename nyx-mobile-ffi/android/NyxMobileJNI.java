@@ -81,6 +81,13 @@ public class NyxMobileJNI {
      */
     public static native int nativeInitAndroidJNI(android.content.Context context);
     
+    /**
+     * Notify an immediate mobile event to native (Rust) side
+     * @param event event code (0=SCREEN,1=LOW_POWER,2=BATTERY,3=APP_STATE,4=NETWORK)
+     * @param value associated value
+     */
+    public static native void nativeNotifyEvent(int event, int value);
+    
     // Callback methods called from native code
     
     /**
