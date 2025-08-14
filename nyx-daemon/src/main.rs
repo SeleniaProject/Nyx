@@ -1630,6 +1630,10 @@ async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::R
         .route("/api/v1/wasm/handshake/start", post(http_wasm_handshake_start))
         .route("/api/v1/wasm/handshake/process-peer-settings", post(http_wasm_handshake_process_peer_settings))
         .route("/api/v1/wasm/handshake/complete", post(http_wasm_handshake_complete))
+        // Plugin registry diagnostics and reload (feature=plugin)
+        .route("/api/v1/plugins/registry", get(http_get_plugin_registry))
+        .route("/api/v1/plugins/reload", post(http_reload_plugin_manifest_json))
+        .route("/api/v1/plugins/reload/env", post(http_reload_plugin_manifest_env))
         .route("/api/v1/stream/:id/recv", get(http_receive_data))
         .route("/api/v1/events", get(http_get_events))
         .route("/api/v1/events", post(http_publish_event))
@@ -1890,6 +1894,49 @@ async fn http_wasm_handshake_complete(State(st): State<AppState>) -> Json<serde_
             }
         } else {
             Json(serde_json::json!({"ok": false, "error": "no handshake in progress"}))
+        }
+    }
+    #[cfg(not(feature = "plugin"))]
+    {
+        Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
+    }
+}
+
+/// Get plugin registry snapshot (feature=plugin)
+async fn http_get_plugin_registry() -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        let items = nyx_stream::plugin_handshake::get_plugin_registry_snapshot();
+        return Json(serde_json::json!({"ok": true, "registry": items}));
+    }
+    #[cfg(not(feature = "plugin"))]
+    {
+        Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
+    }
+}
+
+/// Reload plugin manifest from JSON body (feature=plugin)
+async fn http_reload_plugin_manifest_json(body: axum::body::Bytes) -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        match nyx_stream::plugin_handshake::reload_plugin_manifest_from_json(std::str::from_utf8(&body).unwrap_or("{}")) {
+            Ok(count) => Json(serde_json::json!({"ok": true, "count": count})),
+            Err(e) => Json(serde_json::json!({"ok": false, "error": e})),
+        }
+    }
+    #[cfg(not(feature = "plugin"))]
+    {
+        Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
+    }
+}
+
+/// Reload plugin manifest from NYX_PLUGIN_MANIFEST env (feature=plugin)
+async fn http_reload_plugin_manifest_env() -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        match nyx_stream::plugin_handshake::reload_plugin_manifest() {
+            Ok(count) => Json(serde_json::json!({"ok": true, "count": count})),
+            Err(e) => Json(serde_json::json!({"ok": false, "error": e})),
         }
     }
     #[cfg(not(feature = "plugin"))]
