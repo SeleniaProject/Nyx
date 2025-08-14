@@ -227,8 +227,10 @@ mod tests {
 
 	#[tokio::test(flavor = "current_thread")]
 	async fn init_only_no_crash() {
-		let (_dispatch, _spans) = init_in_memory_tracer("nyx-test", 1.0);
-		assert!(true);
+		// Initialize tracer and ensure no spans are captured immediately after init.
+		let (_dispatch, spans) = init_in_memory_tracer("nyx-test", 1.0);
+		let store = spans.lock().unwrap();
+		assert!(store.is_empty(), "span store should be empty right after initialization");
 	}
 
 	#[tokio::test(flavor = "current_thread")]

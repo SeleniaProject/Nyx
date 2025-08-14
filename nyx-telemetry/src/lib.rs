@@ -751,6 +751,13 @@ impl TelemetryCollector {
         Ok(())
     }
 
+    /// Stop the telemetry collector. This stops the periodic collection loop.
+    /// The HTTP metrics server (if started) remains available until process exit.
+    pub async fn stop(&self) {
+        *self.running.write().await = false;
+        debug!("Telemetry collector stop requested");
+    }
+
     /// Lightweight initialization that installs hooks & starts metrics server WITHOUT entering the blocking collection loop.
     /// Intended for tests that want to manually trigger collection via `collect_once_for_test`.
     pub async fn init_light(&self) -> Result<()> {
