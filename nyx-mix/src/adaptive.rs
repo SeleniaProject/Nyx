@@ -117,8 +117,8 @@ impl AdaptiveCoverGenerator {
         // If entering low-power conditions, reduce λ immediately.
         let low = matches!(state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
         if low {
-            // Strong reduction (<20%) per low_power tests (strictly less than 0.2x)
-            self.gen = CoverGenerator::new(self.base_lambda * 0.15);
+            // Strong reduction per spec constant LOW_POWER_COVER_RATIO
+            self.gen = CoverGenerator::new(self.base_lambda * LOW_POWER_COVER_RATIO);
         } else {
             self.gen = CoverGenerator::new(self.base_lambda);
         }
@@ -211,6 +211,7 @@ impl AdaptiveCoverGenerator {
         // Telemetry hooks (feature gated) for λ deviation
         #[cfg(feature="telemetry")]
         {
+            let adjusted_cover_pps = self.gen.lambda;
             let total_pps = util_smoothed + adjusted_cover_pps;
             if total_pps > 0.0 {
                 let achieved_ratio = adjusted_cover_pps / total_pps;
