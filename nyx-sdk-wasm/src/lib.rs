@@ -1,4 +1,4 @@
-//! WASM bindings exposing a minimal subset of Nyx capabilities.
+//! WASM bindings exposing a growing subset of Nyx capabilities.
 //!
 //! Feature parity notes:
 //! - HPKE: Public API surface is planned; handshake demo currently uses classic Noise. HPKE exposure will use wasm-safe RNG and KEM bindings when stabilized.
@@ -6,12 +6,27 @@
 //! - Capability negotiation / Close codes: Will be exposed as structured JS errors; interim maps to exceptions.
 //! - Push notifications: `nyx_register_push` is provided. Integration with Nyx gateway (VAPID/endpoint exchange) follows WebPush best practices.
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "noise")]
 use nyx_crypto::noise::{initiator_generate, responder_process, initiator_finalize, derive_session_key};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, PushSubscriptionOptionsInit, ServiceWorkerRegistration, PushSubscription, PushManager};
 use js_sys::{Uint8Array, JSON, Object, Reflect};
 use base64::engine::{general_purpose, Engine};
+mod multipath;
+mod plugin;
+mod errors;
+mod management;
+#[cfg(feature = "hpke")]
+mod hpke;
 
+pub use multipath::{MultipathController, MultipathConfigWasm, PathStatsWasm, PathSelectionResult};
+pub use plugin::{PluginRegistryWasm};
+#[cfg(feature = "hpke")]
+pub use hpke::{hpke_generate_keypair, hpke_open, hpke_seal, hpke_generate_and_seal_session, hpke_open_session};
+pub use errors::{nyx_map_close_code, nyx_check_required_plugins};
+pub use management::{nyx_build_plugin_settings, nyx_build_close_unsupported_cap};
+
+#[cfg(feature = "noise")]
 #[wasm_bindgen]
 pub fn noise_handshake_demo() -> String {
     // Simple demo performing Noise_Nyx X25519 handshake in wasm.
@@ -54,10 +69,51 @@ pub async fn nyx_register_push(sw_path: String, vapid_public_key: String) -> Res
     let sub_js = JsFuture::from(sub_promise).await?;
     let sub: PushSubscription = sub_js.dyn_into()?;
 
-    // Simplified serialization - just return the endpoint for now
+    // Build comprehensive subscription JSON: endpoint + keys (p256dh, auth)
     let js_obj = Object::new();
     Reflect::set(&js_obj, &"endpoint".into(), &sub.endpoint().into())?;
+    // keys (via JS getKey fallback to support older web-sys)
+    let keys_obj = Object::new();
+    let get_key_fn = Reflect::get(&sub, &JsValue::from_str("getKey"))?;
+    if let Some(f) = get_key_fn.dyn_ref::<js_sys::Function>() {
+        // p256dh
+        let res = f.call1(&sub, &JsValue::from_str("p256dh"))?;
+        if !res.is_undefined() && !res.is_null() {
+            let u8 = js_sys::Uint8Array::new(&res);
+            let v = u8.to_vec();
+            let b64 = general_purpose::URL_SAFE_NO_PAD.encode(v);
+            Reflect::set(&keys_obj, &"p256dh".into(), &JsValue::from_str(&b64))?;
+        }
+        // auth
+        let res = f.call1(&sub, &JsValue::from_str("auth"))?;
+        if !res.is_undefined() && !res.is_null() {
+            let u8 = js_sys::Uint8Array::new(&res);
+            let v = u8.to_vec();
+            let b64 = general_purpose::URL_SAFE_NO_PAD.encode(v);
+            Reflect::set(&keys_obj, &"auth".into(), &JsValue::from_str(&b64))?;
+        }
+    }
+    Reflect::set(&js_obj, &"keys".into(), &keys_obj.into())?;
     
     let json_str = JSON::stringify(&js_obj)?;
     Ok(json_str.into())
 } 
+
+/// Multipath controller factory (convenience for JS users)
+#[wasm_bindgen]
+pub fn nyx_multipath_controller_new(config_json: Option<String>) -> MultipathController {
+    let cfg = config_json.map(|s| MultipathConfigWasm::new(Some(s)).unwrap_or_else(|_| MultipathConfigWasm::new(None).unwrap()));
+    MultipathController::new(cfg)
+}
+
+/// Create an empty plugin registry for client-side manifest management
+#[wasm_bindgen]
+pub fn nyx_plugin_registry_new() -> PluginRegistryWasm {
+    PluginRegistryWasm::new()
+}
+
+/// Convenience: export required plugin IDs as CBOR (base64url) from the registry
+#[wasm_bindgen]
+pub fn nyx_plugin_required_cbor_b64(registry: &PluginRegistryWasm) -> Result<String, JsValue> {
+    registry.export_required_plugins_cbor_b64()
+}

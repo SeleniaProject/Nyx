@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wasm-bindgen = "0.2"
-nyx-crypto = { path = "../nyx-crypto" }
+nyx-crypto = { path = "../nyx-crypto", optional = true }
 getrandom = { version = "0.2", features = ["js"] }
 hex = "0.4"
 wasm-bindgen-futures = "0.4"
@@ -30,3 +30,19 @@ web-sys = { version = "0.3", features = [
     "Notification",
     "console"
 ] } 
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+once_cell = { version = "1.19", optional = true }
+thiserror = { version = "1.0", optional = true }
+semver = { version = "1.0", features = ["serde"], optional = true }
+ed25519-dalek = { version = "2", features = ["std", "rand_core"], optional = true }
+sha2 = { version = "0.10", optional = true }
+ciborium = { version = "0.2", optional = true }
+
+[features]
+default = ["plugin", "multipath"]
+plugin = ["serde", "serde_json", "serde-wasm-bindgen", "ed25519-dalek", "sha2", "semver", "ciborium"]
+multipath = ["serde", "serde_json", "serde-wasm-bindgen", "once_cell", "thiserror"]
+noise = ["nyx-crypto"]
+hpke = []
