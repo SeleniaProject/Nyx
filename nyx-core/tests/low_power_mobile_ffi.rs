@@ -19,6 +19,11 @@ async fn construct_with_mobile_ffi() {
 #[cfg(not(feature = "mobile_ffi"))]
 #[test]
 fn mobile_ffi_test_skipped() {
-    // Placeholder so cargo test --all succeeds when feature disabled.
-    assert!(true);
+    // When mobile_ffi feature is disabled on non-mobile platforms, ensure the
+    // symbolic types remain accessible but constructors are gated.
+    // Compile-time check: type path compiles.
+    use nyx_core::low_power::PowerState;
+    let _ = PowerState::ScreenOn; // symbol presence check
+    // Runtime no-op assertion to indicate intentional skip.
+    assert_eq!(1, 1, "mobile_ffi disabled build should compile paths");
 }

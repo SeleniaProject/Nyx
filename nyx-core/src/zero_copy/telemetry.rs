@@ -490,6 +490,23 @@ impl ZeroCopyTelemetry {
     }
 }
 
+/// Convenience: spawn telemetry collection task for a given `ZeroCopyManager` using a provided collector and config.
+/// This helper allows external components (e.g., daemon) to bind zero-copy metrics into their existing
+/// telemetry pipeline without duplicating wiring code.
+pub async fn spawn_zerocopy_telemetry_for_manager(
+	collector: std::sync::Arc<TelemetryCollector>,
+	manager: std::sync::Arc<crate::zero_copy::manager::ZeroCopyManager>,
+	cfg: TelemetryConfig,
+) -> tokio::task::JoinHandle<()> {
+	let zt = ZeroCopyTelemetry {
+		collector,
+		manager,
+		config: cfg.clone(),
+		metric_history: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::VecDeque::with_capacity(cfg.max_history_entries))),
+	};
+	zt.start_collection().await
+}
+
 /// Optimization analysis report
 #[derive(Debug, Clone)]
 pub struct OptimizationReport {

@@ -64,38 +64,85 @@ impl PathPerformanceMonitor {
                 let mut m = metrics.write().await;
                 let hist = history.read().await;
                 if hist.len() >= 5 {
-                    let recent: Vec<_> = hist.iter().rev().take(10).collect();
-                    let mut latency_delta = 0.0;
-                    let mut reliability_delta = 0.0;
-                    let mut rel_vals = Vec::new();
-                    for w in recent.windows(2) {
-                        let (older, newer) = (w[1], w[0]);
-                        latency_delta += newer.latency_ms - older.latency_ms;
-                        reliability_delta += newer.reliability_score - older.reliability_score;
-                        rel_vals.push(newer.reliability_score);
-                    }
-                    let volatility = if rel_vals.len() > 1 {
-                        let mean = rel_vals.iter().sum::<f64>() / rel_vals.len() as f64;
-                        (rel_vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / rel_vals.len() as f64).sqrt()
-                    } else { 0.0 };
-                    let overall = reliability_delta - latency_delta / 100.0;
-                    m.performance_trend = if volatility > 0.3 { PerformanceTrend::Volatile } else if overall > 0.1 { PerformanceTrend::Ascending } else if overall < -0.1 { PerformanceTrend::Descending } else { PerformanceTrend::Stable };
-                    if m.reliability_score < PERFORMANCE_ALERT_THRESHOLD {
-                        if let Some(cb) = alert_cb.lock().await.as_ref() { cb(&m); }
-                    }
-                    let point = super::path_monitor::PerformanceDataPoint { timestamp: SystemTime::now(), latency_ms: m.current_latency_ms, bandwidth_mbps: m.current_bandwidth_mbps, packet_loss_rate: m.packet_loss_rate, reliability_score: m.reliability_score };
-                    drop(m); drop(hist);
-                    let mut hw = history.write().await; hw.push_back(point); if hw.len() > PERFORMANCE_SAMPLE_WINDOW { hw.pop_front(); }
+                    Self::compute_trend_and_maybe_alert(&alert_cb, &mut m, &hist).await;
                 }
+                // Always append a fresh data point on each tick based on current snapshot
+                let point = super::path_monitor::PerformanceDataPoint { timestamp: SystemTime::now(), latency_ms: m.current_latency_ms, bandwidth_mbps: m.current_bandwidth_mbps, packet_loss_rate: m.packet_loss_rate, reliability_score: m.reliability_score };
+                drop(m); drop(hist);
+                let mut hw = history.write().await; hw.push_back(point); if hw.len() > PERFORMANCE_SAMPLE_WINDOW { hw.pop_front(); }
             }
         });
         *self.monitoring_task.lock().await = Some(handle);
         Ok(())
     }
     pub async fn stop_monitoring(&self) { self.enabled.store(false, std::sync::atomic::Ordering::SeqCst); if let Some(h)=self.monitoring_task.lock().await.take(){ h.abort(); } }
-    pub async fn record_latency(&self, latency_ms: f64) { let mut s = self.latency_samples.write().await; s.push_back(latency_ms); if s.len()>PERFORMANCE_SAMPLE_WINDOW { s.pop_front(); } let avg = s.iter().sum::<f64>()/s.len() as f64; let mut m = self.metrics.write().await; m.current_latency_ms = latency_ms; m.avg_latency_ms = avg; m.last_updated = SystemTime::now(); }
-    pub async fn record_bandwidth(&self, bandwidth_mbps: f64) { let mut s = self.bandwidth_samples.write().await; s.push_back(bandwidth_mbps); if s.len()>PERFORMANCE_SAMPLE_WINDOW { s.pop_front(); } let avg = s.iter().sum::<f64>()/s.len() as f64; let mut m = self.metrics.write().await; m.current_bandwidth_mbps = bandwidth_mbps; m.avg_bandwidth_mbps = avg; m.last_updated = SystemTime::now(); }
-    pub async fn record_transmission(&self, bytes_tx:u64, bytes_rx:u64, success: bool){ let mut m = self.metrics.write().await; m.bytes_transmitted += bytes_tx; m.bytes_received += bytes_rx; if success { m.successful_transmissions +=1; } else { m.failed_transmissions +=1; } let total = m.successful_transmissions + m.failed_transmissions; if total>0 { m.reliability_score = m.successful_transmissions as f64 / total as f64; m.packet_loss_rate = 1.0 - m.reliability_score; m.throughput_efficiency = m.reliability_score; } m.last_updated = SystemTime::now(); }
+
+    /// Compute trend based on recent history and optionally trigger alert callback.
+    async fn compute_trend_and_maybe_alert(
+        alert_cb: &Arc<Mutex<Option<Box<dyn Fn(&PathPerformanceMetrics)+Send+Sync>>>>,
+        m: &mut PathPerformanceMetrics,
+        hist: &std::collections::VecDeque<PerformanceDataPoint>,
+    ) {
+        let recent: Vec<_> = hist.iter().rev().take(10).collect();
+        if recent.len() >= 2 {
+            let mut latency_delta = 0.0;
+            let mut reliability_delta = 0.0;
+            let mut rel_vals = Vec::new();
+            for w in recent.windows(2) {
+                let (older, newer) = (w[1], w[0]);
+                latency_delta += newer.latency_ms - older.latency_ms;
+                reliability_delta += newer.reliability_score - older.reliability_score;
+                rel_vals.push(newer.reliability_score);
+            }
+            let volatility = if rel_vals.len() > 1 {
+                let mean = rel_vals.iter().sum::<f64>() / rel_vals.len() as f64;
+                (rel_vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / rel_vals.len() as f64).sqrt()
+            } else { 0.0 };
+            let overall = reliability_delta - latency_delta / 100.0;
+            m.performance_trend = if volatility > 0.3 { PerformanceTrend::Volatile } else if overall > 0.1 { PerformanceTrend::Ascending } else if overall < -0.1 { PerformanceTrend::Descending } else { PerformanceTrend::Stable };
+        }
+        if m.reliability_score < PERFORMANCE_ALERT_THRESHOLD { if let Some(cb) = alert_cb.lock().await.as_ref() { cb(&m); } }
+    }
+
+    /// Push a data point and update trend/alerts immediately for responsiveness.
+    async fn push_point_and_update(&self) {
+        let snapshot = { self.metrics.read().await.clone() };
+        {
+            let mut hw = self.history.write().await;
+            hw.push_back(PerformanceDataPoint { timestamp: SystemTime::now(), latency_ms: snapshot.current_latency_ms, bandwidth_mbps: snapshot.current_bandwidth_mbps, packet_loss_rate: snapshot.packet_loss_rate, reliability_score: snapshot.reliability_score });
+            if hw.len() > PERFORMANCE_SAMPLE_WINDOW { hw.pop_front(); }
+        }
+        // Recompute trend on demand using latest history
+        let mut m = self.metrics.write().await;
+        let hist = self.history.read().await;
+        Self::compute_trend_and_maybe_alert(&self.alert_callback, &mut m, &hist).await;
+    }
+
+    pub async fn record_latency(&self, latency_ms: f64) {
+        let mut s = self.latency_samples.write().await; s.push_back(latency_ms); if s.len()>PERFORMANCE_SAMPLE_WINDOW { s.pop_front(); }
+        let avg = s.iter().sum::<f64>()/s.len() as f64;
+        { let mut m = self.metrics.write().await; m.current_latency_ms = latency_ms; m.avg_latency_ms = avg; m.last_updated = SystemTime::now(); }
+        // Do not push a history point here to ensure first point contains bandwidth as well
+    }
+
+    pub async fn record_bandwidth(&self, bandwidth_mbps: f64) {
+        let mut s = self.bandwidth_samples.write().await; s.push_back(bandwidth_mbps); if s.len()>PERFORMANCE_SAMPLE_WINDOW { s.pop_front(); }
+        let avg = s.iter().sum::<f64>()/s.len() as f64;
+        { let mut m = self.metrics.write().await; m.current_bandwidth_mbps = bandwidth_mbps; m.avg_bandwidth_mbps = avg; m.last_updated = SystemTime::now(); }
+        // Do not push a history point here; `record_transmission` or the periodic ticker appends
+    }
+
+    pub async fn record_transmission(&self, bytes_tx:u64, bytes_rx:u64, success: bool){
+        {
+            let mut m = self.metrics.write().await;
+            m.bytes_transmitted += bytes_tx; m.bytes_received += bytes_rx;
+            if success { m.successful_transmissions +=1; } else { m.failed_transmissions +=1; }
+            let total = m.successful_transmissions + m.failed_transmissions;
+            if total>0 { m.reliability_score = m.successful_transmissions as f64 / total as f64; m.packet_loss_rate = 1.0 - m.reliability_score; m.throughput_efficiency = m.reliability_score; }
+            m.last_updated = SystemTime::now();
+        }
+        self.push_point_and_update().await;
+    }
     pub async fn set_alert_callback<F:Fn(&PathPerformanceMetrics)+Send+Sync+'static>(&self, cb:F){ *self.alert_callback.lock().await = Some(Box::new(cb)); }
     pub async fn get_metrics(&self) -> PathPerformanceMetrics { self.metrics.read().await.clone() }
     pub async fn get_history(&self) -> Vec<PerformanceDataPoint> { self.history.read().await.iter().cloned().collect() }
