@@ -260,6 +260,11 @@ public class NyxMobileBridge {
             if (nativeCallback != null) {
                 nativeCallback.onAppStateChanged(state.getValue());
             }
+            try {
+                NyxMobileJNI.nativeNotifyEvent(3, state.getValue());
+            } catch (Throwable t) {
+                Log.w(TAG, "nativeNotifyEvent(app) failed: " + t.getMessage());
+            }
         }
     }
     
@@ -313,6 +318,11 @@ public class NyxMobileBridge {
             
             if (nativeCallback != null) {
                 nativeCallback.onNetworkStateChanged(newState.getValue());
+            }
+            try {
+                NyxMobileJNI.nativeNotifyEvent(4, newState.getValue());
+            } catch (Throwable t) {
+                Log.w(TAG, "nativeNotifyEvent(net) failed: " + t.getMessage());
             }
         }
     }
@@ -370,6 +380,9 @@ public class NyxMobileBridge {
                     if (nativeCallback != null && level >= 0) {
                         nativeCallback.onBatteryLevelChanged(level);
                     }
+                    if (level >= 0) {
+                        try { NyxMobileJNI.nativeNotifyEvent(2, level); } catch (Throwable t) { Log.w(TAG, "nativeNotifyEvent(battery) failed: " + t.getMessage()); }
+                    }
                     break;
                     
                 case Intent.ACTION_POWER_CONNECTED:
@@ -378,6 +391,7 @@ public class NyxMobileBridge {
                     if (nativeCallback != null) {
                         nativeCallback.onChargingStateChanged(charging);
                     }
+                    // Low power or charging is reflected via dedicated receiver; omit here.
                     break;
             }
         }
@@ -390,6 +404,11 @@ public class NyxMobileBridge {
                 boolean powerSaveMode = isPowerSaveMode();
                 if (nativeCallback != null) {
                     nativeCallback.onPowerSaveModeChanged(powerSaveMode);
+                }
+                try {
+                    NyxMobileJNI.nativeNotifyEvent(1, powerSaveMode ? 1 : 0);
+                } catch (Throwable t) {
+                    Log.w(TAG, "nativeNotifyEvent(low_power) failed: " + t.getMessage());
                 }
             }
         }
