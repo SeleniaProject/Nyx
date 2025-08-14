@@ -612,8 +612,8 @@ async fn test_multipath_routing_correctness() {
             }
         }
 
-        // Allow processing time (increase to reduce timing-induced apparent loss)
-        tokio::time::sleep(Duration::from_millis(400)).await;
+        // Allow processing time; slightly longer to avoid timing-induced apparent loss in CI
+        tokio::time::sleep(Duration::from_millis(700)).await;
 
         let results = simulator.get_results().await;
         

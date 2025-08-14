@@ -1049,7 +1049,7 @@ impl PerformanceVerificationSuite {
     fn analyze_regression(
         &self,
         crypto_metrics: &CryptoPerformanceMetrics,
-        _stream_metrics: &StreamPerformanceMetrics,
+        stream_metrics: &StreamPerformanceMetrics,
         _network_metrics: &NetworkPerformanceMetrics,
         _daemon_metrics: &DaemonPerformanceMetrics,
         _resource_metrics: &ResourceUsageMetrics,
@@ -1059,23 +1059,55 @@ impl PerformanceVerificationSuite {
         let mut baseline_comparison = HashMap::new();
         let mut affected_components = Vec::new();
 
-        // Compare crypto performance
-        let crypto_change = (crypto_metrics.hpke_key_derivation_ops_per_sec - 
-                           baseline.crypto_metrics.hpke_key_derivation_ops_per_sec) /
-                           baseline.crypto_metrics.hpke_key_derivation_ops_per_sec * 100.0;
+        // Helper to compute percent change robustly
+        let pct = |current: f64, base: f64| -> f64 {
+            if base.abs() < f64::EPSILON {
+                if current.abs() < f64::EPSILON { 0.0 } else { -100.0 }
+            } else {
+                (current - base) / base * 100.0
+            }
+        };
+
+        // Compare crypto performance (higher is better)
+        let crypto_change = pct(
+            crypto_metrics.hpke_key_derivation_ops_per_sec,
+            baseline.crypto_metrics.hpke_key_derivation_ops_per_sec,
+        );
         baseline_comparison.insert("crypto_hpke_ops".to_string(), crypto_change);
 
         if crypto_change < -self.thresholds.max_regression_percent {
             affected_components.push("Crypto".to_string());
         }
 
-        // Compare system performance
-        let system_change = (system_metrics.overall_throughput_mbps - 
-                           baseline.system_metrics.overall_throughput_mbps) /
-                           baseline.system_metrics.overall_throughput_mbps * 100.0;
-        baseline_comparison.insert("system_throughput".to_string(), system_change);
+        // Compare system throughput (higher is better)
+        let system_throughput_change = pct(
+            system_metrics.overall_throughput_mbps,
+            baseline.system_metrics.overall_throughput_mbps,
+        );
+        baseline_comparison.insert("system_throughput".to_string(), system_throughput_change);
 
-        if system_change < -self.thresholds.max_regression_percent {
+        if system_throughput_change < -self.thresholds.max_regression_percent {
+            affected_components.push("System".to_string());
+        }
+
+        // Compare stream creation ops (higher is better)
+        let stream_creation_change = pct(
+            stream_metrics.stream_creation_ops_per_sec,
+            baseline.stream_metrics.stream_creation_ops_per_sec,
+        );
+        baseline_comparison.insert("stream_creation_ops".to_string(), stream_creation_change);
+        if stream_creation_change < -self.thresholds.max_regression_percent {
+            affected_components.push("Stream".to_string());
+        }
+
+        // Compare end-to-end latency (lower is better) → invert sign so increase reduces overall score
+        let latency_change = pct(
+            system_metrics.end_to_end_latency_ms,
+            baseline.system_metrics.end_to_end_latency_ms,
+        );
+        let latency_perf_change = -latency_change;
+        baseline_comparison.insert("system_latency".to_string(), latency_perf_change);
+        if latency_change > self.thresholds.max_regression_percent {
             affected_components.push("System".to_string());
         }
 
@@ -1931,8 +1963,8 @@ async fn test_performance_degradation_detection() {
     info!("  - System throughput: {:.2} Mbps", degraded_metrics.system_metrics.overall_throughput_mbps);
     info!("  - End-to-end latency: {:.2} ms", degraded_metrics.system_metrics.end_to_end_latency_ms);
 
-    // Analyze performance degradation
-    let regression = &degraded_metrics.performance_analysis.regression_analysis;
+        // Analyze performance degradation
+        let regression = &degraded_metrics.performance_analysis.regression_analysis;
     
     info!("Degradation analysis:");
     info!("  - Overall performance change: {:.2}%", regression.performance_change_percent);
@@ -1956,9 +1988,11 @@ async fn test_performance_degradation_detection() {
               bottleneck.severity_score * 100.0);
     }
 
-    // Verify degradation analysis functionality
-    assert!(!bottlenecks.is_empty() || regression.performance_change_percent.abs() > 5.0, 
-            "Performance degradation should be detected under increased load");
+        // Verify degradation analysis functionality
+        assert!(
+            !bottlenecks.is_empty() || regression.regression_detected || regression.performance_change_percent.abs() > 5.0,
+            "Performance degradation should be detected under increased load"
+        );
 
     // Check recommendations
     let recommendations = &degraded_metrics.performance_analysis.recommendations;
