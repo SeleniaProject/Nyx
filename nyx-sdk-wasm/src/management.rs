@@ -231,4 +231,20 @@ pub async fn nyx_complete_plugin_handshake(url: String) -> Result<JsValue, JsVal
     Ok(json)
 }
 
+/// Convenience: process peer settings (b64url) then complete handshake against daemon gateway
+#[wasm_bindgen]
+pub async fn nyx_autopilot_process_and_complete(base_url: String, peer_settings_b64: String) -> Result<JsValue, JsValue> {
+    // Decode peer settings from base64url to Uint8Array
+    let bytes = general_purpose::URL_SAFE_NO_PAD
+        .decode(peer_settings_b64.as_bytes())
+        .map_err(|e| JsValue::from_str(&format!("base64url decode error: {}", e)))?;
+    let u8a = js_sys::Uint8Array::from(bytes.as_slice());
+    // POST process-peer-settings
+    let process_url = format!("{}/api/v1/wasm/handshake/process-peer-settings", base_url.trim_end_matches('/'));
+    let _ = nyx_process_peer_settings(process_url, u8a).await?;
+    // POST complete
+    let complete_url = format!("{}/api/v1/wasm/handshake/complete", base_url.trim_end_matches('/'));
+    nyx_complete_plugin_handshake(complete_url).await
+}
+
 
