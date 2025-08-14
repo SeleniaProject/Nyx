@@ -14,12 +14,73 @@ fn find_free_port() -> u16 {
 }
 
 fn locate_daemon_binary() -> String {
+    // 1) Standard Cargo-provided env vars
     if let Ok(p) = std::env::var("CARGO_BIN_EXE_nyx_daemon") { return p; }
     if let Ok(p) = std::env::var("CARGO_BIN_EXE_nyx-daemon") { return p; }
-    for (k,v) in std::env::vars() {
-        if k.starts_with("CARGO_BIN_EXE_") && k.ends_with("nyx-daemon") || k.ends_with("nyx_daemon") { return v; }
+    for (k, v) in std::env::vars() {
+        // Accept both hyphenated and underscored suffixes
+        if k.starts_with("CARGO_BIN_EXE_") && (k.ends_with("nyx-daemon") || k.ends_with("nyx_daemon")) {
+            return v;
+        }
     }
-    panic!("CARGO_BIN_EXE for nyx-daemon not found");
+
+    // 2) Fallback: search under target/(debug|test|release)/ for nyx-daemon executable
+    use std::path::{Path, PathBuf};
+    let target_root_default = "target".to_string();
+    let mut candidate_target_roots: Vec<PathBuf> = Vec::new();
+    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
+        candidate_target_roots.push(PathBuf::from(dir));
+    }
+    // Current crate dir
+    candidate_target_roots.push(PathBuf::from(&target_root_default));
+    // Workspace root dir (walk up)
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut up = cwd.clone();
+        for _ in 0..4 {
+            if let Some(parent) = up.parent() {
+                let mut t = parent.to_path_buf();
+                t.push("target");
+                candidate_target_roots.push(t);
+                up = parent.to_path_buf();
+            }
+        }
+    }
+    let profiles = ["debug", "test", "release"]; // typical Cargo output directories
+    let names = ["nyx-daemon", "nyx_daemon"]; // name variants
+    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
+
+    for root in &candidate_target_roots {
+        for prof in &profiles {
+            for name in &names {
+                let mut p = root.clone();
+                p.push(prof);
+                p.push(format!("{}{}", name, exe_suffix));
+                if p.exists() { return p.to_string_lossy().into_owned(); }
+            }
+        }
+    }
+
+    // 3) Fallback: scan target/(debug|test|release) for files starting with nyx-daemon*
+    for root in &candidate_target_roots {
+        for prof in &profiles {
+            let mut dir = root.clone();
+            dir.push(prof);
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for e in rd.flatten() {
+                    let path = e.path();
+                    if let Some(fname) = path.file_name().and_then(|s| s.to_str()) {
+                        let is_candidate = fname.starts_with("nyx-daemon") || fname.starts_with("nyx_daemon");
+                        let exe_ok = if cfg!(windows) { fname.ends_with(".exe") } else { true };
+                        if is_candidate && exe_ok && path.is_file() {
+                            return path.to_string_lossy().into_owned();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    panic!("Could not locate nyx-daemon binary. Ensure the bin target is built.");
 }
 
 async fn spawn_daemon_on(port: u16) -> std::process::Child {
@@ -141,6 +202,12 @@ async fn wasm_handshake_fail_on_unsupported_required() {
     let complete = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/complete", base), &serde_json::json!({})).await;
     assert_eq!(complete["ok"], false);
     assert_eq!(complete["result"], "incompatible");
+
+    // CLOSE(0x07) explicit: build unsupported cap close and verify daemon decodes it
+    let close_payload = nyx_stream::build_close_unsupported_cap(424242);
+    let decoded = http_post_bytes(&client, &format!("{}/api/v1/wasm/close", base), close_payload, "application/nyx-close").await;
+    assert_eq!(decoded["accepted"], true);
+    assert_eq!(decoded["code"], 7);
 
     let _ = child.kill();
 }

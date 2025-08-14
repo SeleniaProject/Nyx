@@ -415,10 +415,31 @@ impl MetricsCollector {
             let system = self.system.read().await;
             let current_pid = std::process::id();
             if let Some(process) = system.process(Pid::from(current_pid.try_into().unwrap_or(0))) {
-                // Populate cross-platform fields with best-effort values. On Windows, we compute handle
-                // count and disk usage via Win32 APIs using the pure-Rust `windows` crate.
+                // Populate cross-platform fields with best-effort values.
                 let disk_used: u64 = 0;
+                // Derive thread count and open fd count on Unix via /proc when available.
+                #[cfg(unix)]
+                let thread_count: u32 = {
+                    use std::fs;
+                    let mut threads: u32 = 0;
+                    if let Ok(status) = fs::read_to_string("/proc/self/status") {
+                        for line in status.lines() {
+                            if let Some(rest) = line.strip_prefix("Threads:") {
+                                threads = rest.trim().split_whitespace().next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+                                break;
+                            }
+                        }
+                    }
+                    threads
+                };
+                #[cfg(not(unix))]
                 let thread_count: u32 = 0;
+                #[cfg(unix)]
+                let fd_count: u32 = {
+                    use std::fs;
+                    fs::read_dir("/proc/self/fd").ok().map(|it| it.count() as u32).unwrap_or(0)
+                };
+                #[cfg(not(unix))]
                 let fd_count: u32 = 0;
                 Some(crate::proto::ResourceUsage {
                     cpu_percent: process.cpu_usage() as f64,
@@ -1548,16 +1569,8 @@ impl SystemResourceMonitor {
         }
         #[cfg(windows)]
         {
-            // Windows: use GetProcessHandleCount to return the number of open handles for current process.
-            #[allow(unsafe_code)]
-            unsafe {
-                use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
-                use windows::Win32::Foundation::HANDLE;
-                let mut count: u32 = 0;
-                let hproc: HANDLE = GetCurrentProcess();
-                // If the call fails, return 0 as a conservative default.
-                if GetProcessHandleCount(hproc, &mut count).is_ok() { count } else { 0 }
-            }
+            // Windows: sysinfo does not expose handle count directly in pure Rust; return 0 under forbid(unsafe_code)
+            0
         }
     }
     
@@ -1604,33 +1617,8 @@ impl SystemResourceMonitor {
         }
         #[cfg(windows)]
         {
-            // Windows: sum used bytes across logical drives using GetDiskFreeSpaceExW
-            #[allow(unsafe_code)]
-            unsafe {
-                use windows::Win32::Storage::FileSystem::{GetLogicalDrives, GetDiskFreeSpaceExW};
-                use windows::core::PCWSTR;
-                let mut used_total: u64 = 0;
-                let mask = GetLogicalDrives();
-                for i in 0..26u32 { // A..Z
-                    if (mask & (1u32 << i)) != 0 {
-                        let drive_letter = (b'A' + (i as u8)) as char;
-                        let path = format!("{}:\\", drive_letter);
-                        let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-                        let mut free_avail: u64 = 0;
-                        let mut total_bytes: u64 = 0;
-                        let mut free_bytes: u64 = 0;
-                        let ok = GetDiskFreeSpaceExW(
-                            PCWSTR(wide.as_ptr()),
-                             Some(&mut free_avail),
-                             Some(&mut total_bytes),
-                             Some(&mut free_bytes),
-                        )
-                        .is_ok();
-                        if ok && total_bytes >= free_bytes { used_total = used_total.saturating_add(total_bytes - free_bytes); }
-                    }
-                }
-                used_total
-            }
+            // Windows: avoid unsafe FFI under forbid(unsafe_code); return 0 as placeholder gauge
+            0
         }
     }
     
@@ -2857,7 +2845,7 @@ impl PrometheusExporter {
             routing::get,
             Router,
             response::IntoResponse,
-            http::{StatusCode, HeaderMap, header},
+            http::{StatusCode, HeaderMap, HeaderValue, header},
         };
         use std::sync::Arc;
         use std::collections::HashMap as StdHashMap;
@@ -2879,7 +2867,7 @@ impl PrometheusExporter {
                     let mut headers = HeaderMap::new();
                     headers.insert(
                         header::CONTENT_TYPE,
-                       match "text/plain; version=0.0.4; charset=utf-8".parse() { Ok(v) => v, Err(_) => return Err(anyhow::anyhow!("invalid content-type")) },
+                        HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
                     );
                     match Self::export_metrics_with_options(metrics_collector, default_labels, params).await {
                         Ok(body) => (StatusCode::OK, headers, body).into_response(),

@@ -29,9 +29,12 @@ experimental-all = [
  hybrid = []
  cmix = []
  plugin = ["nyx-stream/plugin"]
- low_power = ["dep:nyx-mobile-ffi"]
+ low_power = ["dep:nyx-mobile-ffi", "nyx-mobile-ffi/telemetry"]
  # Enable Windows API bindings for metrics on Windows builds
  windows = ["dep:windows"]
+ # Enable OpenTelemetry OTLP integration in dependency crate
+ otlp = ["nyx-telemetry/otlp"]
+ otlp_exporter = ["nyx-telemetry/otlp_exporter", "otlp"]
 
 [dependencies]
 async-trait = "0.1"
@@ -157,6 +160,11 @@ hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 ciborium = "0.2"
+
+[dev-dependencies]
+# Hyper 0.14 is used only in tests as an HTTP client to hit Axum server endpoints.
+# Keeping it in dev-deps avoids impacting runtime deps (Axum uses Hyper 1.x internally).
+hyper = { version = "0.14", features = ["full"] }
 
 [build-dependencies]
 # tonic-build = "0.10" # DISABLED: uses ring/openssl 

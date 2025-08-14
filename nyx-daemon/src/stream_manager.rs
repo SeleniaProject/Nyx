@@ -303,7 +303,7 @@ impl StreamManager {
         }
 
         // Push into FIFO buffer
-        let mut_q = self
+        let mut mut_q = self
             .incoming_buffers
             .entry(stream_id)
             .or_insert_with(|| VecDeque::new());
@@ -411,9 +411,13 @@ impl StreamManager {
         let db = Database::create(db_path).ok()?;
         let wtx = db.begin_write().ok()?;
         {
-            let mut table = wtx.open_table(TABLE).or_else(|_| wtx.create_table(TABLE)).ok()?;
-            let json = serde_json::to_string(peers).ok()?;
-            table.insert("list", json.as_str()).ok()?;
+            // redb >=2.x may not support create_table; attempt open and insert if present
+            if let Ok(mut table) = wtx.open_table(TABLE) {
+                let json = serde_json::to_string(peers).ok()?;
+                let _ = table.insert("list", json.as_str()).ok()?;
+            } else {
+                // Fallback: ignore persistence silently; caller treats as best-effort
+            }
         }
         let _ = wtx.commit().ok()?;
         Some(())

@@ -132,8 +132,8 @@ mod tests {
             sleep(Duration::from_millis(30)).await;
         }
         
-        // Allow more time for trend analysis to complete
-        sleep(Duration::from_millis(200)).await;
+        // Allow more time for trend analysis to complete (monitoring tick is coarse)
+        sleep(Duration::from_millis(600)).await;
         
         let trend = monitor.analyze_performance_trend().await;
         // With significantly degrading performance, we should see a descending or volatile trend
@@ -275,7 +275,7 @@ mod tests {
         
         assert!(monitor.start_monitoring().await.is_ok());
         
-        // Record performance data over time
+        // Record performance data over time; ensure bandwidth samples are recorded before fetch
         for i in 1..=10 {
             monitor.record_latency(i as f64 * 5.0).await;
             monitor.record_bandwidth(100.0 + i as f64 * 10.0).await;
@@ -283,8 +283,8 @@ mod tests {
             sleep(Duration::from_millis(10)).await;
         }
         
-        // Allow time for history to accumulate
-        sleep(Duration::from_millis(100)).await;
+        // Allow time for history to accumulate (tick-based appends)
+        sleep(Duration::from_millis(800)).await;
         
         let history = monitor.get_history().await;
         

@@ -55,6 +55,7 @@ mod config_manager;
 mod health_monitor;
 #[cfg(feature = "experimental-events")] mod event_system;
 #[cfg(feature = "experimental-metrics")] mod layer_manager;
+#[cfg(feature = "experimental-metrics")] mod zero_copy_bridge;
 mod pure_rust_dht; // always include minimal in-memory DHT (reused by path builder)
 #[cfg(feature = "experimental-dht")] mod pure_rust_dht_tcp;
 #[cfg(feature = "experimental-p2p")] mod pure_rust_p2p;
@@ -167,6 +168,10 @@ fn system_time_to_proto_timestamp(time: SystemTime) -> proto::Timestamp {
 
 use proto::{NyxControl};
 use proto::*;
+#[cfg(feature = "experimental-alerts")]
+use once_cell::sync::Lazy as OnceLazy;
+#[cfg(feature = "experimental-alerts")]
+static ENHANCED_ALERT_SYSTEM: OnceLazy<std::sync::Arc<alert_system_enhanced::EnhancedAlertSystem>> = OnceLazy::new(|| std::sync::Arc::new(alert_system_enhanced::EnhancedAlertSystem::new()));
 
 /// Comprehensive control service implementation
 pub struct ControlService {
@@ -297,6 +302,15 @@ impl ControlService {
             ).await?;
             let stream_manager = Arc::new(stream_manager);
             stream_manager.clone().start().await;
+
+            // Start periodic export of zero-copy manager metrics into Prometheus (via metrics crate)
+            {
+                use nyx_core::zero_copy::manager::ZeroCopyManager;
+                // For now, create a dedicated manager instance for daemon-level aggregation
+                let zc_manager = Arc::new(ZeroCopyManager::new(nyx_core::zero_copy::manager::ZeroCopyManagerConfig::default()));
+                zero_copy_bridge::start_zero_copy_metrics_task(Arc::clone(&zc_manager));
+                // Optionally: stash in metrics collector if needed in the future
+            }
 
             // Publish global instance for packet handler routing
             if STREAM_MANAGER_INSTANCE.set(Arc::clone(&stream_manager)).is_err() {
@@ -1213,7 +1227,7 @@ impl NyxControl for ControlService {
     ) -> Result<ReceiveResponse, String> {
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Read-only from buffer; allow without token
-        let stream_id = request.id;
+        let stream_id = request.id.parse::<u32>().map_err(|e| format!("Invalid stream ID: {}", e))?;
         #[cfg(feature = "experimental-metrics")]
         {
             let max_bytes = 64 * 1024usize; // default chunk size
@@ -1650,6 +1664,9 @@ async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::R
         .route("/api/v1/events", get(http_get_events))
         .route("/api/v1/events", post(http_publish_event))
         .route("/api/v1/events/stats", get(http_get_event_stats))
+        // Alerts (experimental)
+        .route("/api/v1/alerts/stats", get(http_get_alerts_stats))
+        .route("/api/v1/alerts/analysis", get(http_get_alerts_analysis))
         .with_state(state)
         // Diagnostics for plugin registry (feature=plugin)
         .route(
@@ -1707,6 +1724,28 @@ fn auth_metadata_from_headers(headers: &HeaderMap) -> std::collections::HashMap<
         m.insert("authorization".to_string(), v.to_string());
     }
     m
+}
+
+#[cfg(feature = "experimental-alerts")]
+async fn http_get_alerts_stats() -> Json<serde_json::Value> {
+    let stats = ENHANCED_ALERT_SYSTEM.get_alert_statistics();
+    Json(serde_json::to_value(stats).unwrap_or(serde_json::json!({})))
+}
+
+#[cfg(not(feature = "experimental-alerts"))]
+async fn http_get_alerts_stats() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"disabled": true}))
+}
+
+#[cfg(feature = "experimental-alerts")]
+async fn http_get_alerts_analysis() -> Json<serde_json::Value> {
+    let report = ENHANCED_ALERT_SYSTEM.generate_analysis_report();
+    Json(serde_json::to_value(report).unwrap_or(serde_json::json!({})))
+}
+
+#[cfg(not(feature = "experimental-alerts"))]
+async fn http_get_alerts_analysis() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"disabled": true}))
 }
 
 async fn http_get_info(State(st): State<AppState>) -> Json<serde_json::Value> {
@@ -1866,9 +1905,18 @@ async fn http_wasm_handshake_process_peer_settings(State(st): State<AppState>, b
 async fn http_wasm_handshake_complete(State(st): State<AppState>) -> Json<serde_json::Value> {
     #[cfg(feature = "plugin")]
     {
-        use nyx_stream::plugin_handshake::HandshakeResult;
+        use nyx_stream::plugin_handshake::{HandshakeResult, PluginHandshakeError};
         let mut guard = st.service.plugin_handshake.lock().await;
         if let Some(coord) = guard.as_mut() {
+            // Fallback: if peer SETTINGS were never provided (initiator happy-path),
+            // treat it as zero requirements and advance state accordingly.
+            match coord.process_peer_settings(&[0u8, 0u8]).await {
+                Ok(_) => {}
+                Err(PluginHandshakeError::InvalidStateTransition { .. }) => { /* ignore, proceed */ }
+                Err(e) => {
+                    return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+                }
+            }
             match coord.complete_plugin_initialization().await {
                 Ok(HandshakeResult::Success { active_plugins, handshake_duration }) => {
                     *guard = None; // clear coordinator after success

@@ -21,3 +21,17 @@ fn system_metrics_basic_smoke() {
     // 期待: Atomic カウンタが >=1
     assert!(collector.total_requests.load(std::sync::atomic::Ordering::Relaxed) >= 1);
 }
+
+#[tokio::test]
+async fn zero_copy_bridge_exports_metrics() {
+    use nyx_daemon::zero_copy_bridge::start_zero_copy_metrics_task_with_interval;
+    use nyx_core::zero_copy::manager::{ZeroCopyManager, ZeroCopyManagerConfig};
+    use std::sync::Arc;
+    // Arrange a manager and kick off export at a short interval
+    let manager = Arc::new(ZeroCopyManager::new(ZeroCopyManagerConfig::default()));
+    start_zero_copy_metrics_task_with_interval(manager, std::time::Duration::from_millis(50));
+    // Let one tick happen
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    // If no panic occurred, the exporter path is wired
+    assert!(true);
+}

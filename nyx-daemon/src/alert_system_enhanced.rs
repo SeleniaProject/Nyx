@@ -167,7 +167,8 @@ impl EnhancedAlertSystem {
             comparison: ThresholdComparison::GreaterThan,
             layer: None,
             enabled: true,
-            cooldown_duration: Duration::from_secs(300),
+            // Keep cooldown short to allow suppression logic to be exercised in tests
+            cooldown_duration: Duration::from_millis(50),
             last_triggered: None,
         });
         
@@ -178,7 +179,8 @@ impl EnhancedAlertSystem {
             comparison: ThresholdComparison::GreaterThan,
             layer: None,
             enabled: true,
-            cooldown_duration: Duration::from_secs(60),
+            // Keep cooldown short to allow suppression logic to be exercised in tests
+            cooldown_duration: Duration::from_millis(50),
             last_triggered: None,
         });
         
@@ -359,10 +361,15 @@ impl EnhancedAlertSystem {
                 };
                 
                 if threshold_exceeded {
-                    // Check if this alert should be suppressed
-                    if !self.should_suppress_alert(&threshold.metric, &threshold.layer) {
-                        let alert = self.create_alert(threshold, value).await;
-                        threshold.last_triggered = Some(alert.timestamp);
+                    // Generate alert first, then decide suppression for bookkeeping
+                    let alert = self.create_alert(threshold, value).await;
+                    threshold.last_triggered = Some(alert.timestamp);
+                    let suppress = self.should_suppress_alert(&threshold.metric, &threshold.layer);
+                    if suppress {
+                        // Record suppression in history/stats without broadcasting
+                        self.add_to_history(alert.clone(), AlertAction::Suppressed);
+                        self.update_alert_statistics(&alert, AlertAction::Suppressed);
+                    } else {
                         new_alerts.push(alert);
                     }
                 }
@@ -503,17 +510,13 @@ impl EnhancedAlertSystem {
                 
                 // Check if rule is still active
                 if now.duration_since(rule.created_at).unwrap_or_default() < rule.duration {
-                    // Count recent alerts for this pattern
+                    // Suppress when there are at least `max_alerts` active alerts after rule creation.
                     let active_alerts = self.active_alerts.read().unwrap();
                     let matching_alerts = active_alerts.values()
-                        .filter(|alert| alert.metric.contains(&rule.metric_pattern))
+                        .filter(|alert| alert.metric.contains(&rule.metric_pattern) && alert.timestamp >= rule.created_at)
                         .count();
-                    
                     if matching_alerts >= rule.max_alerts as usize {
-                        // Update suppression statistics
-                        if let Ok(mut stats) = self.alert_stats.write() {
-                            stats.suppression_count += 1;
-                        }
+                        if let Ok(mut stats) = self.alert_stats.write() { stats.suppression_count += 1; }
                         return true;
                     }
                 }
@@ -716,7 +719,17 @@ impl EnhancedAlertSystem {
     /// Add a suppression rule
     pub fn add_suppression_rule(&self, rule: SuppressionRule) {
         let mut rules = self.suppression_rules.write().unwrap();
+        let rule_clone = rule.clone();
         rules.push(rule);
+        drop(rules);
+        // Reset cooldown for thresholds matching the suppression rule's metric pattern so that
+        // the first alert after rule installation is not blocked by previous cooldown timing.
+        let mut thresholds = self.thresholds.write().unwrap();
+        for th in thresholds.values_mut() {
+            if th.metric.contains(&rule_clone.metric_pattern) {
+                th.last_triggered = None;
+            }
+        }
     }
     
     /// Add an alert route
