@@ -218,6 +218,10 @@ pub struct ControlService {
     // Plugin handshake coordinator stored across HTTP calls (plugin feature only)
     #[cfg(feature = "plugin")]
     plugin_handshake: Arc<Mutex<Option<PluginHandshakeCoordinator>>>,
+
+    // Required plugin IDs provided by client (decoded from CBOR array<u32>)
+    #[cfg(feature = "plugin")]
+    plugin_required_ids: Arc<RwLock<Vec<u32>>>,
 }
 
 impl ControlService {
@@ -584,6 +588,8 @@ impl ControlService {
             plugin_negotiation: Arc::new(RwLock::new(PluginNegotiationState::default())),
             #[cfg(feature = "plugin")]
             plugin_handshake: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "plugin")]
+            plugin_required_ids: Arc::new(RwLock::new(Vec::new())),
         };
         info!("Control service instance created");
         
@@ -622,9 +628,14 @@ impl ControlService {
     async fn begin_plugin_handshake_from_snapshot(&self, is_initiator: bool) -> Result<Option<Vec<u8>>, String> {
         let snap = self.plugin_negotiation.read().await.clone();
         let mut mgr = PluginSettingsManager::new();
-        // When only counts are known, advertise basic support/security without detailed list.
-        // A real implementation would fill specific plugin requirements here from registry/config.
-        // For now, enable negotiation but without explicit IDs; peer can still respond.
+        // Inject required plugin IDs if provided by client beforehand
+        {
+            let ids = self.plugin_required_ids.read().await;
+            for pid in ids.iter() {
+                // default version range and empty caps for now; registry validation will refine later
+                let _ = mgr.add_required_plugin(*pid, (1,0), vec![]);
+            }
+        }
         let mut coord = PluginHandshakeCoordinator::new(mgr, is_initiator);
         coord.initiate_handshake().await.map_err(|e| format!("handshake init error: {}", e))
     }
@@ -1630,6 +1641,7 @@ async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::R
         .route("/api/v1/wasm/handshake/start", post(http_wasm_handshake_start))
         .route("/api/v1/wasm/handshake/process-peer-settings", post(http_wasm_handshake_process_peer_settings))
         .route("/api/v1/wasm/handshake/complete", post(http_wasm_handshake_complete))
+        .route("/api/v1/wasm/handshake/required", post(http_wasm_set_required_plugins))
         // Plugin registry diagnostics and reload (feature=plugin)
         .route("/api/v1/plugins/registry", get(http_get_plugin_registry))
         .route("/api/v1/plugins/reload", post(http_reload_plugin_manifest_json))
@@ -1754,7 +1766,8 @@ async fn http_wasm_settings(State(st): State<AppState>, headers: HeaderMap, body
             "support_flags": state.support_flags,
             "required_plugin_count": state.required_plugin_count,
             "optional_plugin_count": state.optional_plugin_count,
-            "security_policy": state.security_policy
+            "security_policy": state.security_policy,
+            "requirements_count": state.requirements_count
         })),
         Err(e) => Json(serde_json::json!({"accepted": false, "error": e})),
     }
@@ -1900,6 +1913,32 @@ async fn http_wasm_handshake_complete(State(st): State<AppState>) -> Json<serde_
     {
         Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
     }
+}
+
+/// Set required plugin IDs from CBOR array<u32> (base64url-encoded) coming from browser
+async fn http_wasm_set_required_plugins(State(st): State<AppState>, Json(body): Json<serde_json::Value>) -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        // Expect {"required_cbor_b64": "..."}
+        let maybe_b64 = body.get("required_cbor_b64").and_then(|v| v.as_str()).unwrap_or("");
+        match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(maybe_b64.as_bytes()) {
+            Ok(bytes) => {
+                match ciborium::from_reader::<Vec<u32>, _>(bytes.as_slice()) {
+                    Ok(ids) => {
+                        {
+                            let mut guard = st.service.plugin_required_ids.write().await;
+                            *guard = ids.clone();
+                        }
+                        return Json(serde_json::json!({"ok": true, "count": ids.len()}));
+                    }
+                    Err(e) => return Json(serde_json::json!({"ok": false, "error": format!("cbor: {}", e)})),
+                }
+            }
+            Err(e) => return Json(serde_json::json!({"ok": false, "error": format!("b64: {}", e)})),
+        }
+    }
+    #[cfg(not(feature = "plugin"))]
+    { Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"})) }
 }
 
 /// Get plugin registry snapshot (feature=plugin)

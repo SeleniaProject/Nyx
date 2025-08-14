@@ -247,4 +247,27 @@ pub async fn nyx_autopilot_process_and_complete(base_url: String, peer_settings_
     nyx_complete_plugin_handshake(complete_url).await
 }
 
+/// POST the required plugin list (CBOR b64url) to daemon gateway
+#[wasm_bindgen]
+pub async fn nyx_set_required_plugins(base_url: String, required_cbor_b64: String) -> Result<JsValue, JsValue> {
+    let win = window().ok_or(JsValue::from_str("no window"))?;
+    // Build JSON body { required_cbor_b64: "..." }
+    let obj = js_sys::Object::new();
+    js_sys::Reflect::set(&obj, &JsValue::from_str("required_cbor_b64"), &JsValue::from_str(&required_cbor_b64))?;
+    let json = js_sys::JSON::stringify(&obj).map_err(|e| JsValue::from(e))?;
+    let mut init = js_sys::Object::new();
+    js_sys::Reflect::set(&init, &JsValue::from_str("method"), &JsValue::from_str("POST"))?;
+    js_sys::Reflect::set(&init, &JsValue::from_str("body"), &json)?;
+    let request_ctor = js_sys::Function::new_with_args("u,i", "return new Request(u,i);");
+    let url = format!("{}/api/v1/wasm/handshake/required", base_url.trim_end_matches('/'));
+    let request_js = request_ctor.call2(&JsValue::NULL, &JsValue::from_str(&url), &init)?;
+    let request: Request = request_js.dyn_into()?;
+    request.headers().set("Content-Type", "application/json")?;
+    let resp_value = JsFuture::from(win.fetch_with_request(&request)).await?;
+    let resp: Response = resp_value.dyn_into()?;
+    let json_promise = resp.json().map_err(|e| JsValue::from(e))?;
+    let out = JsFuture::from(json_promise).await?;
+    Ok(out)
+}
+
 
