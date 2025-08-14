@@ -1,3 +1,57 @@
+name: NyxNet CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Workspace tests
+        run: cargo test --workspace --all-features --no-fail-fast
+
+      - name: Daemon metrics tests (experimental-metrics)
+        run: cargo test -p nyx-daemon --features experimental-metrics --tests --no-fail-fast
+
+      - name: Daemon OTLP exporter smoke
+        run: cargo test -p nyx-daemon --features experimental-metrics,otlp_exporter --tests --no-fail-fast
+        env:
+          NYX_OTLP_ENABLED: "0"
+
+      - name: CLI alerts smoke
+        run: |
+          cargo build -p nyx-cli --tests
+          cargo test -p nyx-cli --test alerts_cmd --no-fail-fast
+
+      - name: Mobile FFI telemetry (build only)
+        run: |
+          cargo build -p nyx-mobile-ffi --features telemetry
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: nyx-sdk-wasm tests (node)
+        run: cargo test -p nyx-sdk-wasm --target wasm32-unknown-unknown --no-fail-fast
+
 name: Nyx CI
 
 on:
