@@ -229,10 +229,36 @@ impl PluginFrameProcessor {
             return Err(PluginFrameError::PermissionDenied(plugin_id));
         }
 
-        // Create plugin message for dispatch
-        // For now, just return success without actual dispatcher call
-        debug!("Plugin frame processed for plugin {}", plugin_id);
-        Ok(PluginFrameResult::Dispatched { plugin_id })
+        // Assemble CBOR header + payload for dispatcher
+        let mut frame_bytes = match frame.plugin_header.encode() {
+            Ok(h) => {
+                let mut v = Vec::with_capacity(h.len() + frame.payload.len());
+                v.extend_from_slice(&h);
+                v.extend_from_slice(frame.payload);
+                v
+            }
+            Err(e) => {
+                return Err(PluginFrameError::CborError(e.to_string()));
+            }
+        };
+
+        // Delegate to dispatcher with full validation and IPC routing
+        match self.dispatcher.dispatch_plugin_frame(frame.frame_header.frame_type, std::mem::take(&mut frame_bytes)).await {
+            Ok(()) => {
+                debug!("Plugin frame dispatched to runtime for plugin {}", plugin_id);
+                Ok(PluginFrameResult::Dispatched { plugin_id })
+            }
+            Err(dispatch_err) => {
+                use crate::plugin_dispatch::DispatchError as DE;
+                match dispatch_err {
+                    DE::PluginNotRegistered(id) => Err(PluginFrameError::UnknownPlugin(id)),
+                    DE::InsufficientPermissions(id) => Err(PluginFrameError::PermissionDenied(id)),
+                    DE::InvalidFrameType(ft) => Err(PluginFrameError::InvalidFrameType(ft)),
+                    DE::CborError(e) => Err(PluginFrameError::CborError(e.to_string())),
+                    other => Err(PluginFrameError::ValidationError(format!("dispatch error: {}", other))),
+                }
+            }
+        }
     }
 
     /// Stub implementation for non-plugin builds

@@ -43,8 +43,6 @@ pub enum Permission {
     AccessGeo,
     /// Legacy network access (for compatibility)
     AccessNetwork,
-    /// Legacy geo access (for compatibility)
-    AccessGeo,
     /// Plugin persistence and state management
     PluginPersistence,
     /// Cryptographic operations access
