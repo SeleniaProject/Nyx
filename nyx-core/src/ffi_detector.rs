@@ -33,6 +33,39 @@ use crate::low_power::{LowPowerError, ScreenStateDetector};
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use nyx_mobile_ffi; // real FFI crate
 
+// Optional event-driven fast path: global atoms updated by mobile callbacks
+#[cfg(any(target_os = "ios", target_os = "android"))]
+static GLOBAL_SCREEN_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+#[cfg(any(target_os = "ios", target_os = "android"))]
+static GLOBAL_LOW_POWER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(any(target_os = "ios", target_os = "android"))]
+static GLOBAL_BATTERY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(100);
+#[cfg(any(target_os = "ios", target_os = "android"))]
+static EVENT_TX: once_cell::sync::OnceCell<mpsc::UnboundedSender<bool>> = once_cell::sync::OnceCell::new();
+
+/// C-ABI callback from nyx-mobile-ffi to deliver immediate events
+#[cfg(any(target_os = "ios", target_os = "android"))]
+#[no_mangle]
+extern "C" fn nyx_core_mobile_event_callback(event: i32, value: i32) {
+    use std::sync::atomic::Ordering;
+    match event {
+        0 => { // SCREEN
+            let on = value != 0; GLOBAL_SCREEN_ON.store(on, Ordering::Relaxed);
+            if let Some(tx) = EVENT_TX.get() { let _ = tx.send(on); }
+        }
+        1 => { // LOW_POWER
+            let lp = value != 0; GLOBAL_LOW_POWER.store(lp, Ordering::Relaxed);
+            if lp {
+                if let Some(tx) = EVENT_TX.get() { let _ = tx.send(false); }
+            }
+        }
+        2 => { // BATTERY
+            let lvl = value.clamp(0, 100) as u8; GLOBAL_BATTERY.store(lvl, Ordering::Relaxed);
+        }
+        _ => {}
+    }
+}
+
 // Desktop / non-mobile fallback stubs (simulate stable values)
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod desktop_stub {
@@ -79,6 +112,8 @@ impl FfiScreenStateDetector {
             if rc < -1 { return Err(LowPowerError::PlatformNotSupported); }
             let rc2 = nyx_mobile_ffi::nyx_mobile_start_monitoring();
             if rc2 < -1 { return Err(LowPowerError::PlatformNotSupported); }
+            // Register event callback for immediate updates
+            let _ = nyx_mobile_ffi::nyx_mobile_register_event_callback(Some(nyx_core_mobile_event_callback));
         }
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
@@ -145,6 +180,8 @@ impl ScreenStateDetector for FfiScreenStateDetector {
         }
 
     let (tx, rx) = mpsc::unbounded_channel();
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    { let _ = EVENT_TX.set(tx.clone()); }
     // Emit initial state
     let initial = self.read_screen().unwrap_or(true);
     let _ = tx.send(initial);

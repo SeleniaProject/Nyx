@@ -111,6 +111,38 @@ impl AdaptiveCoverGenerator {
         }
     }
 
+    /// Update base λ (events/sec). Respects current power state when updating internal generator.
+    pub fn set_base_lambda(&mut self, base_lambda: f64) {
+        self.base_lambda = base_lambda.max(0.0);
+        let low = self.manual_low_power || matches!(self.power_state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
+        let target = if low { self.base_lambda * LOW_POWER_COVER_RATIO } else { self.base_lambda };
+        if (self.gen.lambda - target).abs() / (self.gen.lambda.max(1e-9)) > 0.01 {
+            self.gen = CoverGenerator::new(target);
+        }
+    }
+
+    /// Update desired cover ratio (0..1).
+    pub fn set_target_ratio(&mut self, ratio: f64) {
+        self.target_ratio = ratio.clamp(0.0, 1.0);
+    }
+
+    /// Update desired anonymity score target (0..1).
+    pub fn set_anonymity_target(&mut self, target: f64) { self.anonymity_target = target.clamp(0.0, 1.0); }
+
+    /// Snapshot of internal state for monitoring/diagnostics.
+    pub fn stats(&self) -> AdaptiveStats {
+        AdaptiveStats {
+            current_lambda: self.gen.lambda,
+            base_lambda: self.base_lambda,
+            target_ratio: self.target_ratio,
+            util_smoothed_pps: self.util_ema,
+            last_cover_pps: self.last_cover_pps,
+            last_ratio_deviation: self.last_ratio_deviation,
+            anonymity_target: self.anonymity_target,
+            power_state: self.power_state.clone(),
+        }
+    }
+
     /// Apply external power state updates (from mobile platform layer).
     pub fn apply_power_state(&mut self, state: nyx_core::mobile::MobilePowerState) {
         self.power_state = state;
@@ -250,6 +282,19 @@ impl AdaptiveCoverGenerator {
     pub fn set_util_band(&mut self, low: f64, high: f64) { self.util_band = (low.min(high), high.max(low)); }
 }
 
+/// Read-only snapshot of adaptive generator state.
+#[derive(Debug, Clone)]
+pub struct AdaptiveStats {
+    pub current_lambda: f64,
+    pub base_lambda: f64,
+    pub target_ratio: f64,
+    pub util_smoothed_pps: f64,
+    pub last_cover_pps: f64,
+    pub last_ratio_deviation: f64,
+    pub anonymity_target: f64,
+    pub power_state: nyx_core::mobile::MobilePowerState,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +319,26 @@ mod tests {
         for _ in 0..50 { acg.record_real_bytes(1200 * 3); acg.next_delay(); }
         let high_phase_lambda = acg.current_lambda();
         assert!(high_phase_lambda >= low_phase_lambda);
+    }
+
+    #[test]
+    fn low_power_scales_to_spec_ratio() {
+        let mut acg = AdaptiveCoverGenerator::new(10.0, 0.5);
+        acg.apply_power_state(nyx_core::mobile::MobilePowerState::ScreenOff);
+        assert!((acg.current_lambda() - 10.0 * LOW_POWER_COVER_RATIO).abs() < 1e-6);
+        acg.apply_power_state(nyx_core::mobile::MobilePowerState::Foreground);
+        assert!((acg.current_lambda() - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn high_util_monotonic_shorter_delay() {
+        let mut acg = AdaptiveCoverGenerator::new(15.0, 0.5);
+        // Drive utilisation high
+        for _ in 0..10 { acg.record_real_bytes(1200 * 5); }
+        let d1 = acg.next_delay();
+        // more utilisation
+        for _ in 0..10 { acg.record_real_bytes(1200 * 5); }
+        let d2 = acg.next_delay();
+        assert!(d2 <= d1, "expected non-increasing delay under high utilisation");
     }
 } 

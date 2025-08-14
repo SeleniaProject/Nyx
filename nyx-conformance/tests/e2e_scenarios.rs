@@ -16,11 +16,7 @@ use futures::future::join_all;
 use rand::{Rng, thread_rng};
 
 use nyx_crypto::noise::NoiseHandshake;
-// NyxAsyncStream / FrameHandler disabled in current baseline build
-#[cfg(feature = "legacy_tests_disabled")]
-use nyx_stream::{NyxAsyncStream, FlowController, FrameHandler};
-#[cfg(not(feature = "legacy_tests_disabled"))]
-use nyx_stream::{FlowController};
+use nyx_stream::NyxAsyncStream;
 use nyx_conformance::{
     network_simulator::{NetworkSimulator, SimulationConfig, LatencyDistribution, SimulatedPacket, PacketPriority},
     property_tester::{PropertyTester, PropertyTestConfig, ByteVecGenerator}
@@ -279,8 +275,8 @@ async fn test_client_daemon_data_flow() {
 
     // Phase 2: Stream layer setup
     info!("Phase 2: Setting up stream layer");
-    let client_stream = NyxAsyncStream::new(connection_id, 131072, 2048);
-    let daemon_stream = NyxAsyncStream::new(connection_id + 1000, 131072, 2048);
+    let (_client_stream, _rx_c) = NyxAsyncStream::new(connection_id, 131072, 2048);
+    let (_daemon_stream, _rx_d) = NyxAsyncStream::new(connection_id + 1000, 131072, 2048);
     
     // Record connection establishment
     let conn_info = ConnectionInfo {
@@ -655,7 +651,7 @@ async fn test_multipath_communication() {
     let mut path_metrics = HashMap::new();
     
     for path_config in &path_configs {
-        let stream = NyxAsyncStream::new(path_config.id, 131072, 2048);
+        let (_stream, _rx) = NyxAsyncStream::new(path_config.id, 131072, 2048);
         path_streams.push((path_config.clone(), stream));
         
         path_metrics.insert(path_config.id, PathMetrics {
@@ -926,7 +922,7 @@ async fn test_long_running_connection() {
     let (private_key, public_key) = hpke.derive_keypair()
         .expect("Failed to derive keypair");
     
-    let stream = NyxAsyncStream::new(connection_id, 262144, 4096); // Large buffers for long-running
+    let (_stream, _rx) = NyxAsyncStream::new(connection_id, 262144, 4096); // Large buffers for long-running
     
     let conn_info = ConnectionInfo {
         connection_id,

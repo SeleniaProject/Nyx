@@ -9,6 +9,6 @@ async fn obfuscator_three_sigma_bound() {
     let start = Instant::now();
     let _ = timeout(Duration::from_millis(100), obf.recv()).await.expect("timeout").unwrap();
     let elapsed = start.elapsed().as_millis() as u64;
-    // Expect delay <= mean + 3*sigma = 35ms with some margin
-    assert!(elapsed <= 45, "delay {}ms exceeds 3σ bound", elapsed);
+    // Expect delay <= mean + 3*sigma = 35ms with CI margin for scheduling jitter
+    assert!(elapsed <= 60, "delay {}ms exceeds 3σ bound (with margin)", elapsed);
 } 

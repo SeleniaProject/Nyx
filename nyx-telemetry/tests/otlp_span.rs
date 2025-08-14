@@ -1,5 +1,17 @@
-// OTLP 統合は未安定なためこのテストは一時的に無効化。
-#[test]
-fn otlp_placeholder() {
-    assert!(true);
+#![cfg(feature = "otlp")]
+use nyx_telemetry::otlp::{init_in_memory_tracer, force_flush};
+use tracing::Level;
+
+#[tokio::test(flavor = "current_thread")]
+async fn capture_and_flush_spans_in_memory() {
+    let (dispatch, store) = init_in_memory_tracer("nyx-test", 1.0);
+    tracing::dispatcher::with_default(&dispatch, || {
+        let span = tracing::span!(Level::INFO, "nyx.stream.send", path_id = 7u8, cid = "cid-otlp");
+        let _e = span.enter();
+        tracing::info!(target: "nyx", "emit test span");
+    });
+    // Allow background to close spans
+    force_flush();
+    let captured = store.lock().unwrap();
+    assert!(captured.iter().any(|s| s.name == "nyx.stream.send"));
 }

@@ -16,11 +16,7 @@ use tokio::time::{timeout, sleep};
 use tracing::{info, warn};
 
 use nyx_crypto::{hpke::HpkeKeyDeriver, noise::NoiseHandshake};
-// Async stream components disabled in current baseline; keep behind feature
-#[cfg(feature = "legacy_tests_disabled")]
-use nyx_stream::{NyxAsyncStream, FlowController, FrameHandler};
-#[cfg(not(feature = "legacy_tests_disabled"))]
-use nyx_stream::{FlowController};
+use nyx_stream::NyxAsyncStream;
 use nyx_conformance::{network_simulator::NetworkSimulator, property_tester::PropertyTester};
 
 /// Test data structure for component integration scenarios
@@ -83,15 +79,8 @@ async fn test_crypto_stream_integration() {
     let responder_transport = responder.into_transport_mode()
         .expect("Failed to convert responder to transport mode");
     
-    // Create stream with proper parameters
-    let flow_controller = FlowController::new(65536, 32768, 1024); // window, cwnd, buffer_size
-    let frame_handler = FrameHandler::new(1024, 512, 256); // max_frame_size, buffer_size, queue_size
-    
-    let stream = NyxAsyncStream::new(
-        1, // stream_id
-        65536, // initial_window_size
-        1024, // max_frame_size
-    );
+    // Create stream (constructor returns (stream, receiver) tuple)
+    let (_stream, _rx) = NyxAsyncStream::new(1, 1024, 65536);
     
     // Test encrypted data flow through stream
     let test_data = b"This is encrypted test data flowing through the stream";
@@ -354,9 +343,7 @@ async fn test_resource_lifecycle() {
     // Create multiple streams to test resource management
     let mut streams = Vec::new();
     for i in 0..10 {
-        let flow_controller = FlowController::new(65536);
-        let frame_handler = FrameHandler::new();
-        let stream = NyxAsyncStream::new(i, flow_controller, frame_handler, None);
+        let (_stream, _rx) = NyxAsyncStream::new(i, 1024, 65536);
         streams.push(stream);
     }
     

@@ -8,7 +8,7 @@
 //! Geolocation retrieval is platform-specific; here we expose a helper to build
 //! frames from already-known coordinates so callers can integrate OS APIs.
 //!
-//! Permission requirement: `ACCESS_GEO`.
+//! Permission requirement: `AccessGeo`.
 
 #![forbid(unsafe_code)]
 
@@ -55,7 +55,7 @@ pub fn plugin_info() -> PluginInfo {
         name: "GeoStat".into(),
         version: "1.0.0".into(),
         description: "Geographic location statistics plugin".into(),
-        permissions: vec![Permission::ACCESS_GEO],
+        permissions: vec![Permission::AccessGeo],
         author: "Nyx Team".into(),
         config_schema: HashMap::new(),
         supported_frames: vec![0x50, 0x51],

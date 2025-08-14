@@ -3,7 +3,7 @@ use nyx_stream::{StreamSettings, build_settings_frame, parse_settings_frame};
 
 #[test]
 fn valid_settings_json() {
-    let json = br#"{"max_streams":128,"max_data":2048,"idle_timeout":15,"pq_supported":true}"#;
+    let json = br#"{"max_streams":128,"max_data":4096,"idle_timeout":15,"pq_supported":true}"#;
     let cfg = validate_settings(json).expect("valid");
     assert_eq!(cfg.max_streams, 128);
     assert!(cfg.pq_supported);

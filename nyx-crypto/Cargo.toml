@@ -8,6 +8,8 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = ["classic"]
+# Optional/experimental feature flag used for cfg guards in code paths (no deps)
+bike = []
 hpke = ["dep:hpke"]
 # Telemetry (no extra deps here; used only for conditional instrumentation counters)
 telemetry = []
