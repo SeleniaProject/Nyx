@@ -330,6 +330,101 @@ curl http://127.0.0.1:50051/api/v1/events/stats
 cargo run --bin nyx-cli -- topology --visualize
 ```
 
+### 📱 モバイル FFI テレメトリ統合（Android / iOS）
+
+Nyx のモバイル向け FFI（`nyx-mobile-ffi`）は、端末バッテリー/電源/アプリ状態/ネットワーク状態の監視と、Prometheus/OTLP 形式でのメトリクス出力に対応しています。モバイルアプリ単体で `/metrics` を提供することも、`metrics` クレート経由でデーモン側のエクスポータと併用することも可能です。
+
+#### 機能フラグ（features）
+
+```toml
+# nyx-mobile-ffi/Cargo.toml
+[features]
+# 基本テレメトリ（Prometheusを自前で有効化）
+telemetry = ["dep:nyx-telemetry", "dep:metrics", "nyx-telemetry/prometheus"]
+# OTLP シグナルを追加（collector に直接送る）
+telemetry-otlp = ["telemetry", "nyx-telemetry/otlp"]
+telemetry-otlp_exporter = ["telemetry", "nyx-telemetry/otlp_exporter"]
+```
+
+ビルド例:
+
+```bash
+# Android 用（例）
+cargo build -p nyx-mobile-ffi --features "android,telemetry"
+
+# iOS 用（例）
+cargo build -p nyx-mobile-ffi --features "ios,telemetry"
+```
+
+#### 環境変数（モバイル側）
+
+```bash
+export NYX_MOBILE_METRICS_PORT=9100                 # モバイル端末で /metrics を公開するポート（0 で OS 任意）
+export NYX_MOBILE_METRICS_INTERVAL_SECS=15          # 収集間隔（秒）
+export NYX_MOBILE_OTLP_ENABLED=0                    # OTLP を使う場合は 1/true
+export NYX_MOBILE_OTLP_ENDPOINT="http://127.0.0.1:4317"  # Collector のエンドポイント
+export NYX_MOBILE_TRACE_SAMPLING=0.05               # 0.0..1.0 のサンプリング率
+```
+
+#### Android 統合（Java/Kotlin）
+
+```java
+// Java 例: アプリ起動時
+public class MyApp extends Application {
+  @Override public void onCreate() {
+    super.onCreate();
+    com.nyx.mobile.NyxMobileBridge.getInstance().initialize(getApplicationContext());
+    // 任意: 追加ラベル
+    com.nyx.mobile.NyxMobileJNI.nativeSetTelemetryLabel("app", "demo");
+  }
+}
+
+// 任意: Activity 終了時にクリーンアップ
+@Override protected void onDestroy() {
+  super.onDestroy();
+  com.nyx.mobile.NyxMobileBridge.getInstance().cleanup();
+}
+```
+
+注意:
+- `initialize()` は JNI/Rust FFI を初期化し、モバイル監視（バッテリー/電源/ネットワーク）を開始します。
+- `telemetry` 機能有効時は `nativeTelemetryInit()` がベストエフォートで起動し、`/metrics` が `NYX_MOBILE_METRICS_PORT` で公開されます。
+- `cleanup()` は監視停止とテレメトリ停止を行います。
+
+#### iOS 統合（Objective‑C / Swift）
+
+```objc
+// Objective‑C 例（AppDelegate）
+#import "NyxMobile.h"
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    [[NyxMobileBridge sharedInstance] initializeMonitoring];
+    [[NyxMobileBridge sharedInstance] injectTelemetryLabels];
+    return YES;
+}
+
+- (void)applicationWillTerminate:(UIApplication *)application {
+    [[NyxMobileBridge sharedInstance] cleanup];
+}
+```
+
+```swift
+// Swift 例（Bridging Header 経由）
+NyxMobileBridge.sharedInstance().initializeMonitoring()
+NyxMobileBridge.sharedInstance().injectTelemetryLabels()
+// 終了時
+NyxMobileBridge.sharedInstance().cleanup()
+```
+
+注意:
+- `initializeMonitoring` は iOS のバッテリー/App/ネットワーク監視を開始し、ラベル注入とともに（有効なら）テレメトリもベストエフォートで開始します。
+- `/metrics` は `NYX_MOBILE_METRICS_PORT` で公開されます。0 の場合は OS に任せられます（実運用では固定ポート推奨）。
+
+#### デーモン側との併用
+
+- モバイルプロセスで `metrics` を発行した場合、それは同一プロセス内のグローバルレコーダに集約されます。Nyx デーモンは別プロセスのため、通常はモバイル側 `/metrics` とデーモン `/metrics` を別々にスクレイプします。
+- Nyx デーモンの Prometheus エンドポイント（例）: `http://127.0.0.1:9090/metrics`（`NYX_PROMETHEUS_ADDR`で変更可）
+
 ## ⚙️ Configuration Reference
 
 ### Complete Configuration Example (`~/.config/nyx/config.toml`)
