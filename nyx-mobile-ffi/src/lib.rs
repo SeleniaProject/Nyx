@@ -25,6 +25,11 @@ use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
+use std::os::raw::c_char;
+#[cfg(feature = "telemetry")]
+use std::collections::HashMap;
+#[cfg(feature = "telemetry")]
+use nyx_telemetry::{TelemetryCollector, TelemetryConfig, MetricType};
 
 // Internal mobile state definitions (avoiding nyx-core dependency)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +70,12 @@ pub use common::*;
 
 /// Global tokio runtime for async operations
 static RUNTIME: OnceCell<Arc<Runtime>> = OnceCell::new();
+#[cfg(feature = "telemetry")]
+static TELEMETRY: OnceCell<Arc<TelemetryCollector>> = OnceCell::new();
+#[cfg(feature = "telemetry")]
+static LABELS: OnceCell<std::sync::RwLock<HashMap<String, String>>> = OnceCell::new();
+#[cfg(not(feature = "telemetry"))]
+type HashMap<K, V> = std::collections::HashMap<K, V>; // keep type references compilable when telemetry disabled
 
 // ---- Cross-crate event callback bridge ----
 // Allows core (nyx-core) to register a single C-ABI callback to receive
@@ -160,6 +171,11 @@ pub extern "C" fn nyx_mobile_init() -> c_int {
     let _ = CURRENT_POWER_STATE.set(std::sync::RwLock::new(initial_power));
     let _ = CURRENT_APP_STATE.set(std::sync::RwLock::new(AppState::Active));
     let _ = CURRENT_NETWORK_STATE.set(std::sync::RwLock::new(NetworkState::WiFi));
+
+    #[cfg(feature = "telemetry")]
+    {
+        let _ = LABELS.set(std::sync::RwLock::new(HashMap::new()));
+    }
     
     info!("Mobile FFI initialization complete");
     0 // Success
@@ -169,6 +185,14 @@ pub extern "C" fn nyx_mobile_init() -> c_int {
 #[no_mangle]
 pub extern "C" fn nyx_mobile_cleanup() {
     info!("Cleaning up Mobile FFI resources");
+    #[cfg(feature = "telemetry")]
+    {
+        // Best-effort stop flag; TelemetryCollector currently uses internal atomic
+        // and warp server, so we don't forcibly shutdown here.
+        if let Some(_tel) = TELEMETRY.get() {
+            debug!("Telemetry instance present during cleanup");
+        }
+    }
     debug!("Mobile FFI cleanup complete");
 }
 
@@ -355,6 +379,19 @@ pub extern "C" fn nyx_mobile_start_monitoring() -> c_int {
                         w.screen_on = screen_on == 1;
                         w.low_power_mode = low_power == 1;
                     }
+                    #[cfg(feature = "telemetry")]
+                    {
+                        if let Some(tel) = TELEMETRY.get() {
+                            let mut labels = HashMap::new();
+                            labels.insert("platform".to_string(), if cfg!(target_os = "ios") { "ios".to_string() } else if cfg!(target_os = "android") { "android".to_string() } else { "other".to_string() });
+                            labels.insert("charging".to_string(), if nyx_mobile_is_charging() == 1 { "true".to_string() } else { "false".to_string() });
+                            // Merge extra labels if provided
+                            if let Some(map) = LABELS.get() { for (k, v) in map.read().unwrap().iter() { labels.insert(k.clone(), v.clone()); } }
+                            let _ = tel.record_metric("nyx_mobile_battery_level_percent", MetricType::Gauge, level.max(0).min(100) as f64, std::time::Instant::now(), Some(labels)).await;
+                        }
+                        // Export via metrics crate for daemon-side Prometheus exporter
+                        metrics::gauge!("nyx_mobile_battery_level_percent").set(level.max(0).min(100) as f64);
+                    }
                     sleep(Duration::from_millis(5000)).await;
                 }
             })
@@ -371,6 +408,17 @@ pub extern "C" fn nyx_mobile_start_monitoring() -> c_int {
                             1 => AppState::Background,
                             _ => AppState::Inactive,
                         };
+                    }
+                    #[cfg(feature = "telemetry")]
+                    {
+                        if let Some(tel) = TELEMETRY.get() {
+                            let mut labels = HashMap::new();
+                            labels.insert("platform".to_string(), if cfg!(target_os = "ios") { "ios".to_string() } else if cfg!(target_os = "android") { "android".to_string() } else { "other".to_string() });
+                            labels.insert("app_state".to_string(), app.to_string());
+                            if let Some(map) = LABELS.get() { for (k, v) in map.read().unwrap().iter() { labels.insert(k.clone(), v.clone()); } }
+                            let _ = tel.record_metric("nyx_mobile_app_state", MetricType::Gauge, app as f64, std::time::Instant::now(), Some(labels)).await;
+                        }
+                        metrics::gauge!("nyx_mobile_app_state").set(app as f64);
                     }
                     sleep(Duration::from_millis(5000)).await;
                 }
@@ -390,6 +438,17 @@ pub extern "C" fn nyx_mobile_start_monitoring() -> c_int {
                             _ => NetworkState::None,
                         };
                     }
+                    #[cfg(feature = "telemetry")]
+                    {
+                        if let Some(tel) = TELEMETRY.get() {
+                            let mut labels = HashMap::new();
+                            labels.insert("platform".to_string(), if cfg!(target_os = "ios") { "ios".to_string() } else if cfg!(target_os = "android") { "android".to_string() } else { "other".to_string() });
+                            labels.insert("network".to_string(), net.to_string());
+                            if let Some(map) = LABELS.get() { for (k, v) in map.read().unwrap().iter() { labels.insert(k.clone(), v.clone()); } }
+                            let _ = tel.record_metric("nyx_mobile_network_state", MetricType::Gauge, net as f64, std::time::Instant::now(), Some(labels)).await;
+                        }
+                        metrics::gauge!("nyx_mobile_network_state").set(net as f64);
+                    }
                     sleep(Duration::from_millis(5000)).await;
                 }
             })
@@ -399,6 +458,95 @@ pub extern "C" fn nyx_mobile_start_monitoring() -> c_int {
     }
     
     0
+}
+
+/// Initialize in-process telemetry collector from Mobile FFI side.
+/// This is optional and used when daemon-side exporter is not available.
+#[no_mangle]
+#[cfg(feature = "telemetry")]
+pub extern "C" fn nyx_mobile_telemetry_init() -> c_int {
+    if TELEMETRY.get().is_some() { return 1; }
+    // Read configuration from environment with safe defaults
+    let metrics_port = std::env::var("NYX_MOBILE_METRICS_PORT").ok().and_then(|v| v.parse::<u16>().ok()).unwrap_or(0);
+    let collection_interval = std::env::var("NYX_MOBILE_METRICS_INTERVAL_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(15);
+    let otlp_enabled = std::env::var("NYX_MOBILE_OTLP_ENABLED").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+    let otlp_endpoint = std::env::var("NYX_MOBILE_OTLP_ENDPOINT").ok();
+    let trace_sampling = std::env::var("NYX_MOBILE_TRACE_SAMPLING").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+
+    let cfg = TelemetryConfig {
+        metrics_enabled: true,
+        metrics_port,
+        collection_interval,
+        otlp_enabled,
+        otlp_endpoint,
+        trace_sampling,
+        attribute_filter_config: None,
+        exporter_recovery: false,
+    };
+
+    match TelemetryCollector::new(cfg) {
+        Ok(t) => {
+            let arc = Arc::new(t);
+            // Start telemetry in background using the global runtime
+            if let Some(rt) = RUNTIME.get() {
+                let tel = arc.clone();
+                rt.spawn(async move {
+                    // Use full start() to run collection loop and metrics server; ignore errors to avoid crashing host.
+                    let _ = tel.start().await;
+                });
+            }
+            let _ = TELEMETRY.set(arc);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
+/// No-op variants to keep link compatibility when telemetry feature is disabled
+#[cfg(not(feature = "telemetry"))]
+#[no_mangle]
+pub extern "C" fn nyx_mobile_telemetry_init() -> c_int { 1 }
+
+#[cfg(not(feature = "telemetry"))]
+#[no_mangle]
+pub extern "C" fn nyx_mobile_telemetry_shutdown() { }
+
+/// Shutdown telemetry collector started via nyx_mobile_telemetry_init (no-op if not started)
+#[no_mangle]
+#[cfg(feature = "telemetry")]
+pub extern "C" fn nyx_mobile_telemetry_shutdown() {
+    if let Some(tel) = TELEMETRY.get() {
+        if let Some(rt) = RUNTIME.get() {
+            let tel = tel.clone();
+            rt.spawn(async move {
+                tel.stop().await;
+            });
+        }
+    }
+}
+
+/// Set extra telemetry labels (key/value). Passing NULL clears the map.
+#[no_mangle]
+#[cfg(feature = "telemetry")]
+pub extern "C" fn nyx_mobile_set_telemetry_label(key: *const c_char, value: *const c_char) {
+    use crate::common::c_str_to_string;
+    if let Some(map) = LABELS.get() {
+        let mut w = map.write().unwrap();
+        if key.is_null() || value.is_null() {
+            w.clear();
+            return;
+        }
+        if let (Ok(k), Ok(v)) = (c_str_to_string(key), c_str_to_string(value)) {
+            if !k.is_empty() { w.insert(k, v); }
+        }
+    }
+}
+
+/// No-op when telemetry feature is disabled to keep platform bridges link-safe.
+#[cfg(not(feature = "telemetry"))]
+#[no_mangle]
+pub extern "C" fn nyx_mobile_set_telemetry_label(_key: *const c_char, _value: *const c_char) {
+    // no-op
 }
 
 #[cfg(test)]

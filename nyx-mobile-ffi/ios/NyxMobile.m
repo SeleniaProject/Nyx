@@ -61,6 +61,10 @@
     [self startNetworkMonitoring];
     
     NSLog(@"iOS monitoring initialization complete");
+    // Inject device/OS labels into native telemetry if available
+    [self injectTelemetryLabels];
+    // Try to start in-process telemetry collector if available
+    [self startTelemetryIfAvailable];
     return YES;
 }
 
@@ -72,6 +76,8 @@
     
     // Disable battery monitoring
     [UIDevice currentDevice].batteryMonitoringEnabled = NO;
+    // Stop telemetry if running
+    [self stopTelemetryIfAvailable];
 }
 
 // MARK: - Battery Monitoring
@@ -226,6 +232,21 @@
     [self onAppStateChanged:NyxAppStateActive];
 }
 
+// MARK: - Telemetry Labels
+
+- (void)injectTelemetryLabels {
+    @try {
+        UIDevice *device = [UIDevice currentDevice];
+        NSString *model = device.model ?: @"unknown";
+        NSString *os = [NSString stringWithFormat:@"iOS-%@", [device systemVersion]];
+        extern void nyx_mobile_set_telemetry_label(const char* key, const char* value);
+        nyx_mobile_set_telemetry_label("device_model", [model UTF8String]);
+        nyx_mobile_set_telemetry_label("os_version", [os UTF8String]);
+    } @catch (NSException *ex) {
+        NSLog(@"Failed to inject telemetry labels: %@", ex.reason);
+    }
+}
+
 - (void)appWillResignActive:(NSNotification *)notification {
     NSLog(@"App will resign active");
     _currentAppState = NyxAppStateInactive;
@@ -329,4 +350,25 @@ int nyx_ios_initialize_monitoring_objc(void) {
 
 void nyx_ios_cleanup_monitoring_objc(void) {
     [[NyxMobileBridge sharedInstance] cleanup];
+}
+
+// MARK: - Telemetry control
+
+- (void)startTelemetryIfAvailable {
+    @try {
+        extern int nyx_mobile_telemetry_init(void);
+        int r = nyx_mobile_telemetry_init();
+        NSLog(@"nyx_mobile_telemetry_init result: %d", r);
+    } @catch (NSException *ex) {
+        NSLog(@"Telemetry not initialized (feature off or unavailable): %@", ex.reason);
+    }
+}
+
+- (void)stopTelemetryIfAvailable {
+    @try {
+        extern void nyx_mobile_telemetry_shutdown(void);
+        nyx_mobile_telemetry_shutdown();
+    } @catch (NSException *ex) {
+        NSLog(@"Telemetry shutdown skipped: %@", ex.reason);
+    }
 }

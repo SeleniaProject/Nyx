@@ -15,6 +15,26 @@ use cocoa::foundation::{NSString, NSAutoreleasePool};
 use core_foundation::base::TCFType;
 #[cfg(target_os = "ios")]
 use tracing::{debug, error, info, warn};
+/// Bridge functions implemented in Objective-C (`NyxMobile.m`) to manage monitoring lifecycle
+#[cfg(target_os = "ios")]
+extern "C" {
+    fn nyx_ios_initialize_monitoring_objc() -> i32;
+    fn nyx_ios_cleanup_monitoring_objc();
+}
+
+/// Start high-level Objective-C monitoring (battery/app/network) via bridge singleton
+#[cfg(target_os = "ios")]
+#[no_mangle]
+pub extern "C" fn ios_start_bridge_monitoring() -> c_int {
+    unsafe { nyx_ios_initialize_monitoring_objc() as c_int }
+}
+
+/// Stop Objective-C monitoring via bridge singleton
+#[cfg(target_os = "ios")]
+#[no_mangle]
+pub extern "C" fn ios_stop_bridge_monitoring() {
+    unsafe { nyx_ios_cleanup_monitoring_objc() }
+}
 
 /// iOS battery level monitoring using UIDevice
 #[cfg(target_os = "ios")]

@@ -11,6 +11,10 @@ fn main() {
             println!("cargo:rustc-link-lib=framework=CoreFoundation");
             println!("cargo:rustc-link-lib=framework=Network");
             println!("cargo:rustc-link-lib=framework=CoreTelephony");
+            // Enable networking extensions for background metrics if present
+            if let Ok(_) = env::var("NYX_IOS_ENABLE_BACKGROUND_NETWORKING") {
+                println!("cargo:rustc-link-lib=framework=SystemConfiguration");
+            }
             
             // Add search path for iOS FFI library
             let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -20,6 +24,9 @@ fn main() {
         "android" => {
             println!("cargo:rustc-link-lib=log");
             println!("cargo:rustc-link-lib=android");
+            // Link native libraries commonly required by JNI and networking
+            println!("cargo:rustc-link-lib=dl");
+            println!("cargo:rustc-link-lib=c");
             
             // Add search path for Android FFI library
             let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());

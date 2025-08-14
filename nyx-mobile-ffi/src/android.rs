@@ -73,6 +73,43 @@ pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeInit(
     super::nyx_mobile_init() as jint
 }
 
+#[cfg(all(target_os = "android", feature = "telemetry"))]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeTelemetryInit(
+    _env: JNIEnv,
+    _class: JClass,
+)-> jint {
+    super::nyx_mobile_telemetry_init() as jint
+}
+
+#[cfg(all(target_os = "android", feature = "telemetry"))]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeTelemetryShutdown(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    super::nyx_mobile_telemetry_shutdown();
+}
+
+// No-op JNI stubs when telemetry feature is disabled, to keep linkage stable
+#[cfg(all(target_os = "android", not(feature = "telemetry")))]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeTelemetryInit(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    1
+}
+
+#[cfg(all(target_os = "android", not(feature = "telemetry")))]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeTelemetryShutdown(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    // no-op
+}
+
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeCleanup(
@@ -178,6 +215,26 @@ pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeNotifyEvent(
 ) {
     // Forward to common Rust-side notifier to update state and dispatch callback
     super::nyx_mobile_notify_event(event as i32, value as i32);
+}
+
+/// JNI: Set telemetry label via Java bridge
+#[cfg(all(target_os = "android", feature = "telemetry"))]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeSetTelemetryLabel(
+    env: JNIEnv,
+    _class: JClass,
+    key: JString,
+    value: JString,
+) {
+    if key.is_null() || value.is_null() {
+        unsafe { super::nyx_mobile_set_telemetry_label(std::ptr::null(), std::ptr::null()) };
+        return;
+    }
+    let k: String = env.get_string(&key).map(|s| s.into()).unwrap_or_default();
+    let v: String = env.get_string(&value).map(|s| s.into()).unwrap_or_default();
+    let ck = std::ffi::CString::new(k).unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
+    let cv = std::ffi::CString::new(v).unwrap_or_else(|_| std::ffi::CString::new("").unwrap());
+    unsafe { super::nyx_mobile_set_telemetry_label(ck.as_ptr(), cv.as_ptr()) };
 }
 
 /// Android battery level monitoring using BatteryManager

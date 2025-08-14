@@ -112,12 +112,54 @@ public class NyxMobileBridge {
             return false;
         }
         
+        // Initialize native layer (JNI + Rust FFI) early so metrics and state are ready
+        try {
+            int jni = NyxMobileJNI.nativeInitAndroidJNI(this.context);
+            if (jni < 0) {
+                Log.w(TAG, "nativeInitAndroidJNI returned error: " + jni);
+            } else {
+                Log.d(TAG, "nativeInitAndroidJNI ok: " + jni);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeInitAndroidJNI failed: " + t.getMessage());
+        }
+        try {
+            int init = NyxMobileJNI.nativeInit();
+            if (init < 0) {
+                Log.w(TAG, "nativeInit returned error: " + init);
+            }
+            int mon = NyxMobileJNI.nativeStartMonitoring();
+            if (mon < 0) {
+                Log.w(TAG, "nativeStartMonitoring returned error: " + mon);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "Native init/monitoring failed: " + t.getMessage());
+        }
+
         // Initialize monitoring
         startBatteryMonitoring();
         startPowerSaveMonitoring();
         startNetworkMonitoring();
         
         Log.d(TAG, "NyxMobileBridge initialization complete");
+
+        // Inject device/OS labels into native telemetry if available
+        try {
+            String model = android.os.Build.MODEL != null ? android.os.Build.MODEL : "unknown";
+            String os = "Android-" + android.os.Build.VERSION.RELEASE;
+            NyxMobileJNI.nativeSetTelemetryLabel("device_model", model);
+            NyxMobileJNI.nativeSetTelemetryLabel("os_version", os);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to set telemetry labels: " + t.getMessage());
+        }
+        
+        // Optionally start in-process telemetry collector if environment requires it
+        try {
+            int tel = NyxMobileJNI.nativeTelemetryInit();
+            Log.d(TAG, "nativeTelemetryInit result: " + tel);
+        } catch (Throwable t) {
+            Log.d(TAG, "Telemetry not initialized (feature off or unavailable): " + t.getMessage());
+        }
         return true;
     }
     
@@ -138,6 +180,14 @@ public class NyxMobileBridge {
         stopPowerSaveMonitoring();
         stopNetworkMonitoring();
         
+        try {
+            // Best-effort stop telemetry collector if started
+            try { NyxMobileJNI.nativeTelemetryShutdown(); } catch (Throwable ignore) { }
+            NyxMobileJNI.nativeCleanup();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeCleanup failed: " + t.getMessage());
+        }
+
         nativeCallback = null;
     }
     

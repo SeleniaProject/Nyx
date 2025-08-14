@@ -87,6 +87,22 @@ public class NyxMobileJNI {
      * @param value associated value
      */
     public static native void nativeNotifyEvent(int event, int value);
+
+    /**
+     * Set extra telemetry label (key/value) in native layer. Passing null clears all labels.
+     */
+    public static native void nativeSetTelemetryLabel(String key, String value);
+
+    /**
+     * Start in-process telemetry collector (optional; requires telemetry feature).
+     * Returns 0 on success, 1 if already started, negative on error.
+     */
+    public static native int nativeTelemetryInit();
+
+    /**
+     * Shutdown telemetry collector started via nativeTelemetryInit (no-op if not started).
+     */
+    public static native void nativeTelemetryShutdown();
     
     // Callback methods called from native code
     

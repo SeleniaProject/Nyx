@@ -40,6 +40,12 @@ typedef NS_ENUM(NSInteger, NyxPlatform) {
 + (instancetype)sharedInstance;
 - (BOOL)initializeMonitoring;
 - (void)cleanup;
+// Telemetry control (optional)
+- (void)startTelemetryIfAvailable;
+- (void)stopTelemetryIfAvailable;
+
+/// Inject telemetry labels into native layer (keys like device_model / os_version)
+- (void)injectTelemetryLabels;
 
 // Battery Monitoring
 @property (nonatomic, readonly) NSInteger batteryLevel;
@@ -109,6 +115,9 @@ int nyx_mobile_is_low_power_mode(void);
 int nyx_mobile_get_app_state(void);
 int nyx_mobile_get_network_state(void);
 int nyx_mobile_start_monitoring(void);
+// Optional telemetry control FFI (no-op if telemetry feature disabled)
+void nyx_mobile_telemetry_init(void);
+void nyx_mobile_telemetry_shutdown(void);
 
 #ifdef __cplusplus
 }
