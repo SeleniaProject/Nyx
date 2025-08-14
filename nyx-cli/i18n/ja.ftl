@@ -26,6 +26,12 @@ status-cpu = CPU: { $cpu }%
 status-memory = メモリ使用量: { $bytes } バイト
 status-active-connections = アクティブ接続数: { $count }
 
+# アラート
+alerts-stats-line = アラート: active={ $active } resolved={ $resolved } suppressed={ $suppressed }
+alerts-active-by-severity = 深刻度別 Active: { $json }
+alerts-analysis-metric-frequency = メトリクス頻度: { $json }
+alerts-analysis-recommendations = 推奨事項: { $json }
+
 # ベンチマークコマンドメッセージ
 bench-starting = { $target } に対するベンチマークを開始中
 bench-duration = 実行時間: { $duration }

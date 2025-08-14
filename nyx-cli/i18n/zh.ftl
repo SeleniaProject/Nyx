@@ -26,6 +26,12 @@ status-cpu = CPU: { $cpu }%
 status-memory = 内存使用: { $bytes } 字节
 status-active-connections = 活动连接数: { $count }
 
+# 警报
+alerts-stats-line = 警报: active={ $active } resolved={ $resolved } suppressed={ $suppressed }
+alerts-active-by-severity = 按严重程度统计: { $json }
+alerts-analysis-metric-frequency = 指标频率: { $json }
+alerts-analysis-recommendations = 建议: { $json }
+
 # 基准测试命令消息
 bench-starting = 开始对 { $target } 进行基准测试
 bench-duration = 持续时间: { $duration }

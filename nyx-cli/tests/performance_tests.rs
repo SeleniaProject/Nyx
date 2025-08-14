@@ -265,7 +265,8 @@ async fn test_memory_usage_validation() {
     
     println!("💾 Testing memory usage during intensive operations");
     
-    let initial_memory = get_system_memory_usage(&mut system);
+    // Use process-local memory usage baseline to reduce noise from other processes in CI runners
+    let initial_memory = get_process_memory_usage(&mut system);
     println!("Initial system memory usage: {:.1} MB", initial_memory);
     
     // Run memory-intensive benchmark
@@ -285,7 +286,7 @@ async fn test_memory_usage_validation() {
     match output {
         Ok(_output) => {
             system.refresh_all();
-            let final_memory = get_system_memory_usage(&mut system);
+            let final_memory = get_process_memory_usage(&mut system);
             let memory_increase = final_memory - initial_memory;
             
             println!("📊 Memory Usage Results:");

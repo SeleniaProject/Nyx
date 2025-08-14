@@ -418,6 +418,38 @@ impl NyxControlClient {
             .map_err(|e| anyhow!("Failed to parse stats: {}", e))?;
         Ok(v)
     }
+
+    pub async fn get_alerts_stats(&self) -> anyhow::Result<serde_json::Value> {
+        let url = format!("{}/api/v1/alerts/stats", self.base_url);
+        let agent = self.agent.clone();
+        let auth_token = self.auth_token.clone();
+        let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut http_request = agent.get(&url);
+            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
+            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+        }).await
+            .map_err(|e| anyhow!("Task join error: {}", e))??;
+        let v: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| anyhow!("Failed to parse alerts stats: {}", e))?;
+        Ok(v)
+    }
+
+    pub async fn get_alerts_analysis(&self) -> anyhow::Result<serde_json::Value> {
+        let url = format!("{}/api/v1/alerts/analysis", self.base_url);
+        let agent = self.agent.clone();
+        let auth_token = self.auth_token.clone();
+        let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut http_request = agent.get(&url);
+            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
+            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
+        }).await
+            .map_err(|e| anyhow!("Task join error: {}", e))??;
+        let v: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| anyhow!("Failed to parse alerts analysis: {}", e))?;
+        Ok(v)
+    }
 }
 
 /// Create authenticated request with token if available
@@ -477,6 +509,8 @@ pub enum Commands {
     Events(EventsCmd),
     /// Plugin management (manifest reload and registry dump)
     Plugin(PluginCmd),
+    /// Alerts API (stats/analysis)
+    Alerts(AlertsCmd),
 }
 
 #[derive(Args, Clone, Debug)]
@@ -597,6 +631,23 @@ pub enum PluginSubcommands {
 pub struct PluginCmd {
     #[command(subcommand)]
     pub sub: PluginSubcommands,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AlertsSubcommands {
+    /// Show alert statistics snapshot
+    Stats,
+    /// Show alert analysis report
+    Analysis,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct AlertsCmd {
+    /// Output format (table/json)
+    #[arg(long = "format", default_value = "table")]
+    pub format: String,
+    #[command(subcommand)]
+    pub sub: AlertsSubcommands,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -1157,6 +1208,49 @@ async fn cmd_events(cli: &Cli, args: &EventsCmd) -> Result<()> {
     Ok(())
 }
 
+async fn cmd_alerts(cli: &Cli, args: &AlertsCmd) -> Result<()> {
+    let client = create_client(cli).await?;
+    match &args.sub {
+        AlertsSubcommands::Stats => {
+            let stats = client.get_alerts_stats().await?;
+            if args.format == "json" {
+                println!("{}", serde_json::to_string_pretty(&stats)?);
+            } else {
+                // Localized human-readable lines
+                let total_active = stats.get("total_active").and_then(|v| v.as_u64()).unwrap_or(0);
+                let total_resolved = stats.get("total_resolved").and_then(|v| v.as_u64()).unwrap_or(0);
+                let suppressed = stats.get("suppression_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let mut m = std::collections::HashMap::new();
+                m.insert("active", total_active.to_string());
+                m.insert("resolved", total_resolved.to_string());
+                m.insert("suppressed", suppressed.to_string());
+                println!("{}", localize(&cli.language, "alerts-stats-line", Some(&m)));
+                if let Some(sev) = stats.get("active_by_severity") {
+                    let mut m2 = std::collections::HashMap::new();
+                    m2.insert("json", serde_json::to_string(sev).unwrap_or_default());
+                    println!("{}", localize(&cli.language, "alerts-active-by-severity", Some(&m2)));
+                }
+            }
+        }
+        AlertsSubcommands::Analysis => {
+            let report = client.get_alerts_analysis().await?;
+            if args.format == "json" {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                let freq = report.get("metric_frequency").cloned().unwrap_or(serde_json::json!({}));
+                let recs = report.get("recommendations").cloned().unwrap_or(serde_json::json!([]));
+                let mut m1 = std::collections::HashMap::new();
+                m1.insert("json", serde_json::to_string(&freq).unwrap_or_default());
+                println!("{}", localize(&cli.language, "alerts-analysis-metric-frequency", Some(&m1)));
+                let mut m2 = std::collections::HashMap::new();
+                m2.insert("json", serde_json::to_string(&recs).unwrap_or_default());
+                println!("{}", localize(&cli.language, "alerts-analysis-recommendations", Some(&m2)));
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn cmd_plugin(cli: &Cli, args: &PluginCmd) -> Result<()> {
     let client = create_client(cli).await?;
     match &args.sub {
@@ -1300,5 +1394,6 @@ async fn main() -> Result<()> {
         Commands::Metrics(m) => cmd_metrics(&cli, m).await,
         Commands::Events(e) => cmd_events(&cli, e).await,
         Commands::Plugin(p) => cmd_plugin(&cli, p).await,
+        Commands::Alerts(a) => cmd_alerts(&cli, a).await,
     }
 }

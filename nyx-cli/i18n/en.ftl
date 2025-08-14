@@ -26,6 +26,12 @@ status-cpu = CPU: { $cpu }%
 status-memory = Memory Usage: { $bytes } bytes
 status-active-connections = Active Connections: { $count }
 
+# Alerts
+alerts-stats-line = Alerts: active={ $active } resolved={ $resolved } suppressed={ $suppressed }
+alerts-active-by-severity = Active by severity: { $json }
+alerts-analysis-metric-frequency = Metric frequency: { $json }
+alerts-analysis-recommendations = Recommendations: { $json }
+
 # Benchmark command messages
 bench-starting = Starting benchmark against { $target }
 bench-duration = Duration: { $duration }
