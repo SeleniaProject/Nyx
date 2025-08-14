@@ -28,7 +28,7 @@ experimental-all = [
  mpr_experimental = []
  hybrid = []
  cmix = []
- plugin = []
+ plugin = ["nyx-stream/plugin"]
  low_power = ["dep:nyx-mobile-ffi"]
  # Enable Windows API bindings for metrics on Windows builds
  windows = ["dep:windows"]
@@ -156,6 +156,7 @@ trust-dns-resolver = "0.23"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+ciborium = "0.2"
 
 [build-dependencies]
 # tonic-build = "0.10" # DISABLED: uses ring/openssl 

@@ -25,6 +25,8 @@ use nyx_daemon::GLOBAL_PATH_PERFORMANCE_REGISTRY; // lib側で定義したグロ
 use tokio::sync::{broadcast, RwLock, Mutex};
 // use tonic::transport::Server; // REMOVED: C/C++ dependency
 use tracing::{debug, error, info, instrument};
+use axum::{Router, routing::{get, post}, extract::{State, Path, Query}, Json};
+// use axum::http::HeaderMap; // duplicate import removed
 
 // Internal modules
 use nyx_core::{types::*, config::NyxConfig};
@@ -115,16 +117,35 @@ use std::borrow::Cow;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use nyx_mix::cover_adaptive::{AdaptiveCoverGenerator, AdaptiveCoverConfig};
 // HTTP server (Axum) to serve pure-Rust JSON API for CLI
-use axum::{Router, routing::{get, post}, extract::{Path, State, Query}, Json};
+// use axum::{Router, routing::{get, post}, extract::{Path, State, Query}, Json}; // duplicate import removed
 use serde::{Deserialize, Serialize};
 use axum::http::HeaderMap;
 use std::collections::HashMap;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64_STD;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64_URL_SAFE;
+use nyx_stream::{SettingsFrame, Setting, parse_settings_frame, parse_close_frame};
+use nyx_stream::management::setting_ids as mgmt_setting_ids;
+use nyx_stream::management::ERR_UNSUPPORTED_CAP;
+#[cfg(feature = "plugin")]
+use nyx_stream::plugin_handshake::{PluginHandshakeCoordinator, PluginHandshakeError};
+#[cfg(feature = "plugin")]
+use nyx_stream::plugin_settings::PluginSettingsManager;
 #[cfg(feature = "plugin")]
 use notify::{Watcher, RecommendedWatcher, EventKind, RecursiveMode};
 #[cfg(feature = "plugin")]
 use std::sync::Arc as StdArc;
 #[cfg(feature = "plugin")]
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering2};
+
+#[derive(Debug, Clone, Default, Serialize)]
+struct PluginNegotiationState {
+    support_flags: u32,
+    required_plugin_count: u32,
+    optional_plugin_count: u32,
+    security_policy: u32,
+    requirements_count: u32,
+}
 
 // Global stream manager handle for inbound packet routing (feature-gated)
 #[cfg(feature = "experimental-metrics")]
@@ -190,6 +211,13 @@ pub struct ControlService {
 
     // Access control: if present, all control APIs require this token
     api_token: Option<String>,
+
+    // Last plugin negotiation state received from WASM client (HTTP gateway)
+    plugin_negotiation: Arc<RwLock<PluginNegotiationState>>,
+
+    // Plugin handshake coordinator stored across HTTP calls (plugin feature only)
+    #[cfg(feature = "plugin")]
+    plugin_handshake: Arc<Mutex<Option<PluginHandshakeCoordinator>>>,
 }
 
 impl ControlService {
@@ -553,6 +581,9 @@ impl ControlService {
             connection_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             total_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             api_token,
+            plugin_negotiation: Arc::new(RwLock::new(PluginNegotiationState::default())),
+            #[cfg(feature = "plugin")]
+            plugin_handshake: Arc::new(Mutex::new(None)),
         };
         info!("Control service instance created");
         
@@ -563,6 +594,51 @@ impl ControlService {
         
         info!("Control service initialized with node ID: {}", hex::encode(node_id));
         Ok(service)
+    }
+
+    /// Apply a SETTINGS payload received from WASM client to negotiation snapshot
+    async fn apply_wasm_settings(&self, payload: &[u8]) -> Result<PluginNegotiationState, String> {
+        let state = parse_wasm_settings_to_state(payload)?;
+        {
+            let mut guard = self.plugin_negotiation.write().await;
+            *guard = state.clone();
+        }
+        // Emit event for diagnostics/observers
+        let _ = self.event_tx.send(proto::Event {
+            r#type: "system".to_string(),
+            detail: "plugin negotiation updated".to_string(),
+            timestamp: Some(proto::Timestamp::now()),
+            severity: "info".to_string(),
+            attributes: std::collections::HashMap::new(),
+            event_type: "plugin_negotiation".to_string(),
+            data: std::collections::HashMap::new(),
+            event_data: None,
+        });
+        Ok(state)
+    }
+
+    /// For plugin-enabled builds: bootstrap a handshake coordinator using stored negotiation
+    #[cfg(feature = "plugin")]
+    async fn begin_plugin_handshake_from_snapshot(&self, is_initiator: bool) -> Result<Option<Vec<u8>>, String> {
+        let snap = self.plugin_negotiation.read().await.clone();
+        let mut mgr = PluginSettingsManager::new();
+        // When only counts are known, advertise basic support/security without detailed list.
+        // A real implementation would fill specific plugin requirements here from registry/config.
+        // For now, enable negotiation but without explicit IDs; peer can still respond.
+        let mut coord = PluginHandshakeCoordinator::new(mgr, is_initiator);
+        coord.initiate_handshake().await.map_err(|e| format!("handshake init error: {}", e))
+    }
+
+    /// Process a CLOSE payload from WASM client. Returns decoded code and optional cap id.
+    async fn process_wasm_close(&self, payload: &[u8]) -> Result<(u16, Option<u32>), String> {
+        let (_rest, cf) = parse_close_frame(payload).map_err(|e| format!("CLOSE parse error: {:?}", e))?;
+        let code = cf.code;
+        let cap_id = if code == ERR_UNSUPPORTED_CAP && cf.reason.len() == 4 {
+            let mut b = [0u8;4];
+            b.copy_from_slice(cf.reason);
+            Some(u32::from_be_bytes(b))
+        } else { None };
+        Ok((code, cap_id))
     }
     
     /// Generate a node ID from configuration
@@ -935,6 +1011,49 @@ impl ControlService {
         } else {
             Err("Invalid authorization token".to_string())
         }
+    }
+}
+
+/// Parse SETTINGS payload from WASM into PluginNegotiationState (pure function for testability)
+fn parse_wasm_settings_to_state(payload: &[u8]) -> Result<PluginNegotiationState, String> {
+    let (_, frame) = parse_settings_frame(payload).map_err(|e| format!("SETTINGS parse error: {:?}", e))?;
+    let mut state = PluginNegotiationState::default();
+    let mut found_plugin_required = false;
+    for s in frame.settings.iter() {
+        match s.id {
+            mgmt_setting_ids::PLUGIN_SUPPORT => state.support_flags = s.value,
+            mgmt_setting_ids::PLUGIN_REQUIRED => {
+                state.required_plugin_count = s.value;
+                found_plugin_required = true;
+            }
+            mgmt_setting_ids::PLUGIN_OPTIONAL => state.optional_plugin_count = s.value,
+            mgmt_setting_ids::PLUGIN_SECURITY_POLICY => state.security_policy = s.value,
+            _ => {}
+        }
+    }
+    state.requirements_count = if found_plugin_required { state.required_plugin_count } else { 0 };
+    Ok(state)
+}
+
+#[cfg(test)]
+mod wasm_settings_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_wasm_settings_to_state_basic() {
+        let items = vec![
+            Setting { id: mgmt_setting_ids::PLUGIN_SUPPORT, value: 0x0001 },
+            Setting { id: mgmt_setting_ids::PLUGIN_SECURITY_POLICY, value: 0x0001 },
+            Setting { id: mgmt_setting_ids::PLUGIN_REQUIRED, value: 2 },
+            Setting { id: mgmt_setting_ids::PLUGIN_OPTIONAL, value: 1 },
+        ];
+        let payload = nyx_stream::build_settings_frame(&items);
+        let st = parse_wasm_settings_to_state(&payload).expect("parse ok");
+        assert_eq!(st.support_flags, 0x0001);
+        assert_eq!(st.security_policy, 0x0001);
+        assert_eq!(st.required_plugin_count, 2);
+        assert_eq!(st.optional_plugin_count, 1);
+        assert_eq!(st.requirements_count, 2);
     }
 }
 
@@ -1402,7 +1521,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = "127.0.0.1:50051";
     let config = Default::default();
-    let service = std::sync::Arc::new(ControlService::new(config).await?);
+        let service = std::sync::Arc::new(ControlService::new(config).await?);
     // Spawn HTTP control API server compatible with nyx-cli
     spawn_http_server(service.clone()).await?;
 
@@ -1431,12 +1550,14 @@ fn start_plugin_manifest_watcher(path: String) {
     // Debounce reload requests to avoid thrash on editors writing temp files
     let (tx, mut rx) = mpsc::unbounded_channel::<()>();
 
+    // Clone path for async task
+    let path_async = path.clone();
     // Spawn a background task to perform reloads
     tokio::spawn(async move {
         let mut last_reload = std::time::Instant::now() - Duration::from_secs(10);
         while let Some(_) = rx.recv().await {
             if last_reload.elapsed() < Duration::from_millis(250) { continue; }
-            match nyx_stream::plugin_handshake::reload_plugin_manifest_from_path(&path) {
+            match nyx_stream::plugin_handshake::reload_plugin_manifest_from_path(&path_async) {
                 Ok(count) => tracing::info!("Reloaded plugin manifest ({} entries)", count),
                 Err(e) => tracing::warn!("Failed to reload plugin manifest: {}", e),
             }
@@ -1502,6 +1623,13 @@ async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::R
         .route("/api/v1/stream/data", post(http_send_data))
         .route("/api/v1/stream/:id/stats", get(http_get_stream_stats))
         .route("/api/v1/stream/:id/close", post(http_close_stream))
+        // WASM: incoming SETTINGS and CLOSE payloads for browser clients
+        .route("/api/v1/wasm/settings", post(http_wasm_settings))
+        .route("/api/v1/wasm/close", post(http_wasm_close))
+        .route("/api/v1/wasm/negotiation", get(http_get_wasm_negotiation))
+        .route("/api/v1/wasm/handshake/start", post(http_wasm_handshake_start))
+        .route("/api/v1/wasm/handshake/process-peer-settings", post(http_wasm_handshake_process_peer_settings))
+        .route("/api/v1/wasm/handshake/complete", post(http_wasm_handshake_complete))
         .route("/api/v1/stream/:id/recv", get(http_receive_data))
         .route("/api/v1/events", get(http_get_events))
         .route("/api/v1/events", post(http_publish_event))
@@ -1605,6 +1733,168 @@ async fn http_publish_event(State(st): State<AppState>, headers: HeaderMap, Json
     match st.service.publish_event_internal(&meta, event).await {
         Ok(_) => Json(serde_json::json!({"success": true})),
         Err(e) => Json(serde_json::json!({"success": false, "error": e})),
+    }
+}
+
+// ---- WASM endpoints ----
+
+/// Accept SETTINGS payload posted by browser client. Content-Type: application/nyx-settings
+async fn http_wasm_settings(State(st): State<AppState>, headers: HeaderMap, body: axum::body::Bytes) -> Json<serde_json::Value> {
+    let len = body.len();
+    let ct = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+    tracing::info!(target="nyx-daemon", content_type=%ct, bytes=len, "Received WASM SETTINGS payload");
+    match st.service.apply_wasm_settings(&body).await {
+        Ok(state) => Json(serde_json::json!({
+            "accepted": true,
+            "bytes": len,
+            "support_flags": state.support_flags,
+            "required_plugin_count": state.required_plugin_count,
+            "optional_plugin_count": state.optional_plugin_count,
+            "security_policy": state.security_policy
+        })),
+        Err(e) => Json(serde_json::json!({"accepted": false, "error": e})),
+    }
+}
+
+/// Accept CLOSE payload posted by browser client. Content-Type: application/nyx-close
+async fn http_wasm_close(State(st): State<AppState>, headers: HeaderMap, body: axum::body::Bytes) -> Json<serde_json::Value> {
+    let len = body.len();
+    let ct = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+    tracing::info!(target="nyx-daemon", content_type=%ct, bytes=len, "Received WASM CLOSE payload");
+    match st.service.process_wasm_close(&body).await {
+        Ok((code, cap)) => Json(serde_json::json!({"accepted": true, "bytes": len, "code": code, "cap_id": cap})),
+        Err(e) => Json(serde_json::json!({"accepted": false, "error": e})),
+    }
+}
+
+/// Get last WASM negotiation snapshot
+async fn http_get_wasm_negotiation(State(st): State<AppState>) -> Json<serde_json::Value> {
+    let snap = st.service.plugin_negotiation.read().await.clone();
+    Json(serde_json::json!({
+        "support_flags": snap.support_flags,
+        "required_plugin_count": snap.required_plugin_count,
+        "optional_plugin_count": snap.optional_plugin_count,
+        "security_policy": snap.security_policy,
+        "requirements_count": snap.requirements_count
+    }))
+}
+
+/// Start a plugin handshake using current negotiation snapshot (feature=plugin)
+async fn http_wasm_handshake_start(State(st): State<AppState>) -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        use nyx_stream::plugin_handshake::PluginHandshakeCoordinator;
+        use nyx_stream::plugin_settings::PluginSettingsManager;
+
+        let mut guard = st.service.plugin_handshake.lock().await;
+        // If not present, create a new coordinator from current snapshot
+        if guard.is_none() {
+            let _snap = st.service.plugin_negotiation.read().await.clone();
+            let mgr = PluginSettingsManager::new();
+            let mut coord = PluginHandshakeCoordinator::new(mgr, true);
+            match coord.initiate_handshake().await {
+                Ok(payload_opt) => {
+                    let settings_b64 = payload_opt.map(|p| B64_URL_SAFE.encode(p));
+                    *guard = Some(coord);
+                    return Json(serde_json::json!({"started": true, "settings_b64": settings_b64}));
+                }
+                Err(e) => {
+                    return Json(serde_json::json!({"started": false, "error": e.to_string()}));
+                }
+            }
+        } else {
+            return Json(serde_json::json!({"started": true, "info": "already in progress"}));
+        }
+    }
+    #[cfg(not(feature = "plugin"))]
+    {
+        Json(serde_json::json!({"started": false, "error": "plugin feature disabled"}))
+    }
+}
+
+/// Process peer SETTINGS (from browser) through the coordinator and return optional response SETTINGS
+async fn http_wasm_handshake_process_peer_settings(State(st): State<AppState>, body: axum::body::Bytes) -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        use nyx_stream::plugin_handshake::PluginHandshakeCoordinator;
+        use nyx_stream::plugin_settings::PluginSettingsManager;
+
+        let mut guard = st.service.plugin_handshake.lock().await;
+        if guard.is_none() {
+            // Initialize as responder if no coordinator exists
+            let mgr = PluginSettingsManager::new();
+            let mut coord = PluginHandshakeCoordinator::new(mgr, false);
+            if let Err(e) = coord.initiate_handshake().await {
+                return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+            }
+            *guard = Some(coord);
+        }
+        let coord = guard.as_mut().unwrap();
+        match coord.process_peer_settings(&body).await {
+            Ok(Some(response_settings)) => {
+                let b64 = B64_URL_SAFE.encode(&response_settings);
+                Json(serde_json::json!({"ok": true, "response_settings_b64": b64}))
+            }
+            Ok(None) => Json(serde_json::json!({"ok": true, "response_settings_b64": null})),
+            Err(e) => Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+        }
+    }
+    #[cfg(not(feature = "plugin"))]
+    {
+        Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
+    }
+}
+
+/// Complete plugin initialization and return result summary
+async fn http_wasm_handshake_complete(State(st): State<AppState>) -> Json<serde_json::Value> {
+    #[cfg(feature = "plugin")]
+    {
+        use nyx_stream::plugin_handshake::HandshakeResult;
+        let mut guard = st.service.plugin_handshake.lock().await;
+        if let Some(coord) = guard.as_mut() {
+            match coord.complete_plugin_initialization().await {
+                Ok(HandshakeResult::Success { active_plugins, handshake_duration }) => {
+                    *guard = None; // clear coordinator after success
+                    Json(serde_json::json!({
+                        "ok": true,
+                        "result": "success",
+                        "active_plugins": active_plugins,
+                        "duration_secs": handshake_duration.as_secs_f64()
+                    }))
+                }
+                Ok(HandshakeResult::IncompatibleRequirements { conflicting_plugin_id, reason }) => {
+                    *guard = None;
+                    Json(serde_json::json!({
+                        "ok": false,
+                        "result": "incompatible",
+                        "conflicting_plugin_id": conflicting_plugin_id,
+                        "reason": reason
+                    }))
+                }
+                Ok(HandshakeResult::Timeout { attempted_duration }) => {
+                    *guard = None;
+                    Json(serde_json::json!({
+                        "ok": false,
+                        "result": "timeout",
+                        "duration_secs": attempted_duration.as_secs_f64()
+                    }))
+                }
+                Ok(HandshakeResult::ProtocolError { error }) => {
+                    *guard = None;
+                    Json(serde_json::json!({"ok": false, "result": "protocol_error", "error": error}))
+                }
+                Err(e) => {
+                    *guard = None;
+                    Json(serde_json::json!({"ok": false, "error": e.to_string()}))
+                }
+            }
+        } else {
+            Json(serde_json::json!({"ok": false, "error": "no handshake in progress"}))
+        }
+    }
+    #[cfg(not(feature = "plugin"))]
+    {
+        Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
     }
 }
 
