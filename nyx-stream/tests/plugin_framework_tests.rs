@@ -332,8 +332,15 @@ async fn test_plugin_frame_processing_telemetry() {
 #[cfg(not(feature = "plugin"))]
 #[tokio::test]
 async fn test_plugin_framework_disabled() {
-    // Plugin無効時は機能が非公開のため、最低限の確認のみ行う
-    assert!(true);
+    // When plugin feature is disabled, confirm plugin symbols are not exported and
+    // non-plugin utilities remain usable.
+    use nyx_stream::{build_header, build_header_ext, FrameHeader};
+    let hdr_struct = FrameHeader { frame_type: 0x01, flags: 0x00, length: 0x10 };
+    let header_bytes = build_header(hdr_struct);
+    // Extended builder should append path id when provided
+    let ext = build_header_ext(hdr_struct, Some(7));
+    assert_eq!(header_bytes.len(), 4);
+    assert_eq!(ext.len(), 5);
 }
 
 #[cfg(feature = "plugin")]

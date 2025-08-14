@@ -398,6 +398,8 @@ async fn test_concurrent_plugin_operations() {
 #[cfg(not(feature = "plugin"))]
 #[tokio::test]
 async fn test_integration_without_plugin_support() {
-    // Plugin無効時はスモークテストのみ
-    assert!(true);
+    // Ensure base stream types are available without plugin feature
+    use nyx_stream::{build_header, FrameHeader};
+    let h = build_header(0x02, 0x00, 0x20);
+    assert_eq!(h.frame_type, 0x02);
 }

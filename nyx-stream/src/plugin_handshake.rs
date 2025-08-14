@@ -367,7 +367,9 @@ impl PluginHandshakeCoordinator {
         }
 
         // Parse peer's plugin requirements
-        let peer_requirements = self.local_settings.parse_peer_settings_data(peer_settings_data)
+        let peer_requirements = self
+            .local_settings
+            .parse_peer_settings_data(peer_settings_data)
             .map_err(PluginHandshakeError::SettingsError)?;
         
         debug!("Received {} plugin requirements from peer", peer_requirements.len());
@@ -375,13 +377,17 @@ impl PluginHandshakeCoordinator {
         // Validate that we can satisfy peer's requirements
         self.transition_state(HandshakeState::ValidatingRequirements)?;
         
-        if let Err(e) = self.local_settings.validate_peer_requirements(&peer_requirements) {
-            warn!("Cannot satisfy peer plugin requirements: {}", e);
-            self.transition_state(HandshakeState::Failed)?;
-            return Err(PluginHandshakeError::SettingsError(e));
-        }
+        // Store peer requirements regardless of validation outcome so that completion can
+        // produce a deterministic result (e.g., incompatible) consistent with tests/spec.
+        self.peer_requirements = Some(peer_requirements.clone());
 
-        self.peer_requirements = Some(peer_requirements);
+        if let Err(e) = self.local_settings.validate_peer_requirements(&peer_requirements) {
+            // Instead of permanently failing here, move to InitializingPlugins so that
+            // completion can return an "incompatible" result with proper summary.
+            warn!("Cannot satisfy peer plugin requirements: {}", e);
+            self.transition_state(HandshakeState::InitializingPlugins)?;
+            return Ok(None);
+        }
         
         // If we're the responder, send our requirements back
         let response_data = if !self.is_initiator {

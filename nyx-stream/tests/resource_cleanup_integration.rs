@@ -49,7 +49,8 @@ async fn test_comprehensive_resource_cleanup() {
     assert_eq!(final_resource_stats.total_resources, 0);
     
     let final_stream_stats = stream.get_stream_stats().await;
-    assert!(final_stream_stats.is_cleaning_up);
+    // After cleanup completes, the stream should no longer be in cleaning state
+    assert!(!final_stream_stats.is_cleaning_up);
     
     // Stop monitoring
     stream.stop_resource_monitoring().await;
@@ -152,8 +153,8 @@ async fn test_memory_leak_prevention() {
     let stats_after = stream.get_stream_stats().await;
     println!("Buffer size before: {}, after: {}", initial_write_buffer, stats_after.write_buffer_size);
     
-    // Verify cleanup state
-    assert!(stats_after.is_cleaning_up);
+    // Verify cleanup state finished
+    assert!(!stats_after.is_cleaning_up);
 }
 
 #[tokio::test]

@@ -745,7 +745,8 @@ impl NyxAsyncStream {
         
         info!("Completed resource cleanup for stream {}", self.stream_id);
         
-        // Notify waiting tasks
+        // Reset cleanup state and notify any waiters
+        self.is_cleaning_up.store(false, std::sync::atomic::Ordering::SeqCst);
         self.cleanup_completed.notify_waiters();
         
         Ok(())
@@ -985,6 +986,8 @@ impl NyxAsyncStream {
                 }
             }
             
+            // Reset cleanup state and notify any waiters
+            is_cleaning_up.store(false, std::sync::atomic::Ordering::SeqCst);
             cleanup_completed.notify_waiters();
             info!("Completed scheduled cleanup for stream {}", stream_id);
         });
@@ -1532,9 +1535,9 @@ mod tests {
         let stats_after = stream.get_resource_stats().await.unwrap();
         assert_eq!(stats_after.total_resources, 0);
         
-        // Check stream stats
+        // After cleanup completes, the stream should no longer be marked as cleaning up
         let stream_stats = stream.get_stream_stats().await;
-        assert!(stream_stats.is_cleaning_up);
+        assert!(!stream_stats.is_cleaning_up);
     }
 
     #[tokio::test]

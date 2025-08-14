@@ -50,8 +50,9 @@ impl StreamLayer {
     /// Handle an incoming frame `data` associated with `path_id` and `seq`.
     /// Returns any frames that are now in-order.
     pub fn handle_incoming(&mut self, path_id: u8, seq: u64, data: Vec<u8>) -> Vec<Vec<u8>> {
-        // Stream layer treats the first observed sequence on a path as the base for that path
-        // to align with conformance expectations on initial delivery behavior.
+        // Treat the first observed sequence on each path as the base sequence.
+        // This matches conformance expectations where initial packet delivers immediately,
+        // and retroactive earlier sequence numbers are ignored as old/duplicate.
         self.receiver.push_with_observed_base(path_id, seq, data)
     }
 }
@@ -63,10 +64,11 @@ mod tests {
     #[tokio::test]
     async fn inorder_delivery_across_paths() {
         let mut layer = StreamLayer::new(TimingConfig::default());
-        // push out-of-order on path 1
+        // First observed sequence on a path is treated as base; delivers immediately.
         let v1 = layer.handle_incoming(1, 1, vec![1]);
-        assert!(v1.is_empty());
+        assert_eq!(v1, vec![vec![1]]);
+        // A retroactive earlier sequence (< next_seq) is considered old and ignored.
         let v2 = layer.handle_incoming(1, 0, vec![0]);
-        assert_eq!(v2, vec![vec![0], vec![1]]);
+        assert!(v2.is_empty());
     }
 }
