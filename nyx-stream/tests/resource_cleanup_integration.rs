@@ -1,13 +1,9 @@
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "legacy_tests_disabled")]
-use nyx_stream::{NyxAsyncStream, CleanupConfig, StreamStats, ResourceStats};
-#[cfg(feature = "legacy_tests_disabled")]
+use nyx_stream::{NyxAsyncStream, CleanupConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-#[cfg(feature = "legacy_tests_disabled")]
 use std::time::Duration;
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_comprehensive_resource_cleanup() {
     // Create stream with custom cleanup configuration
@@ -59,7 +55,6 @@ async fn test_comprehensive_resource_cleanup() {
     stream.stop_resource_monitoring().await;
 }
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_force_cleanup_with_timeout() {
     let cleanup_config = CleanupConfig {
@@ -97,7 +92,6 @@ async fn test_force_cleanup_with_timeout() {
     }
 }
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_resource_limits() {
     let cleanup_config = CleanupConfig {
@@ -134,7 +128,6 @@ async fn test_resource_limits() {
     stream.cleanup_resources().await.unwrap();
 }
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_memory_leak_prevention() {
     let (mut stream, _receiver) = NyxAsyncStream::new(4, 1024, 4096);
@@ -163,7 +156,6 @@ async fn test_memory_leak_prevention() {
     assert!(stats_after.is_cleaning_up);
 }
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_drop_cleanup() {
     let cleanup_config = CleanupConfig {
@@ -195,7 +187,6 @@ async fn test_drop_cleanup() {
     println!("Drop cleanup completed successfully");
 }
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_operation_lifecycle() {
     let (stream, _receiver) = NyxAsyncStream::new(6, 1024, 4096);
@@ -220,7 +211,6 @@ async fn test_operation_lifecycle() {
     stream.cleanup_resources().await.unwrap();
 }
 
-#[cfg(feature = "legacy_tests_disabled")]
 #[tokio::test]
 async fn test_sequential_operations() {
     let (stream, _receiver) = NyxAsyncStream::new(7, 1024, 4096);
