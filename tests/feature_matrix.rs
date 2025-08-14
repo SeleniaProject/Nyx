@@ -44,8 +44,18 @@ mod tests {
     #[cfg(feature="mpr_experimental")]
     #[test]
     fn fm_mpr_experimental_marker() {
-        // Marker test; ensure code behind mpr_experimental compiles
-        assert!(true);
+        // Construct MprDispatcher and exercise a few basic calls to ensure symbols link.
+        use nyx_stream::{WeightedRrScheduler, MprDispatcher};
+        let mut sched = WeightedRrScheduler::new();
+        sched.update_path(1, 10.0);
+        sched.update_path(2, 20.0);
+        let mut mpr = MprDispatcher::new(sched, 2);
+        let chosen = mpr.choose_paths();
+        assert!(!chosen.is_empty());
+        // Provide feedback and verify redundancy stays within bounds [1,4]
+        mpr.record_feedback(false);
+        let k = mpr.redundancy();
+        assert!(k >= 1 && k <= 4);
     }
 
     #[cfg(feature="fec")]
