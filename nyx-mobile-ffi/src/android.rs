@@ -59,6 +59,115 @@ fn get_jni_env() -> Result<AttachGuard, Box<dyn std::error::Error + Send + Sync>
     Ok(vm.attach_current_thread()?)
 }
 
+// JNI wrappers to expose Rust FFI to Java `NyxMobileJNI`
+// Signature mapping: package com.nyx.mobile; class NyxMobileJNI
+// All wrappers are Android-only and exported with the standard JNI naming.
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeInit(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    // Delegate to generic FFI initializer defined in lib.rs
+    super::nyx_mobile_init() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeCleanup(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    super::nyx_mobile_cleanup();
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeStartMonitoring(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_start_monitoring() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeGetBatteryLevel(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_get_battery_level() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeIsCharging(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_is_charging() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeIsScreenOn(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_is_screen_on() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeIsPowerSaveMode(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_is_low_power_mode() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeGetAppState(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_get_app_state() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeGetNetworkState(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    super::nyx_mobile_get_network_state() as jint
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_nyx_mobile_NyxMobileJNI_nativeInitAndroidJNI(
+    env: JNIEnv,
+    _class: JClass,
+    context: JObject,
+) -> jint {
+    // Acquire raw JavaVM pointer for the lower-level initializer
+    match env.get_java_vm() {
+        Ok(vm) => {
+            let raw_vm = vm.get_java_vm_pointer();
+            // jni::JavaVM does not directly expose raw pointer in stable API; use into_raw on JNIEnv
+            // Fallback: use internal representation via jni-sys
+            let raw_vm_ptr: *mut jni::sys::JavaVM = unsafe { std::mem::transmute(raw_vm) };
+            super::android_init_jni(raw_vm_ptr, context.into_raw()) as jint
+        }
+        Err(e) => {
+            error!("Failed to get JavaVM: {}", e);
+            -1
+        }
+    }
+}
+
 /// Android battery level monitoring using BatteryManager
 #[cfg(target_os = "android")]
 #[no_mangle]

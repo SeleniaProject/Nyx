@@ -23,6 +23,7 @@ use std::os::raw::c_int;
 use std::sync::Arc;
 use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
 // Internal mobile state definitions (avoiding nyx-core dependency)
@@ -274,6 +275,66 @@ pub extern "C" fn nyx_mobile_start_monitoring() -> c_int {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         info!("Desktop platform - mobile monitoring simulated");
+    }
+
+    // Spawn periodic pollers to keep CURRENT_* states in sync (cross-platform)
+    if let Some(rt) = RUNTIME.get() {
+        let power_handle = {
+            rt.spawn(async move {
+                loop {
+                    let level = nyx_mobile_get_battery_level();
+                    let charging = nyx_mobile_is_charging();
+                    let screen_on = nyx_mobile_is_screen_on();
+                    let low_power = nyx_mobile_is_low_power_mode();
+                    if let Some(state) = CURRENT_POWER_STATE.get() {
+                        let mut w = state.write().unwrap();
+                        // Clamp and map
+                        w.battery_level = level.max(0).min(100) as u8;
+                        w.is_charging = charging == 1;
+                        w.screen_on = screen_on == 1;
+                        w.low_power_mode = low_power == 1;
+                    }
+                    sleep(Duration::from_millis(5000)).await;
+                }
+            })
+        };
+
+        let app_handle = {
+            rt.spawn(async move {
+                loop {
+                    let app = nyx_mobile_get_app_state();
+                    if let Some(st) = CURRENT_APP_STATE.get() {
+                        let mut w = st.write().unwrap();
+                        *w = match app {
+                            0 => AppState::Active,
+                            1 => AppState::Background,
+                            _ => AppState::Inactive,
+                        };
+                    }
+                    sleep(Duration::from_millis(5000)).await;
+                }
+            })
+        };
+
+        let net_handle = {
+            rt.spawn(async move {
+                loop {
+                    let net = nyx_mobile_get_network_state();
+                    if let Some(st) = CURRENT_NETWORK_STATE.get() {
+                        let mut w = st.write().unwrap();
+                        *w = match net {
+                            0 => NetworkState::WiFi,
+                            1 => NetworkState::Cellular,
+                            2 => NetworkState::Ethernet,
+                            _ => NetworkState::None,
+                        };
+                    }
+                    sleep(Duration::from_millis(5000)).await;
+                }
+            })
+        };
+
+        debug!("Spawned mobile monitoring tasks: power={:?} app={:?} net={:?}", power_handle.id(), app_handle.id(), net_handle.id());
     }
     
     0

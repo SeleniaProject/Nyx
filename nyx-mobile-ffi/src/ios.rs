@@ -140,27 +140,37 @@ pub extern "C" fn ios_get_app_state() -> c_int {
     }
 }
 
-/// iOS network state detection using Network framework
+/// iOS network state detection using SystemConfiguration reachability
 #[cfg(target_os = "ios")]
 #[no_mangle]
 pub extern "C" fn ios_get_network_state() -> c_int {
     unsafe {
         let _pool = NSAutoreleasePool::new(cocoa::base::nil);
-        
-        // For now, use simplified Reachability-style detection
-        // In a full implementation, this would use Network framework
-        
-        // Get system configuration framework
-        // This is a simplified implementation - full version would use SCNetworkReachability
-        
-        // Default to WiFi for simulation
-        // Real implementation would check:
-        // - Network.framework path monitoring
-        // - SCNetworkReachability for detailed network status
-        // - CTTelephonyNetworkInfo for cellular details
-        
-        debug!("iOS network state: WiFi (simplified)");
-        
+        use system_configuration::reachability::{Reachability, SCNetworkConnectionFlags as Flags};
+
+        // Create reachability for default route (0.0.0.0)
+        let target = std::net::Ipv4Addr::new(0, 0, 0, 0);
+        let reach = match Reachability::with_address(&target) {
+            Ok(r) => r,
+            Err(_) => return 3, // None
+        };
+        let flags = match reach.get_flags() {
+            Ok(f) => f,
+            Err(_) => return 3,
+        };
+
+        // Map flags to our NetworkState
+        // Priorities: WiFi > Cellular > None
+        // - .is_reachable() で到達性
+        // - .is_wwan() があればCellular（iOSでWWANフラグは古いがSystemConfigurationには存在）
+        let reachable = flags.contains(Flags::REACHABLE);
+        if !reachable { return 3; } // None
+
+        #[allow(deprecated)]
+        let is_wwan = flags.contains(Flags::IS_WWAN);
+        if is_wwan { return 1; } // Cellular
+
+        // Assume WiFi if reachable and not WWAN
         0 // WiFi
     }
 }
