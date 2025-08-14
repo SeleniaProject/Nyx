@@ -215,6 +215,12 @@ async fn test_event_filtering() {
 mod placeholder_tests {
     #[test]
     fn test_placeholder() {
-        assert!(true);
+        // Verify public re-exports exist and are coherent
+        use nyx_sdk::{NyxConfig, ErrorKind};
+        let cfg = NyxConfig::default();
+        assert!(cfg.daemon.connect_timeout > std::time::Duration::from_millis(0));
+        // Create a sample error and verify kind/props
+        let e = nyx_sdk::NyxError::timeout(std::time::Duration::from_millis(10));
+        assert_eq!(e.kind(), ErrorKind::Timeout);
     }
 }

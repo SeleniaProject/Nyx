@@ -546,6 +546,9 @@ async fn test_complete_sdk_workflow() {
 mod placeholder_tests {
     #[test]
     fn test_placeholder() {
-        assert!(true);
+        // Basic SDK constants and defaults sanity checks
+        assert!(nyx_sdk::VERSION.len() > 0);
+        let ep = nyx_sdk::default_daemon_endpoint();
+        assert!(!ep.is_empty());
     }
 }
