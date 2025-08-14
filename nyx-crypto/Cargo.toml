@@ -63,6 +63,7 @@ aes-gcm = { version = "0.10", features = ["aes"] }
 pbkdf2 = { version = "0.12", features = ["simple"] }
 hmac = "0.12"
 getrandom = "0.2"
+tracing = "0.1"
 
 # System dependencies
 rpassword = "7.3"
