@@ -250,10 +250,17 @@ impl AdaptiveCoverGenerator {
                 self.last_ratio_deviation = achieved_ratio - self.target_ratio;
                 self.last_cover_pps = adjusted_cover_pps;
                 tracing::trace!(cover_pps=adjusted_cover_pps, util_pps=util_smoothed, ratio_dev=self.last_ratio_deviation, "adaptive_cover_rate_update");
+                // Export via nyx-telemetry Prometheus helpers when available
                 #[cfg(feature="prometheus")]
                 {
                     nyx_telemetry::set_cover_traffic_pps(adjusted_cover_pps);
                     nyx_telemetry::set_cover_ratio_deviation(self.last_ratio_deviation);
+                }
+                // Also export via metrics crate for daemon Prometheus exporter integration
+                #[cfg(feature="metrics")]
+                {
+                    metrics::gauge!("nyx_cover_traffic_pps").set(adjusted_cover_pps);
+                    metrics::gauge!("nyx_cover_ratio_deviation").set(self.last_ratio_deviation);
                 }
             }
         }

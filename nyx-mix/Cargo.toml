@@ -9,7 +9,9 @@ license = "MIT OR Apache-2.0"
 [features]
 default = []
 mobile = []
-telemetry = []
+# Enable telemetry integration hooks. When enabled, nyx-mix can emit both
+# Prometheus (via nyx-telemetry) and metrics crate gauges for daemon exporter.
+telemetry = ["dep:nyx-telemetry", "dep:metrics"]
 
 [dependencies]
 rand = { version = "0.8", features = ["std"] }
@@ -30,3 +32,5 @@ num-traits = "0.2"
 tokio = { version = "1.37", features = ["sync", "time", "rt", "macros"] }
 lazy_static = "1"
 tokio-stream = { version = "0.1", features=["sync"] }
+nyx-telemetry = { path = "../nyx-telemetry", optional = true }
+metrics = { version = "0.22", optional = true }
