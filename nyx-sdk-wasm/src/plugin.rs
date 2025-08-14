@@ -116,6 +116,28 @@ impl PluginRegistryWasm {
             .map_err(|e| JsValue::from_str(&format!("CBOR encode error: {:?}", e)))?;
         Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf))
     }
+
+    /// Import multiple manifests from JSON array string
+    pub fn import_manifests_json(&mut self, manifests_json: String) -> Result<(), JsValue> {
+        let list: Vec<PluginManifest> = serde_json::from_str(&manifests_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid manifests JSON: {}", e)))?;
+        for m in list { self.manifests.push(m); }
+        Ok(())
+    }
+
+    /// Mark a plugin as required or optional by id
+    pub fn set_required(&mut self, id: u32, required: bool) {
+        for m in &mut self.manifests { if m.id == id { m.required = required; } }
+    }
+
+    /// Export plugin IDs (required or optional) as JSON array
+    pub fn export_plugin_ids_json(&self, required_only: bool) -> String {
+        let ids: Vec<u32> = self.manifests.iter()
+            .filter(|m| !required_only || m.required)
+            .map(|m| m.id)
+            .collect();
+        serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
+    }
 }
 
 fn verify_manifest(m: &PluginManifest) -> ValidationResult {

@@ -6,6 +6,8 @@
 //! - Capability negotiation / Close codes: Will be exposed as structured JS errors; interim maps to exceptions.
 //! - Push notifications: `nyx_register_push` is provided. Integration with Nyx gateway (VAPID/endpoint exchange) follows WebPush best practices.
 use wasm_bindgen::prelude::*;
+#[cfg(test)]
+use wasm_bindgen_test::*;
 #[cfg(feature = "noise")]
 use nyx_crypto::noise::{initiator_generate, responder_process, initiator_finalize, derive_session_key};
 use wasm_bindgen_futures::JsFuture;
@@ -104,6 +106,18 @@ pub async fn nyx_register_push(sw_path: String, vapid_public_key: String) -> Res
 pub fn nyx_multipath_controller_new(config_json: Option<String>) -> MultipathController {
     let cfg = config_json.map(|s| MultipathConfigWasm::new(Some(s)).unwrap_or_else(|_| MultipathConfigWasm::new(None).unwrap()));
     MultipathController::new(cfg)
+}
+
+// WASM tests (configure to run in browser when built for wasm32)
+#[cfg(all(test, target_arch = "wasm32"))]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+#[cfg(test)]
+#[wasm_bindgen_test]
+fn multipath_basic_config_serializes() {
+    let cfg = MultipathConfigWasm::new(None).unwrap();
+    let s = cfg.to_json();
+    assert!(s.contains("max_paths"));
 }
 
 /// Create an empty plugin registry for client-side manifest management

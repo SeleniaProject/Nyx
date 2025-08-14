@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 description = "WASM bindings for Nyx client operations"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2"
@@ -46,3 +46,7 @@ plugin = ["serde", "serde_json", "serde-wasm-bindgen", "ed25519-dalek", "sha2", 
 multipath = ["serde", "serde_json", "serde-wasm-bindgen", "once_cell", "thiserror"]
 noise = ["nyx-crypto"]
 hpke = []
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+ciborium = "0.2"

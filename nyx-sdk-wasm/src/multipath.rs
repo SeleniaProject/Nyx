@@ -250,6 +250,7 @@ pub struct MultipathController {
     reorder_global: Option<ReorderBuffer>,
     reorder_per_path: HashMap<PathId, ReorderBuffer>,
     selection_history: Vec<PathId>,
+    fixed_weights: bool,
 }
 
 #[wasm_bindgen]
@@ -265,6 +266,7 @@ impl MultipathController {
             reorder_global,
             reorder_per_path: HashMap::new(),
             selection_history: Vec::with_capacity(DEFAULT_HISTORY),
+            fixed_weights: false,
         }
     }
 
@@ -309,8 +311,8 @@ impl MultipathController {
     /// Select the next path for sending data using Smooth WRR.
     pub fn select_path(&mut self) -> Option<PathSelectionResult> {
         if self.wrr.paths.is_empty() { return None; }
-        // Refresh weights based on health each selection to react quickly to changes
-        self.wrr.adjust_weights_from_health();
+        // Refresh weights based on health unless fixed_weights mode is enabled
+        if !self.fixed_weights { self.wrr.adjust_weights_from_health(); }
         let id = self.wrr.select()?;
         if self.selection_history.len() >= DEFAULT_HISTORY { self.selection_history.remove(0); }
         self.selection_history.push(id);
@@ -358,6 +360,37 @@ impl MultipathController {
     pub fn reset(&mut self) {
         for p in &mut self.wrr.paths { p.current = 0.0; }
         self.selection_history.clear();
+    }
+
+    /// Enable or disable fixed weight mode (disables health-driven adjustments when true)
+    pub fn set_fixed_weights(&mut self, fixed: bool) {
+        self.fixed_weights = fixed;
+    }
+
+    /// Explicitly recompute weights from the current per-path health metrics
+    pub fn recompute_weights(&mut self) {
+        self.wrr.adjust_weights_from_health();
+    }
+
+    /// Set base weight for a specific path and update its effective weight accordingly
+    pub fn set_path_weight(&mut self, path_id: u8, weight: u32) -> Result<(), JsValue> {
+        let mut updated = false;
+        for p in &mut self.wrr.paths {
+            if p.id == path_id {
+                p.base_weight = weight.max(1);
+                p.effective_weight = p.base_weight as f64; // immediate effect; health may modulate later
+                updated = true;
+                break;
+            }
+        }
+        if !updated { return Err(JsValue::from_str("Path not found")); }
+        self.wrr.recompute_total();
+        Ok(())
+    }
+
+    /// Return recent selection history as JSON array
+    pub fn get_selection_history_json(&self) -> String {
+        serde_json::to_string(&self.selection_history).unwrap_or_else(|_| "[]".to_string())
     }
 }
 
