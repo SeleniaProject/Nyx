@@ -1,0 +1,20 @@
+name: Feature Request
+description: Suggest an idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What and why
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Use cases and benefits
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
