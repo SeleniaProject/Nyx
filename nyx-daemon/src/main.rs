@@ -327,5 +327,37 @@ mod tests {
 		assert!(rx.is_some());
 		assert_eq!(filter, Some(vec!["system".to_string()]));
 	}
+
+	#[tokio::test]
+	async fn list_versions_after_snapshot() {
+		let state = make_state_with_token(None);
+		let _ = state.cfg.snapshot("t").await.unwrap();
+		let req = serde_json::json!({
+			"id": "v1",
+			"op": "list_config_versions"
+		})
+		.to_string();
+		let (resp, _rx, _filter) = process_request(&req, &state).await;
+		assert!(resp.ok);
+		let v: Vec<VersionSummary> = serde_json::from_value(resp.data.unwrap()).unwrap();
+		assert!(!v.is_empty());
+	}
+
+	#[tokio::test]
+	async fn rollback_succeeds_with_valid_version() {
+		let state = make_state_with_token(Some("t"));
+		let ver = state.cfg.snapshot("before").await.unwrap();
+		let req = serde_json::json!({
+			"id": "rb1",
+			"auth": "t",
+			"op": "rollback_config",
+			"version": ver
+		})
+		.to_string();
+		let (resp, _rx, _filter) = process_request(&req, &state).await;
+		assert!(resp.ok, "{resp:?}");
+		let cr: ConfigResponse = serde_json::from_value(resp.data.unwrap()).unwrap();
+		assert!(cr.success);
+	}
 }
 
