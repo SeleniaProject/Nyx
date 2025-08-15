@@ -154,7 +154,8 @@ async fn handle_unix_client(mut stream: tokio::net::UnixStream, state: Arc<Daemo
 	let line_end = buf.iter().position(|&b| b == b'\n').unwrap_or(buf.len());
 	let req = std::str::from_utf8(&buf[..line_end]).unwrap_or("");
 	let (resp, stream_back, filter) = process_request(req, &state).await;
-	let json = serde_json::to_vec(&resp).unwrap_or_else(|e| serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(None, 500, e.to_string())).unwrap());
+	let resp_id = resp.id.clone();
+	let json = serde_json::to_vec(&resp).unwrap_or_else(|e| serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(resp_id, 500, e.to_string())).unwrap());
 	stream.write_all(&json).await?;
 	stream.write_all(b"\n").await?;
 	stream.flush().await?;
@@ -185,11 +186,22 @@ async fn handle_pipe_client(stream: &mut tokio::net::windows::named_pipe::NamedP
 	}
 	let line_end = buf.iter().position(|&b| b == b'\n').unwrap_or(buf.len());
 	let req = std::str::from_utf8(&buf[..line_end]).unwrap_or("");
-	let (resp, _stream_back, _filter) = process_request(req, &state).await;
-	let json = serde_json::to_vec(&resp).unwrap_or_else(|e| serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(None, 500, e.to_string())).unwrap());
+	let (resp, stream_back, filter) = process_request(req, &state).await;
+	let resp_id = resp.id.clone();
+	let json = serde_json::to_vec(&resp).unwrap_or_else(|e| serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(resp_id, 500, e.to_string())).unwrap());
 	stream.write_all(&json).await?;
 	stream.write_all(b"\n").await?;
 	stream.flush().await?;
+	// Stream events if subscribed until client disconnects
+	if let Some(mut rx) = stream_back {
+		while let Ok(ev) = rx.recv().await {
+			if !state.events.matches(&ev, &filter).await { continue; }
+			let line = serde_json::to_vec(&ev).unwrap_or_default();
+			if stream.write_all(&line).await.is_err() { break; }
+			if stream.write_all(b"\n").await.is_err() { break; }
+			if stream.flush().await.is_err() { break; }
+		}
+	}
 	Ok(())
 }
 
@@ -227,8 +239,80 @@ async fn process_request(req_line: &str, state: &DaemonState) -> (Response<serde
 fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
 	match (&state.token, auth) {
 		(None, _) => true, // if no token is set, allow all (development default)
-		(Some(expected), Some(provided)) => provided == expected,
-		(Some(_), None) => false,
+		(Some(expected), Some(provided)) => {
+			let ok = provided == expected;
+			if !ok { warn!("authorization failed: wrong token"); }
+			ok
+		}
+		(Some(_), None) => {
+			warn!("authorization failed: missing token");
+			false
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn make_state_with_token(token: Option<&str>) -> DaemonState {
+		let mut node_id = [0u8; 32];
+		node_id[0] = 1; // deterministic
+		let cfg_mgr = ConfigManager::new(NyxConfig::default(), None);
+		let events = EventSystem::new(16);
+		DaemonState {
+			start_time: Instant::now(),
+			node_id,
+			cfg: cfg_mgr,
+			events,
+			token: token.map(|s| s.to_string()),
+		}
+	}
+
+	#[tokio::test]
+	async fn get_info_ok_and_id_echo() {
+		let state = make_state_with_token(None);
+		let req = serde_json::json!({
+			"id": "abc",
+			"op": "get_info"
+		})
+		.to_string();
+		let (resp, rx, filter) = process_request(&req, &state).await;
+		assert!(resp.ok);
+		assert_eq!(resp.id.as_deref(), Some("abc"));
+		assert!(rx.is_none());
+		assert!(filter.is_none());
+	}
+
+	#[tokio::test]
+	async fn update_config_unauthorized_without_token() {
+		let state = make_state_with_token(Some("secret"));
+		let req = serde_json::json!({
+			"id": "u1",
+			"op": "update_config",
+			"settings": {"log_level": "debug"}
+		})
+		.to_string();
+		let (resp, _rx, _filter) = process_request(&req, &state).await;
+		assert!(!resp.ok);
+		assert_eq!(resp.code, 401);
+		assert_eq!(resp.id.as_deref(), Some("u1"));
+	}
+
+	#[tokio::test]
+	async fn subscribe_events_authorized_and_filters_attached() {
+		let state = make_state_with_token(Some("tok"));
+		let req = serde_json::json!({
+			"id": "s1",
+			"auth": "tok",
+			"op": "subscribe_events",
+			"types": ["system"]
+		})
+		.to_string();
+		let (resp, rx, filter) = process_request(&req, &state).await;
+		assert!(resp.ok);
+		assert!(rx.is_some());
+		assert_eq!(filter, Some(vec!["system".to_string()]));
 	}
 }
 
