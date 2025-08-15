@@ -1,6 +1,6 @@
-use nyx_telemetry::{TelemetryConfig, TelemetryCollector};
-use hyper::Client;
 use hyper::client::HttpConnector;
+use hyper::Client;
+use nyx_telemetry::{TelemetryCollector, TelemetryConfig};
 
 #[tokio::test]
 async fn exporter_metrics_endpoint_ok_and_nonexistent_404() {

@@ -12,9 +12,9 @@
 
 #![forbid(unsafe_code)]
 
-use serde::{Serialize, Deserialize};
+use super::{Permission, PluginHeader, PluginInfo};
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use super::{PluginHeader, PluginInfo, Permission};
 
 /// Assigned plugin ID (0x47454F53 = 'GEOS').
 pub const GEO_PLUGIN_ID: u32 = 0x4745_4F53;
@@ -33,7 +33,11 @@ impl GeoStat {
     pub fn build_frame(&self) -> Result<Vec<u8>, String> {
         let mut data = Vec::new();
         ciborium::ser::into_writer(self, &mut data).map_err(|e| e.to_string())?;
-        let hdr = PluginHeader { id: GEO_PLUGIN_ID, flags: 0, data };
+        let hdr = PluginHeader {
+            id: GEO_PLUGIN_ID,
+            flags: 0,
+            data,
+        };
         hdr.encode().map_err(|e| e.to_string())
     }
 
@@ -49,7 +53,7 @@ impl GeoStat {
 #[must_use]
 pub fn plugin_info() -> PluginInfo {
     use std::collections::HashMap;
-    
+
     PluginInfo {
         id: GEO_PLUGIN_ID,
         name: "GeoStat".into(),
@@ -71,9 +75,13 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let g = GeoStat { lat: 35.0, lon: 139.0, acc: 15.0 };
+        let g = GeoStat {
+            lat: 35.0,
+            lon: 139.0,
+            acc: 15.0,
+        };
         let bytes = g.build_frame().unwrap();
         let parsed = GeoStat::parse_frame(&bytes).unwrap();
         assert_eq!(g, parsed);
     }
-} 
+}

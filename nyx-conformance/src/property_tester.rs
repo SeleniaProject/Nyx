@@ -4,12 +4,11 @@
 //! of the Nyx protocol, including test case generation, property verification,
 //! counterexample generation, and detailed failure reporting.
 
-
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 
 /// Property test configuration
 #[derive(Debug, Clone)]
@@ -45,10 +44,10 @@ impl Default for PropertyTestConfig {
 pub trait Generator<T>: Send + Sync {
     /// Generate a random test case
     fn generate(&self, rng: &mut StdRng, size: usize) -> T;
-    
+
     /// Shrink a test case to find minimal counterexample
     fn shrink(&self, value: &T) -> Vec<T>;
-    
+
     /// Get the name of this generator
     fn name(&self) -> &'static str;
 }
@@ -57,10 +56,10 @@ pub trait Generator<T>: Send + Sync {
 pub trait Property<T>: Send + Sync {
     /// Test the property against a generated value
     fn test(&self, value: &T) -> PropertyResult;
-    
+
     /// Get the name of this property
     fn name(&self) -> &'static str;
-    
+
     /// Get a description of what this property tests
     fn description(&self) -> &'static str;
 }
@@ -155,7 +154,7 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
                 .unwrap()
                 .as_secs()
         });
-        
+
         Self {
             config,
             generator,
@@ -164,52 +163,52 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
             test_history: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    
+
     /// Add a property to test
     pub fn add_property(&mut self, property: Box<dyn Property<T>>) {
         self.properties.push(property);
     }
-    
+
     /// Run all registered properties
     pub fn run_all_tests(&mut self) -> Vec<TestResults<T>> {
         let mut results = Vec::new();
-        
+
         // Clone property names to avoid borrowing issues
         let property_count = self.properties.len();
         for i in 0..property_count {
             let result = self.run_property_test_by_index(i);
             results.push(result);
         }
-        
+
         results
     }
-    
+
     /// Run a property test by index
     fn run_property_test_by_index(&mut self, index: usize) -> TestResults<T> {
         let property_name = self.properties[index].name().to_string();
         let _property_description = self.properties[index].description().to_string();
-        
+
         let start_time = Instant::now();
         let mut passed = 0;
         let mut failed = 0;
         let mut discarded = 0;
         let mut counterexample = None;
-        
+
         for i in 0..self.config.iterations {
             let size = std::cmp::min(i / 10, self.config.max_size);
             let test_case_value = self.generator.generate(&mut self.rng, size);
-            
+
             let test_case = TestCase {
                 value: test_case_value,
                 size,
                 seed: self.rng.gen(),
                 generated_at: Instant::now(),
             };
-            
+
             let test_start = Instant::now();
             let result = self.properties[index].test(&test_case.value);
             let test_end = Instant::now();
-            
+
             // Record test execution
             {
                 let mut history = self.test_history.lock().unwrap();
@@ -222,7 +221,7 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
                     test_case_size: size,
                 });
             }
-            
+
             match result {
                 PropertyResult::Passed => passed += 1,
                 PropertyResult::Failed(msg) => {
@@ -233,11 +232,11 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
                         counterexample = Some(shrunk);
                     }
                     break; // Stop on first failure
-                },
+                }
                 PropertyResult::Discarded => discarded += 1,
             }
         }
-        
+
         let execution_time = start_time.elapsed();
         let total_cases = passed + failed + discarded;
         let success_rate = if total_cases > 0 {
@@ -245,7 +244,7 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
         } else {
             0.0
         };
-        
+
         TestResults {
             property_name,
             total_cases,
@@ -257,9 +256,7 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
             success_rate,
         }
     }
-    
 
-    
     /// Shrink a counterexample to find minimal failing case
     fn shrink_counterexample_by_index(
         &mut self,
@@ -270,10 +267,10 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
         let mut current_case = original_case.clone();
         let mut shrink_steps = Vec::new();
         let property_name = self.properties[property_index].name().to_string();
-        
+
         for _ in 0..self.config.shrink_attempts {
             let candidates = self.generator.shrink(&current_case.value);
-            
+
             let mut found_smaller = false;
             for candidate in candidates {
                 match self.properties[property_index].test(&candidate) {
@@ -289,16 +286,16 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
                         current_case = shrunk_case;
                         found_smaller = true;
                         break;
-                    },
+                    }
                     _ => continue,
                 }
             }
-            
+
             if !found_smaller {
                 break;
             }
         }
-        
+
         CounterExample {
             minimal_case: current_case,
             original_case: original_case,
@@ -307,49 +304,61 @@ impl<T: Clone + Debug + 'static> PropertyTester<T> {
             failure_message,
         }
     }
-    
+
     /// Generate a detailed test report
     pub fn generate_report(&self, results: &[TestResults<T>]) -> String {
         let mut report = String::new();
         report.push_str("=== Property Test Report ===\n\n");
-        
+
         let total_properties = results.len();
         let passed_properties = results.iter().filter(|r| r.failed_cases == 0).count();
         let failed_properties = total_properties - passed_properties;
-        
+
         report.push_str(&format!("Properties tested: {}\n", total_properties));
         report.push_str(&format!("Properties passed: {}\n", passed_properties));
         report.push_str(&format!("Properties failed: {}\n", failed_properties));
         report.push_str("\n");
-        
+
         for result in results {
             report.push_str(&format!("Property: {}\n", result.property_name));
             report.push_str(&format!("  Total cases: {}\n", result.total_cases));
             report.push_str(&format!("  Passed: {}\n", result.passed_cases));
             report.push_str(&format!("  Failed: {}\n", result.failed_cases));
             report.push_str(&format!("  Discarded: {}\n", result.discarded_cases));
-            report.push_str(&format!("  Success rate: {:.2}%\n", result.success_rate * 100.0));
+            report.push_str(&format!(
+                "  Success rate: {:.2}%\n",
+                result.success_rate * 100.0
+            ));
             report.push_str(&format!("  Execution time: {:?}\n", result.execution_time));
-            
+
             if let Some(ref counterexample) = result.counterexample {
                 report.push_str("  COUNTEREXAMPLE FOUND:\n");
                 report.push_str(&format!("    Property: {}\n", counterexample.property_name));
-                report.push_str(&format!("    Failure: {}\n", counterexample.failure_message));
-                report.push_str(&format!("    Shrink steps: {}\n", counterexample.shrink_steps.len()));
-                report.push_str(&format!("    Minimal case: {:?}\n", counterexample.minimal_case.value));
+                report.push_str(&format!(
+                    "    Failure: {}\n",
+                    counterexample.failure_message
+                ));
+                report.push_str(&format!(
+                    "    Shrink steps: {}\n",
+                    counterexample.shrink_steps.len()
+                ));
+                report.push_str(&format!(
+                    "    Minimal case: {:?}\n",
+                    counterexample.minimal_case.value
+                ));
             }
-            
+
             report.push_str("\n");
         }
-        
+
         report
     }
-    
+
     /// Get test execution history
     pub(crate) fn get_test_history(&self) -> Vec<TestExecution> {
         self.test_history.lock().unwrap().clone()
     }
-    
+
     /// Clear test history
     pub fn clear_history(&self) {
         self.test_history.lock().unwrap().clear();
@@ -374,10 +383,10 @@ impl Generator<u32> for U32Generator {
     fn generate(&self, rng: &mut StdRng, _size: usize) -> u32 {
         rng.gen_range(self.min..=self.max)
     }
-    
+
     fn shrink(&self, value: &u32) -> Vec<u32> {
         let mut shrunk = Vec::new();
-        
+
         // Try smaller values
         if *value > self.min {
             shrunk.push(self.min);
@@ -386,10 +395,10 @@ impl Generator<u32> for U32Generator {
                 shrunk.push(*value - 1);
             }
         }
-        
+
         shrunk
     }
-    
+
     fn name(&self) -> &'static str {
         "U32Generator"
     }
@@ -409,39 +418,43 @@ impl ByteVecGenerator {
 
 impl Generator<Vec<u8>> for ByteVecGenerator {
     fn generate(&self, rng: &mut StdRng, size: usize) -> Vec<u8> {
-    // Ensure we never create an invalid empty range when the provided size is
-    // smaller than the generator's minimum length. When `size < min_len`, we
-    // clamp the upper bound to at least `min_len` so the inclusive range is valid.
-    let effective_upper = std::cmp::min(self.max_len, size);
-    let upper = if effective_upper < self.min_len { self.min_len } else { effective_upper };
-    let len = rng.gen_range(self.min_len..=upper);
+        // Ensure we never create an invalid empty range when the provided size is
+        // smaller than the generator's minimum length. When `size < min_len`, we
+        // clamp the upper bound to at least `min_len` so the inclusive range is valid.
+        let effective_upper = std::cmp::min(self.max_len, size);
+        let upper = if effective_upper < self.min_len {
+            self.min_len
+        } else {
+            effective_upper
+        };
+        let len = rng.gen_range(self.min_len..=upper);
         (0..len).map(|_| rng.gen()).collect()
     }
-    
+
     fn shrink(&self, value: &Vec<u8>) -> Vec<Vec<u8>> {
         let mut shrunk = Vec::new();
-        
+
         // Try empty vector
         if value.len() > self.min_len {
             shrunk.push(vec![]);
         }
-        
+
         // Try shorter vectors
         if value.len() > 1 {
             shrunk.push(value[..value.len() / 2].to_vec());
             shrunk.push(value[..value.len() - 1].to_vec());
         }
-        
+
         // Try simpler byte values
         if !value.is_empty() {
             let mut simplified = value.clone();
             simplified[0] = 0;
             shrunk.push(simplified);
         }
-        
+
         shrunk
     }
-    
+
     fn name(&self) -> &'static str {
         "ByteVecGenerator"
     }
@@ -464,11 +477,11 @@ impl Generator<Duration> for DurationGenerator {
         let ms = rng.gen_range(self.min_ms..=self.max_ms);
         Duration::from_millis(ms)
     }
-    
+
     fn shrink(&self, value: &Duration) -> Vec<Duration> {
         let mut shrunk = Vec::new();
         let ms = value.as_millis() as u64;
-        
+
         if ms > self.min_ms {
             shrunk.push(Duration::from_millis(self.min_ms));
             if ms > self.min_ms + 1 {
@@ -476,10 +489,10 @@ impl Generator<Duration> for DurationGenerator {
                 shrunk.push(Duration::from_millis(ms - 1));
             }
         }
-        
+
         shrunk
     }
-    
+
     fn name(&self) -> &'static str {
         "DurationGenerator"
     }
@@ -511,11 +524,11 @@ impl<T: PartialOrd + Clone + Debug + Send + Sync> Property<T> for BoundsProperty
             ))
         }
     }
-    
+
     fn name(&self) -> &'static str {
         self.name
     }
-    
+
     fn description(&self) -> &'static str {
         "Checks if value is within specified bounds"
     }
@@ -540,11 +553,11 @@ impl<T: Send + Sync> Property<Vec<T>> for NonEmptyProperty {
             PropertyResult::Passed
         }
     }
-    
+
     fn name(&self) -> &'static str {
         self.name
     }
-    
+
     fn description(&self) -> &'static str {
         "Checks if collection is not empty"
     }
@@ -558,7 +571,7 @@ pub struct PredicateProperty<T> {
 }
 
 impl<T> PredicateProperty<T> {
-    pub fn new<F>(predicate: F, name: &'static str, description: &'static str) -> Self 
+    pub fn new<F>(predicate: F, name: &'static str, description: &'static str) -> Self
     where
         F: Fn(&T) -> bool + Send + Sync + 'static,
     {
@@ -578,11 +591,11 @@ impl<T: Debug + Send + Sync> Property<T> for PredicateProperty<T> {
             PropertyResult::Failed(format!("Predicate failed for value: {:?}", value))
         }
     }
-    
+
     fn name(&self) -> &'static str {
         self.name
     }
-    
+
     fn description(&self) -> &'static str {
         self.description
     }
@@ -596,7 +609,7 @@ mod tests {
     fn test_u32_generator() {
         let mut rng = StdRng::seed_from_u64(42);
         let gen = U32Generator::new(10, 100);
-        
+
         for _ in 0..100 {
             let value = gen.generate(&mut rng, 50);
             assert!(value >= 10 && value <= 100);
@@ -606,13 +619,13 @@ mod tests {
     #[test]
     fn test_bounds_property() {
         let prop = BoundsProperty::new(0u32, 100u32, "test_bounds");
-        
+
         assert_eq!(prop.test(&50), PropertyResult::Passed);
         assert_eq!(prop.test(&0), PropertyResult::Passed);
         assert_eq!(prop.test(&100), PropertyResult::Passed);
-        
+
         match prop.test(&150) {
-            PropertyResult::Failed(_) => {},
+            PropertyResult::Failed(_) => {}
             _ => panic!("Expected failure for out-of-bounds value"),
         }
     }
@@ -624,15 +637,15 @@ mod tests {
             seed: Some(42),
             ..Default::default()
         };
-        
+
         let generator = Box::new(U32Generator::new(0, 50));
         let mut tester = PropertyTester::new(config, generator);
-        
+
         tester.add_property(Box::new(BoundsProperty::new(0u32, 100u32, "bounds_check")));
-        
+
         let results = tester.run_all_tests();
         assert_eq!(results.len(), 1);
-        
+
         let result = &results[0];
         assert_eq!(result.property_name, "bounds_check");
         assert!(result.success_rate > 0.0);
@@ -642,7 +655,7 @@ mod tests {
     fn test_shrinking() {
         let gen = U32Generator::new(0, 1000);
         let shrunk = gen.shrink(&500);
-        
+
         assert!(!shrunk.is_empty());
         assert!(shrunk.contains(&0)); // Should try minimum
         assert!(shrunk.contains(&250)); // Should try half
@@ -653,7 +666,7 @@ mod tests {
     fn test_byte_vec_generator() {
         let mut rng = StdRng::seed_from_u64(42);
         let gen = ByteVecGenerator::new(1, 10);
-        
+
         for _ in 0..50 {
             let value = gen.generate(&mut rng, 20);
             assert!(value.len() >= 1 && value.len() <= 10);
@@ -665,14 +678,14 @@ mod tests {
         let prop = PredicateProperty::new(
             |x: &u32| *x % 2 == 0,
             "even_check",
-            "Checks if number is even"
+            "Checks if number is even",
         );
-        
+
         assert_eq!(prop.test(&4), PropertyResult::Passed);
         assert_eq!(prop.test(&6), PropertyResult::Passed);
-        
+
         match prop.test(&5) {
-            PropertyResult::Failed(_) => {},
+            PropertyResult::Failed(_) => {}
             _ => panic!("Expected failure for odd number"),
         }
     }

@@ -1,4 +1,4 @@
-use nyx_transport::{UdpPool, ice::get_srflx_addr, stun_server::start_stun_server};
+use nyx_transport::{ice::get_srflx_addr, stun_server::start_stun_server, UdpPool};
 use std::net::SocketAddr;
 
 #[tokio::test]
@@ -12,4 +12,4 @@ async fn srflx_with_local_stun_server() {
     // Should reflect to our socket's local address.
     assert_eq!(addr.port(), pool.socket().local_addr().unwrap().port());
     let _ = handle.abort();
-} 
+}

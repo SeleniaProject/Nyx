@@ -11,7 +11,7 @@
 use std::io;
 // use std::time::Duration; // not used currently
 use tracing::{debug, info};
-use win32job::{Job, ExtendedLimitInfo};
+use win32job::{ExtendedLimitInfo, Job};
 use windows::Win32::System::Threading::GetCurrentProcess;
 
 /// Configuration for Windows process isolation using Job Objects.
@@ -52,8 +52,12 @@ pub fn apply_process_isolation(config: Option<WindowsIsolationConfig>) -> io::Re
     );
 
     // Create a Job Object using the safe wrapper
-    let job = Job::create()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to create Job Object: {}", e)))?;
+    let job = Job::create().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create Job Object: {}", e),
+        )
+    })?;
 
     // Configure extended limits
     let mut limit_info = ExtendedLimitInfo::new();
@@ -67,14 +71,21 @@ pub fn apply_process_isolation(config: Option<WindowsIsolationConfig>) -> io::Re
         limit_info.limit_kill_on_job_close();
     }
 
-    job
-        .set_extended_limit_info(&mut limit_info)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to set job limits: {}", e)))?;
+    job.set_extended_limit_info(&mut limit_info).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to set job limits: {}", e),
+        )
+    })?;
 
     // Assign current process to the job using a pseudo-handle
     let handle = unsafe { GetCurrentProcess() };
-    job.assign_process(handle.0 as isize)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to assign current process to job: {}", e)))?;
+    job.assign_process(handle.0 as isize).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to assign current process to job: {}", e),
+        )
+    })?;
 
     debug!(target: "nyx-core::windows", "Job Object configured and assigned to current process");
 
@@ -98,5 +109,3 @@ mod tests {
         assert!(cfg.kill_on_job_close);
     }
 }
-
-

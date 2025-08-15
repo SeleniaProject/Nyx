@@ -37,7 +37,13 @@ pub fn build_ack_frame(ack: &AckFrame) -> Vec<u8> {
 pub fn parse_ack_frame(input: &[u8]) -> IResult<&[u8], AckFrame> {
     let (input, largest) = be_u32(input)?;
     let (input, delay) = be_u32(input)?;
-    Ok((input, AckFrame { largest_ack: largest, ack_delay_micros: delay }))
+    Ok((
+        input,
+        AckFrame {
+            largest_ack: largest,
+            ack_delay_micros: delay,
+        },
+    ))
 }
 
 /// ACK generator which coalesces ACKs over a short delay (default 25 ms) to
@@ -76,7 +82,10 @@ impl AckGenerator {
             tokio::time::sleep(delay).await;
             let val = cell.swap(0, Ordering::SeqCst);
             if val != 0 {
-                let frame = AckFrame { largest_ack: val, ack_delay_micros: delay.as_micros() as u32 };
+                let frame = AckFrame {
+                    largest_ack: val,
+                    ack_delay_micros: delay.as_micros() as u32,
+                };
                 let _ = tx.send(build_ack_frame(&frame)).await;
             }
         });
@@ -89,9 +98,12 @@ mod tests {
 
     #[test]
     fn build_and_parse_roundtrip() {
-        let fr = AckFrame { largest_ack: 123456, ack_delay_micros: 55_000 };
+        let fr = AckFrame {
+            largest_ack: 123456,
+            ack_delay_micros: 55_000,
+        };
         let bytes = build_ack_frame(&fr);
         let (_, parsed) = parse_ack_frame(&bytes).unwrap();
         assert_eq!(fr, parsed);
     }
-} 
+}

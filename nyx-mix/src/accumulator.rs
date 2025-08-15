@@ -54,12 +54,17 @@ impl RsaAccumulator {
     /// Create a *new empty* accumulator with `A = g`.
     #[must_use]
     pub fn new(params: AccumulatorParams) -> Self {
-        Self { value: params.g.clone(), params }
+        Self {
+            value: params.g.clone(),
+            params,
+        }
     }
 
     /// Return current accumulator value.
     #[must_use]
-    pub fn value(&self) -> &BigUint { &self.value }
+    pub fn value(&self) -> &BigUint {
+        &self.value
+    }
 
     /// Accumulate element `x` (assumed prime). Returns membership witness.
     pub fn add(&mut self, x: &BigUint) -> BigUint {
@@ -90,22 +95,34 @@ pub fn hash_to_prime(data: &[u8]) -> BigUint {
         let mut candidate = BigUint::from_bytes_le(&digest);
         candidate.set_bit(255u64, true);
         candidate.set_bit(0u64, true);
-        if primal_check(&candidate) { return candidate; }
+        if primal_check(&candidate) {
+            return candidate;
+        }
         counter = counter.wrapping_add(1);
     }
 }
 
 /// Miller-Rabin primality test with 32 deterministic bases for 256-bit numbers.
 fn primal_check(n: &BigUint) -> bool {
-    if *n == BigUint::from(2u8) { return true; }
-    if n.is_zero() || n.is_one() || n.is_even() { return false; }
+    if *n == BigUint::from(2u8) {
+        return true;
+    }
+    if n.is_zero() || n.is_one() || n.is_even() {
+        return false;
+    }
     // small prime trial division (fast path)
-    const SMALL: [u64; 8] = [3,5,7,11,13,17,19,23];
-    for p in SMALL { if (n % p).is_zero() { return *n == p.to_biguint().unwrap(); } }
+    const SMALL: [u64; 8] = [3, 5, 7, 11, 13, 17, 19, 23];
+    for p in SMALL {
+        if (n % p).is_zero() {
+            return *n == p.to_biguint().unwrap();
+        }
+    }
     // deterministic MR bases for <2^512 per https://miller-rabin.appspot.com/
-    const BASES: [u64; 12] = [2,3,5,7,11,13,17,19,23,29,31,37];
+    const BASES: [u64; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
     for a in BASES {
-        if !miller_rabin(n, a) { return false; }
+        if !miller_rabin(n, a) {
+            return false;
+        }
     }
     true
 }
@@ -117,13 +134,20 @@ fn miller_rabin(n: &BigUint, a: u64) -> bool {
     // write n-1 = d * 2^s with d odd
     let mut d = nm1.clone();
     let mut s = 0u32;
-    while d.is_even() { d >>= 1; s += 1; }
+    while d.is_even() {
+        d >>= 1;
+        s += 1;
+    }
 
     let mut x = a.modpow(&d, n);
-    if x == one || x == nm1 { return true; }
+    if x == one || x == nm1 {
+        return true;
+    }
     for _ in 1..s {
         x = x.modpow(&BigUint::from(2u8), n);
-        if x == nm1 { return true; }
+        if x == nm1 {
+            return true;
+        }
     }
     false
 }
@@ -138,7 +162,10 @@ impl KeyCeremony {
         let p = generate_prime(bits / 2, &mut rng);
         let q = generate_prime(bits / 2, &mut rng);
         let n = &p * &q;
-        AccumulatorParams { n, g: G_DEFAULT.to_biguint().unwrap() }
+        AccumulatorParams {
+            n,
+            g: G_DEFAULT.to_biguint().unwrap(),
+        }
     }
 
     /// Multi-party ceremony (toy). Each of `parts` participants contributes a random
@@ -146,7 +173,7 @@ impl KeyCeremony {
     /// where `commitments[i] = SHA-256(p_i)` allows post-facto audit without
     /// revealing the primes. **This is NOT secure for production** but suffices for
     /// interoperability tests.
-    pub fn multi_party(parts: usize, bits: usize) -> (AccumulatorParams, Vec<[u8;32]>) {
+    pub fn multi_party(parts: usize, bits: usize) -> (AccumulatorParams, Vec<[u8; 32]>) {
         assert!(parts >= 2, "at least two participants");
         assert!(bits / parts >= 128, "per-part prime too small");
         let mut rng = OsRng;
@@ -158,7 +185,13 @@ impl KeyCeremony {
             let hash = Sha256::digest(&prime.to_bytes_be());
             commits.push(hash.into());
         }
-        (AccumulatorParams { n, g: G_DEFAULT.to_biguint().unwrap() }, commits)
+        (
+            AccumulatorParams {
+                n,
+                g: G_DEFAULT.to_biguint().unwrap(),
+            },
+            commits,
+        )
     }
 }
 
@@ -185,7 +218,12 @@ fn generate_prime(bits: usize, rng: &mut impl RngCore) -> BigUint {
 /// This variant does not require an instantiated `RsaAccumulator` and is
 /// therefore useful for stateless verification paths.
 #[must_use]
-pub fn verify_membership(n: &BigUint, element: &BigUint, witness: &BigUint, acc_value: &BigUint) -> bool {
+pub fn verify_membership(
+    n: &BigUint,
+    element: &BigUint,
+    witness: &BigUint,
+    acc_value: &BigUint,
+) -> bool {
     witness.modpow(element, n) == *acc_value
 }
 
@@ -217,4 +255,4 @@ mod tests {
         assert!(params.n.bits() > 700);
         assert_eq!(params.g, G_DEFAULT.to_biguint().unwrap());
     }
-} 
+}

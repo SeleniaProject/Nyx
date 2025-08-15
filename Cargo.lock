@@ -3207,6 +3207,7 @@ dependencies = [
  "indicatif",
  "md5",
  "nyx-sdk",
+ "nyx-stream",
  "predicates",
  "prost 0.12.6",
  "prost-types",

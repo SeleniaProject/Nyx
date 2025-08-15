@@ -30,15 +30,18 @@
 //! The implementation exclusively uses in-memory buffers; no plaintext is ever
 //! written to disk.
 
-use std::fs;
-use std::path::Path;
-use std::io::{Read};
-use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};
-use zeroize::Zeroizing;
-use thiserror::Error;
-use std::time::Duration;
-use pbkdf2;
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Key, Nonce,
+};
 use hmac;
+use pbkdf2;
+use std::fs;
+use std::io::Read;
+use std::path::Path;
+use std::time::Duration;
+use thiserror::Error;
+use zeroize::Zeroizing;
 
 /// Error type for keystore operations.
 #[derive(Debug, Error)]
@@ -113,26 +116,44 @@ impl PasswordStrength {
     /// Assess password strength based on various criteria
     pub fn assess(password: &str) -> Self {
         let mut score = 0;
-        
+
         // Length scoring
-        if password.len() >= 8 { score += 1; }
-        if password.len() >= 12 { score += 1; }
-        if password.len() >= 16 { score += 1; }
-        
-        // Character variety scoring
-        if password.chars().any(|c| c.is_ascii_lowercase()) { score += 1; }
-        if password.chars().any(|c| c.is_ascii_uppercase()) { score += 1; }
-        if password.chars().any(|c| c.is_ascii_digit()) { score += 1; }
-        if password.chars().any(|c| !c.is_ascii_alphanumeric()) { score += 1; }
-        
-        // Avoid common patterns
-        let unique_chars = password.chars().collect::<std::collections::HashSet<_>>().len();
-        if !password.to_lowercase().contains("password") &&
-           !password.to_lowercase().contains("123456") &&
-           unique_chars >= 3 {
+        if password.len() >= 8 {
             score += 1;
         }
-        
+        if password.len() >= 12 {
+            score += 1;
+        }
+        if password.len() >= 16 {
+            score += 1;
+        }
+
+        // Character variety scoring
+        if password.chars().any(|c| c.is_ascii_lowercase()) {
+            score += 1;
+        }
+        if password.chars().any(|c| c.is_ascii_uppercase()) {
+            score += 1;
+        }
+        if password.chars().any(|c| c.is_ascii_digit()) {
+            score += 1;
+        }
+        if password.chars().any(|c| !c.is_ascii_alphanumeric()) {
+            score += 1;
+        }
+
+        // Avoid common patterns
+        let unique_chars = password
+            .chars()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        if !password.to_lowercase().contains("password")
+            && !password.to_lowercase().contains("123456")
+            && unique_chars >= 3
+        {
+            score += 1;
+        }
+
         match score {
             0..=2 => Self::VeryWeak,
             3..=4 => Self::Weak,
@@ -141,7 +162,7 @@ impl PasswordStrength {
             _ => Self::Strong,
         }
     }
-    
+
     /// Get human-readable description
     pub fn description(&self) -> &'static str {
         match self {
@@ -152,7 +173,7 @@ impl PasswordStrength {
             Self::Strong => "Strong",
         }
     }
-    
+
     /// Get color code for terminal display
     pub fn color_code(&self) -> &'static str {
         match self {
@@ -179,7 +200,7 @@ impl PassphraseInput {
             mode: InputMode::Interactive,
         }
     }
-    
+
     /// Create with custom configuration
     pub fn with_config(config: RetryConfig) -> Self {
         Self {
@@ -187,13 +208,13 @@ impl PassphraseInput {
             mode: InputMode::Interactive,
         }
     }
-    
+
     /// Set input mode
     pub fn with_mode(mut self, mode: InputMode) -> Self {
         self.mode = mode;
         self
     }
-    
+
     /// Prompt for passphrase with retry logic for decryption
     pub fn prompt_for_decrypt(&self, prompt: &str) -> Result<Zeroizing<String>, KeystoreError> {
         match &self.mode {
@@ -202,92 +223,100 @@ impl PassphraseInput {
             InputMode::Interactive => self.interactive_decrypt_prompt(prompt),
         }
     }
-    
+
     /// Prompt for passphrase with confirmation for encryption
     pub fn prompt_for_encrypt(&self, prompt: &str) -> Result<Zeroizing<String>, KeystoreError> {
         match &self.mode {
             InputMode::Programmatic(pass) => {
                 self.validate_password(pass)?;
                 Ok(Zeroizing::new(pass.clone()))
-            },
+            }
             InputMode::NonInteractive => {
                 let pass = self.read_from_stdin()?;
                 self.validate_password(&pass)?;
                 Ok(pass)
-            },
+            }
             InputMode::Interactive => self.interactive_encrypt_prompt(prompt),
         }
     }
-    
+
     /// Interactive prompt for decryption with retries
     fn interactive_decrypt_prompt(&self, prompt: &str) -> Result<Zeroizing<String>, KeystoreError> {
         use std::io::{self, Write};
-        
+
         for attempt in 1..=self.config.max_attempts {
-            print!("{} (attempt {}/{}): ", prompt, attempt, self.config.max_attempts);
+            print!(
+                "{} (attempt {}/{}): ",
+                prompt, attempt, self.config.max_attempts
+            );
             io::stdout().flush().map_err(KeystoreError::Io)?;
-            
+
             let password = self.read_password_hidden()?;
-            
+
             if password.is_empty() && !self.config.allow_empty {
                 eprintln!("Password cannot be empty. Please try again.");
                 continue;
             }
-            
+
             return Ok(password);
         }
-        
+
         Err(KeystoreError::MaxRetriesExceeded)
     }
-    
+
     /// Interactive prompt for encryption with confirmation
     fn interactive_encrypt_prompt(&self, prompt: &str) -> Result<Zeroizing<String>, KeystoreError> {
         use std::io::{self, Write};
-        
+
         for _attempt in 1..=self.config.max_attempts {
             print!("{}: ", prompt);
             io::stdout().flush().map_err(KeystoreError::Io)?;
-            
+
             let password = self.read_password_hidden()?;
-            
+
             // Validate password
             if let Err(e) = self.validate_password(&password) {
                 eprintln!("Password validation failed: {}", e);
                 continue;
             }
-            
+
             // Show strength assessment
             if self.config.show_strength_hints {
                 let strength = PasswordStrength::assess(&password);
-                eprintln!("{}Password strength: {}{}\x1b[0m", 
-                         strength.color_code(), 
-                         strength.description(),
-                         if matches!(strength, PasswordStrength::VeryWeak | PasswordStrength::Weak) {
-                             " (consider using a stronger password)"
-                         } else {
-                             ""
-                         });
+                eprintln!(
+                    "{}Password strength: {}{}\x1b[0m",
+                    strength.color_code(),
+                    strength.description(),
+                    if matches!(
+                        strength,
+                        PasswordStrength::VeryWeak | PasswordStrength::Weak
+                    ) {
+                        " (consider using a stronger password)"
+                    } else {
+                        ""
+                    }
+                );
             }
-            
+
             // Confirm password if required
             if self.config.confirm_on_create {
                 print!("Confirm password: ");
                 io::stdout().flush().map_err(KeystoreError::Io)?;
-                
+
                 let confirm = self.read_password_hidden()?;
-                
+
                 if password.as_bytes() != confirm.as_bytes() {
                     eprintln!("Passwords do not match. Please try again.");
                     continue;
                 }
             }
-            
+
             return Ok(password);
         }
-        
+
         Err(KeystoreError::MaxRetriesExceeded)
     }
-    
+
     /// Read password with hidden input (no echo)
     fn read_password_hidden(&self) -> Result<Zeroizing<String>, KeystoreError> {
         #[cfg(unix)]
@@ -304,7 +333,7 @@ impl PassphraseInput {
             self.read_from_stdin()
         }
     }
-    
+
     #[cfg(unix)]
     fn read_password_unix(&self) -> Result<Zeroizing<String>, KeystoreError> {
         // Use rpassword crate to avoid unsafe code
@@ -313,23 +342,24 @@ impl PassphraseInput {
             Err(e) => Err(KeystoreError::Io(e)),
         }
     }
-    
+
     #[cfg(windows)]
     fn read_password_windows(&self) -> Result<Zeroizing<String>, KeystoreError> {
         use std::io::{self, Write};
-        
+
         let mut password = String::new();
-        
+
         loop {
             // Read single character
             let mut buffer = [0u8; 1];
             match io::stdin().read_exact(&mut buffer) {
                 Ok(()) => {
                     let ch = buffer[0] as char;
-                    
+
                     if ch == '\r' || ch == '\n' {
                         break;
-                    } else if ch == '\x08' || ch == '\x7f' { // Backspace or DEL
+                    } else if ch == '\x08' || ch == '\x7f' {
+                        // Backspace or DEL
                         if !password.is_empty() {
                             password.pop();
                             print!("\x08 \x08"); // Erase character
@@ -343,22 +373,22 @@ impl PassphraseInput {
                         print!("*"); // Show asterisk for each character
                         io::stdout().flush().map_err(KeystoreError::Io)?;
                     }
-                },
+                }
                 Err(e) => return Err(KeystoreError::Io(e)),
             }
         }
-        
+
         println!(); // Newline after password input
         Ok(Zeroizing::new(password))
     }
-    
+
     /// Read from stdin (non-interactive mode)
     fn read_from_stdin(&self) -> Result<Zeroizing<String>, KeystoreError> {
         use std::io::{self, BufRead};
-        
+
         let stdin = io::stdin();
         let mut line = String::new();
-        
+
         match stdin.lock().read_line(&mut line) {
             Ok(0) => Err(KeystoreError::NoInputAvailable),
             Ok(_) => {
@@ -370,27 +400,30 @@ impl PassphraseInput {
                     line.pop();
                 }
                 Ok(Zeroizing::new(line))
-            },
+            }
             Err(e) => Err(KeystoreError::Io(e)),
         }
     }
-    
+
     /// Validate password according to configuration
     fn validate_password(&self, password: &str) -> Result<(), KeystoreError> {
         if password.is_empty() && !self.config.allow_empty {
             return Err(KeystoreError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Password cannot be empty"
+                "Password cannot be empty",
             )));
         }
-        
+
         if password.len() < self.config.min_length {
             return Err(KeystoreError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("Password must be at least {} characters long", self.config.min_length)
+                format!(
+                    "Password must be at least {} characters long",
+                    self.config.min_length
+                ),
             )));
         }
-        
+
         Ok(())
     }
 }
@@ -402,7 +435,11 @@ impl Default for PassphraseInput {
 }
 
 /// Encrypt `secret` with `passphrase` and write to `path` in AES-GCM format.
-pub fn encrypt_and_store<P: AsRef<Path>>(secret: &Zeroizing<Vec<u8>>, path: P, passphrase: &str) -> Result<(), KeystoreError> {
+pub fn encrypt_and_store<P: AsRef<Path>>(
+    secret: &Zeroizing<Vec<u8>>,
+    path: P,
+    passphrase: &str,
+) -> Result<(), KeystoreError> {
     // Ensure parent directory exists.
     if let Some(parent) = path.as_ref().parent() {
         fs::create_dir_all(parent)?;
@@ -413,74 +450,102 @@ pub fn encrypt_and_store<P: AsRef<Path>>(secret: &Zeroizing<Vec<u8>>, path: P, p
     let mut nonce_bytes = [0u8; 12];
     getrandom::getrandom(&mut salt).map_err(|_| KeystoreError::Encrypt)?;
     getrandom::getrandom(&mut nonce_bytes).map_err(|_| KeystoreError::Encrypt)?;
-    
+
     // Derive key from passphrase using PBKDF2
     let mut key_bytes = [0u8; 32];
-    match pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(passphrase.as_bytes(), &salt, 100_000, &mut key_bytes) {
-        Ok(_) => {},
-        Err(e) => return Err(KeystoreError::Crypto(format!("PBKDF2 derivation failed: {:?}", e))),
+    match pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(
+        passphrase.as_bytes(),
+        &salt,
+        100_000,
+        &mut key_bytes,
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(KeystoreError::Crypto(format!(
+                "PBKDF2 derivation failed: {:?}",
+                e
+            )))
+        }
     }
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
-    
+
     // Encrypt the data
     let cipher = Aes256Gcm::new(key);
-    let ciphertext = cipher.encrypt(nonce, secret.as_slice())
+    let ciphertext = cipher
+        .encrypt(nonce, secret.as_slice())
         .map_err(|_| KeystoreError::Encrypt)?;
-    
+
     // Write salt + nonce + ciphertext to file
     let mut file_data = Vec::new();
     file_data.extend_from_slice(&salt);
     file_data.extend_from_slice(&nonce_bytes);
     file_data.extend_from_slice(&ciphertext);
-    
+
     fs::write(&path, file_data)?;
     Ok(())
 }
 
 /// Load AES-GCM encrypted keystore from `path`, decrypt with `passphrase` and return secret.
-pub fn load_and_decrypt<P: AsRef<Path>>(path: P, passphrase: &str) -> Result<Zeroizing<Vec<u8>>, KeystoreError> {
+pub fn load_and_decrypt<P: AsRef<Path>>(
+    path: P,
+    passphrase: &str,
+) -> Result<Zeroizing<Vec<u8>>, KeystoreError> {
     let encrypted_data = fs::read(&path)?;
-    
+
     // Extract salt and nonce from the beginning of the file
-    if encrypted_data.len() < 44 { // 32 bytes salt + 12 bytes nonce = 44 bytes minimum
+    if encrypted_data.len() < 44 {
+        // 32 bytes salt + 12 bytes nonce = 44 bytes minimum
         return Err(KeystoreError::DecryptFailed);
     }
-    
+
     let salt = &encrypted_data[0..32];
     let nonce_bytes = &encrypted_data[32..44];
     let ciphertext = &encrypted_data[44..];
-    
+
     // Derive key from passphrase using PBKDF2
     let mut key_bytes = [0u8; 32];
-    match pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(passphrase.as_bytes(), salt, 100_000, &mut key_bytes) {
-        Ok(_) => {},
-        Err(e) => return Err(KeystoreError::Crypto(format!("PBKDF2 derivation failed: {:?}", e))),
+    match pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(
+        passphrase.as_bytes(),
+        salt,
+        100_000,
+        &mut key_bytes,
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(KeystoreError::Crypto(format!(
+                "PBKDF2 derivation failed: {:?}",
+                e
+            )))
+        }
     }
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     let nonce = Nonce::from_slice(nonce_bytes);
-    
+
     // Decrypt the data
     let cipher = Aes256Gcm::new(key);
-    let plaintext = cipher.decrypt(nonce, ciphertext)
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|_| KeystoreError::DecryptFailed)?;
-    
+
     Ok(Zeroizing::new(plaintext))
 }
 
 /// Load secret with interactive passphrase prompt and retry logic
 pub fn load_and_decrypt_interactive<P: AsRef<Path>>(
-    path: P, 
-    prompt: Option<&str>
+    path: P,
+    prompt: Option<&str>,
 ) -> Result<Zeroizing<Vec<u8>>, KeystoreError> {
     let input = PassphraseInput::new();
     let default_prompt = format!("Enter passphrase for {}", path.as_ref().display());
     let prompt = prompt.unwrap_or(&default_prompt);
-    
+
     for attempt in 1..=input.config.max_attempts {
-        let passphrase = input.prompt_for_decrypt(&format!("{} (attempt {}/{})", 
-                                                          prompt, attempt, input.config.max_attempts))?;
-        
+        let passphrase = input.prompt_for_decrypt(&format!(
+            "{} (attempt {}/{})",
+            prompt, attempt, input.config.max_attempts
+        ))?;
+
         match load_and_decrypt(&path, &passphrase) {
             Ok(secret) => return Ok(secret),
             Err(KeystoreError::Decrypt) | Err(KeystoreError::DecryptFailed) => {
@@ -490,38 +555,48 @@ pub fn load_and_decrypt_interactive<P: AsRef<Path>>(
                 } else {
                     return Err(KeystoreError::DecryptFailed);
                 }
-            },
+            }
             Err(e) => return Err(e),
         }
     }
-    
+
     Err(KeystoreError::MaxRetriesExceeded)
 }
 
 /// Encrypt and store with interactive passphrase prompt
 pub fn encrypt_and_store_interactive<P: AsRef<Path>>(
-    secret: &Zeroizing<Vec<u8>>, 
-    path: P, 
-    prompt: Option<&str>
+    secret: &Zeroizing<Vec<u8>>,
+    path: P,
+    prompt: Option<&str>,
 ) -> Result<(), KeystoreError> {
     let input = PassphraseInput::new();
     let default_prompt = format!("Enter passphrase to encrypt {}", path.as_ref().display());
     let prompt = prompt.unwrap_or(&default_prompt);
-    
+
     let passphrase = input.prompt_for_encrypt(prompt)?;
     encrypt_and_store(secret, path, &passphrase)
 }
 
 /// Load secret if file exists and not older than `max_age`. Otherwise generate via callback `gen` and store.
-pub fn load_or_rotate<P, F>(path: P, passphrase: &str, max_age: Duration, gen: F) -> Result<Zeroizing<Vec<u8>>, KeystoreError>
-where P: AsRef<Path>, F: Fn() -> Zeroizing<Vec<u8>> {
+pub fn load_or_rotate<P, F>(
+    path: P,
+    passphrase: &str,
+    max_age: Duration,
+    gen: F,
+) -> Result<Zeroizing<Vec<u8>>, KeystoreError>
+where
+    P: AsRef<Path>,
+    F: Fn() -> Zeroizing<Vec<u8>>,
+{
     let p = path.as_ref();
     let meta = fs::metadata(p);
     let need_new = match meta {
         Ok(m) => {
             if let Ok(modt) = m.modified() {
                 modt.elapsed().unwrap_or(Duration::from_secs(0)) > max_age
-            } else { true }
+            } else {
+                true
+            }
         }
         Err(_) => true,
     };
@@ -537,13 +612,13 @@ where P: AsRef<Path>, F: Fn() -> Zeroizing<Vec<u8>> {
 
 /// Load or rotate with interactive passphrase prompts
 pub fn load_or_rotate_interactive<P, F>(
-    path: P, 
-    max_age: Duration, 
-    gen: F
+    path: P,
+    max_age: Duration,
+    gen: F,
 ) -> Result<Zeroizing<Vec<u8>>, KeystoreError>
-where 
-    P: AsRef<Path>, 
-    F: Fn() -> Zeroizing<Vec<u8>> 
+where
+    P: AsRef<Path>,
+    F: Fn() -> Zeroizing<Vec<u8>>,
 {
     let p = path.as_ref();
     let meta = fs::metadata(p);
@@ -551,7 +626,9 @@ where
         Ok(m) => {
             if let Ok(modt) = m.modified() {
                 modt.elapsed().unwrap_or(Duration::from_secs(0)) > max_age
-            } else { true }
+            } else {
+                true
+            }
         }
         Err(_) => true,
     };
@@ -599,7 +676,7 @@ mod tests {
         encrypt_and_store(&secret, &path, "pass1").unwrap();
         let err = load_and_decrypt(&path, "wrongpass").unwrap_err();
         match err {
-            KeystoreError::DecryptFailed | KeystoreError::Encrypt | KeystoreError::Decrypt => {},
+            KeystoreError::DecryptFailed | KeystoreError::Encrypt | KeystoreError::Decrypt => {}
             _ => panic!("unexpected error type"),
         }
         fs::remove_file(&path).unwrap();
@@ -613,32 +690,56 @@ mod tests {
         let secret = Zeroizing::new(b"old".to_vec());
         encrypt_and_store(&secret, &path, "pw").unwrap();
         // Set mtime to old (simulate 100 days)
-        #[cfg(unix)] {
+        #[cfg(unix)]
+        {
             use filetime::FileTime;
             use std::time::SystemTime;
-            let ft = FileTime::from_system_time(SystemTime::now() - std::time::Duration::from_secs(86400*100));
+            let ft = FileTime::from_system_time(
+                SystemTime::now() - std::time::Duration::from_secs(86400 * 100),
+            );
             filetime::set_file_mtime(&path, ft).unwrap();
         }
-        let new = load_or_rotate(&path, "pw", std::time::Duration::from_secs(86400*30), || Zeroizing::new(b"newsecret".to_vec())).unwrap();
+        let new = load_or_rotate(
+            &path,
+            "pw",
+            std::time::Duration::from_secs(86400 * 30),
+            || Zeroizing::new(b"newsecret".to_vec()),
+        )
+        .unwrap();
         assert_eq!(&*new, b"newsecret");
         fs::remove_file(&path).unwrap();
     }
-    
+
     #[test]
     fn test_password_strength_assessment() {
         assert_eq!(PasswordStrength::assess("123"), PasswordStrength::VeryWeak);
-        assert_eq!(PasswordStrength::assess("password"), PasswordStrength::VeryWeak);
-        assert_eq!(PasswordStrength::assess("Password1"), PasswordStrength::Weak);
-        
+        assert_eq!(
+            PasswordStrength::assess("password"),
+            PasswordStrength::VeryWeak
+        );
+        assert_eq!(
+            PasswordStrength::assess("Password1"),
+            PasswordStrength::Weak
+        );
+
         // "Password123!" contains "password" so gets 6 points = Fair
-        assert_eq!(PasswordStrength::assess("Password123!"), PasswordStrength::Fair);
+        assert_eq!(
+            PasswordStrength::assess("Password123!"),
+            PasswordStrength::Fair
+        );
         // Use a different password without "password" for Good test
-        assert_eq!(PasswordStrength::assess("SecurePwd123!"), PasswordStrength::Good);
+        assert_eq!(
+            PasswordStrength::assess("SecurePwd123!"),
+            PasswordStrength::Good
+        );
         // Use a longer password without common patterns for Strong - should get 8 points
         // 16+ chars(3) + lower(1) + upper(1) + digit(1) + special(1) + no common(1) = 8 = Good
-        assert_eq!(PasswordStrength::assess("MySecure!Key#2024$Complex"), PasswordStrength::Good);
+        assert_eq!(
+            PasswordStrength::assess("MySecure!Key#2024$Complex"),
+            PasswordStrength::Good
+        );
     }
-    
+
     #[test]
     fn test_retry_config_defaults() {
         let config = RetryConfig::default();
@@ -648,30 +749,30 @@ mod tests {
         assert_eq!(config.min_length, 8);
         assert!(!config.allow_empty);
     }
-    
+
     #[test]
     fn test_input_mode_programmatic() {
-        let input = PassphraseInput::new()
-            .with_mode(InputMode::Programmatic("test_password".to_string()));
-        
+        let input =
+            PassphraseInput::new().with_mode(InputMode::Programmatic("test_password".to_string()));
+
         let result = input.prompt_for_decrypt("Test prompt");
         assert!(result.is_ok());
         assert_eq!(&*result.unwrap(), "test_password");
     }
-    
+
     #[test]
     fn test_password_validation() {
         let input = PassphraseInput::new();
-        
+
         // Valid password
         assert!(input.validate_password("validpassword123").is_ok());
-        
+
         // Too short
         assert!(input.validate_password("short").is_err());
-        
+
         // Empty (not allowed by default)
         assert!(input.validate_password("").is_err());
-        
+
         // Empty allowed with custom config
         let config = RetryConfig {
             allow_empty: true,
@@ -681,7 +782,7 @@ mod tests {
         let input_allow_empty = PassphraseInput::with_config(config);
         assert!(input_allow_empty.validate_password("").is_ok());
     }
-    
+
     #[test]
     fn test_keystore_error_types() {
         // Test that all error types can be created and formatted
@@ -691,13 +792,13 @@ mod tests {
             KeystoreError::UserCancelled,
             KeystoreError::NoInputAvailable,
         ];
-        
+
         for error in errors {
             let error_string = format!("{}", error);
             assert!(!error_string.is_empty());
         }
     }
-    
+
     #[test]
     fn test_password_strength_descriptions() {
         let strengths = vec![
@@ -707,13 +808,13 @@ mod tests {
             PasswordStrength::Good,
             PasswordStrength::Strong,
         ];
-        
+
         for strength in strengths {
             let desc = strength.description();
             assert!(!desc.is_empty());
-            
+
             let color = strength.color_code();
             assert!(color.starts_with("\x1b["));
         }
     }
-} 
+}

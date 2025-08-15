@@ -1,13 +1,13 @@
-use nyx_stream::management::ERR_UNSUPPORTED_CAP;
-use nyx_core::mobile::PowerProfile;
 use nyx_core::error::{NyxError, NyxResult};
+use nyx_core::mobile::PowerProfile;
+use nyx_stream::management::ERR_UNSUPPORTED_CAP;
 use proptest::prelude::*;
 use std::collections::HashSet;
 
 /// Property-based tests for protocol state machine behavior
 /// These tests verify that the Rust implementation matches the TLA+ model behavior
 /// defined in formal/nyx_multipath_plugin.tla
-/// 
+///
 /// Key TLA+ properties being tested:
 /// - ValidTransition: State transitions follow the formal model
 /// - TypeInvariant: All variables maintain their expected types
@@ -51,12 +51,15 @@ impl ProtocolContext {
         if self.state != ProtocolState::Init {
             return Err(NyxError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Can only negotiate from Init state"
+                "Can only negotiate from Init state",
             )));
         }
 
         // TLA+ condition: C_req ⊆ C_sup
-        if self.capabilities_required.is_subset(&self.capabilities_supported) {
+        if self
+            .capabilities_required
+            .is_subset(&self.capabilities_supported)
+        {
             // NegotiateOK: state' = "Open"
             self.state = ProtocolState::Open;
             self.error = None;
@@ -65,14 +68,15 @@ impl ProtocolContext {
             // NegotiateFail: state' = "Close" ∧ error' = 7
             self.state = ProtocolState::Close;
             self.error = Some(ERR_UNSUPPORTED_CAP);
-            
+
             // Find first unsupported capability
-            let unsupported = self.capabilities_required
+            let unsupported = self
+                .capabilities_required
                 .difference(&self.capabilities_supported)
                 .next()
                 .copied()
                 .unwrap_or(0xDEADBEEF);
-            
+
             Err(NyxError::UnsupportedCap(unsupported))
         }
     }
@@ -83,14 +87,14 @@ impl ProtocolContext {
         if self.state != ProtocolState::Open {
             return Err(NyxError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Can only enter low power from Open state"
+                "Can only enter low power from Open state",
             )));
         }
 
         if matches!(self.power, PowerProfile::UltraLowPower) {
             return Err(NyxError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Already in low power mode"
+                "Already in low power mode",
             )));
         }
 
@@ -104,7 +108,7 @@ impl ProtocolContext {
         if self.state != ProtocolState::Open {
             return Err(NyxError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Can only exit low power from Open state"
+                "Can only exit low power from Open state",
             )));
         }
 
@@ -130,14 +134,21 @@ impl ProtocolContext {
         }
 
         // CapabilityInvariant: state = "Open" => C_req ⊆ C_sup
-        if self.state == ProtocolState::Open && !self.capabilities_required.is_subset(&self.capabilities_supported) {
+        if self.state == ProtocolState::Open
+            && !self
+                .capabilities_required
+                .is_subset(&self.capabilities_supported)
+        {
             return false;
         }
 
         // CapabilityInvariant: state = "Close" ∧ error = 7 => ~(C_req ⊆ C_sup)
-        if self.state == ProtocolState::Close 
-            && self.error == Some(ERR_UNSUPPORTED_CAP) 
-            && self.capabilities_required.is_subset(&self.capabilities_supported) {
+        if self.state == ProtocolState::Close
+            && self.error == Some(ERR_UNSUPPORTED_CAP)
+            && self
+                .capabilities_required
+                .is_subset(&self.capabilities_supported)
+        {
             return false;
         }
 
@@ -148,17 +159,18 @@ impl ProtocolContext {
     pub fn is_valid_transition(&self, next_state: ProtocolState, next_power: PowerProfile) -> bool {
         match (self.state, next_state) {
             // (state = "Init" ∧ state' = "Open") => (C_req ⊆ C_sup)
-            (ProtocolState::Init, ProtocolState::Open) => {
-                self.capabilities_required.is_subset(&self.capabilities_supported)
-            }
+            (ProtocolState::Init, ProtocolState::Open) => self
+                .capabilities_required
+                .is_subset(&self.capabilities_supported),
             // (state = "Init" ∧ state' = "Close") => ~(C_req ⊆ C_sup)
-            (ProtocolState::Init, ProtocolState::Close) => {
-                !self.capabilities_required.is_subset(&self.capabilities_supported)
-            }
+            (ProtocolState::Init, ProtocolState::Close) => !self
+                .capabilities_required
+                .is_subset(&self.capabilities_supported),
             // (state = "Open" ∧ power = "Normal" ∧ power' = "LowPower") => (state' = "Open")
             (ProtocolState::Open, ProtocolState::Open) => {
-                if !matches!(self.power, PowerProfile::UltraLowPower) 
-                    && matches!(next_power, PowerProfile::UltraLowPower) {
+                if !matches!(self.power, PowerProfile::UltraLowPower)
+                    && matches!(next_power, PowerProfile::UltraLowPower)
+                {
                     true
                 } else {
                     true // Other transitions within Open state are allowed
@@ -175,25 +187,22 @@ impl ProtocolContext {
 /// Generate a capability ID for testing
 fn capability_id_strategy() -> impl Strategy<Value = u32> {
     prop_oneof![
-        Just(0x0001), // Core capability
-        Just(0x0002), // Plugin framework
-        0x0003u32..0x1000u32, // Valid range
+        Just(0x0001),                 // Core capability
+        Just(0x0002),                 // Plugin framework
+        0x0003u32..0x1000u32,         // Valid range
         0xDEAD0000u32..0xDEADBEEFu32, // Unsupported range
     ]
 }
 
 /// Generate a set of capability IDs
 fn capability_set_strategy() -> impl Strategy<Value = HashSet<u32>> {
-    prop::collection::vec(capability_id_strategy(), 0..=8)
-        .prop_map(|ids| ids.into_iter().collect())
+    prop::collection::vec(capability_id_strategy(), 0..=8).prop_map(|ids| ids.into_iter().collect())
 }
 
 /// Generate a path of node IDs (3-7 nodes, no duplicates)
 fn path_strategy() -> impl Strategy<Value = Vec<u32>> {
     (3usize..=7)
-        .prop_flat_map(|len| {
-            prop::collection::vec(1u32..100u32, len..=len)
-        })
+        .prop_flat_map(|len| prop::collection::vec(1u32..100u32, len..=len))
         .prop_map(|mut path| {
             // Ensure no duplicates (TLA+ Inv_NoDup)
             let mut seen = HashSet::new();
@@ -215,16 +224,15 @@ fn protocol_context_strategy() -> impl Strategy<Value = ProtocolContext> {
         capability_set_strategy(),
         capability_set_strategy(),
         path_strategy(),
-    ).prop_map(|(required, supported, path)| {
-        ProtocolContext {
+    )
+        .prop_map(|(required, supported, path)| ProtocolContext {
             state: ProtocolState::Init,
             power: PowerProfile::HighPerformance,
             error: None,
             path,
             capabilities_required: required,
             capabilities_supported: supported,
-        }
-    })
+        })
 }
 
 proptest! {
@@ -250,11 +258,11 @@ proptest! {
             prop_assert!(result.is_err(), "Negotiation should fail when ~(C_req ⊆ C_sup)");
             prop_assert_eq!(context.state, ProtocolState::Close, "State should be Close after failed negotiation");
             prop_assert_eq!(context.error, Some(ERR_UNSUPPORTED_CAP), "Error should be UNSUPPORTED_CAP after failed negotiation");
-            
+
             if let Err(NyxError::UnsupportedCap(cap_id)) = result {
-                prop_assert!(initial_state.capabilities_required.contains(&cap_id), 
+                prop_assert!(initial_state.capabilities_required.contains(&cap_id),
                     "Failed capability should be one of the required ones");
-                prop_assert!(!initial_state.capabilities_supported.contains(&cap_id), 
+                prop_assert!(!initial_state.capabilities_supported.contains(&cap_id),
                     "Failed capability should not be supported");
             }
         }
@@ -288,7 +296,7 @@ proptest! {
             // If negotiation fails, we can't enter low power
             let _ = context.negotiate_capabilities();
             prop_assert_eq!(context.state, ProtocolState::Close);
-            
+
             let result = context.enter_low_power();
             prop_assert!(result.is_err(), "Should not be able to enter low power from Close state");
         }
@@ -326,17 +334,17 @@ proptest! {
         for &next_state in &[ProtocolState::Init, ProtocolState::Open, ProtocolState::Close] {
             for &next_power in &[PowerProfile::HighPerformance, PowerProfile::UltraLowPower] {
                 let is_valid = context.is_valid_transition(next_state, next_power);
-                
+
                 // Verify transition validity matches expected behavior
                 match (context.state, next_state) {
                     (ProtocolState::Init, ProtocolState::Open) => {
                         let expected = context.capabilities_required.is_subset(&context.capabilities_supported);
-                        prop_assert_eq!(is_valid, expected, 
+                        prop_assert_eq!(is_valid, expected,
                             "Init->Open transition validity should match capability subset relationship");
                     }
                     (ProtocolState::Init, ProtocolState::Close) => {
                         let expected = !context.capabilities_required.is_subset(&context.capabilities_supported);
-                        prop_assert_eq!(is_valid, expected, 
+                        prop_assert_eq!(is_valid, expected,
                             "Init->Close transition validity should match capability non-subset relationship");
                     }
                     (ProtocolState::Open, ProtocolState::Open) => {
@@ -368,7 +376,7 @@ proptest! {
             }
             ProtocolState::Close => {
                 prop_assert!(result.is_err(), "Close state should correspond to error result");
-                prop_assert_eq!(context.error, Some(ERR_UNSUPPORTED_CAP), 
+                prop_assert_eq!(context.error, Some(ERR_UNSUPPORTED_CAP),
                     "Close state should have UNSUPPORTED_CAP error (Inv_Error)");
             }
             ProtocolState::Init => {
@@ -385,21 +393,21 @@ proptest! {
         mut context in protocol_context_strategy()
     ) {
         // Verify initial path properties
-        prop_assert!(context.path.len() >= 3 && context.path.len() <= 7, 
+        prop_assert!(context.path.len() >= 3 && context.path.len() <= 7,
             "Path length should be 3-7 (Inv_PathLen)");
-        
+
         let unique_nodes: HashSet<_> = context.path.iter().collect();
-        prop_assert_eq!(unique_nodes.len(), context.path.len(), 
+        prop_assert_eq!(unique_nodes.len(), context.path.len(),
             "Path should have no duplicate nodes (Inv_NoDup)");
 
         // Path properties should be maintained after state transitions
         let _ = context.negotiate_capabilities();
-        
-        prop_assert!(context.path.len() >= 3 && context.path.len() <= 7, 
+
+        prop_assert!(context.path.len() >= 3 && context.path.len() <= 7,
             "Path length should remain 3-7 after negotiation");
-        
+
         let unique_nodes_after: HashSet<_> = context.path.iter().collect();
-        prop_assert_eq!(unique_nodes_after.len(), context.path.len(), 
+        prop_assert_eq!(unique_nodes_after.len(), context.path.len(),
             "Path should still have no duplicate nodes after negotiation");
     }
 
@@ -420,10 +428,10 @@ proptest! {
         // All results should be identical
         prop_assert_eq!(result1.is_ok(), result2.is_ok(), "Results should be deterministic");
         prop_assert_eq!(result2.is_ok(), result3.is_ok(), "Results should be deterministic");
-        
+
         prop_assert_eq!(context1.state, context2.state, "States should be deterministic");
         prop_assert_eq!(context2.state, context3.state, "States should be deterministic");
-        
+
         prop_assert_eq!(context1.error, context2.error, "Errors should be deterministic");
         prop_assert_eq!(context2.error, context3.error, "Errors should be deterministic");
     }
@@ -451,7 +459,7 @@ mod deterministic_tests {
         let caps: HashSet<u32> = vec![0x0001, 0x0002, 0x0003].into_iter().collect();
         context.capabilities_required = caps.clone();
         context.capabilities_supported = caps;
-        
+
         let result = context.negotiate_capabilities();
         assert!(result.is_ok());
         assert_eq!(context.state, ProtocolState::Open);
@@ -463,13 +471,13 @@ mod deterministic_tests {
         let mut context = ProtocolContext::new();
         context.capabilities_required.insert(0xDEADBEEF);
         context.capabilities_supported.insert(0x0001);
-        
+
         let result = context.negotiate_capabilities();
         assert!(result.is_err());
         assert_eq!(context.state, ProtocolState::Close);
         assert_eq!(context.error, Some(ERR_UNSUPPORTED_CAP));
         assert!(context.check_invariants());
-        
+
         if let Err(NyxError::UnsupportedCap(cap_id)) = result {
             assert_eq!(cap_id, 0xDEADBEEF);
         }
@@ -478,7 +486,7 @@ mod deterministic_tests {
     #[test]
     fn power_state_transitions_from_init() {
         let mut context = ProtocolContext::new();
-        
+
         // Cannot enter low power from Init state
         let result = context.enter_low_power();
         assert!(result.is_err());
@@ -490,11 +498,11 @@ mod deterministic_tests {
     fn power_state_transitions_from_close() {
         let mut context = ProtocolContext::new();
         context.capabilities_required.insert(0xDEADBEEF); // Unsupported
-        
+
         // Negotiate to Close state
         let _ = context.negotiate_capabilities();
         assert_eq!(context.state, ProtocolState::Close);
-        
+
         // Cannot enter low power from Close state
         let result = context.enter_low_power();
         assert!(result.is_err());
@@ -505,18 +513,18 @@ mod deterministic_tests {
     #[test]
     fn multiple_power_transitions() {
         let mut context = ProtocolContext::new();
-        
+
         // Negotiate to Open state
         let _ = context.negotiate_capabilities();
         assert_eq!(context.state, ProtocolState::Open);
-        
+
         // Multiple power transitions should work
         for _ in 0..5 {
             let result = context.enter_low_power();
             assert!(result.is_ok());
             assert_eq!(context.power, PowerProfile::UltraLowPower);
             assert!(context.check_invariants());
-            
+
             let result = context.exit_low_power();
             assert!(result.is_ok());
             assert_eq!(context.power, PowerProfile::HighPerformance);
@@ -527,17 +535,17 @@ mod deterministic_tests {
     #[test]
     fn invariant_violations_detected() {
         let mut context = ProtocolContext::new();
-        
+
         // Manually create invalid state (Close without error)
         context.state = ProtocolState::Close;
         context.error = None;
         assert!(!context.check_invariants()); // Should detect Inv_Error violation
-        
+
         // Fix the error
         context.error = Some(ERR_UNSUPPORTED_CAP);
         context.capabilities_required.insert(0xDEADBEEF);
         assert!(context.check_invariants()); // Should pass now
-        
+
         // Create another invalid state (Open with error)
         context.state = ProtocolState::Open;
         context.error = Some(ERR_UNSUPPORTED_CAP);
@@ -547,16 +555,16 @@ mod deterministic_tests {
     #[test]
     fn transition_validity_edge_cases() {
         let mut context = ProtocolContext::new();
-        
+
         // Test invalid transitions
         assert!(!context.is_valid_transition(ProtocolState::Close, PowerProfile::HighPerformance));
         assert!(!context.is_valid_transition(ProtocolState::Init, PowerProfile::HighPerformance));
-        
+
         // Test valid transitions based on capabilities
         context.capabilities_required.insert(0x0001);
         context.capabilities_supported.insert(0x0001);
         assert!(context.is_valid_transition(ProtocolState::Open, PowerProfile::HighPerformance));
-        
+
         context.capabilities_required.insert(0xDEADBEEF); // Add unsupported
         assert!(context.is_valid_transition(ProtocolState::Close, PowerProfile::HighPerformance));
         assert!(!context.is_valid_transition(ProtocolState::Open, PowerProfile::HighPerformance));
@@ -565,17 +573,17 @@ mod deterministic_tests {
     #[test]
     fn path_length_boundaries() {
         let mut context = ProtocolContext::new();
-        
+
         // Test minimum path length (3)
         context.path = vec![1, 2, 3];
         assert!(context.path.len() >= 3 && context.path.len() <= 7);
         assert!(context.check_invariants());
-        
+
         // Test maximum path length (7)
         context.path = vec![1, 2, 3, 4, 5, 6, 7];
         assert!(context.path.len() >= 3 && context.path.len() <= 7);
         assert!(context.check_invariants());
-        
+
         // Verify no duplicates
         let unique: HashSet<_> = context.path.iter().collect();
         assert_eq!(unique.len(), context.path.len());
@@ -584,30 +592,30 @@ mod deterministic_tests {
     #[test]
     fn capability_subset_edge_cases() {
         let mut context = ProtocolContext::new();
-        
+
         // Test proper subset
         context.capabilities_required = vec![0x0001, 0x0002].into_iter().collect();
         context.capabilities_supported = vec![0x0001, 0x0002, 0x0003].into_iter().collect();
-        
+
         let result = context.negotiate_capabilities();
         assert!(result.is_ok());
         assert_eq!(context.state, ProtocolState::Open);
-        
+
         // Test equal sets
         let mut context2 = ProtocolContext::new();
         let caps: HashSet<u32> = vec![0x0001, 0x0002].into_iter().collect();
         context2.capabilities_required = caps.clone();
         context2.capabilities_supported = caps;
-        
+
         let result = context2.negotiate_capabilities();
         assert!(result.is_ok());
         assert_eq!(context2.state, ProtocolState::Open);
-        
+
         // Test disjoint sets
         let mut context3 = ProtocolContext::new();
         context3.capabilities_required = vec![0x0001, 0x0002].into_iter().collect();
         context3.capabilities_supported = vec![0x0003, 0x0004].into_iter().collect();
-        
+
         let result = context3.negotiate_capabilities();
         assert!(result.is_err());
         assert_eq!(context3.state, ProtocolState::Close);
@@ -625,14 +633,14 @@ mod integration_tests {
     async fn stream_state_machine_integration() {
         let (ack_tx, _ack_rx) = mpsc::channel(16);
         let mut stream = Stream::new(1, ack_tx);
-        
+
         // Test initial state
         assert_eq!(stream.state(), StreamState::Idle);
-        
+
         // Test state transitions
         let _frame = stream.send_data(&[1, 2, 3, 4]);
         assert_eq!(stream.state(), StreamState::Open);
-        
+
         let _fin_frame = stream.finish();
         assert_eq!(stream.state(), StreamState::HalfClosedLocal);
     }
@@ -641,7 +649,7 @@ mod integration_tests {
     fn error_code_consistency() {
         // Verify our error codes match the actual implementation
         assert_eq!(ERR_UNSUPPORTED_CAP, 0x07);
-        
+
         let error = NyxError::UnsupportedCap(0xDEADBEEF);
         assert_eq!(error.code(), ERR_UNSUPPORTED_CAP);
     }
@@ -651,28 +659,34 @@ mod integration_tests {
         // Test power profile scaling factors
         assert_eq!(PowerProfile::HighPerformance.cover_traffic_scale(), 1.0);
         assert_eq!(PowerProfile::UltraLowPower.cover_traffic_scale(), 0.1);
-        
+
         // Test keepalive intervals
-        assert!(PowerProfile::HighPerformance.keepalive_interval() < PowerProfile::UltraLowPower.keepalive_interval());
-        
+        assert!(
+            PowerProfile::HighPerformance.keepalive_interval()
+                < PowerProfile::UltraLowPower.keepalive_interval()
+        );
+
         // Test connection timeouts
-        assert!(PowerProfile::HighPerformance.connection_timeout() < PowerProfile::UltraLowPower.connection_timeout());
+        assert!(
+            PowerProfile::HighPerformance.connection_timeout()
+                < PowerProfile::UltraLowPower.connection_timeout()
+        );
     }
 
     #[tokio::test]
     async fn protocol_context_with_real_capabilities() {
         let mut context = ProtocolContext::new();
-        
+
         // Use real capability IDs from the system
         context.capabilities_supported.insert(0x0001); // Core capability
         context.capabilities_supported.insert(0x0002); // Plugin framework
-        
+
         // Test successful negotiation
         context.capabilities_required.insert(0x0001);
         let result = context.negotiate_capabilities();
         assert!(result.is_ok());
         assert_eq!(context.state, ProtocolState::Open);
-        
+
         // Test power state transitions
         let result = context.enter_low_power();
         assert!(result.is_ok());
@@ -684,22 +698,24 @@ mod integration_tests {
     fn tla_model_consistency() {
         // Verify our implementation matches TLA+ model constants
         let mut context = ProtocolContext::new();
-        
+
         // Test path length constraints (TLA+ Inv_PathLen: 3..7)
         context.path = vec![1, 2, 3]; // Minimum length
         assert!(context.path.len() >= 3 && context.path.len() <= 7);
-        
+
         context.path = vec![1, 2, 3, 4, 5, 6, 7]; // Maximum length
         assert!(context.path.len() >= 3 && context.path.len() <= 7);
-        
+
         // Test capability set properties
         let caps: HashSet<u32> = vec![0x0001, 0x0002, 0x0003].into_iter().collect();
         context.capabilities_required = caps.clone();
         context.capabilities_supported = caps;
-        
+
         // Should satisfy C_req ⊆ C_sup
-        assert!(context.capabilities_required.is_subset(&context.capabilities_supported));
-        
+        assert!(context
+            .capabilities_required
+            .is_subset(&context.capabilities_supported));
+
         let result = context.negotiate_capabilities();
         assert!(result.is_ok());
         assert_eq!(context.state, ProtocolState::Open);

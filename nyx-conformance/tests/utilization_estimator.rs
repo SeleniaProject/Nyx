@@ -12,4 +12,4 @@ fn utilization_window_purge() {
     sleep(Duration::from_millis(1100));
     let thr_after = est.throughput_bps();
     assert!(thr_after < 10.0);
-} 
+}

@@ -24,5 +24,3 @@ async fn otlp_exporter_initializes_and_emits_without_panic() {
     // 明示的シャットダウン（多重呼び出し安全）
     NyxTelemetry::shutdown();
 }
-
-

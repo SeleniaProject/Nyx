@@ -1,4 +1,4 @@
-use nyx_transport::{UdpPool, ice::get_srflx_addr};
+use nyx_transport::{ice::get_srflx_addr, UdpPool};
 use std::net::SocketAddr;
 
 #[tokio::test]
@@ -8,4 +8,4 @@ async fn dummy_stun_timeout() {
     let stun_srv: SocketAddr = "203.0.113.1:3478".parse().unwrap();
     let res = get_srflx_addr(&pool, stun_srv).await;
     assert!(res.is_err());
-} 
+}

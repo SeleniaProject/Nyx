@@ -27,13 +27,15 @@ fn reorder_buffer_drops_duplicates() {
 fn reorder_buffer_large_out_of_order() {
     let mut buf = nyx_stream::ReorderBuffer::new(5);
     // insert seq 0..9 shuffled
-    let seqs = [4,1,0,3,2,5,7,6,9,8];
+    let seqs = [4, 1, 0, 3, 2, 5, 7, 6, 9, 8];
     for &s in &seqs {
         buf.push(s, s as u8);
     }
-    let drained: Vec<u8> = (0..10).filter_map(|_| {
-        let v = buf.pop_front();
-        v
-    }).collect();
+    let drained: Vec<u8> = (0..10)
+        .filter_map(|_| {
+            let v = buf.pop_front();
+            v
+        })
+        .collect();
     assert_eq!(drained, (0u8..10u8).collect::<Vec<_>>());
-} 
+}

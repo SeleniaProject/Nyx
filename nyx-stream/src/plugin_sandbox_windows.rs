@@ -8,7 +8,7 @@
 //! - Process isolation and privilege restrictions
 //! - Network access controls
 //! - File system access limitations
-//! 
+//!
 //! All implementations use safe Rust wrappers around Windows APIs.
 
 use std::io;
@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, error, warn};
-use win32job::{Job, ExtendedLimitInfo, UiRestrictions, JobError};
+use win32job::{ExtendedLimitInfo, Job, JobError, UiRestrictions};
 
 /// Comprehensive sandbox configuration for plugins.
 #[derive(Debug, Clone)]
@@ -33,10 +33,10 @@ pub struct SandboxConfig {
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
-            max_process_memory_mb: 64,      // 64MB per process
-            max_job_memory_mb: 128,         // 128MB total for job
-            max_working_set_mb: 32,         // 32MB working set
-            max_process_time_seconds: 300,  // 5 minutes max runtime
+            max_process_memory_mb: 64,     // 64MB per process
+            max_job_memory_mb: 128,        // 128MB total for job
+            max_working_set_mb: 32,        // 32MB working set
+            max_process_time_seconds: 300, // 5 minutes max runtime
             ui_restrictions_enabled: true,
             kill_on_job_close: true,
         }
@@ -47,15 +47,24 @@ impl Default for SandboxConfig {
 pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Child> {
     let exe = plugin_path.as_ref();
     if !exe.exists() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, "plugin binary not found"));
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "plugin binary not found",
+        ));
     }
 
     // Enforce a strict allowlist for plugin locations (absolute path, under program directory/"plugins").
     // This avoids executing arbitrary binaries.
     let exe_abs: PathBuf = exe.canonicalize()?;
-    let allowed_dir = std::env::current_dir()?.join("plugins").canonicalize().unwrap_or_else(|_| PathBuf::from("plugins"));
+    let allowed_dir = std::env::current_dir()?
+        .join("plugins")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("plugins"));
     if !exe_abs.starts_with(&allowed_dir) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "plugin path not in allowlisted directory"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "plugin path not in allowlisted directory",
+        ));
     }
 
     let config = SandboxConfig::default();
@@ -80,8 +89,11 @@ pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Chil
         return Err(e);
     }
 
-    debug!("Plugin {} spawned with comprehensive sandboxing, PID: {}", 
-           exe.display(), child.id());
+    debug!(
+        "Plugin {} spawned with comprehensive sandboxing, PID: {}",
+        exe.display(),
+        child.id()
+    );
 
     Ok(child)
 }
@@ -89,23 +101,27 @@ pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Chil
 /// Configure Job Object with comprehensive security restrictions using safe APIs.
 fn configure_job_object_safe(child: &Child, config: &SandboxConfig) -> io::Result<()> {
     // Create Job Object using safe win32job crate
-    let job = Job::create()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to create Job Object: {}", e)))?;
+    let job = Job::create().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create Job Object: {}", e),
+        )
+    })?;
 
     // Configure extended limits
     let mut limit_info = ExtendedLimitInfo::new();
-    
+
     // Set memory limits
     limit_info.limit_process_memory(
         config.max_process_memory_mb * 1024 * 1024,
-        config.max_process_memory_mb * 1024 * 1024
+        config.max_process_memory_mb * 1024 * 1024,
     );
-    
+
     limit_info.limit_job_memory(config.max_job_memory_mb * 1024 * 1024);
-    
+
     limit_info.limit_working_memory(
         config.max_working_set_mb * 1024 * 1024,
-        config.max_working_set_mb * 1024 * 1024
+        config.max_working_set_mb * 1024 * 1024,
     );
 
     // Set process time limit
@@ -117,8 +133,12 @@ fn configure_job_object_safe(child: &Child, config: &SandboxConfig) -> io::Resul
     }
 
     // Apply the limits to the job
-    job.set_extended_limit_info(&mut limit_info)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to set job limits: {}", e)))?;
+    job.set_extended_limit_info(&mut limit_info).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to set job limits: {}", e),
+        )
+    })?;
 
     // Optional UI restrictions (prevent user handles / clipboard / global atoms etc.)
     if config.ui_restrictions_enabled {
@@ -134,14 +154,17 @@ fn configure_job_object_safe(child: &Child, config: &SandboxConfig) -> io::Resul
     // Assign the child process to the job
     if let Err(e) = job.assign_process(child.id()) {
         error!("sandbox.assign_failure pid={} error={}", child.id(), e);
-        return Err(io::Error::new(io::ErrorKind::Other, format!("Failed to assign process to job: {}", e)));
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to assign process to job: {}", e),
+        ));
     }
 
     debug!("sandbox.job_configured pid={}", child.id());
-    
+
     // Keep the job object alive by leaking it (it will be cleaned up when the process exits)
     std::mem::forget(job);
-    
+
     Ok(())
 }
 
@@ -151,24 +174,26 @@ pub async fn spawn_plugin_with_timeout<P: AsRef<Path>>(
     timeout_duration: Duration,
 ) -> io::Result<Child> {
     let plugin_path = plugin_path.as_ref().to_path_buf();
-    
+
     // Spawn in a blocking task to avoid blocking the async runtime
-    let spawn_result = tokio::task::spawn_blocking(move || {
-        spawn_sandboxed_plugin(&plugin_path)
-    }).await;
+    let spawn_result =
+        tokio::task::spawn_blocking(move || spawn_sandboxed_plugin(&plugin_path)).await;
 
     match spawn_result {
         Ok(Ok(child)) => {
             debug!("Plugin spawned successfully with timeout protection");
             Ok(child)
-        },
+        }
         Ok(Err(e)) => {
             error!("Failed to spawn plugin: {}", e);
             Err(e)
-        },
+        }
         Err(e) => {
             error!("Plugin spawn task panicked: {}", e);
-            Err(io::Error::new(io::ErrorKind::Other, "Plugin spawn task failed"))
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Plugin spawn task failed",
+            ))
         }
     }
 }
@@ -176,20 +201,20 @@ pub async fn spawn_plugin_with_timeout<P: AsRef<Path>>(
 /// Terminate plugin process safely.
 pub fn terminate_plugin(mut child: Child) -> io::Result<()> {
     debug!("Terminating plugin process PID: {}", child.id());
-    
+
     // First try graceful termination
     match child.try_wait() {
         Ok(Some(status)) => {
             debug!("Plugin already exited with status: {:?}", status);
             return Ok(());
-        },
+        }
         Ok(None) => {
             // Process is still running, try to kill it
             if let Err(e) = child.kill() {
                 warn!("Failed to kill plugin process: {}", e);
                 return Err(e);
             }
-        },
+        }
         Err(e) => {
             warn!("Failed to check plugin process status: {}", e);
             return Err(e);
@@ -201,7 +226,7 @@ pub fn terminate_plugin(mut child: Child) -> io::Result<()> {
         Ok(status) => {
             debug!("Plugin terminated with status: {:?}", status);
             Ok(())
-        },
+        }
         Err(e) => {
             error!("Failed to wait for plugin termination: {}", e);
             Err(e)
@@ -212,9 +237,9 @@ pub fn terminate_plugin(mut child: Child) -> io::Result<()> {
 /// Check if plugin process is still running.
 pub fn is_plugin_running(child: &mut Child) -> bool {
     match child.try_wait() {
-        Ok(Some(_)) => false,  // Process has exited
-        Ok(None) => true,      // Process is still running
-        Err(_) => false,       // Error checking status, assume not running
+        Ok(Some(_)) => false, // Process has exited
+        Ok(None) => true,     // Process is still running
+        Err(_) => false,      // Error checking status, assume not running
     }
 }
 
@@ -243,9 +268,10 @@ mod tests {
     async fn test_spawn_nonexistent_plugin() {
         let result = spawn_plugin_with_timeout(
             PathBuf::from("nonexistent_plugin.exe"),
-            Duration::from_secs(5)
-        ).await;
-        
+            Duration::from_secs(5),
+        )
+        .await;
+
         assert!(result.is_err());
     }
-} 
+}

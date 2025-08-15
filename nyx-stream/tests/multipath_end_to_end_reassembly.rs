@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use nyx_stream::multipath::{MultipathManager, MultipathConfig};
 use nyx_core::types::PathId;
+use nyx_stream::multipath::{MultipathConfig, MultipathManager};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -45,7 +45,8 @@ fn multipath_end_to_end_reassembly_per_path_inorder() {
     // Generate scheduled sends, assign per-path sequences, and synthetic delays
     const N: usize = 600;
     let mut seq_per_path: HashMap<PathId, u64> = HashMap::new();
-    let base_delay: HashMap<PathId, u64> = [(1, 5u64), (2, 10u64), (3, 50u64)].into_iter().collect();
+    let base_delay: HashMap<PathId, u64> =
+        [(1, 5u64), (2, 10u64), (3, 50u64)].into_iter().collect();
     let mut inflight: Vec<SimPkt> = Vec::with_capacity(N);
 
     for i in 0..N {
@@ -57,7 +58,12 @@ fn multipath_end_to_end_reassembly_per_path_inorder() {
         let jitter = ((i % 7) * 3) as u64; // 0,3,6,9,12,15,18ms
         let delay_ms = base_delay[&path] + jitter;
         let data = encode(path, *seq, payload);
-        inflight.push(SimPkt { path, seq: *seq, delay_ms, data });
+        inflight.push(SimPkt {
+            path,
+            seq: *seq,
+            delay_ms,
+            data,
+        });
         *seq += 1;
     }
 
@@ -73,7 +79,14 @@ fn multipath_end_to_end_reassembly_per_path_inorder() {
         for buf in ready {
             let (path, seq, _payload) = decode(&buf);
             let last = last_seq_delivered.get(&path).copied().unwrap_or(-1);
-            assert_eq!(seq as i64, last + 1, "path {} delivered out-of-order: got seq {} after {}", path, seq, last);
+            assert_eq!(
+                seq as i64,
+                last + 1,
+                "path {} delivered out-of-order: got seq {} after {}",
+                path,
+                seq,
+                last
+            );
             last_seq_delivered.insert(path, seq as i64);
             *delivered_count.entry(path).or_insert(0) += 1;
         }
@@ -85,7 +98,11 @@ fn multipath_end_to_end_reassembly_per_path_inorder() {
     // Verify we delivered all per-path packets
     for (path, total_sent) in seq_per_path {
         let delivered = delivered_count.get(&path).copied().unwrap_or(0);
-        assert_eq!(delivered, total_sent, "path {}: delivered {} vs sent {}", path, delivered, total_sent);
+        assert_eq!(
+            delivered, total_sent,
+            "path {}: delivered {} vs sent {}",
+            path, delivered, total_sent
+        );
     }
 
     // Spot-check hop_count bounds via a few more sends

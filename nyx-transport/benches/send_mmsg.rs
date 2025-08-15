@@ -10,9 +10,7 @@ use std::os::unix::io::AsRawFd;
 fn bench_udp_send(c: &mut Criterion) {
     // Prepare receiver socket on localhost.
     let recv_sock = UdpSocket::bind("127.0.0.1:0").expect("bind recv");
-    recv_sock
-        .set_nonblocking(true)
-        .expect("nonblocking");
+    recv_sock.set_nonblocking(true).expect("nonblocking");
     let dst = recv_sock.local_addr().expect("addr");
 
     // Drain task to avoid RX buffer overflow during benchmark.
@@ -28,9 +26,7 @@ fn bench_udp_send(c: &mut Criterion) {
     // Single datagram send benchmark.
     c.bench_function("udp_send_to", |b| {
         b.iter(|| {
-            send_sock
-                .send_to(&payload, dst)
-                .expect("send_to failed");
+            send_sock.send_to(&payload, dst).expect("send_to failed");
         })
     });
 
@@ -61,4 +57,4 @@ fn bench_udp_send(c: &mut Criterion) {
 }
 
 criterion_group!(benches, bench_udp_send);
-criterion_main!(benches); 
+criterion_main!(benches);

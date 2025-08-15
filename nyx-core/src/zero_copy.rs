@@ -3,7 +3,7 @@
 //! Zero-copy optimization system for critical data path (crypto→FEC→transmission).
 //!
 //! This module provides comprehensive memory allocation tracking and reduction strategies
-//! for the Nyx protocol's performance-critical data processing pipeline. The system 
+//! for the Nyx protocol's performance-critical data processing pipeline. The system
 //! monitors and optimizes memory usage across three key stages:
 //!
 //! 1. **Crypto Stage**: AEAD encryption/decryption buffer management
@@ -11,7 +11,7 @@
 //! 3. **Transmission Stage**: Network buffer zero-copy strategies
 //!
 //! ## Key Features
-//! 
+//!
 //! - **Allocation Tracking**: Comprehensive counters for memory operations
 //! - **Buffer Reuse**: Intelligent buffer pooling to minimize allocations
 //! - **Zero-Copy Pipelines**: Direct memory mapping where possible
@@ -19,19 +19,19 @@
 //! - **Adaptive Optimization**: Dynamic tuning based on usage patterns
 //!
 //! ## Usage
-//! 
+//!
 //! ```rust
 //! use nyx_core::zero_copy::{ZeroCopyManager, ZeroCopyManagerConfig};
 //! use std::sync::Arc;
-//! 
+//!
 //! let manager = Arc::new(ZeroCopyManager::new(ZeroCopyManagerConfig::default()));
-//! 
+//!
 //! tokio_test::block_on(async {
 //!     let path = manager
 //!         .create_critical_path("doc_example".to_string())
 //!         .await
 //!         .unwrap();
-//! 
+//!
 //!     // Process data through zero-copy optimized pipeline
 //!     let data = vec![0u8; 128];
 //!     let result = path.process_packet(&data).await.unwrap();
@@ -39,11 +39,14 @@
 //! });
 //! ```
 
-use std::sync::{Arc, Mutex, atomic::{AtomicU64, AtomicUsize, Ordering}};
 use std::collections::{HashMap, VecDeque};
+use std::sync::{
+    atomic::{AtomicU64, AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 /// Reference guard that decrements the internal reference counter on drop
 pub struct ZeroCopyRef {
@@ -56,19 +59,14 @@ impl Drop for ZeroCopyRef {
     }
 }
 
+pub mod integration;
 pub mod manager;
 pub mod telemetry;
-pub mod integration;
 
 // Re-export core types for ergonomic access in tests and external modules
 pub use manager::{
-    ZeroCopyManager,
-    ZeroCopyManagerConfig,
-    CriticalPath,
-    CriticalPathConfig,
-    ProcessingContext,
-    AggregatedMetrics,
-    ZeroCopyError,
+    AggregatedMetrics, CriticalPath, CriticalPathConfig, ProcessingContext, ZeroCopyError,
+    ZeroCopyManager, ZeroCopyManagerConfig,
 };
 
 /// Critical path stage identifiers
@@ -225,7 +223,9 @@ impl ZeroCopyBuffer {
     /// Clone buffer reference (increment ref count) and return a guard that decrements on drop
     pub fn clone_ref(&self) -> ZeroCopyRef {
         self.ref_count.fetch_add(1, Ordering::AcqRel);
-        ZeroCopyRef { counter: Arc::clone(&self.ref_count) }
+        ZeroCopyRef {
+            counter: Arc::clone(&self.ref_count),
+        }
     }
 }
 
@@ -248,12 +248,12 @@ impl BufferPool {
     /// Create new buffer pool with configuration
     pub fn new(max_buffers_per_size: usize, max_total_buffers: usize) -> Self {
         let size_classes = vec![
-            256,    // Small packets
-            1280,   // RaptorQ symbol size
-            4096,   // Standard page size
-            8192,   // Large packets  
-            16384,  // Very large packets
-            32768,  // Maximum frame size
+            256,   // Small packets
+            1280,  // RaptorQ symbol size
+            4096,  // Standard page size
+            8192,  // Large packets
+            16384, // Very large packets
+            32768, // Maximum frame size
         ];
 
         Self {
@@ -270,7 +270,7 @@ impl BufferPool {
     /// Get buffer of appropriate size
     pub fn get_buffer(&mut self, size: usize) -> ZeroCopyBuffer {
         let size_class = self.find_size_class(size);
-        
+
         if let Some(pool) = self.pools.get_mut(&size_class) {
             if let Some(mut buffer) = pool.pop_front() {
                 if buffer.can_reuse() {
@@ -319,7 +319,7 @@ impl BufferPool {
         let hits = self.hits.load(Ordering::Relaxed);
         let misses = self.misses.load(Ordering::Relaxed);
         let total_requests = hits + misses;
-        
+
         BufferPoolStats {
             total_buffers: self.total_buffers,
             hits,
@@ -329,7 +329,9 @@ impl BufferPool {
             } else {
                 0.0
             },
-            size_class_distribution: self.pools.iter()
+            size_class_distribution: self
+                .pools
+                .iter()
                 .map(|(&size, pool)| (size, pool.len()))
                 .collect(),
         }
@@ -418,27 +420,35 @@ impl AllocationTracker {
         match event.stage {
             Stage::Crypto => {
                 self.crypto_allocations.fetch_add(1, Ordering::Relaxed);
-                self.crypto_bytes.fetch_add(event.size as u64, Ordering::Relaxed);
+                self.crypto_bytes
+                    .fetch_add(event.size as u64, Ordering::Relaxed);
             }
             Stage::Fec => {
                 self.fec_allocations.fetch_add(1, Ordering::Relaxed);
-                self.fec_bytes.fetch_add(event.size as u64, Ordering::Relaxed);
+                self.fec_bytes
+                    .fetch_add(event.size as u64, Ordering::Relaxed);
             }
             Stage::Transmission => {
-                self.transmission_allocations.fetch_add(1, Ordering::Relaxed);
-                self.transmission_bytes.fetch_add(event.size as u64, Ordering::Relaxed);
+                self.transmission_allocations
+                    .fetch_add(1, Ordering::Relaxed);
+                self.transmission_bytes
+                    .fetch_add(event.size as u64, Ordering::Relaxed);
             }
         }
 
         // Update current memory usage
         match event.operation {
             OperationType::Allocate | OperationType::Reallocate => {
-                let current = self.current_memory.fetch_add(event.size as u64, Ordering::Relaxed) + event.size as u64;
+                let current = self
+                    .current_memory
+                    .fetch_add(event.size as u64, Ordering::Relaxed)
+                    + event.size as u64;
                 // Update peak if necessary
                 self.peak_memory.fetch_max(current, Ordering::Relaxed);
             }
             OperationType::PoolReturn => {
-                self.current_memory.fetch_sub(event.size as u64, Ordering::Relaxed);
+                self.current_memory
+                    .fetch_sub(event.size as u64, Ordering::Relaxed);
             }
             _ => {}
         }
@@ -460,7 +470,8 @@ impl AllocationTracker {
     pub fn end_timing(&self) {
         if let Some(start) = self.allocation_start_time.lock().unwrap().take() {
             let duration = start.elapsed().as_nanos() as u64;
-            self.total_allocation_time.fetch_add(duration, Ordering::Relaxed);
+            self.total_allocation_time
+                .fetch_add(duration, Ordering::Relaxed);
         }
     }
 
@@ -480,36 +491,56 @@ impl AllocationTracker {
     /// Get current metrics snapshot
     pub async fn get_metrics(&self) -> AllocationMetrics {
         let events = self.events.read().await;
-        
+
         // Calculate per-stage statistics
         let mut stages = HashMap::new();
-        
+
         for stage in [Stage::Crypto, Stage::Fec, Stage::Transmission] {
             let stage_events: Vec<_> = events.iter().filter(|e| e.stage == stage).collect();
-            
-            let total_allocations = stage_events.iter()
-                .filter(|e| matches!(e.operation, OperationType::Allocate | OperationType::Reallocate | OperationType::PoolGet))
+
+            let total_allocations = stage_events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.operation,
+                        OperationType::Allocate
+                            | OperationType::Reallocate
+                            | OperationType::PoolGet
+                    )
+                })
                 .count() as u64;
-            
-            let total_bytes: u64 = stage_events.iter()
-                .filter(|e| matches!(e.operation, OperationType::Allocate | OperationType::Reallocate | OperationType::PoolGet))
+
+            let total_bytes: u64 = stage_events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.operation,
+                        OperationType::Allocate
+                            | OperationType::Reallocate
+                            | OperationType::PoolGet
+                    )
+                })
                 .map(|e| e.size as u64)
                 .sum();
-            
-            let total_copies = stage_events.iter()
+
+            let total_copies = stage_events
+                .iter()
                 .filter(|e| e.operation == OperationType::Copy)
                 .count() as u64;
-            
-            let total_copy_bytes: u64 = stage_events.iter()
+
+            let total_copy_bytes: u64 = stage_events
+                .iter()
                 .filter(|e| e.operation == OperationType::Copy)
                 .map(|e| e.size as u64)
                 .sum();
 
-            let zero_copy_ops = stage_events.iter()
+            let zero_copy_ops = stage_events
+                .iter()
                 .filter(|e| e.operation == OperationType::ZeroCopy)
                 .count() as u64;
 
-            let pool_hits = stage_events.iter()
+            let pool_hits = stage_events
+                .iter()
                 .filter(|e| e.operation == OperationType::PoolGet)
                 .count() as u64;
 
@@ -519,22 +550,26 @@ impl AllocationTracker {
                 0.0
             };
 
-            stages.insert(stage, StageStats {
-                total_allocations,
-                total_bytes,
-                total_copies,
-                total_copy_bytes,
-                total_reallocations: stage_events.iter()
-                    .filter(|e| e.operation == OperationType::Reallocate)
-                    .count() as u64,
-                pool_hits,
-                pool_misses: total_allocations.saturating_sub(pool_hits),
-                zero_copy_ops,
-                peak_memory: 0, // Will be updated below
-                active_allocations: 0, // Will be calculated from current state
-                average_alloc_size,
-                last_updated: Instant::now(),
-            });
+            stages.insert(
+                stage,
+                StageStats {
+                    total_allocations,
+                    total_bytes,
+                    total_copies,
+                    total_copy_bytes,
+                    total_reallocations: stage_events
+                        .iter()
+                        .filter(|e| e.operation == OperationType::Reallocate)
+                        .count() as u64,
+                    pool_hits,
+                    pool_misses: total_allocations.saturating_sub(pool_hits),
+                    zero_copy_ops,
+                    peak_memory: 0,        // Will be updated below
+                    active_allocations: 0, // Will be calculated from current state
+                    average_alloc_size,
+                    last_updated: Instant::now(),
+                },
+            );
         }
 
         // Calculate pipeline totals
@@ -543,7 +578,8 @@ impl AllocationTracker {
         let pipeline_peak_memory = self.peak_memory.load(Ordering::Relaxed);
 
         // Calculate optimization ratios
-        let total_ops = pipeline_total_allocations + stages.values().map(|s| s.zero_copy_ops).sum::<u64>();
+        let total_ops =
+            pipeline_total_allocations + stages.values().map(|s| s.zero_copy_ops).sum::<u64>();
         let zero_copy_ratio = if total_ops > 0 {
             stages.values().map(|s| s.zero_copy_ops).sum::<u64>() as f64 / total_ops as f64
         } else {
@@ -551,7 +587,8 @@ impl AllocationTracker {
         };
 
         let reduction_ratio = if pipeline_total_bytes > 0 {
-            1.0 - (stages.values().map(|s| s.total_copy_bytes).sum::<u64>() as f64 / pipeline_total_bytes as f64)
+            1.0 - (stages.values().map(|s| s.total_copy_bytes).sum::<u64>() as f64
+                / pipeline_total_bytes as f64)
         } else {
             0.0
         };

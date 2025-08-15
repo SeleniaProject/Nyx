@@ -1,9 +1,9 @@
 //! PathBuilder dynamic hop count conformance test
 #![allow(clippy::unwrap_used)]
 
-use nyx_mix::{larmix::{Prober, LARMixPlanner}};
-use rand::{thread_rng, Rng};
 use nyx_core::NodeId;
+use nyx_mix::larmix::{LARMixPlanner, Prober};
+use rand::{thread_rng, Rng};
 
 #[test]
 fn adaptive_hop_count_within_expected_range() {
@@ -26,4 +26,4 @@ fn adaptive_hop_count_within_expected_range() {
     }
     let avg = total_hops as f64 / samples as f64;
     assert!(avg >= 4.0 && avg <= 6.0, "average hop count {avg}");
-} 
+}

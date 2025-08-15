@@ -10,8 +10,8 @@
 
 use zeroize::Zeroize;
 
-pub mod noise;
 pub mod kdf;
+pub mod noise;
 #[cfg(feature = "kyber")]
 pub use noise::kyber;
 #[cfg(feature = "hybrid")]
@@ -19,9 +19,9 @@ pub mod hybrid;
 #[cfg(feature = "hybrid")]
 pub use hybrid::PqAlgorithm;
 pub mod aead;
-pub mod keystore;
 #[cfg(feature = "hpke")]
 pub mod hpke;
+pub mod keystore;
 pub mod pcr;
 
 pub use kdf::KdfLabel;

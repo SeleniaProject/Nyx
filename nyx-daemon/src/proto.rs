@@ -45,22 +45,22 @@ pub struct NodeInfo {
     /// Nyx Protocol compliance level (Core / Plus / Full)
     pub compliance_level: Option<String>,
     /// Numeric capability identifiers advertised by this node (spec Appendix)
-    pub capabilities: Option<Vec<u32>>,    
+    pub capabilities: Option<Vec<u32>>,
 }
 
 // Performance metrics for the daemon
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PerformanceMetrics {
-    pub cover_traffic_rate: f64,        // packets/sec
-    pub avg_latency_ms: f64,            // milliseconds
-    pub packet_loss_rate: f64,          // 0.0-1.0
-    pub bandwidth_utilization: f64,     // 0.0-1.0
-    pub cpu_usage: f64,                 // 0.0-1.0
-    pub memory_usage_mb: f64,           // megabytes
+    pub cover_traffic_rate: f64,    // packets/sec
+    pub avg_latency_ms: f64,        // milliseconds
+    pub packet_loss_rate: f64,      // 0.0-1.0
+    pub bandwidth_utilization: f64, // 0.0-1.0
+    pub cpu_usage: f64,             // 0.0-1.0
+    pub memory_usage_mb: f64,       // megabytes
     pub total_packets_sent: u64,
     pub total_packets_received: u64,
     pub retransmissions: u64,
-    pub connection_success_rate: f64,   // 0.0-1.0
+    pub connection_success_rate: f64, // 0.0-1.0
 }
 
 // System resource usage information
@@ -75,8 +75,8 @@ pub struct ResourceUsage {
     pub disk_total_bytes: u64,
     pub network_rx_bytes: u64,
     pub network_tx_bytes: u64,
-    pub network_bytes_sent: u64,      // Added for compatibility
-    pub network_bytes_received: u64,  // Added for compatibility
+    pub network_bytes_sent: u64,     // Added for compatibility
+    pub network_bytes_received: u64, // Added for compatibility
     pub file_descriptors: u32,
     pub open_file_descriptors: u32, // Alias for file_descriptors
     pub thread_count: u32,
@@ -91,12 +91,12 @@ pub struct NetworkTopology {
     pub gateway_nodes: u32,
     pub network_diameter: u32,
     pub clustering_coefficient: f64,
-    pub peers: Vec<String>,                  // Added for compatibility
-    pub paths: Vec<String>,                  // Added for compatibility
-    pub total_nodes_known: u32,              // Added for compatibility
-    pub reachable_nodes: u32,                // Added for compatibility
-    pub current_region: String,              // Added for compatibility
-    pub available_regions: Vec<String>,      // Added for compatibility
+    pub peers: Vec<String>,             // Added for compatibility
+    pub paths: Vec<String>,             // Added for compatibility
+    pub total_nodes_known: u32,         // Added for compatibility
+    pub reachable_nodes: u32,           // Added for compatibility
+    pub current_region: String,         // Added for compatibility
+    pub available_regions: Vec<String>, // Added for compatibility
 }
 
 // Health check request and response
@@ -165,7 +165,7 @@ pub struct StreamStats {
     pub retransmissions: u64,
     pub rtt_ms: f64,
     pub bandwidth_bps: f64,
-    pub bandwidth_mbps: f64, // Converted from bandwidth_bps
+    pub bandwidth_mbps: f64,  // Converted from bandwidth_bps
     pub paths: Vec<PathStat>, // Path statistics
     pub target_address: String,
     pub state: String,
@@ -389,8 +389,8 @@ pub struct StatsRequest {
 pub struct StatsUpdate {
     pub metrics: HashMap<String, f64>,
     pub timestamp: Option<Timestamp>,
-    pub node_info: Option<NodeInfo>,          // Added for compatibility  
-    pub stream_stats: Vec<StreamStats>,       // Added for compatibility
+    pub node_info: Option<NodeInfo>,    // Added for compatibility
+    pub stream_stats: Vec<StreamStats>, // Added for compatibility
     pub custom_metrics: HashMap<String, f64>, // Added for compatibility
 }
 
@@ -462,7 +462,7 @@ pub struct HealthCheck {
 // Event system for streaming capabilities
 pub mod event {
     use super::*;
-    
+
     // Event types for daemon events
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum EventType {
@@ -475,7 +475,7 @@ pub mod event {
         HealthStatusChanged,
         Error,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct Event {
         pub event_type: String,
@@ -484,7 +484,7 @@ pub mod event {
         pub severity: EventSeverity,
         pub event_data: Option<event::EventData>,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum EventSeverity {
         Info,
@@ -492,7 +492,7 @@ pub mod event {
         Error,
         Critical,
     }
-    
+
     // EventData enum for different event types
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum EventData {
@@ -504,7 +504,7 @@ pub mod event {
         NetworkEvent(NetworkEvent),
         SystemEvent(SystemEvent),
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct StreamEvent {
         pub stream_id: String,
@@ -516,28 +516,28 @@ pub mod event {
         pub data: HashMap<String, String>,
         pub details: String, // Backward compatible detail/summary
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct LayerEvent {
         pub layer_name: String,
         pub status: String,
         pub message: String,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct ConfigEvent {
         pub config_key: String,
         pub old_value: String,
         pub new_value: String,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct HealthEvent {
         pub component: String,
         pub status: String,
         pub message: String,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct PerformanceEvent {
         pub metric: String,
@@ -545,14 +545,14 @@ pub mod event {
         pub threshold: f64,
         pub description: String,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct NetworkEvent {
         pub peer_id: String,
         pub action: String,
         pub address: String,
     }
-    
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct SystemEvent {
         pub event_type: String,
@@ -574,7 +574,7 @@ pub mod event {
                 event_data: None,
             }
         }
-        
+
         pub fn with_data(mut self, key: &str, value: &str) -> Self {
             self.data.insert(key.to_string(), value.to_string());
             self
@@ -605,7 +605,7 @@ pub trait NyxControl: Send + Sync + 'static {
     async fn open_stream(&self, request: OpenRequest) -> Result<StreamResponse, String>;
     async fn close_stream(&self, request: StreamId) -> Result<Empty, String>;
     async fn get_stream_stats(&self, request: StreamId) -> Result<StreamStats, String>;
-    
+
     // Additional methods for compatibility with main.rs implementation
     async fn list_streams(&self, request: Empty) -> Result<Vec<StreamStats>, String>;
     async fn subscribe_events(&self, request: EventFilter) -> Result<Vec<Event>, String>;
@@ -634,8 +634,8 @@ pub fn map_close_code_to_grpc(code: u16) -> &'static str {
 
 // Server types for gRPC replacement
 #[derive(Debug, Clone)]
-pub struct NyxControlServer<T> 
-where 
+pub struct NyxControlServer<T>
+where
     T: NyxControl,
 {
     // Pure Rust server implementation
@@ -669,9 +669,14 @@ pub mod nyx_control_server {
 
     impl<S: NyxControl> NyxControlService<S> {
         pub fn new(inner: S, addr: impl Into<String>) -> Self {
-            Self { inner: Arc::new(inner), _addr: addr.into() }
+            Self {
+                inner: Arc::new(inner),
+                _addr: addr.into(),
+            }
         }
 
-        pub fn address(&self) -> &str { &self._addr }
+        pub fn address(&self) -> &str {
+            &self._addr
+        }
     }
 }

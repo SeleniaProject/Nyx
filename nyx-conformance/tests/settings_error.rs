@@ -6,4 +6,4 @@ fn settings_frame_too_short() {
     // Provide 5 bytes to trigger error.
     let invalid = [0x00u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8];
     assert!(parse_settings_frame(&invalid).is_err());
-} 
+}

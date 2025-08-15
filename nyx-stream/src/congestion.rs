@@ -19,12 +19,12 @@ enum Mode {
 
 #[derive(Debug)]
 pub struct CongestionCtrl {
-    cwnd: f64,          // congestion window in packets
+    cwnd: f64, // congestion window in packets
     #[allow(dead_code)]
-    pacing_rate: f64,   // packets per second
+    pacing_rate: f64, // packets per second
     min_rtt: Duration,
     rtt_samples: VecDeque<Duration>,
-    bw_est: f64,          // packets/s
+    bw_est: f64, // packets/s
     cycle_index: usize,
     inflight: usize,
     #[allow(dead_code)]
@@ -67,7 +67,9 @@ impl CongestionCtrl {
         self.inflight = self.inflight.saturating_sub(bytes);
 
         // RTT tracking & aging (update min_rtt every 10s)
-        if self.rtt_samples.len() == 8 { self.rtt_samples.pop_front(); }
+        if self.rtt_samples.len() == 8 {
+            self.rtt_samples.pop_front();
+        }
         self.rtt_samples.push_back(rtt);
         if rtt < self.min_rtt || self.min_rtt_timestamp.elapsed() > Duration::from_secs(10) {
             self.min_rtt = rtt;
@@ -97,7 +99,9 @@ impl CongestionCtrl {
         let prev = self.cwnd;
         self.cwnd = (self.cwnd * gain).max(4.0);
         // Safety: clamp per-ACK growth to 30% to avoid pathological spikes with jittery RTT.
-        if self.cwnd > prev * 1.3 { self.cwnd = prev * 1.3; }
+        if self.cwnd > prev * 1.3 {
+            self.cwnd = prev * 1.3;
+        }
     }
 
     pub fn available_window(&self) -> f64 {
@@ -125,4 +129,4 @@ mod tests {
         cc.on_ack(1280, Duration::from_millis(100));
         assert!(cc.cwnd > 10.0);
     }
-} 
+}

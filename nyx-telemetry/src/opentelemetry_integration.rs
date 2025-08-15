@@ -2,25 +2,27 @@
 //! Minimal OTLP integration (manual exporter, no SDK provider).
 
 // no direct opentelemetry tracer usage (manual capture layer)
-use serde::{Serialize, Deserialize};
-use tracing::info;
-use tracing_subscriber::Registry;
-use std::time::Duration;
-use opentelemetry_semantic_conventions as semcov;
 #[cfg(feature = "otlp_exporter")]
-use tokio::sync::mpsc;
+use crate::otlp::with_recovery;
+#[cfg(feature = "otlp_exporter")]
+use crate::otlp::{register_export_sender, CapturedSpan};
 #[cfg(feature = "otlp_exporter")]
 use opentelemetry_proto::tonic::collector::trace::v1::trace_service_client::TraceServiceClient;
 #[cfg(feature = "otlp_exporter")]
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 #[cfg(feature = "otlp_exporter")]
-use opentelemetry_proto::tonic::trace::v1::{Span, span::SpanKind, ResourceSpans, ScopeSpans};
+use opentelemetry_proto::tonic::common::v1::{
+    AnyValue, InstrumentationScope, KeyValue as OTLPKeyValue,
+};
 #[cfg(feature = "otlp_exporter")]
-use opentelemetry_proto::tonic::common::v1::{InstrumentationScope, KeyValue as OTLPKeyValue, AnyValue};
+use opentelemetry_proto::tonic::trace::v1::{span::SpanKind, ResourceSpans, ScopeSpans, Span};
+use opentelemetry_semantic_conventions as semcov;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
 #[cfg(feature = "otlp_exporter")]
-use crate::otlp::{register_export_sender, CapturedSpan};
-#[cfg(feature = "otlp_exporter")]
-use crate::otlp::with_recovery;
+use tokio::sync::mpsc;
+use tracing::info;
+use tracing_subscriber::Registry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelemetryConfig {
@@ -31,7 +33,11 @@ pub struct TelemetryConfig {
 
 impl Default for TelemetryConfig {
     fn default() -> Self {
-        Self { endpoint: "http://localhost:4317".into(), service_name: "nyx".into(), sampling_ratio: 1.0 }
+        Self {
+            endpoint: "http://localhost:4317".into(),
+            service_name: "nyx".into(),
+            sampling_ratio: 1.0,
+        }
     }
 }
 
@@ -52,14 +58,21 @@ impl NyxTelemetry {
             let subscriber = Registry::default();
             let _ = tracing::subscriber::set_global_default(subscriber);
         }
-        info!(target="telemetry", "telemetry_in_memory_initialized svc={} ratio={}", cfg.service_name, cfg.sampling_ratio);
+        info!(
+            target = "telemetry",
+            "telemetry_in_memory_initialized svc={} ratio={}", cfg.service_name, cfg.sampling_ratio
+        );
         Ok(())
     }
 
     #[cfg(feature = "otlp_exporter")]
     pub fn init_with_exporter(cfg: TelemetryConfig) -> anyhow::Result<()> {
         // Fallback: initialize local tracer (non-exporting) + manual sender worker.
-        Self::init(TelemetryConfig { endpoint: cfg.endpoint.clone(), service_name: cfg.service_name.clone(), sampling_ratio: cfg.sampling_ratio })?;
+        Self::init(TelemetryConfig {
+            endpoint: cfg.endpoint.clone(),
+            service_name: cfg.service_name.clone(),
+            sampling_ratio: cfg.sampling_ratio,
+        })?;
         let (tx, mut rx) = mpsc::channel::<CapturedSpan>(128);
         register_export_sender(tx);
         let endpoint = cfg.endpoint.clone();
@@ -72,20 +85,35 @@ impl NyxTelemetry {
         // ID generators
         fn next_trace_id() -> [u8; 16] {
             let seq = TRACE_SEQ.fetch_add(1, Ordering::Relaxed);
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u128;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u128;
             let mixed = now ^ (seq as u128);
             mixed.to_be_bytes()
         }
         fn next_span_id() -> [u8; 8] {
             let seq = SPAN_SEQ.fetch_add(1, Ordering::Relaxed);
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
             let mixed = ((now as u64) << 32) ^ seq;
             mixed.to_be_bytes()
         }
 
         tokio::spawn(async move {
             // Build static resource attributes once.
-            let resource_attrs = vec![OTLPKeyValue { key: semcov::resource::SERVICE_NAME.to_string(), value: Some(AnyValue { value: Some(opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(service_name)) }) }];
+            let resource_attrs = vec![OTLPKeyValue {
+                key: semcov::resource::SERVICE_NAME.to_string(),
+                value: Some(AnyValue {
+                    value: Some(
+                        opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(
+                            service_name,
+                        ),
+                    ),
+                }),
+            }];
             while let Some(cspan) = rx.recv().await {
                 // Build a minimal OTLP Span from CapturedSpan
                 let attributes: Vec<OTLPKeyValue> = cspan.attributes.iter().map(|(k,v)| OTLPKeyValue { key: k.clone(), value: Some(AnyValue { value: Some(opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(v.clone())) }) }).collect();
@@ -107,23 +135,48 @@ impl NyxTelemetry {
                     trace_state: String::new(),
                     flags: 0,
                 };
-                let scope_spans = ScopeSpans { scope: Some(InstrumentationScope { name: "manual".into(), version: "0".into(), attributes: vec![], dropped_attributes_count: 0 }), spans: vec![span], schema_url: String::new() };
-                let resource_spans = ResourceSpans { resource: Some(opentelemetry_proto::tonic::resource::v1::Resource { attributes: resource_attrs.clone(), dropped_attributes_count: 0 }), scope_spans: vec![scope_spans], schema_url: String::new() };
-                let req = ExportTraceServiceRequest { resource_spans: vec![resource_spans] };
-                    let endpoint_clone = endpoint.clone();
-                    // Use recovery (backoff + circuit breaker); ignore returned value.
-                    let _ = with_recovery(|| {
-                        let req = req.clone();
-                        let endpoint_inner = endpoint_clone.clone();
-                        async move {
-                            let mut client = TraceServiceClient::connect(endpoint_inner).await?;
-                            let _ = client.export(req).await?; // we only care that call succeeded
-                            Ok(())
-                        }
-                    }).await;
+                let scope_spans = ScopeSpans {
+                    scope: Some(InstrumentationScope {
+                        name: "manual".into(),
+                        version: "0".into(),
+                        attributes: vec![],
+                        dropped_attributes_count: 0,
+                    }),
+                    spans: vec![span],
+                    schema_url: String::new(),
+                };
+                let resource_spans = ResourceSpans {
+                    resource: Some(opentelemetry_proto::tonic::resource::v1::Resource {
+                        attributes: resource_attrs.clone(),
+                        dropped_attributes_count: 0,
+                    }),
+                    scope_spans: vec![scope_spans],
+                    schema_url: String::new(),
+                };
+                let req = ExportTraceServiceRequest {
+                    resource_spans: vec![resource_spans],
+                };
+                let endpoint_clone = endpoint.clone();
+                // Use recovery (backoff + circuit breaker); ignore returned value.
+                let _ = with_recovery(|| {
+                    let req = req.clone();
+                    let endpoint_inner = endpoint_clone.clone();
+                    async move {
+                        let mut client = TraceServiceClient::connect(endpoint_inner).await?;
+                        let _ = client.export(req).await?; // we only care that call succeeded
+                        Ok(())
+                    }
+                })
+                .await;
             }
         });
-    info!(target="telemetry", "manual_otlp_worker_initialized endpoint={} svc={} ratio={}", cfg.endpoint, cfg.service_name, cfg.sampling_ratio);
+        info!(
+            target = "telemetry",
+            "manual_otlp_worker_initialized endpoint={} svc={} ratio={}",
+            cfg.endpoint,
+            cfg.service_name,
+            cfg.sampling_ratio
+        );
         Ok(())
     }
 
@@ -131,14 +184,22 @@ impl NyxTelemetry {
     /// Only available with exporter feature.
     #[cfg(feature = "otlp_exporter")]
     pub fn health_check(cfg: &TelemetryConfig, timeout: Duration) -> anyhow::Result<()> {
-        use std::net::{TcpStream};
+        use std::net::TcpStream;
         // crude parse: strip scheme if present
         let mut s = cfg.endpoint.trim().to_string();
-        if let Some(rest) = s.strip_prefix("http://") { s = rest.to_string(); }
-        if let Some(rest) = s.strip_prefix("https://") { s = rest.to_string(); }
+        if let Some(rest) = s.strip_prefix("http://") {
+            s = rest.to_string();
+        }
+        if let Some(rest) = s.strip_prefix("https://") {
+            s = rest.to_string();
+        }
         // cut path
-        if let Some(idx) = s.find('/') { s = s[..idx].to_string(); }
-        if !s.contains(':') { s = format!("{}:4317", s); }
+        if let Some(idx) = s.find('/') {
+            s = s[..idx].to_string();
+        }
+        if !s.contains(':') {
+            s = format!("{}:4317", s);
+        }
         let addr = s;
         let dur = timeout;
         TcpStream::connect_timeout(&addr.parse()?, dur)?; // relies on std net ToSocketAddrs
@@ -156,9 +217,14 @@ impl NyxTelemetry {
     }
 
     pub fn test_span() {
-        let span = tracing::span!(tracing::Level::INFO, "nyx.stream.send", path_id = 1, cid = "test");
+        let span = tracing::span!(
+            tracing::Level::INFO,
+            "nyx.stream.send",
+            path_id = 1,
+            cid = "test"
+        );
         let _g = span.enter();
-        tracing::info!(target="telemetry", "test_span_inside");
+        tracing::info!(target = "telemetry", "test_span_inside");
     }
 }
 
@@ -166,5 +232,8 @@ impl NyxTelemetry {
 mod tests {
     use super::*;
     #[tokio::test(flavor = "current_thread")]
-    async fn init_and_emit_span() { NyxTelemetry::init(TelemetryConfig::default()).unwrap(); NyxTelemetry::test_span(); }
+    async fn init_and_emit_span() {
+        NyxTelemetry::init(TelemetryConfig::default()).unwrap();
+        NyxTelemetry::test_span();
+    }
 }

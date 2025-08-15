@@ -1,23 +1,25 @@
 //! Simplified End-to-End Scenario Tests
-//! 
+//!
 //! Comprehensive tests that simulate real usage scenarios from client to daemon
 //! covering complete data flow, multiple client connections, multipath communication,
 //! long-running scenarios, stress testing, and network failure recovery.
 
+use futures::future::join_all;
+use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::time::{sleep, timeout};
-use tracing::{info, warn, error};
-use futures::future::join_all;
-use rand::{Rng, thread_rng};
+use tracing::{error, info, warn};
 
-use nyx_crypto::noise::NoiseHandshake; // Simplify: drop HPKE dependency & async stream usage for now
 use nyx_conformance::{
-    network_simulator::{NetworkSimulator, SimulationConfig, LatencyDistribution, SimulatedPacket, PacketPriority},
-    property_tester::{PropertyTester, PropertyTestConfig, ByteVecGenerator, PredicateProperty}
+    network_simulator::{
+        LatencyDistribution, NetworkSimulator, PacketPriority, SimulatedPacket, SimulationConfig,
+    },
+    property_tester::{ByteVecGenerator, PredicateProperty, PropertyTestConfig, PropertyTester},
 };
+use nyx_crypto::noise::NoiseHandshake; // Simplify: drop HPKE dependency & async stream usage for now
 
 /// Test context for end-to-end scenarios
 #[derive(Clone)]
@@ -120,12 +122,12 @@ impl E2ETestContext {
         };
 
         let network_simulator = Arc::new(NetworkSimulator::new(sim_config));
-        
+
         // Initialize network topology
         for i in 0..config.max_clients {
             network_simulator.add_node(i, Some((i as f64, 0.0))).await;
         }
-        
+
         let mut metrics = E2EMetrics::default();
         metrics.test_start_time = Some(Instant::now());
 
@@ -140,13 +142,13 @@ impl E2ETestContext {
     async fn record_connection(&self, conn_info: ConnectionInfo) {
         let mut connections = self.active_connections.write().await;
         connections.insert(conn_info.connection_id, conn_info.clone());
-        
+
         let mut metrics = self.metrics_collector.lock().unwrap();
         metrics.total_connections += 1;
         if conn_info.status == ConnectionStatus::Established {
             metrics.successful_connections += 1;
         }
-        
+
         let current_count = connections.len() as u32;
         if current_count > metrics.peak_concurrent_connections {
             metrics.peak_concurrent_connections = current_count;
@@ -158,7 +160,7 @@ impl E2ETestContext {
         if let Some(conn) = connections.get_mut(&connection_id) {
             conn.status = status.clone();
             conn.last_activity = Instant::now();
-            
+
             if let ConnectionStatus::Failed(error) = status {
                 let mut metrics = self.metrics_collector.lock().unwrap();
                 metrics.failed_connections += 1;
@@ -174,7 +176,7 @@ impl E2ETestContext {
             conn.bytes_received += bytes_received;
             conn.last_activity = Instant::now();
         }
-        
+
         let mut metrics = self.metrics_collector.lock().unwrap();
         metrics.total_bytes_transferred += bytes_sent + bytes_received;
     }
@@ -193,53 +195,63 @@ async fn test_client_daemon_data_flow() {
 
     let config = E2ETestConfig::default();
     let context = E2ETestContext::new(config).await;
-    
+
     // Start network simulation
-    context.network_simulator.start().await.expect("Failed to start network simulator");
+    context
+        .network_simulator
+        .start()
+        .await
+        .expect("Failed to start network simulator");
 
     // Simulate complete client-daemon setup
     let client_id = "client_001";
     let connection_id = 1;
-    
+
     // Phase 1: (Simplified) Crypto layer handshake using Noise only
     info!("Phase 1: Setting up crypto layer (Noise only)");
 
     // Noise protocol handshake
-    let mut client_noise = NoiseHandshake::new_initiator()
-        .expect("Failed to create client noise handshake");
-    let mut daemon_noise = NoiseHandshake::new_responder()
-        .expect("Failed to create daemon noise handshake");
-    
+    let mut client_noise =
+        NoiseHandshake::new_initiator().expect("Failed to create client noise handshake");
+    let mut daemon_noise =
+        NoiseHandshake::new_responder().expect("Failed to create daemon noise handshake");
+
     let mut message_buffer = vec![0u8; 4096];
     let mut payload_buffer = vec![0u8; 4096];
-    
+
     // Complete 3-way handshake
-    let msg1_len = client_noise.write_message(b"client_init", &mut message_buffer)
+    let msg1_len = client_noise
+        .write_message(b"client_init", &mut message_buffer)
         .expect("Failed to write client init");
-    
-    let payload1_len = daemon_noise.read_message(&message_buffer[..msg1_len], &mut payload_buffer)
+
+    let payload1_len = daemon_noise
+        .read_message(&message_buffer[..msg1_len], &mut payload_buffer)
         .expect("Failed to read client init");
     assert_eq!(&payload_buffer[..payload1_len], b"client_init");
-    
-    let msg2_len = daemon_noise.write_message(b"daemon_response", &mut message_buffer)
+
+    let msg2_len = daemon_noise
+        .write_message(b"daemon_response", &mut message_buffer)
         .expect("Failed to write daemon response");
-    
-    let payload2_len = client_noise.read_message(&message_buffer[..msg2_len], &mut payload_buffer)
+
+    let payload2_len = client_noise
+        .read_message(&message_buffer[..msg2_len], &mut payload_buffer)
         .expect("Failed to read daemon response");
     assert_eq!(&payload_buffer[..payload2_len], b"daemon_response");
-    
-    let msg3_len = client_noise.write_message(b"client_final", &mut message_buffer)
+
+    let msg3_len = client_noise
+        .write_message(b"client_final", &mut message_buffer)
         .expect("Failed to write client final");
-    
-    let payload3_len = daemon_noise.read_message(&message_buffer[..msg3_len], &mut payload_buffer)
+
+    let payload3_len = daemon_noise
+        .read_message(&message_buffer[..msg3_len], &mut payload_buffer)
         .expect("Failed to read client final");
     assert_eq!(&payload_buffer[..payload3_len], b"client_final");
-    
+
     info!("Noise protocol handshake completed");
 
     // Phase 2: (Simplified) Stream layer placeholder (async stream disabled)
     info!("Phase 2: Stream layer placeholder (NyxAsyncStream disabled)");
-    
+
     // Record connection establishment
     let conn_info = ConnectionInfo {
         connection_id,
@@ -262,10 +274,14 @@ async fn test_client_daemon_data_flow() {
     ];
 
     for (scenario_name, test_data) in test_scenarios {
-        info!("Testing scenario: {} ({} bytes)", scenario_name, test_data.len());
-        
+        info!(
+            "Testing scenario: {} ({} bytes)",
+            scenario_name,
+            test_data.len()
+        );
+
         let start_time = Instant::now();
-        
+
         // Simulate network transmission with realistic conditions
         let packet = SimulatedPacket {
             id: thread_rng().gen(),
@@ -276,22 +292,36 @@ async fn test_client_daemon_data_flow() {
             size_bytes: test_data.len(),
             priority: PacketPriority::Normal,
         };
-        
+
         let transmission_result = context.network_simulator.send_packet(packet).await;
         match transmission_result {
             Ok(()) => {
                 let transfer_time = start_time.elapsed();
-                info!("Scenario '{}' completed in {:?}", scenario_name, transfer_time);
-                
+                info!(
+                    "Scenario '{}' completed in {:?}",
+                    scenario_name, transfer_time
+                );
+
                 // Record successful data transfer
-                context.record_data_transfer(connection_id, test_data.len() as u64, test_data.len() as u64).await;
+                context
+                    .record_data_transfer(
+                        connection_id,
+                        test_data.len() as u64,
+                        test_data.len() as u64,
+                    )
+                    .await;
             }
             Err(e) => {
                 warn!("Scenario '{}' failed: {:?}", scenario_name, e);
-                context.update_connection_status(connection_id, ConnectionStatus::Failed(format!("{:?}", e))).await;
+                context
+                    .update_connection_status(
+                        connection_id,
+                        ConnectionStatus::Failed(format!("{:?}", e)),
+                    )
+                    .await;
             }
         }
-        
+
         // Small delay between scenarios
         sleep(Duration::from_millis(50)).await;
     }
@@ -299,23 +329,30 @@ async fn test_client_daemon_data_flow() {
     // Phase 4: Verify data integrity and performance
     info!("Phase 4: Verifying data integrity and performance");
     let metrics = context.get_metrics_summary().await;
-    
+
     assert_eq!(metrics.successful_connections, 1);
     assert!(metrics.total_bytes_transferred > 0);
-    info!("Data integrity verified: {} bytes transferred", metrics.total_bytes_transferred);
+    info!(
+        "Data integrity verified: {} bytes transferred",
+        metrics.total_bytes_transferred
+    );
 
     // Phase 5: Connection cleanup
     info!("Phase 5: Connection cleanup");
-    context.update_connection_status(connection_id, ConnectionStatus::Disconnecting).await;
-    
+    context
+        .update_connection_status(connection_id, ConnectionStatus::Disconnecting)
+        .await;
+
     // Simulate graceful connection teardown
     sleep(Duration::from_millis(100)).await;
-    
-    context.update_connection_status(connection_id, ConnectionStatus::Disconnected).await;
+
+    context
+        .update_connection_status(connection_id, ConnectionStatus::Disconnected)
+        .await;
     context.network_simulator.stop().await;
-    
+
     info!("Client-to-daemon data flow scenario completed successfully");
-    
+
     // Final verification
     let final_metrics = context.get_metrics_summary().await;
     assert!(final_metrics.total_connections > 0);
@@ -331,31 +368,35 @@ async fn test_multiple_client_connections() {
     let mut config = E2ETestConfig::default();
     config.max_clients = 10; // Reduced for simpler test
     config.test_duration = Duration::from_secs(5);
-    
+
     let context = E2ETestContext::new(config.clone()).await;
-    context.network_simulator.start().await.expect("Failed to start network simulator");
+    context
+        .network_simulator
+        .start()
+        .await
+        .expect("Failed to start network simulator");
 
     let num_clients = 10;
     let mut client_handles = Vec::new();
-    
+
     info!("Starting {} concurrent client connections", num_clients);
-    
+
     // Simulate multiple clients connecting concurrently
     for client_id in 0..num_clients {
         let context_clone = context.clone();
-        
+
         let handle = tokio::spawn(async move {
             let client_name = format!("client_{:03}", client_id);
             let connection_id = client_id + 1;
-            
+
             let start_time = Instant::now();
-            
+
             // Phase 1: Client crypto setup (simplified, HPKE removed)
-            
+
             // Phase 2: Stream creation and setup
             // Simplified: skip actual stream creation (NyxAsyncStream disabled)
             let _dummy = connection_id; // suppress unused warning
-            
+
             // Record connection establishment
             let conn_info = ConnectionInfo {
                 connection_id,
@@ -366,18 +407,18 @@ async fn test_multiple_client_connections() {
                 last_activity: Instant::now(),
                 status: ConnectionStatus::Established,
             };
-            
+
             context_clone.record_connection(conn_info).await;
-            
+
             // Phase 3: Simulate client activity
             let message_count = 3;
             let message_size = 1024;
-            
+
             let mut total_bytes_sent = 0u64;
-            
+
             for msg_id in 0..message_count {
                 let message_data = vec![((client_id + msg_id) % 256) as u8; message_size];
-                
+
                 // Simulate message transmission through network
                 let packet = SimulatedPacket {
                     id: thread_rng().gen(),
@@ -388,54 +429,64 @@ async fn test_multiple_client_connections() {
                     size_bytes: message_data.len(),
                     priority: PacketPriority::Normal,
                 };
-                
+
                 match context_clone.network_simulator.send_packet(packet).await {
                     Ok(()) => {
                         total_bytes_sent += message_data.len() as u64;
-                        
+
                         // Update connection activity
-                        context_clone.record_data_transfer(
-                            connection_id, 
-                            message_data.len() as u64, 
-                            message_data.len() as u64
-                        ).await;
+                        context_clone
+                            .record_data_transfer(
+                                connection_id,
+                                message_data.len() as u64,
+                                message_data.len() as u64,
+                            )
+                            .await;
                     }
                     Err(e) => {
                         warn!("Client {} message {} failed: {:?}", client_name, msg_id, e);
-                        context_clone.update_connection_status(
-                            connection_id, 
-                            ConnectionStatus::Failed(format!("Message send failed: {:?}", e))
-                        ).await;
+                        context_clone
+                            .update_connection_status(
+                                connection_id,
+                                ConnectionStatus::Failed(format!("Message send failed: {:?}", e)),
+                            )
+                            .await;
                     }
                 }
-                
+
                 // Realistic inter-message delay
                 sleep(Duration::from_millis(50)).await;
             }
-            
+
             // Phase 4: Connection cleanup
-            context_clone.update_connection_status(connection_id, ConnectionStatus::Disconnecting).await;
+            context_clone
+                .update_connection_status(connection_id, ConnectionStatus::Disconnecting)
+                .await;
             sleep(Duration::from_millis(10)).await;
-            context_clone.update_connection_status(connection_id, ConnectionStatus::Disconnected).await;
-            
+            context_clone
+                .update_connection_status(connection_id, ConnectionStatus::Disconnected)
+                .await;
+
             let connection_duration = start_time.elapsed();
-            
-            info!("Client {} completed: {} bytes sent in {:?}", 
-                  client_name, total_bytes_sent, connection_duration);
-            
+
+            info!(
+                "Client {} completed: {} bytes sent in {:?}",
+                client_name, total_bytes_sent, connection_duration
+            );
+
             (client_id, total_bytes_sent, connection_duration)
         });
-        
+
         client_handles.push(handle);
-        
+
         // Stagger connection attempts
         if client_id % 3 == 2 {
             sleep(Duration::from_millis(100)).await;
         }
     }
-    
+
     info!("Waiting for all {} clients to complete", num_clients);
-    
+
     // Wait for all clients to complete with timeout
     let timeout_duration = Duration::from_secs(15);
     let results = match timeout(timeout_duration, join_all(client_handles)).await {
@@ -445,40 +496,57 @@ async fn test_multiple_client_connections() {
             panic!("Test timed out");
         }
     };
-    
+
     // Analyze results
     let mut successful_clients = 0;
     let mut total_bytes_transferred = 0u64;
-    
+
     for result in results {
         match result {
             Ok((client_id, bytes_sent, duration)) => {
                 successful_clients += 1;
                 total_bytes_transferred += bytes_sent;
-                info!("Client {} transferred {} bytes in {:?}", client_id, bytes_sent, duration);
+                info!(
+                    "Client {} transferred {} bytes in {:?}",
+                    client_id, bytes_sent, duration
+                );
             }
             Err(e) => {
                 error!("Client task failed: {:?}", e);
             }
         }
     }
-    
+
     // Get final metrics
     let final_metrics = context.get_metrics_summary().await;
     context.network_simulator.stop().await;
-    
+
     // Verify results
     info!("Multiple client test results:");
-    info!("  Successful clients: {}/{}", successful_clients, num_clients);
+    info!(
+        "  Successful clients: {}/{}",
+        successful_clients, num_clients
+    );
     info!("  Total bytes transferred: {}", total_bytes_transferred);
-    info!("  Peak concurrent connections: {}", final_metrics.peak_concurrent_connections);
-    
+    info!(
+        "  Peak concurrent connections: {}",
+        final_metrics.peak_concurrent_connections
+    );
+
     // Assertions for test success
-    assert!(successful_clients >= (num_clients * 8 / 10), 
-            "Should have at least 80% successful connections");
-    assert!(total_bytes_transferred > 0, "Should have transferred some data");
-    assert!(final_metrics.peak_concurrent_connections > 0, "Should have tracked concurrent connections");
-    
+    assert!(
+        successful_clients >= (num_clients * 8 / 10),
+        "Should have at least 80% successful connections"
+    );
+    assert!(
+        total_bytes_transferred > 0,
+        "Should have transferred some data"
+    );
+    assert!(
+        final_metrics.peak_concurrent_connections > 0,
+        "Should have tracked concurrent connections"
+    );
+
     info!("Multiple client connections scenario completed successfully");
 }
 
@@ -490,7 +558,11 @@ async fn test_data_integrity_pipeline() {
 
     let config = E2ETestConfig::default();
     let context = E2ETestContext::new(config).await;
-    context.network_simulator.start().await.expect("Failed to start network simulator");
+    context
+        .network_simulator
+        .start()
+        .await
+        .expect("Failed to start network simulator");
 
     // Test various data types for integrity
     let test_datasets = vec![
@@ -500,18 +572,22 @@ async fn test_data_integrity_pipeline() {
     ];
 
     for (data_name, original_data) in test_datasets {
-        info!("Testing data integrity for: {} ({} bytes)", data_name, original_data.len());
-        
+        info!(
+            "Testing data integrity for: {} ({} bytes)",
+            data_name,
+            original_data.len()
+        );
+
         // Calculate original hash
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         original_data.hash(&mut hasher);
         let original_hash = hasher.finish();
-        
-    // Simulate crypto layer processing (HPKE removed in simplified mode)
-        
+
+        // Simulate crypto layer processing (HPKE removed in simplified mode)
+
         // Simulate network transmission
         let packet = SimulatedPacket {
             id: thread_rng().gen(),
@@ -522,19 +598,27 @@ async fn test_data_integrity_pipeline() {
             size_bytes: original_data.len(),
             priority: PacketPriority::Normal,
         };
-        
+
         let transmission_result = context.network_simulator.send_packet(packet).await;
-        
+
         // Verify data integrity (simplified)
         let final_data = original_data.clone(); // In real implementation, this would be reconstructed
-        
+
         let mut final_hasher = DefaultHasher::new();
         final_data.hash(&mut final_hasher);
         let final_hash = final_hasher.finish();
-        
-        assert_eq!(original_hash, final_hash, "Data integrity check failed for {}", data_name);
-        assert_eq!(original_data, final_data, "Data content mismatch for {}", data_name);
-        
+
+        assert_eq!(
+            original_hash, final_hash,
+            "Data integrity check failed for {}",
+            data_name
+        );
+        assert_eq!(
+            original_data, final_data,
+            "Data content mismatch for {}",
+            data_name
+        );
+
         info!("✓ Data integrity maintained for: {}", data_name);
     }
 

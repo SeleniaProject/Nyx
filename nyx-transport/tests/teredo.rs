@@ -1,5 +1,5 @@
-use std::net::{Ipv4Addr};
 use nyx_transport::teredo::TeredoAddr;
+use std::net::Ipv4Addr;
 
 #[test]
 fn teredo_address_encoding() {
@@ -14,8 +14,14 @@ fn teredo_address_encoding() {
     assert_eq!(seg[1], 0x0000);
 
     // Verify server IPv4 embedding
-    assert_eq!(seg[2], ((server_ip.octets()[0] as u16) << 8) | server_ip.octets()[1] as u16);
-    assert_eq!(seg[3], ((server_ip.octets()[2] as u16) << 8) | server_ip.octets()[3] as u16);
+    assert_eq!(
+        seg[2],
+        ((server_ip.octets()[0] as u16) << 8) | server_ip.octets()[1] as u16
+    );
+    assert_eq!(
+        seg[3],
+        ((server_ip.octets()[2] as u16) << 8) | server_ip.octets()[3] as u16
+    );
 
     // Flags should be 0 since cone=false
     assert_eq!(seg[4], 0x0000);
@@ -24,7 +30,12 @@ fn teredo_address_encoding() {
     assert_eq!(seg[5], !port);
 
     // Obfuscated client IP verification
-    let obsc_ip = [!client_ip.octets()[0], !client_ip.octets()[1], !client_ip.octets()[2], !client_ip.octets()[3]];
+    let obsc_ip = [
+        !client_ip.octets()[0],
+        !client_ip.octets()[1],
+        !client_ip.octets()[2],
+        !client_ip.octets()[3],
+    ];
     assert_eq!(seg[6], ((obsc_ip[0] as u16) << 8) | obsc_ip[1] as u16);
     assert_eq!(seg[7], ((obsc_ip[2] as u16) << 8) | obsc_ip[3] as u16);
-} 
+}

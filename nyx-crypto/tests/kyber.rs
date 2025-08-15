@@ -1,7 +1,6 @@
 #![cfg(feature = "pq")]
 /// @spec 3. Hybrid Post-Quantum Handshake
-
-use nyx_crypto::noise::pq::{responder_keypair, initiator_encapsulate, responder_decapsulate};
+use nyx_crypto::noise::pq::{initiator_encapsulate, responder_decapsulate, responder_keypair};
 
 #[test]
 fn kyber_kem_session_key_matches() {
@@ -16,4 +15,4 @@ fn kyber_kem_session_key_matches() {
 
     // Session keys must match
     assert_eq!(key_i.0, key_r.0);
-} 
+}

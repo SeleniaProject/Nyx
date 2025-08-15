@@ -5,51 +5,50 @@
 //! This module provides the main coordinator for multipath data plane operations,
 //! managing path discovery, scheduling, reordering, and dynamic hop count adjustment.
 
+#[cfg(feature = "telemetry")]
+use nyx_telemetry::{
+    inc_mp_packets_expired, inc_mp_packets_received, inc_mp_packets_reordered, inc_mp_packets_sent,
+    inc_mp_path_activated, inc_mp_path_deactivated, observe_mp_path_jitter, observe_mp_path_rtt,
+    set_mp_active_paths, set_wrr_weight_ratio_deviation_ppm,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use tracing::{debug, info, warn, trace};
-#[cfg(feature = "telemetry")]
-use nyx_telemetry::{
-    inc_mp_packets_sent, inc_mp_packets_received, inc_mp_packets_reordered, inc_mp_packets_expired,
-    inc_mp_path_activated, inc_mp_path_deactivated, set_mp_active_paths, observe_mp_path_rtt, observe_mp_path_jitter, set_wrr_weight_ratio_deviation_ppm
-};
+use tracing::{debug, info, trace, warn};
 
-use super::{
-    PathId, SequenceNumber, PathStats, BufferedPacket, ReorderingBuffer,
-    REORDER_TIMEOUT,
-};
-use crate::scheduler_v2::{WeightedRoundRobinScheduler, SchedulerStats as V2SchedulerStats};
+use super::{BufferedPacket, PathId, PathStats, ReorderingBuffer, SequenceNumber, REORDER_TIMEOUT};
+use crate::scheduler_v2::{SchedulerStats as V2SchedulerStats, WeightedRoundRobinScheduler};
 
 /// Update scheduler with all path statistics
-/// 
+///
 /// This function adapts the old `update_paths(&HashMap<PathId, PathStats>)` API
 /// to work with the new scheduler that uses individual RTT updates.
 fn update_scheduler_with_paths(
-    scheduler: &mut WeightedRoundRobinScheduler, 
-    paths: &HashMap<PathId, PathStats>
+    scheduler: &mut WeightedRoundRobinScheduler,
+    paths: &HashMap<PathId, PathStats>,
 ) {
     // First, collect all current paths in scheduler
-    let current_paths: std::collections::HashSet<PathId> = scheduler.path_info()
+    let current_paths: std::collections::HashSet<PathId> = scheduler
+        .path_info()
         .into_iter()
         .map(|info| info.path_id)
         .collect();
-    
+
     // Collect all paths that should be in scheduler
     let target_paths: std::collections::HashSet<PathId> = paths.keys().copied().collect();
-    
+
     // Remove paths that are no longer present
     for path_id in current_paths.difference(&target_paths) {
         scheduler.remove_path(*path_id);
         debug!(path_id = *path_id, "Removed path from scheduler");
     }
-    
-    // Update/add paths with current RTT
+
+    // Update/add paths with current RTT and loss rate
     for (path_id, stats) in paths {
         if stats.is_healthy() {
-            match scheduler.update_path(*path_id, stats.rtt) {
+            match scheduler.update_path_with_quality(*path_id, stats.rtt, stats.loss_rate) {
                 Ok(()) => {
                     // Activate path if it was previously inactive
                     scheduler.set_path_active(*path_id, true);
@@ -65,9 +64,9 @@ fn update_scheduler_with_paths(
         }
     }
 }
+use crate::frame::{ParsedHeader, FLAG_HAS_PATH_ID, FLAG_MULTIPATH_ENABLED};
 use nyx_core::config::MultipathConfig;
 use nyx_core::types::{is_valid_user_path_id, CONTROL_PATH_ID};
-use crate::frame::{ParsedHeader, FLAG_MULTIPATH_ENABLED, FLAG_HAS_PATH_ID};
 
 /// Multipath packet with metadata
 #[derive(Debug, Clone)]
@@ -89,11 +88,22 @@ pub enum MultipathEvent {
     /// Path statistics updated
     PathStatsUpdated { path_id: PathId, stats: PathStats },
     /// Packet reordered and delivered
-    PacketReordered { path_id: PathId, sequence: SequenceNumber, delay: Duration },
+    PacketReordered {
+        path_id: PathId,
+        sequence: SequenceNumber,
+        delay: Duration,
+    },
     /// Packet expired from reordering buffer
-    PacketExpired { path_id: PathId, sequence: SequenceNumber },
+    PacketExpired {
+        path_id: PathId,
+        sequence: SequenceNumber,
+    },
     /// Hop count adjusted for path
-    HopCountAdjusted { path_id: PathId, old_hops: u8, new_hops: u8 },
+    HopCountAdjusted {
+        path_id: PathId,
+        old_hops: u8,
+        new_hops: u8,
+    },
 }
 
 /// Statistics for the multipath manager
@@ -134,7 +144,7 @@ pub struct MultipathManager {
 impl MultipathManager {
     pub fn new(config: MultipathConfig) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             path_stats: Arc::new(RwLock::new(HashMap::new())),
@@ -199,7 +209,10 @@ impl MultipathManager {
         let mut reordering_buffers = self.reordering_buffers.write().await;
 
         if path_stats.len() >= self.config.max_paths {
-            return Err(format!("Maximum number of paths ({}) reached", self.config.max_paths));
+            return Err(format!(
+                "Maximum number of paths ({}) reached",
+                self.config.max_paths
+            ));
         }
 
         if path_stats.contains_key(&path_id) {
@@ -209,7 +222,7 @@ impl MultipathManager {
         // Create new path statistics
         let stats = PathStats::new(path_id);
         let hop_count = stats.hop_count;
-        
+
         path_stats.insert(path_id, stats);
         reordering_buffers.insert(path_id, ReorderingBuffer::new(path_id));
 
@@ -220,10 +233,19 @@ impl MultipathManager {
         }
 
         // Emit event
-    let _ = self.event_tx.send(MultipathEvent::PathActivated { path_id, hop_count });
-    #[cfg(feature = "telemetry")] { inc_mp_path_activated(); }
+        let _ = self
+            .event_tx
+            .send(MultipathEvent::PathActivated { path_id, hop_count });
+        #[cfg(feature = "telemetry")]
+        {
+            inc_mp_path_activated();
+        }
 
-        info!(path_id = path_id, hop_count = hop_count, "Added new multipath");
+        info!(
+            path_id = path_id,
+            hop_count = hop_count,
+            "Added new multipath"
+        );
 
         Ok(())
     }
@@ -247,8 +269,14 @@ impl MultipathManager {
         }
 
         // Emit event
-    let _ = self.event_tx.send(MultipathEvent::PathDeactivated { path_id, reason: reason.clone() });
-    #[cfg(feature = "telemetry")] { inc_mp_path_deactivated(); }
+        let _ = self.event_tx.send(MultipathEvent::PathDeactivated {
+            path_id,
+            reason: reason.clone(),
+        });
+        #[cfg(feature = "telemetry")]
+        {
+            inc_mp_path_deactivated();
+        }
 
         info!(path_id = path_id, reason = reason, "Removed multipath");
 
@@ -266,11 +294,15 @@ impl MultipathManager {
         let path_id = {
             let mut scheduler = self.scheduler.lock().unwrap();
             scheduler.select_path()
-        }.ok_or("No active paths available for multipath routing")?;
+        }
+        .ok_or("No active paths available for multipath routing")?;
 
         // Validate selected PathID is in user range
         if !is_valid_user_path_id(path_id) {
-            return Err(format!("Selected PathID {} is not in valid user range", path_id));
+            return Err(format!(
+                "Selected PathID {} is not in valid user range",
+                path_id
+            ));
         }
 
         // Get next sequence number
@@ -284,7 +316,8 @@ impl MultipathManager {
         // Get hop count for selected path (dynamic 3-7 hops per v1.0 spec)
         let hop_count = {
             let path_stats = self.path_stats.read().await;
-            path_stats.get(&path_id)
+            path_stats
+                .get(&path_id)
                 .map(|stats| stats.hop_count)
                 .unwrap_or(5) // Default to middle value for anonymity/latency balance
         };
@@ -301,7 +334,10 @@ impl MultipathManager {
         {
             let mut stats = self.total_stats.lock().unwrap();
             stats.total_packets_sent += 1;
-            #[cfg(feature = "telemetry")] { inc_mp_packets_sent(); }
+            #[cfg(feature = "telemetry")]
+            {
+                inc_mp_packets_sent();
+            }
         }
 
         // Update per-path statistics
@@ -324,14 +360,23 @@ impl MultipathManager {
     }
 
     /// Process received packet with PathID header validation and reordering
-    pub async fn receive_packet(&self, packet: MultipathPacket) -> Result<Vec<MultipathPacket>, String> {
+    pub async fn receive_packet(
+        &self,
+        packet: MultipathPacket,
+    ) -> Result<Vec<MultipathPacket>, String> {
         let path_id = packet.path_id;
 
         // Validate PathID is in acceptable range
         if path_id == CONTROL_PATH_ID {
-            debug!(path_id = path_id, "Received control path packet, processing normally");
+            debug!(
+                path_id = path_id,
+                "Received control path packet, processing normally"
+            );
         } else if !is_valid_user_path_id(path_id) {
-            warn!(path_id = path_id, "Received packet with invalid PathID, dropping");
+            warn!(
+                path_id = path_id,
+                "Received packet with invalid PathID, dropping"
+            );
             return Err(format!("Invalid PathID {} in received packet", path_id));
         }
 
@@ -371,7 +416,10 @@ impl MultipathManager {
 
                 let mut stats = self.total_stats.lock().unwrap();
                 stats.total_packets_reordered += 1;
-                #[cfg(feature = "telemetry")] { inc_mp_packets_reordered(); }
+                #[cfg(feature = "telemetry")]
+                {
+                    inc_mp_packets_reordered();
+                }
             }
 
             result_packets.push(multipath_packet);
@@ -381,7 +429,10 @@ impl MultipathManager {
         {
             let mut stats = self.total_stats.lock().unwrap();
             stats.total_packets_received += 1;
-            #[cfg(feature = "telemetry")] { inc_mp_packets_received(); }
+            #[cfg(feature = "telemetry")]
+            {
+                inc_mp_packets_received();
+            }
         }
 
         trace!(
@@ -397,19 +448,19 @@ impl MultipathManager {
     /// Update statistics for a specific path
     pub async fn update_path_stats(&self, path_id: PathId, stats: PathStats) -> Result<(), String> {
         let mut path_stats = self.path_stats.write().await;
-        
+
         if !path_stats.contains_key(&path_id) {
             return Err(format!("Path {} not found", path_id));
         }
-        
+
         path_stats.insert(path_id, stats);
-        
+
         // Update scheduler with new statistics
         {
             let mut scheduler = self.scheduler.lock().unwrap();
             update_scheduler_with_paths(&mut scheduler, &path_stats);
         }
-        
+
         debug!(path_id = path_id, "Updated path statistics");
         Ok(())
     }
@@ -418,40 +469,45 @@ impl MultipathManager {
     pub async fn schedule_packet(&self, mut packet: MultipathPacket) -> Result<PathId, String> {
         let path_id = {
             let mut scheduler = self.scheduler.lock().unwrap();
-            scheduler.select_path().ok_or("No available paths for packet scheduling")?
+            scheduler
+                .select_path()
+                .ok_or("No available paths for packet scheduling")?
         };
-        
+
         packet.path_id = path_id;
-        
+
         // Update send statistics
         {
             let mut stats = self.total_stats.lock().unwrap();
             stats.total_packets_sent += 1;
         }
-        
+
         trace!(
             path_id = path_id,
             sequence = packet.sequence,
             "Scheduled packet for transmission"
         );
-        
+
         Ok(path_id)
     }
 
     /// Update RTT measurement for a path
     pub async fn update_path_rtt(&self, path_id: PathId, rtt: Duration) -> Result<(), String> {
         let mut path_stats = self.path_stats.write().await;
-        
+
         let stats = path_stats
             .get_mut(&path_id)
             .ok_or_else(|| format!("Path {} not found", path_id))?;
 
-    let prev_var = stats.rtt_var;
-    stats.update_rtt(rtt);
-    #[cfg(feature = "telemetry")] {
-        observe_mp_path_rtt(rtt.as_secs_f64());
-        if stats.rtt_var != prev_var { observe_mp_path_jitter(stats.rtt_var.as_secs_f64()); }
-    }
+        let prev_var = stats.rtt_var;
+        stats.update_rtt(rtt);
+        #[cfg(feature = "telemetry")]
+        {
+            observe_mp_path_rtt(rtt.as_secs_f64());
+            if stats.rtt_var != prev_var {
+                observe_mp_path_jitter(stats.rtt_var.as_secs_f64());
+            }
+        }
 
         let stats_clone = stats.clone();
 
@@ -486,8 +542,11 @@ impl MultipathManager {
         }
 
         let mut stats = self.total_stats.lock().unwrap();
-    stats.active_paths = path_stats.len();
-    #[cfg(feature = "telemetry")] { set_mp_active_paths(stats.active_paths as i64); }
+        stats.active_paths = path_stats.len();
+        #[cfg(feature = "telemetry")]
+        {
+            set_mp_active_paths(stats.active_paths as i64);
+        }
         stats.scheduler_stats = scheduler_stats;
         stats.path_stats = path_stats.clone();
         stats.reordering_buffer_sizes = buffer_sizes;
@@ -512,7 +571,7 @@ impl MultipathManager {
 
         tokio::spawn(async move {
             let mut interval = interval(interval_duration);
-            
+
             loop {
                 interval.tick().await;
 
@@ -553,7 +612,7 @@ impl MultipathManager {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(100));
-            
+
             loop {
                 interval.tick().await;
 
@@ -568,15 +627,18 @@ impl MultipathManager {
                     };
 
                     let expired = buffer.expire_packets(timeout);
-                    
+
                     if !expired.is_empty() {
                         // Update statistics
                         {
                             let mut total = total_stats.lock().unwrap();
                             total.total_packets_expired += expired.len() as u64;
                         }
-                        #[cfg(feature = "telemetry")] {
-                            for _ in 0..expired.len() { inc_mp_packets_expired(); }
+                        #[cfg(feature = "telemetry")]
+                        {
+                            for _ in 0..expired.len() {
+                                inc_mp_packets_expired();
+                            }
                         }
 
                         // Emit events for expired packets
@@ -607,8 +669,19 @@ impl MultipathManager {
                     let optimal_hops = path_stat.calculate_optimal_hops();
                     if old_hops != optimal_hops {
                         path_stat.hop_count = optimal_hops;
-                        let _ = event_tx.send(MultipathEvent::HopCountAdjusted { path_id: *path_id, old_hops, new_hops: optimal_hops });
-                        debug!(path_id = *path_id, old_hops = old_hops, new_hops = optimal_hops, rtt_ms = path_stat.rtt.as_millis(), loss_rate = path_stat.loss_rate, "Adjusted hop count");
+                        let _ = event_tx.send(MultipathEvent::HopCountAdjusted {
+                            path_id: *path_id,
+                            old_hops,
+                            new_hops: optimal_hops,
+                        });
+                        debug!(
+                            path_id = *path_id,
+                            old_hops = old_hops,
+                            new_hops = optimal_hops,
+                            rtt_ms = path_stat.rtt.as_millis(),
+                            loss_rate = path_stat.loss_rate,
+                            "Adjusted hop count"
+                        );
                     }
                 }
             }
@@ -618,7 +691,7 @@ impl MultipathManager {
     async fn start_stats_update_task(&self) {
         let scheduler = Arc::clone(&self.scheduler);
         let path_stats = Arc::clone(&self.path_stats);
-        let last_totals = Arc::new(Mutex::new((0u64, HashMap::<PathId,u64>::new())));
+        let last_totals = Arc::new(Mutex::new((0u64, HashMap::<PathId, u64>::new())));
         let last_totals_clone = last_totals.clone();
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(1));
@@ -627,7 +700,7 @@ impl MultipathManager {
                 let stats = path_stats.read().await;
                 let mut scheduler = scheduler.lock().unwrap();
                 update_scheduler_with_paths(&mut scheduler, &stats);
-                #[cfg(feature="telemetry")]
+                #[cfg(feature = "telemetry")]
                 {
                     let mut lt = last_totals_clone.lock().unwrap();
                     let infos = scheduler.path_info();
@@ -639,7 +712,11 @@ impl MultipathManager {
                         for info in &infos {
                             if info.weight > 0 {
                                 let expected_ratio = info.weight as f64 / total_weight as f64;
-                                let observed_ratio = if total_selections > 0 { info.selection_count as f64 / total_selections as f64 } else { 0.0 };
+                                let observed_ratio = if total_selections > 0 {
+                                    info.selection_count as f64 / total_selections as f64
+                                } else {
+                                    0.0
+                                };
                                 abs_dev_sum += (observed_ratio - expected_ratio).abs();
                             }
                         }
@@ -652,26 +729,26 @@ impl MultipathManager {
             }
         });
     }
-    
+
     /// Extract PathID from parsed packet header according to v1.0 specification
-    /// 
+    ///
     /// This utility function processes incoming packets and extracts the PathID
     /// from the packet header when multipath flags are set, enabling proper
     /// path identification for reordering and statistics tracking.
     pub fn extract_path_id_from_header(&self, header: &ParsedHeader) -> Option<PathId> {
         // Check for multipath indicators in header flags
-        let has_multipath = (header.hdr.flags & FLAG_MULTIPATH_ENABLED != 0) || 
-                           (header.hdr.flags & FLAG_HAS_PATH_ID != 0);
-        
+        let has_multipath = (header.hdr.flags & FLAG_MULTIPATH_ENABLED != 0)
+            || (header.hdr.flags & FLAG_HAS_PATH_ID != 0);
+
         if has_multipath {
             header.path_id
         } else {
             None
         }
     }
-    
+
     /// Validate PathID according to v1.0 specification and current configuration
-    /// 
+    ///
     /// Ensures that the PathID is within acceptable ranges and that the path
     /// is currently active in the multipath manager's routing table.
     pub async fn validate_path_id(&self, path_id: PathId) -> Result<bool, String> {
@@ -679,61 +756,75 @@ impl MultipathManager {
         if path_id == CONTROL_PATH_ID {
             return Ok(true);
         }
-        
+
         // Validate user range (1-239)
         if !is_valid_user_path_id(path_id) {
-            return Err(format!("PathID {} is outside valid user range (1-239)", path_id));
+            return Err(format!(
+                "PathID {} is outside valid user range (1-239)",
+                path_id
+            ));
         }
-        
+
         // Check if path is currently active
         let path_stats = self.path_stats.read().await;
         match path_stats.get(&path_id) {
             Some(stats) if stats.active => Ok(true),
-            Some(_) => Err(format!("PathID {} exists but is currently inactive", path_id)),
-            None => Err(format!("PathID {} is not configured in multipath manager", path_id)),
+            Some(_) => Err(format!(
+                "PathID {} exists but is currently inactive",
+                path_id
+            )),
+            None => Err(format!(
+                "PathID {} is not configured in multipath manager",
+                path_id
+            )),
         }
     }
-    
+
     /// Get the optimal PathID for next packet transmission based on current conditions
-    /// 
+    ///
     /// Uses weighted round-robin scheduling with weights calculated as inverse RTT,
     /// implementing the v1.0 specification's multipath data plane requirements.
     pub async fn get_optimal_path_id(&self) -> Result<PathId, String> {
         if !self.config.enabled {
             return Err("Multipath data plane is disabled".to_string());
         }
-        
+
         let mut scheduler = self.scheduler.lock().unwrap();
-        scheduler.select_path().ok_or_else(|| {
-            "No active paths available for optimal routing".to_string()
-        })
+        scheduler
+            .select_path()
+            .ok_or_else(|| "No active paths available for optimal routing".to_string())
     }
-    
+
     /// Update path statistics based on packet reception and RTT measurements
-    /// 
+    ///
     /// This function updates the path statistics used for weighted round-robin
     /// scheduling, including RTT, loss rate, and congestion window adjustments.
-    pub async fn update_path_statistics(&self, path_id: PathId, rtt: Duration, success: bool) -> Result<(), String> {
+    pub async fn update_path_statistics(
+        &self,
+        path_id: PathId,
+        rtt: Duration,
+        success: bool,
+    ) -> Result<(), String> {
         let mut path_stats = self.path_stats.write().await;
-        
+
         if let Some(stats) = path_stats.get_mut(&path_id) {
             // Update RTT using exponential moving average
             stats.update_rtt(rtt);
-            
+
             // Update loss rate based on packet success/failure
             if success {
                 stats.packets_acked += 1;
             }
-            
+
             // Recalculate weight for scheduler (inverse RTT)
             stats.weight = if stats.rtt.as_millis() > 0 {
                 (1000.0 / stats.rtt.as_millis() as f64) as u32
             } else {
                 1000 // High weight for very low latency paths
             };
-            
+
             stats.last_update = Instant::now();
-            
+
             debug!(
                 path_id = path_id,
                 rtt_ms = rtt.as_millis(),
@@ -741,13 +832,13 @@ impl MultipathManager {
                 success = success,
                 "Updated path statistics for multipath scheduling"
             );
-            
+
             // Emit event for statistics update
-            let _ = self.event_tx.send(MultipathEvent::PathStatsUpdated { 
-                path_id, 
-                stats: stats.clone() 
+            let _ = self.event_tx.send(MultipathEvent::PathStatsUpdated {
+                path_id,
+                stats: stats.clone(),
             });
-            
+
             Ok(())
         } else {
             Err(format!("PathID {} not found in statistics", path_id))
@@ -758,13 +849,12 @@ impl MultipathManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[tokio::test]
     async fn test_multipath_manager_creation() {
         let config = MultipathConfig::default();
         let manager = MultipathManager::new_test(config);
-        
+
         let stats = manager.get_stats().await;
         assert_eq!(stats.active_paths, 0);
     }
@@ -780,7 +870,10 @@ mod tests {
         assert_eq!(stats.active_paths, 1);
 
         // Remove path
-        manager.remove_path(1, "Test removal".to_string()).await.expect("Failed to remove path");
+        manager
+            .remove_path(1, "Test removal".to_string())
+            .await
+            .expect("Failed to remove path");
         let stats = manager.get_stats().await;
         assert_eq!(stats.active_paths, 0);
     }
@@ -795,12 +888,18 @@ mod tests {
 
         // Send packet
         let data = vec![1, 2, 3, 4, 5];
-        let sent_packet = manager.send_packet(data.clone()).await.expect("Failed to send packet");
+        let sent_packet = manager
+            .send_packet(data.clone())
+            .await
+            .expect("Failed to send packet");
         assert_eq!(sent_packet.path_id, 1);
         assert_eq!(sent_packet.data, data);
 
         // Receive packet (same packet for testing)
-        let received_packets = manager.receive_packet(sent_packet).await.expect("Failed to receive packet");
+        let received_packets = manager
+            .receive_packet(sent_packet)
+            .await
+            .expect("Failed to receive packet");
         assert_eq!(received_packets.len(), 1);
         assert_eq!(received_packets[0].data, data);
     }
@@ -818,37 +917,61 @@ mod tests {
         manager.add_path(11).await.expect("add path 11");
 
         // Prime stats: path 10 fast (low RTT), path 11 slow
-        manager.update_path_statistics(10, Duration::from_millis(10), true).await.unwrap();
-        manager.update_path_statistics(11, Duration::from_millis(60), true).await.unwrap();
+        manager
+            .update_path_statistics(10, Duration::from_millis(10), true)
+            .await
+            .unwrap();
+        manager
+            .update_path_statistics(11, Duration::from_millis(60), true)
+            .await
+            .unwrap();
 
         // Allow scheduler task a moment to rebuild internal state
         tokio::time::sleep(Duration::from_millis(150)).await;
-    let first = manager.get_optimal_path_id().await.expect("select path");
-    // Determine which path actually has higher weight (inverse RTT) after scheduler build.
-    // Either 10 should be chosen; if not, swap semantics for remainder to keep test deterministic.
-    let expected_fast = if first == 10 { 10 } else { 11 };
-    let other = if expected_fast == 10 { 11 } else { 10 };
-    // If the scheduler picked the slow path (race), treat that as baseline fast for subsequent assertions.
-    // This keeps test robust against ordering races; still validates failover/failback mechanics.
+        let first = manager.get_optimal_path_id().await.expect("select path");
+        // Determine which path actually has higher weight (inverse RTT) after scheduler build.
+        // Either 10 should be chosen; if not, swap semantics for remainder to keep test deterministic.
+        let expected_fast = if first == 10 { 10 } else { 11 };
+        let other = if expected_fast == 10 { 11 } else { 10 };
+        // If the scheduler picked the slow path (race), treat that as baseline fast for subsequent assertions.
+        // This keeps test robust against ordering races; still validates failover/failback mechanics.
 
         // Simulate failover: remove (deactivate) fast path 10
-    manager.remove_path(expected_fast, "simulate failure".into()).await.unwrap();
+        manager
+            .remove_path(expected_fast, "simulate failure".into())
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let after_fail = manager.get_optimal_path_id().await.expect("select after fail");
-    assert_eq!(after_fail, other, "expected failover to remaining path");
+        let after_fail = manager
+            .get_optimal_path_id()
+            .await
+            .expect("select after fail");
+        assert_eq!(after_fail, other, "expected failover to remaining path");
 
         // Re-add path 10 with restored good RTT (failback)
-    manager.add_path(expected_fast).await.unwrap();
-    manager.update_path_statistics(expected_fast, Duration::from_millis(8), true).await.unwrap();
+        manager.add_path(expected_fast).await.unwrap();
+        manager
+            .update_path_statistics(expected_fast, Duration::from_millis(8), true)
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(150)).await;
         // Poll multiple selections to allow scheduler cycle to include re-added fast path
         let mut appeared_fast = false;
         for _ in 0..200 {
-            let sel = manager.get_optimal_path_id().await.expect("select after readd");
-            if sel == expected_fast { appeared_fast = true; break; }
+            let sel = manager
+                .get_optimal_path_id()
+                .await
+                .expect("select after readd");
+            if sel == expected_fast {
+                appeared_fast = true;
+                break;
+            }
             // yield small delay to let background update task run
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
-        assert!(appeared_fast, "restored fast path never scheduled after reactivation");
+        assert!(
+            appeared_fast,
+            "restored fast path never scheduled after reactivation"
+        );
     }
 }

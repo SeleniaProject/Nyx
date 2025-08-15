@@ -19,4 +19,4 @@ fn rs_fec_reconstruct_two_losses() {
 
     codec.reconstruct(&mut mut_refs, &mut present).unwrap();
     assert!(present.iter().all(|&b| b));
-} 
+}

@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
 //! Integration tests for PathID header functionality in multipath data plane
-//! 
+//!
 //! These tests validate the complete PathID implementation according to the
 //! Nyx Protocol v1.0 specification, including header parsing, building,
 //! validation, and multipath manager integration.
 
-use nyx_stream::frame::{FrameHeader, ParsedHeader, FLAG_HAS_PATH_ID, FLAG_MULTIPATH_ENABLED};
+use nyx_core::types::{is_valid_user_path_id, PathId, CONTROL_PATH_ID};
 use nyx_stream::builder::build_header_ext;
-use nyx_stream::{parse_header_ext};
-use nyx_stream::multipath::{MultipathManager, MultipathConfig};
-use nyx_core::types::{PathId, is_valid_user_path_id, CONTROL_PATH_ID};
+use nyx_stream::frame::{FrameHeader, FLAG_HAS_PATH_ID, FLAG_MULTIPATH_ENABLED};
+use nyx_stream::multipath::{MultipathConfig, MultipathManager};
+use nyx_stream::parse_header_ext;
 use std::time::Duration;
 
 #[test]
@@ -43,7 +43,7 @@ fn test_pathid_header_round_trip() {
 #[test]
 fn test_pathid_validation_ranges() {
     // Test PathID validation according to v1.0 specification
-    
+
     // Control path (PathID 0) should be valid
     assert_eq!(CONTROL_PATH_ID, 0);
 
@@ -109,7 +109,7 @@ fn test_multipath_manager_pathid_integration_minimal() {
 #[test]
 fn test_pathid_edge_cases() {
     // Test edge cases for PathID handling
-    
+
     // Test maximum valid user PathID
     let max_user_path_id = 239u8;
     let header = FrameHeader {
@@ -127,9 +127,9 @@ fn test_pathid_edge_cases() {
     assert!(!is_valid_user_path_id(min_system_path_id));
 
     // Test PathID boundary conditions
-    assert!(is_valid_user_path_id(1));   // Minimum user PathID
+    assert!(is_valid_user_path_id(1)); // Minimum user PathID
     assert!(is_valid_user_path_id(239)); // Maximum user PathID
-    assert!(!is_valid_user_path_id(0));  // Control path (not user)
+    assert!(!is_valid_user_path_id(0)); // Control path (not user)
     assert!(!is_valid_user_path_id(240)); // System range
 }
 

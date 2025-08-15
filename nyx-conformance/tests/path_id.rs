@@ -1,4 +1,4 @@
-use nyx_stream::{FLAG_HAS_PATH_ID, parse_header_ext};
+use nyx_stream::{parse_header_ext, FLAG_HAS_PATH_ID};
 
 #[test]
 fn header_with_path_id_parses_correctly() {
@@ -16,4 +16,4 @@ fn header_without_path_id_flag() {
     let bytes = [0x55u8, 0x00u8, 0x64u8, 0x00u8];
     let (_, parsed) = parse_header_ext(&bytes).expect("parse");
     assert!(parsed.path_id.is_none());
-} 
+}

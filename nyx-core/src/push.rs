@@ -10,15 +10,18 @@
 //! - Retry and error handling
 //! - Delivery confirmation and retry mechanisms
 
+use anyhow::Result;
 #[cfg(feature = "push")]
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}, RwLock};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, RwLock,
+};
 use std::time::{Duration, SystemTime};
-use anyhow::Result;
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::{info, error};
+use tracing::{error, info};
 
 // Type aliases for this module
 pub type PeerId = [u8; 32];
@@ -124,7 +127,7 @@ pub struct WakeUpSequence {
 #[derive(Debug)]
 pub enum GatewayClients {
     #[cfg(feature = "push")]
-    Fcm { 
+    Fcm {
         server_key: String,
     },
     #[cfg(feature = "push")]
@@ -195,18 +198,22 @@ impl Clone for GatewayManager {
             config: self.config.clone(),
             clients: match &self.clients {
                 #[cfg(feature = "push")]
-                GatewayClients::Fcm { server_key } => GatewayClients::Fcm { 
-                    server_key: server_key.clone()
+                GatewayClients::Fcm { server_key } => GatewayClients::Fcm {
+                    server_key: server_key.clone(),
                 },
                 #[cfg(feature = "push")]
-                GatewayClients::Apns { team_id, key_id, private_key, bundle_id, is_sandbox } => {
-                    GatewayClients::Apns {
-                        team_id: team_id.clone(),
-                        key_id: key_id.clone(),
-                        private_key: private_key.clone(),
-                        bundle_id: bundle_id.clone(),
-                        is_sandbox: *is_sandbox,
-                    }
+                GatewayClients::Apns {
+                    team_id,
+                    key_id,
+                    private_key,
+                    bundle_id,
+                    is_sandbox,
+                } => GatewayClients::Apns {
+                    team_id: team_id.clone(),
+                    key_id: key_id.clone(),
+                    private_key: private_key.clone(),
+                    bundle_id: bundle_id.clone(),
+                    is_sandbox: *is_sandbox,
                 },
                 GatewayClients::Mock => GatewayClients::Mock,
             },
@@ -230,21 +237,25 @@ impl GatewayManager {
         let (notification_tx, _notification_rx) = mpsc::channel(1000);
         let (control_tx, control_rx) = mpsc::channel(100);
         let (_state_tx, state_rx) = broadcast::channel(100);
-        
+
         let clients = match &config.provider {
             #[cfg(feature = "push")]
-            PushProvider::FirebaseCloudMessaging { server_key, .. } => {
-                GatewayClients::Fcm { server_key: server_key.clone() }
+            PushProvider::FirebaseCloudMessaging { server_key, .. } => GatewayClients::Fcm {
+                server_key: server_key.clone(),
             },
             #[cfg(feature = "push")]
-            PushProvider::Apple { team_id, key_id, private_key, bundle_id, is_sandbox } => {
-                GatewayClients::Apns {
-                    team_id: team_id.clone(),
-                    key_id: key_id.clone(),
-                    private_key: private_key.clone(),
-                    bundle_id: bundle_id.clone(),
-                    is_sandbox: *is_sandbox,
-                }
+            PushProvider::Apple {
+                team_id,
+                key_id,
+                private_key,
+                bundle_id,
+                is_sandbox,
+            } => GatewayClients::Apns {
+                team_id: team_id.clone(),
+                key_id: key_id.clone(),
+                private_key: private_key.clone(),
+                bundle_id: bundle_id.clone(),
+                is_sandbox: *is_sandbox,
             },
             PushProvider::Mock => GatewayClients::Mock,
         };
@@ -272,7 +283,10 @@ impl GatewayManager {
     }
 
     pub async fn register_device(&self, device_id: String, token: DeviceToken) -> Result<()> {
-        self.device_registry.write().unwrap().insert(device_id, token);
+        self.device_registry
+            .write()
+            .unwrap()
+            .insert(device_id, token);
         info!("Device registered for push notifications");
         Ok(())
     }
@@ -289,7 +303,7 @@ impl GatewayManager {
                     error: None,
                     retry_after: None,
                 })
-            },
+            }
             #[cfg(feature = "push")]
             GatewayClients::Apns { .. } => {
                 // APNS implementation would go here
@@ -300,7 +314,7 @@ impl GatewayManager {
                     error: None,
                     retry_after: None,
                 })
-            },
+            }
             GatewayClients::Mock => {
                 // Mock implementation for testing
                 self.metrics.messages_sent.fetch_add(1, Ordering::Relaxed);
@@ -310,31 +324,38 @@ impl GatewayManager {
                     error: None,
                     retry_after: None,
                 })
-            },
+            }
         }
     }
 
     pub async fn start_wake_up_sequence(&self, sequence: WakeUpSequence) -> anyhow::Result<()> {
         let seq_id = sequence.id;
-        self.active_sequences.write().unwrap().insert(seq_id, sequence);
-        self.metrics.wake_ups_initiated.fetch_add(1, Ordering::Relaxed);
+        self.active_sequences
+            .write()
+            .unwrap()
+            .insert(seq_id, sequence);
+        self.metrics
+            .wake_ups_initiated
+            .fetch_add(1, Ordering::Relaxed);
         info!("Started wake-up sequence {}", seq_id);
         Ok(())
     }
 
     pub async fn execute_wake_up_sequence(&self, sequence_id: u64) -> Result<()> {
         info!("Executing wake-up sequence {}", sequence_id);
-        
+
         // Implementation would orchestrate the actual wake-up process
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
-        self.metrics.wake_ups_completed.fetch_add(1, Ordering::Relaxed);
+
+        self.metrics
+            .wake_ups_completed
+            .fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
     pub async fn initiate_wake_up(&self, peer_id: PeerId, priority: WakeUpPriority) -> Result<u64> {
         let sequence_id = self.sequence_id.fetch_add(1, Ordering::SeqCst);
-        
+
         let sequence = WakeUpSequence {
             id: sequence_id,
             peer_id,
@@ -362,11 +383,11 @@ impl GatewayManager {
     pub async fn stop(&self) -> Result<()> {
         info!("Stopping push notification gateway");
         *self.state.write().unwrap() = GatewayState::Idle;
-        
+
         if let Some(handle) = self.control_handle.write().unwrap().take() {
             handle.abort();
         }
-        
+
         Ok(())
     }
 
@@ -374,8 +395,12 @@ impl GatewayManager {
         GatewayMetrics {
             messages_sent: AtomicU64::new(self.metrics.messages_sent.load(Ordering::Relaxed)),
             messages_failed: AtomicU64::new(self.metrics.messages_failed.load(Ordering::Relaxed)),
-            wake_ups_initiated: AtomicU64::new(self.metrics.wake_ups_initiated.load(Ordering::Relaxed)),
-            wake_ups_completed: AtomicU64::new(self.metrics.wake_ups_completed.load(Ordering::Relaxed)),
+            wake_ups_initiated: AtomicU64::new(
+                self.metrics.wake_ups_initiated.load(Ordering::Relaxed),
+            ),
+            wake_ups_completed: AtomicU64::new(
+                self.metrics.wake_ups_completed.load(Ordering::Relaxed),
+            ),
         }
     }
 }
@@ -414,8 +439,11 @@ mod tests {
 
         let gateway = GatewayManager::new(config).await.unwrap();
         let peer_id = [0u8; 32]; // Mock peer ID
-        
-        let sequence_id = gateway.initiate_wake_up(peer_id, WakeUpPriority::Normal).await.unwrap();
+
+        let sequence_id = gateway
+            .initiate_wake_up(peer_id, WakeUpPriority::Normal)
+            .await
+            .unwrap();
         assert!(sequence_id > 0);
     }
-} 
+}

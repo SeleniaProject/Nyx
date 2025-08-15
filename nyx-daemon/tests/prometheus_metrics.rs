@@ -6,10 +6,10 @@ use std::time::Duration;
 // This test validates Prometheus exporter HTTP endpoint and presence of zero-copy metrics.
 #[tokio::test]
 async fn prometheus_exposes_metrics_and_zero_copy_labels() {
+    use nyx_core::zero_copy::manager::{ZeroCopyManager, ZeroCopyManagerConfig};
     use nyx_daemon::metrics::MetricsCollector;
     use nyx_daemon::prometheus_exporter::PrometheusExporterBuilder;
     use nyx_daemon::zero_copy_bridge::start_zero_copy_metrics_task_with_interval;
-    use nyx_core::zero_copy::manager::{ZeroCopyManager, ZeroCopyManagerConfig};
     use std::sync::Arc;
 
     let metrics = Arc::new(MetricsCollector::new());
@@ -53,19 +53,17 @@ async fn prometheus_exposes_metrics_and_zero_copy_labels() {
     assert!(body.contains("nyx_requests_total") || body.contains("nyx_uptime_seconds"));
     // Zero-copy bridge metrics (any of the following should appear)
     assert!(
-        body.contains("nyx_zero_copy_combined_allocations") ||
-        body.contains("nyx_zero_copy_combined_bytes") ||
-        body.contains("nyx_zero_copy_total_paths"),
+        body.contains("nyx_zero_copy_combined_allocations")
+            || body.contains("nyx_zero_copy_combined_bytes")
+            || body.contains("nyx_zero_copy_total_paths"),
         "zero-copy metrics should be present"
     );
 
     // Process resource gauges presence (best-effort; at least one)
     assert!(
-        body.contains("nyx_memory_bytes") ||
-        body.contains("nyx_open_fds") ||
-        body.contains("nyx_threads"),
+        body.contains("nyx_memory_bytes")
+            || body.contains("nyx_open_fds")
+            || body.contains("nyx_threads"),
         "process resource gauges should be present"
     );
 }
-
-

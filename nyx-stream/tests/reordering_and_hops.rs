@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use nyx_stream::multipath::{ReorderingBuffer, BufferedPacket, PathStats, MIN_HOPS, MAX_HOPS};
+use nyx_stream::multipath::{BufferedPacket, PathStats, ReorderingBuffer, MAX_HOPS, MIN_HOPS};
 use std::time::{Duration, Instant};
 
 fn mk_packet(path_id: u8, seq: u64, age_ms: u64) -> BufferedPacket {
@@ -38,7 +38,7 @@ fn reordering_expire_packets_by_timeout() {
 
     // Two future packets buffered, one old enough to expire
     buf.insert_packet(mk_packet(2, 12, 250)); // older
-    buf.insert_packet(mk_packet(2, 11, 50));  // newer
+    buf.insert_packet(mk_packet(2, 11, 50)); // newer
 
     // Expire with 200ms timeout -> only the first should expire
     let expired = buf.expire_packets(Duration::from_millis(200));

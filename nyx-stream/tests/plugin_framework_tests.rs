@@ -10,22 +10,13 @@
 //! - IPC transport configuration and data flow
 //! - Error handling and edge cases
 
-use std::collections::HashMap;
-use tokio::sync::mpsc;
-
 #[cfg(feature = "plugin")]
 use nyx_stream::{
-    PluginHeader, PluginFrameProcessor, PluginFrameResult, PluginFrameError,
-    ParsedPluginFrame, build_plugin_frame, validate_plugin_frame_type,
-    PluginHandshakeCoordinator, HandshakeResult, PluginHandshakeError,
-    PluginRegistry, PluginInfo, Permission,
-    Setting, SettingsFrame,
-    PLUGIN_FRAME_TYPE_MIN, PLUGIN_FRAME_TYPE_MAX,
+    build_plugin_frame, validate_plugin_frame_type, HandshakeResult, ParsedPluginFrame, Permission,
+    PluginFrameError, PluginFrameProcessor, PluginFrameResult, PluginHandshakeCoordinator,
+    PluginHandshakeError, PluginHeader, PluginInfo, PluginRegistry, Setting, SettingsFrame,
+    PLUGIN_FRAME_TYPE_MAX, PLUGIN_FRAME_TYPE_MIN,
 };
-use nyx_stream::management::{plugin_support_flags, plugin_security_flags};
-use nyx_stream::management::setting_ids::{PLUGIN_SUPPORT, PLUGIN_REQUIRED, PLUGIN_OPTIONAL, PLUGIN_SECURITY_POLICY};
-
-use nyx_stream::{FrameHeader, build_header_ext};
 
 /// @spec 1. Protocol Combinator (Plugin Framework)
 /// @spec 8. Capability Negotiation (handshake frame types)
@@ -65,7 +56,7 @@ async fn test_plugin_frame_type_validation() {
 /// @spec 1. Protocol Combinator (Plugin Framework)
 /// @spec 8. Capability Negotiation (header encoding schema)
 #[cfg(feature = "plugin")]
-#[tokio::test] 
+#[tokio::test]
 async fn test_plugin_header_cbor_encoding() {
     let test_cases = vec![
         // Basic header with minimal data
@@ -91,12 +82,15 @@ async fn test_plugin_header_cbor_encoding() {
     for header in test_cases {
         // Test encoding
         let encoded = header.encode();
-        assert!(!encoded.as_ref().expect("encode").is_empty(), "Encoded CBOR should not be empty");
+        assert!(
+            !encoded.as_ref().expect("encode").is_empty(),
+            "Encoded CBOR should not be empty"
+        );
 
         // Test decoding
-        let decoded = PluginHeader::decode(encoded.as_ref().unwrap())
-            .expect("Should decode successfully");
-        
+        let decoded =
+            PluginHeader::decode(encoded.as_ref().unwrap()).expect("Should decode successfully");
+
         assert_eq!(decoded.id, header.id, "Plugin ID should match");
         assert_eq!(decoded.flags, header.flags, "Flags should match");
         assert_eq!(decoded.data, header.data, "Data should match");
@@ -123,21 +117,19 @@ async fn test_plugin_frame_building_and_parsing() {
     let path_id = Some(7u8);
 
     // Build complete plugin frame
-    let frame_bytes = build_plugin_frame(
-        frame_type,
-        frame_flags,
-        path_id,
-        &plugin_header,
-        payload,
-    ).expect("Frame building should succeed");
+    let frame_bytes = build_plugin_frame(frame_type, frame_flags, path_id, &plugin_header, payload)
+        .expect("Frame building should succeed");
 
     assert!(!frame_bytes.is_empty(), "Frame should not be empty");
 
     // Parse the frame back
     let registry = PluginRegistry::new();
-    let dispatcher = nyx_stream::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(tokio::sync::Mutex::new(registry.clone())));
+    let dispatcher = nyx_stream::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(
+        tokio::sync::Mutex::new(registry.clone()),
+    ));
     let processor = PluginFrameProcessor::new(registry, dispatcher);
-    let parsed_frame = processor.parse_plugin_frame(&frame_bytes)
+    let parsed_frame = processor
+        .parse_plugin_frame(&frame_bytes)
         .expect("Frame parsing should succeed");
 
     // Validate parsed frame structure
@@ -170,7 +162,7 @@ async fn test_plugin_frame_size_limits() {
     let oversized_payload = vec![0x42; nyx_stream::plugin_frame::MAX_PLUGIN_PAYLOAD_SIZE + 1000];
     let result = build_plugin_frame(0x51, 0x00, None, &plugin_header, &oversized_payload);
     assert!(result.is_err(), "Oversized payload should be rejected");
-    
+
     match result.unwrap_err() {
         PluginFrameError::FrameTooLarge { size, max } => {
             assert!(size > max, "Reported size should exceed maximum");
@@ -183,7 +175,7 @@ async fn test_plugin_frame_size_limits() {
 #[tokio::test]
 async fn test_plugin_permission_enforcement() {
     let registry = PluginRegistry::new();
-    
+
     // Register plugin with limited permissions
     let plugin_info = PluginInfo {
         id: 3001,
@@ -193,15 +185,20 @@ async fn test_plugin_permission_enforcement() {
         permissions: vec![Permission::ReceiveFrames],
         author: "Test Suite".to_string(),
         config_schema: HashMap::new(),
-        supported_frames: vec![0x50,0x52],
+        supported_frames: vec![0x50, 0x52],
         required: false,
         signature_b64: None,
         registry_pubkey_b64: None,
     };
-    registry.register(plugin_info.clone()).await.expect("Plugin registration should succeed");
-    
+    registry
+        .register(plugin_info.clone())
+        .await
+        .expect("Plugin registration should succeed");
+
     // Create dispatcher and processor
-    let dispatcher = nyx_stream::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(tokio::sync::Mutex::new(registry.clone())));
+    let dispatcher = nyx_stream::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(
+        tokio::sync::Mutex::new(registry.clone()),
+    ));
     let mut processor = PluginFrameProcessor::new(registry, dispatcher);
 
     // Test frame with network access flag (should be denied)
@@ -214,13 +211,17 @@ async fn test_plugin_permission_enforcement() {
     let frame_bytes = build_plugin_frame(0x53, 0x00, None, &plugin_header, b"payload")
         .expect("Frame building should succeed");
 
-    let parsed_frame = processor.parse_plugin_frame(&frame_bytes)
+    let parsed_frame = processor
+        .parse_plugin_frame(&frame_bytes)
         .expect("Frame parsing should succeed");
 
     // Processing should fail due to insufficient permissions
     let result = processor.process_plugin_frame(parsed_frame).await;
-    assert!(result.is_err(), "Should reject frame due to insufficient permissions");
-    
+    assert!(
+        result.is_err(),
+        "Should reject frame due to insufficient permissions"
+    );
+
     match result.unwrap_err() {
         PluginFrameError::PermissionDenied(plugin_id) => {
             assert_eq!(plugin_id, 3001, "Should report correct plugin ID");
@@ -233,7 +234,10 @@ async fn test_plugin_permission_enforcement() {
 #[tokio::test]
 async fn test_plugin_handshake_capability_negotiation() {
     // Create coordinator with plugin requirements
-    let mut coordinator = PluginHandshakeCoordinator::new(nyx_stream::plugin_settings::PluginSettingsManager::new(), true);
+    let mut coordinator = PluginHandshakeCoordinator::new(
+        nyx_stream::plugin_settings::PluginSettingsManager::new(),
+        true,
+    );
 
     // Build our plugin settings
     let _ = coordinator.initiate_handshake().await.expect("init");
@@ -254,14 +258,20 @@ async fn test_plugin_handshake_capability_negotiation() {
         ],
     };
 
-    let peer_bytes = nyx_stream::plugin_settings::PluginSettingsManager::new().generate_settings_frame_data().unwrap();
-    let _ = coordinator.process_peer_settings(&peer_bytes).await.expect("proc");
-    let result = coordinator.complete_plugin_initialization().await
+    let peer_bytes = nyx_stream::plugin_settings::PluginSettingsManager::new()
+        .generate_settings_frame_data()
+        .unwrap();
+    let _ = coordinator
+        .process_peer_settings(&peer_bytes)
+        .await
+        .expect("proc");
+    let result = coordinator
+        .complete_plugin_initialization()
+        .await
         .expect("Handshake processing should succeed");
 
     match result {
-        HandshakeResult::Success { .. } => {
-        }
+        HandshakeResult::Success { .. } => {}
         _ => panic!("Expected successful handshake result"),
     }
 }
@@ -269,21 +279,30 @@ async fn test_plugin_handshake_capability_negotiation() {
 #[cfg(feature = "plugin")]
 #[tokio::test]
 async fn test_plugin_handshake_incompatible_requirements() {
-    let mut coordinator = PluginHandshakeCoordinator::new(nyx_stream::plugin_settings::PluginSettingsManager::new(), true);
+    let mut coordinator = PluginHandshakeCoordinator::new(
+        nyx_stream::plugin_settings::PluginSettingsManager::new(),
+        true,
+    );
 
     // Peer that doesn't support plugin frames at all
     let incompatible_peer_settings = SettingsFrame {
-        settings: vec![
-            Setting {
-                id: PLUGIN_SUPPORT,
-                value: 0, // No plugin support
-            },
-        ],
+        settings: vec![Setting {
+            id: PLUGIN_SUPPORT,
+            value: 0, // No plugin support
+        }],
     };
 
-    let peer_bytes = nyx_stream::plugin_settings::PluginSettingsManager::new().generate_settings_frame_data().unwrap();
-    let _ = coordinator.process_peer_settings(&peer_bytes).await.expect("proc");
-    let result = coordinator.complete_plugin_initialization().await.expect("complete");
+    let peer_bytes = nyx_stream::plugin_settings::PluginSettingsManager::new()
+        .generate_settings_frame_data()
+        .unwrap();
+    let _ = coordinator
+        .process_peer_settings(&peer_bytes)
+        .await
+        .expect("proc");
+    let result = coordinator
+        .complete_plugin_initialization()
+        .await
+        .expect("complete");
 
     match result {
         HandshakeResult::Success { .. } => {}
@@ -295,7 +314,9 @@ async fn test_plugin_handshake_incompatible_requirements() {
 #[tokio::test]
 async fn test_plugin_frame_processing_telemetry() {
     let registry = PluginRegistry::new();
-    let dispatcher = nyx_stream::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(tokio::sync::Mutex::new(registry.clone())));
+    let dispatcher = nyx_stream::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(
+        tokio::sync::Mutex::new(registry.clone()),
+    ));
     let mut processor = PluginFrameProcessor::new(registry, dispatcher);
 
     // Initially no stats
@@ -310,10 +331,17 @@ async fn test_plugin_frame_processing_telemetry() {
     };
 
     for i in 0..5 {
-        let frame_bytes = build_plugin_frame(0x55, 0x00, None, &plugin_header, &format!("payload_{}", i).as_bytes())
-            .expect("Frame building should succeed");
+        let frame_bytes = build_plugin_frame(
+            0x55,
+            0x00,
+            None,
+            &plugin_header,
+            &format!("payload_{}", i).as_bytes(),
+        )
+        .expect("Frame building should succeed");
 
-        let parsed_frame = processor.parse_plugin_frame(&frame_bytes)
+        let parsed_frame = processor
+            .parse_plugin_frame(&frame_bytes)
             .expect("Frame parsing should succeed");
 
         let _ = processor.process_plugin_frame(parsed_frame).await; // Ignore result
@@ -321,7 +349,11 @@ async fn test_plugin_frame_processing_telemetry() {
 
     // Check stats updated
     let stats = processor.get_stats();
-    assert_eq!(*stats.get(&9999).unwrap_or(&0), 5, "Should record 5 frames for plugin 9999");
+    assert_eq!(
+        *stats.get(&9999).unwrap_or(&0),
+        5,
+        "Should record 5 frames for plugin 9999"
+    );
 
     // Reset stats
     processor.reset_stats();
@@ -335,7 +367,11 @@ async fn test_plugin_framework_disabled() {
     // When plugin feature is disabled, confirm plugin symbols are not exported and
     // non-plugin utilities remain usable.
     use nyx_stream::{build_header, build_header_ext, FrameHeader};
-    let hdr_struct = FrameHeader { frame_type: 0x01, flags: 0x00, length: 0x10 };
+    let hdr_struct = FrameHeader {
+        frame_type: 0x01,
+        flags: 0x00,
+        length: 0x10,
+    };
     let header_bytes = build_header(hdr_struct);
     // Extended builder should append path id when provided
     let ext = build_header_ext(hdr_struct, Some(7));
@@ -347,11 +383,21 @@ async fn test_plugin_framework_disabled() {
 #[tokio::test]
 async fn test_plugin_frame_type_constants() {
     // Verify frame type constants are correct
-    assert_eq!(PLUGIN_FRAME_TYPE_MIN, 0x50, "Minimum plugin frame type should be 0x50");
-    assert_eq!(PLUGIN_FRAME_TYPE_MAX, 0x5F, "Maximum plugin frame type should be 0x5F");
-    
+    assert_eq!(
+        PLUGIN_FRAME_TYPE_MIN, 0x50,
+        "Minimum plugin frame type should be 0x50"
+    );
+    assert_eq!(
+        PLUGIN_FRAME_TYPE_MAX, 0x5F,
+        "Maximum plugin frame type should be 0x5F"
+    );
+
     // Verify range covers exactly 16 frame types
-    assert_eq!(PLUGIN_FRAME_TYPE_MAX - PLUGIN_FRAME_TYPE_MIN + 1, 16, "Should have exactly 16 plugin frame types");
+    assert_eq!(
+        PLUGIN_FRAME_TYPE_MAX - PLUGIN_FRAME_TYPE_MIN + 1,
+        16,
+        "Should have exactly 16 plugin frame types"
+    );
 }
 
 #[cfg(feature = "plugin")]
@@ -362,7 +408,7 @@ async fn test_settings_id_constants() {
     assert_eq!(PLUGIN_REQUIRED, 0x0011);
     assert_eq!(PLUGIN_OPTIONAL, 0x0012);
     assert_eq!(PLUGIN_SECURITY_POLICY, 0x0013);
-    
+
     // Verify flags are powers of 2 (valid bitmasks)
     let support_flags = [
         plugin_support_flags::BASIC_FRAMES,
@@ -371,8 +417,12 @@ async fn test_settings_id_constants() {
         plugin_support_flags::INTER_PLUGIN_IPC,
         plugin_support_flags::PLUGIN_PERSISTENCE,
     ];
-    
+
     for &flag in &support_flags {
-        assert!(flag.is_power_of_two(), "Support flag 0x{:08X} should be power of 2", flag);
+        assert!(
+            flag.is_power_of_two(),
+            "Support flag 0x{:08X} should be power of 2",
+            flag
+        );
     }
 }

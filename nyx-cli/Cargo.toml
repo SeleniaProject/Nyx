@@ -40,6 +40,7 @@ tracing = "0.1"
 rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 toml = "0.8" # for nyx.toml (CLI section) parsing
 nyx-sdk = { path = "../nyx-sdk" }
+nyx-stream = { path = "../nyx-stream" }
 
 [build-dependencies]
 # tonic-build = "0.10" # DISABLED: uses ring/openssl

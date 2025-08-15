@@ -3,7 +3,9 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-use nyx_sdk_wasm::{MultipathController, MultipathConfigWasm, PluginRegistryWasm, nyx_build_plugin_settings};
+use nyx_sdk_wasm::{
+    nyx_build_plugin_settings, MultipathConfigWasm, MultipathController, PluginRegistryWasm,
+};
 
 #[wasm_bindgen_test]
 fn multipath_select_and_history() {
@@ -35,6 +37,3 @@ fn plugin_required_settings_roundtrip() {
     let settings = nyx_build_plugin_settings(required, flags, policy).unwrap();
     assert!(settings.length() > 0);
 }
-
-
-

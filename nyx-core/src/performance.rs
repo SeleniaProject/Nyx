@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Performance optimization system for NyxNet
 pub mod performance {
@@ -135,7 +135,8 @@ pub mod performance {
                 total_allocated: self.total_allocated,
                 max_buffers: self.max_buffers,
                 buffer_size: self.buffer_size,
-                utilization: (self.total_allocated - self.available_buffers.len()) as f32 / self.total_allocated as f32,
+                utilization: (self.total_allocated - self.available_buffers.len()) as f32
+                    / self.total_allocated as f32,
             }
         }
     }
@@ -170,8 +171,10 @@ pub mod performance {
         /// Add item to batch
         pub fn add(&mut self, item: T) -> Option<Vec<T>> {
             self.batch.push(item);
-            
-            if self.batch.len() >= self.batch_size || self.last_flush.elapsed() >= self.flush_interval {
+
+            if self.batch.len() >= self.batch_size
+                || self.last_flush.elapsed() >= self.flush_interval
+            {
                 self.flush()
             } else {
                 None
@@ -250,7 +253,10 @@ pub mod performance {
             }
 
             // If we reach here, return the largest bucket
-            self.buckets.last().map(|(threshold, _)| *threshold).unwrap_or(Duration::ZERO)
+            self.buckets
+                .last()
+                .map(|(threshold, _)| *threshold)
+                .unwrap_or(Duration::ZERO)
         }
 
         /// Get average latency
@@ -295,7 +301,7 @@ pub mod performance {
         pub fn new(config: PerformanceConfig) -> Self {
             let thread_pool_semaphore = Arc::new(Semaphore::new(config.thread_pool_size));
             let buffer_pool = Arc::new(RwLock::new(BufferPool::new(8192, config.buffer_pool_size)));
-            
+
             Self {
                 config,
                 metrics: Arc::new(RwLock::new(PerformanceMetrics::default())),
@@ -311,7 +317,7 @@ pub mod performance {
             if self.config.enable_auto_tuning {
                 self.start_auto_tuning().await?;
             }
-            
+
             self.start_metrics_collection().await?;
             info!("Performance optimization system started");
             Ok(())
@@ -325,20 +331,26 @@ pub mod performance {
 
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(config_clone.optimization_interval);
-                
+
                 loop {
                     interval.tick().await;
-                    
+
                     let metrics = metrics_clone.read().await.clone();
                     let mut optimizations = Vec::new();
-                    
+
                     // Check CPU usage and adjust thread pool
                     if metrics.cpu_usage > config_clone.max_cpu_threshold {
                         optimizations.push(OptimizationEvent {
                             timestamp: Instant::now(),
                             event_type: OptimizationType::ThreadPoolResize,
-                            description: format!("Reducing thread pool due to high CPU usage: {:.1}%", metrics.cpu_usage),
-                            impact_metrics: [("cpu_reduction".to_string(), 5.0)].iter().cloned().collect(),
+                            description: format!(
+                                "Reducing thread pool due to high CPU usage: {:.1}%",
+                                metrics.cpu_usage
+                            ),
+                            impact_metrics: [("cpu_reduction".to_string(), 5.0)]
+                                .iter()
+                                .cloned()
+                                .collect(),
                         });
                     }
 
@@ -347,8 +359,17 @@ pub mod performance {
                         optimizations.push(OptimizationEvent {
                             timestamp: Instant::now(),
                             event_type: OptimizationType::MemoryCleanup,
-                            description: format!("Triggering memory cleanup due to usage: {} bytes", metrics.memory_usage),
-                            impact_metrics: [("memory_freed".to_string(), metrics.memory_usage as f32 * 0.1)].iter().cloned().collect(),
+                            description: format!(
+                                "Triggering memory cleanup due to usage: {} bytes",
+                                metrics.memory_usage
+                            ),
+                            impact_metrics: [(
+                                "memory_freed".to_string(),
+                                metrics.memory_usage as f32 * 0.1,
+                            )]
+                            .iter()
+                            .cloned()
+                            .collect(),
                         });
                     }
 
@@ -357,8 +378,14 @@ pub mod performance {
                         optimizations.push(OptimizationEvent {
                             timestamp: Instant::now(),
                             event_type: OptimizationType::BatchSizeAdjust,
-                            description: format!("Reducing batch size due to high latency: {:?}", metrics.latency_p95),
-                            impact_metrics: [("latency_reduction".to_string(), 10.0)].iter().cloned().collect(),
+                            description: format!(
+                                "Reducing batch size due to high latency: {:?}",
+                                metrics.latency_p95
+                            ),
+                            impact_metrics: [("latency_reduction".to_string(), 10.0)]
+                                .iter()
+                                .cloned()
+                                .collect(),
                         });
                     }
 
@@ -368,7 +395,7 @@ pub mod performance {
                         for optimization in optimizations {
                             info!("Applied optimization: {}", optimization.description);
                             history.push_back(optimization);
-                            
+
                             // Keep history size reasonable
                             if history.len() > 100 {
                                 history.pop_front();
@@ -384,15 +411,15 @@ pub mod performance {
         /// Start metrics collection
         async fn start_metrics_collection(&self) -> Result<(), PerformanceError> {
             let metrics_clone = self.metrics.clone();
-            
+
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(1));
-                
+
                 loop {
                     interval.tick().await;
-                    
+
                     let mut metrics = metrics_clone.write().await;
-                    
+
                     // Simulate system metrics collection
                     // In a real implementation, these would be actual system measurements
                     metrics.cpu_usage = Self::get_cpu_usage().await;
@@ -427,11 +454,11 @@ pub mod performance {
         pub async fn get_metrics(&self) -> PerformanceMetrics {
             let histogram = self.latency_histogram.read().await;
             let mut metrics = self.metrics.read().await.clone();
-            
+
             metrics.latency_p50 = histogram.percentile(50.0);
             metrics.latency_p95 = histogram.percentile(95.0);
             metrics.latency_p99 = histogram.percentile(99.0);
-            
+
             metrics
         }
 
@@ -448,8 +475,12 @@ pub mod performance {
         }
 
         /// Acquire thread pool permit
-        pub async fn acquire_thread_permit(&self) -> Result<tokio::sync::SemaphorePermit<'_>, PerformanceError> {
-            self.thread_pool_semaphore.acquire().await
+        pub async fn acquire_thread_permit(
+            &self,
+        ) -> Result<tokio::sync::SemaphorePermit<'_>, PerformanceError> {
+            self.thread_pool_semaphore
+                .acquire()
+                .await
                 .map_err(|_| PerformanceError::ThreadPoolExhausted)
         }
 
@@ -476,7 +507,7 @@ pub mod performance {
             }
 
             cleanup_stats.duration = start_time.elapsed();
-            
+
             info!("Cleanup completed: {:?}", cleanup_stats);
             Ok(cleanup_stats)
         }
@@ -528,7 +559,7 @@ pub mod performance {
         #[tokio::test]
         async fn test_buffer_pool() {
             let mut pool = BufferPool::new(1024, 10);
-            
+
             let buffer1 = pool.get_buffer();
             assert_eq!(buffer1.len(), 1024);
             assert_eq!(pool.stats().available_buffers, 0);
@@ -544,7 +575,7 @@ pub mod performance {
         #[tokio::test]
         async fn test_batch_processor() {
             let mut processor = BatchProcessor::new(3, Duration::from_millis(100));
-            
+
             assert!(processor.add(1).is_none());
             assert!(processor.add(2).is_none());
             let batch = processor.add(3);
@@ -555,7 +586,7 @@ pub mod performance {
         #[tokio::test]
         async fn test_latency_histogram() {
             let mut histogram = LatencyHistogram::new();
-            
+
             histogram.record(Duration::from_millis(5));
             histogram.record(Duration::from_millis(15));
             histogram.record(Duration::from_millis(25));
@@ -564,7 +595,7 @@ pub mod performance {
 
             let p50 = histogram.percentile(50.0);
             let p95 = histogram.percentile(95.0);
-            
+
             assert!(p50 <= Duration::from_millis(25));
             assert!(p95 <= Duration::from_millis(100));
         }
@@ -573,14 +604,14 @@ pub mod performance {
         async fn test_performance_optimizer() {
             let config = PerformanceConfig::default();
             let optimizer = PerformanceOptimizer::new(config);
-            
+
             assert!(optimizer.start().await.is_ok());
-            
+
             let buffer = optimizer.get_buffer().await;
             assert!(!buffer.is_empty());
-            
+
             optimizer.return_buffer(buffer).await;
-            
+
             let stats = optimizer.get_buffer_pool_stats().await;
             assert_eq!(stats.available_buffers, 1);
         }
@@ -592,17 +623,17 @@ pub mod performance {
                 ..Default::default()
             };
             let optimizer = PerformanceOptimizer::new(config);
-            
+
             let permit1 = optimizer.acquire_thread_permit().await.unwrap();
             let permit2 = optimizer.acquire_thread_permit().await.unwrap();
-            
+
             // Third permit should timeout or be pending
             let permit3_future = optimizer.acquire_thread_permit();
             let result = tokio::time::timeout(Duration::from_millis(10), permit3_future).await;
-            
+
             drop(permit1);
             drop(permit2);
-            
+
             // Should be able to acquire after dropping permits
             let _permit3 = optimizer.acquire_thread_permit().await.unwrap();
         }
@@ -610,10 +641,10 @@ pub mod performance {
         #[tokio::test]
         async fn test_cleanup() {
             let optimizer = PerformanceOptimizer::new(PerformanceConfig::default());
-            
+
             // Add some data to clean up
             optimizer.record_latency(Duration::from_millis(10)).await;
-            
+
             let cleanup_stats = optimizer.force_cleanup().await.unwrap();
             assert!(cleanup_stats.duration > Duration::ZERO);
         }

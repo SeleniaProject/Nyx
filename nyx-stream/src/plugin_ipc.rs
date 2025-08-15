@@ -28,7 +28,9 @@ pub struct PluginIpcRx {
 
 impl PluginIpcTx {
     pub async fn send(&self, data: &[u8]) -> Result<(), crate::PluginFrameError> {
-        self.tx.send(data.to_vec()).await
+        self.tx
+            .send(data.to_vec())
+            .await
             .map_err(|_| crate::PluginFrameError::ValidationError("IPC channel closed".to_string()))
     }
 }
@@ -72,7 +74,10 @@ pub async fn spawn_ipc_server(id: &str) -> std::io::Result<(PluginIpcTx, PluginI
         .get_mut(id)
         .and_then(|p| p.c2s_rx.take())
         .expect("c2s_rx just inserted");
-    Ok((PluginIpcTx { tx: s2c_tx }, PluginIpcRx { rx: rx_from_client }))
+    Ok((
+        PluginIpcTx { tx: s2c_tx },
+        PluginIpcRx { rx: rx_from_client },
+    ))
 }
 
 /// Connect a client to an existing server identified by `path_or_id`.
@@ -81,11 +86,15 @@ pub async fn connect_client(path_or_id: &str) -> std::io::Result<(PluginIpcTx, P
     let mut reg = IPC_REGISTRY.write().await;
     match reg.get_mut(path_or_id) {
         Some(pair) => {
-            let rx_from_server = pair
-                .s2c_rx
-                .take()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "server channel unavailable"))?;
-            Ok((PluginIpcTx { tx: pair.c2s_tx.clone() }, PluginIpcRx { rx: rx_from_server }))
+            let rx_from_server = pair.s2c_rx.take().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "server channel unavailable")
+            })?;
+            Ok((
+                PluginIpcTx {
+                    tx: pair.c2s_tx.clone(),
+                },
+                PluginIpcRx { rx: rx_from_server },
+            ))
         }
         None => Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -95,14 +104,16 @@ pub async fn connect_client(path_or_id: &str) -> std::io::Result<(PluginIpcTx, P
 }
 
 /// Create mock IPC channel pair for testing
-pub async fn create_plugin_ipc(plugin_id: crate::plugin_cbor::PluginId) -> Result<(PluginIpcTx, PluginIpcRx), crate::PluginFrameError> {
+pub async fn create_plugin_ipc(
+    plugin_id: crate::plugin_cbor::PluginId,
+) -> Result<(PluginIpcTx, PluginIpcRx), crate::PluginFrameError> {
     let id = format!("plugin:{}", plugin_id);
     let (srv_tx, srv_rx) = spawn_ipc_server(&id)
         .await
         .map_err(|e| crate::PluginFrameError::ValidationError(e.to_string()))?;
     debug!("Created IPC channel for plugin {}", plugin_id);
     Ok((srv_tx, srv_rx))
-} 
+}
 
 #[cfg(test)]
 mod tests {

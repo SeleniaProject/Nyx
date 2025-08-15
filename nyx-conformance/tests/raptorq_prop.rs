@@ -22,4 +22,4 @@ proptest! {
             prop_assume!((loss_frac as f32) > 25.0);
         }
     }
-} 
+}

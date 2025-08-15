@@ -8,14 +8,14 @@
 
 use crate::config::{NyxConfig, RetryConfig as SdkRetryConfig};
 use crate::error::NyxResult;
-use crate::events::{NyxEvent, EventHandler};
+use crate::events::{EventHandler, NyxEvent};
 use crate::stream::{NyxStream, StreamOptions};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{RwLock, Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -209,7 +209,7 @@ impl NyxDaemon {
     /// Create a new daemon client with the given configuration
     pub fn new(config: NyxConfig) -> Self {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             connection_info: Arc::new(RwLock::new(ConnectionInfo::default())),
@@ -243,15 +243,26 @@ impl NyxDaemon {
 
     /// Start the connection to the daemon
     async fn start_connection(&mut self) -> NyxResult<()> {
-        info!("Connecting to Nyx daemon at {}", 
-              self.config.daemon.endpoint.as_ref().unwrap_or(&"unknown".to_string()));
-        
+        info!(
+            "Connecting to Nyx daemon at {}",
+            self.config
+                .daemon
+                .endpoint
+                .as_ref()
+                .unwrap_or(&"unknown".to_string())
+        );
+
         // Update connection status
         {
             let mut conn_info = self.connection_info.write().await;
             conn_info.status = ConnectionStatus::Connecting;
-            conn_info.remote_address = self.config.daemon.endpoint.as_ref()
-                .unwrap_or(&"unknown".to_string()).clone();
+            conn_info.remote_address = self
+                .config
+                .daemon
+                .endpoint
+                .as_ref()
+                .unwrap_or(&"unknown".to_string())
+                .clone();
             conn_info.connected_at = Utc::now();
             conn_info.connection_id = uuid::Uuid::new_v4().to_string();
         }
@@ -261,7 +272,8 @@ impl NyxDaemon {
             node_id: "unknown".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             connected_at: Utc::now(),
-        }).await;
+        })
+        .await;
 
         // Start background tasks
         self.start_health_monitoring().await;
@@ -305,19 +317,24 @@ impl NyxDaemon {
     pub async fn node_info(&self) -> NyxResult<NodeInfo> {
         // In a real implementation, this would query the daemon
         // Replace placeholder public key with deterministic derivation
-        use ed25519_dalek::{SigningKey, VerifyingKey};
         use blake3::hash;
+        use ed25519_dalek::{SigningKey, VerifyingKey};
         let pk_hex = {
             // identity_seed is not part of SDK config; derive from endpoint when absent
             if let Some(seed) = self.config.daemon.endpoint.as_ref() {
                 let digest = hash(seed.as_bytes());
-                let mut seed32 = [0u8;32];
+                let mut seed32 = [0u8; 32];
                 seed32.copy_from_slice(&digest.as_bytes()[..32]);
                 let sk = SigningKey::from_bytes(&seed32);
                 let vk: VerifyingKey = (&sk).into();
                 hex::encode(vk.to_bytes())
             } else {
-                let src = self.config.daemon.endpoint.clone().unwrap_or_else(|| "unknown".into());
+                let src = self
+                    .config
+                    .daemon
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "unknown".into());
                 let digest = hash(src.as_bytes());
                 hex::encode(&digest.as_bytes()[..32])
             }
@@ -325,8 +342,13 @@ impl NyxDaemon {
         Ok(NodeInfo {
             node_id: "local-node".to_string(),
             public_key: pk_hex,
-            address: self.config.daemon.endpoint.as_ref()
-                .unwrap_or(&"unknown".to_string()).clone(),
+            address: self
+                .config
+                .daemon
+                .endpoint
+                .as_ref()
+                .unwrap_or(&"unknown".to_string())
+                .clone(),
             region: "local".to_string(),
             capabilities: vec!["mix".to_string(), "gateway".to_string()],
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -336,9 +358,9 @@ impl NyxDaemon {
     }
 
     /// Add an event handler
-    pub async fn add_event_handler<H>(&self, handler: H) 
-    where 
-        H: EventHandler + Send + Sync + 'static 
+    pub async fn add_event_handler<H>(&self, handler: H)
+    where
+        H: EventHandler + Send + Sync + 'static,
     {
         let mut handlers = self.event_handlers.lock().await;
         handlers.push(Arc::new(handler));
@@ -369,24 +391,24 @@ impl NyxDaemon {
         let daemon_status = Arc::clone(&self.daemon_status);
         let connection_info = Arc::clone(&self.connection_info);
         let event_sender = self.event_sender.clone();
-        
+
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Perform health check
                 let mut status = daemon_status.write().await;
                 let mut conn_info = connection_info.write().await;
-                
+
                 // Simulate health check (in real implementation, this would ping the daemon)
                 let old_health = status.health;
                 status.health = HealthStatus::Healthy;
                 status.uptime += Duration::from_secs(30);
-                
+
                 conn_info.last_activity = Utc::now();
-                
+
                 // Emit health change event if status changed
                 if old_health != status.health {
                     let _ = event_sender.send(NyxEvent::DaemonHealthChanged {
@@ -404,16 +426,16 @@ impl NyxDaemon {
     /// Start statistics collection background task
     async fn start_statistics_collection(&self) {
         let daemon_status = Arc::clone(&self.daemon_status);
-        
+
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(10));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Update statistics
                 let mut status = daemon_status.write().await;
-                
+
                 // Simulate statistics collection
                 status.memory_usage = 1024 * 1024 * 50; // 50MB
                 status.cpu_usage = 5.0; // 5%
@@ -427,8 +449,8 @@ impl NyxDaemon {
 
     /// Start event processing background task
     async fn start_event_processing(&self) {
-    let receiver_opt = self.event_receiver.lock().await.take();
-        
+        let receiver_opt = self.event_receiver.lock().await.take();
+
         if let Some(mut receiver) = receiver_opt {
             tokio::spawn(async move {
                 while let Some(event) = receiver.recv().await {
@@ -461,10 +483,15 @@ impl NyxDaemon {
             target.to_string(),
             self.connection_info.clone(),
             opts,
-        ).await?;
+        )
+        .await?;
 
         // Emit stream opened event (use 0 as placeholder ID for compatibility)
-        self.emit_event(NyxEvent::StreamOpened { stream_id: 0, target: target.to_string() }).await;
+        self.emit_event(NyxEvent::StreamOpened {
+            stream_id: 0,
+            target: target.to_string(),
+        })
+        .await;
 
         Ok(stream)
     }
@@ -485,15 +512,24 @@ impl NyxDaemon {
     }
 
     /// Open a new Nyx stream with explicit options
-    pub async fn open_stream_with_options(&self, target: &str, options: StreamOptions) -> NyxResult<NyxStream> {
+    pub async fn open_stream_with_options(
+        &self,
+        target: &str,
+        options: StreamOptions,
+    ) -> NyxResult<NyxStream> {
         let stream_id = uuid::Uuid::new_v4().to_string();
         let stream = NyxStream::new(
             stream_id,
             target.to_string(),
             self.connection_info.clone(),
             options,
-        ).await?;
-        self.emit_event(NyxEvent::StreamOpened { stream_id: 0, target: target.to_string() }).await;
+        )
+        .await?;
+        self.emit_event(NyxEvent::StreamOpened {
+            stream_id: 0,
+            target: target.to_string(),
+        })
+        .await;
         Ok(stream)
     }
 
@@ -507,7 +543,8 @@ impl NyxDaemon {
     /// Close a stream by id (test convenience)
     pub async fn close_stream(&self, _stream_id: &str) -> NyxResult<()> {
         // Emit close event (use 0 as placeholder ID)
-        self.emit_event(NyxEvent::StreamClosed { stream_id: 0 }).await;
+        self.emit_event(NyxEvent::StreamClosed { stream_id: 0 })
+            .await;
         Ok(())
     }
 
@@ -531,7 +568,8 @@ impl NyxDaemon {
         self.emit_event(NyxEvent::DaemonDisconnected {
             reason: "User requested disconnection".to_string(),
             disconnected_at: Utc::now(),
-        }).await;
+        })
+        .await;
 
         // Stop background tasks
         if let Some(handle) = self.health_check_handle.lock().await.take() {
@@ -554,12 +592,12 @@ impl NyxDaemon {
     /// Test the connection to the daemon
     pub async fn test_connection(&self) -> NyxResult<Duration> {
         let start = Instant::now();
-        
+
         // Simulate connection test (in real implementation, this would ping the daemon)
         tokio::time::sleep(Duration::from_millis(10)).await;
-        
+
         let latency = start.elapsed();
-        
+
         // Update connection info
         {
             let mut conn_info = self.connection_info.write().await;
@@ -574,26 +612,42 @@ impl NyxDaemon {
     pub async fn connection_metrics(&self) -> HashMap<String, serde_json::Value> {
         let conn_info = self.connection_info.read().await;
         let daemon_status = self.daemon_status.read().await;
-        
+
         let mut metrics = HashMap::new();
-        
-        metrics.insert("connection_status".to_string(), 
-            serde_json::Value::String(conn_info.status.to_string()));
-        metrics.insert("health_status".to_string(), 
-            serde_json::Value::String(daemon_status.health.to_string()));
-        metrics.insert("latency_ms".to_string(), 
-            serde_json::Value::Number(serde_json::Number::from_f64(conn_info.latency_ms).unwrap()));
-        metrics.insert("active_streams".to_string(), 
-            serde_json::Value::Number(serde_json::Number::from(conn_info.active_streams)));
-        metrics.insert("bytes_sent".to_string(), 
-            serde_json::Value::Number(serde_json::Number::from(conn_info.bytes_sent)));
-        metrics.insert("bytes_received".to_string(), 
-            serde_json::Value::Number(serde_json::Number::from(conn_info.bytes_received)));
-        metrics.insert("error_count".to_string(), 
-            serde_json::Value::Number(serde_json::Number::from(conn_info.error_count)));
-        metrics.insert("uptime_seconds".to_string(), 
-            serde_json::Value::Number(serde_json::Number::from(daemon_status.uptime.as_secs())));
-        
+
+        metrics.insert(
+            "connection_status".to_string(),
+            serde_json::Value::String(conn_info.status.to_string()),
+        );
+        metrics.insert(
+            "health_status".to_string(),
+            serde_json::Value::String(daemon_status.health.to_string()),
+        );
+        metrics.insert(
+            "latency_ms".to_string(),
+            serde_json::Value::Number(serde_json::Number::from_f64(conn_info.latency_ms).unwrap()),
+        );
+        metrics.insert(
+            "active_streams".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(conn_info.active_streams)),
+        );
+        metrics.insert(
+            "bytes_sent".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(conn_info.bytes_sent)),
+        );
+        metrics.insert(
+            "bytes_received".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(conn_info.bytes_received)),
+        );
+        metrics.insert(
+            "error_count".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(conn_info.error_count)),
+        );
+        metrics.insert(
+            "uptime_seconds".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(daemon_status.uptime.as_secs())),
+        );
+
         metrics
     }
 }

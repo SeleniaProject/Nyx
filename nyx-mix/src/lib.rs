@@ -7,7 +7,7 @@
 use nyx_core::NodeId;
 
 pub mod cmix;
-pub use cmix::{CmixController, verify_batch};
+pub use cmix::{verify_batch, CmixController};
 
 pub mod cover;
 pub mod cover_adaptive;
@@ -16,7 +16,7 @@ pub use cover_adaptive::AdaptiveCoverGenerator as CoverTrafficGenerator;
 pub mod adaptive;
 pub use adaptive::{AdaptiveCoverGenerator, UtilizationEstimator};
 pub mod larmix;
-pub use larmix::{Prober, LARMixPlanner};
+pub use larmix::{LARMixPlanner, Prober};
 pub mod accumulator;
 pub mod vdf;
 pub mod vdf_calib;
@@ -47,7 +47,10 @@ impl<'a> WeightedPathBuilder<'a> {
     /// Create new builder.
     /// `alpha` in 0.0..=1.0, higher = latency-biased.
     pub fn new(candidates: &'a [Candidate], alpha: f64) -> Self {
-        Self { candidates, alpha: alpha.clamp(0.0, 1.0) }
+        Self {
+            candidates,
+            alpha: alpha.clamp(0.0, 1.0),
+        }
     }
 
     /// Build a path with weighted random sampling **without replacement**.
@@ -104,14 +107,24 @@ mod weighted_tests {
     #[test]
     fn weighted_selection_prefers_low_latency() {
         // Two nodes: one low-latency, one high-latency.
-        let a = Candidate { id: [1u8;32], latency_ms: 20.0, bandwidth_mbps: 100.0 };
-        let b = Candidate { id: [2u8;32], latency_ms: 200.0, bandwidth_mbps: 100.0 };
+        let a = Candidate {
+            id: [1u8; 32],
+            latency_ms: 20.0,
+            bandwidth_mbps: 100.0,
+        };
+        let b = Candidate {
+            id: [2u8; 32],
+            latency_ms: 200.0,
+            bandwidth_mbps: 100.0,
+        };
         let cands = [a, b];
         let builder = WeightedPathBuilder::new(&cands, 0.7);
         let mut low_latency_count = 0;
         for _ in 0..1000 {
             let path = builder.build_path(1);
-            if path[0] == a.id { low_latency_count += 1; }
+            if path[0] == a.id {
+                low_latency_count += 1;
+            }
         }
         // Expect low-latency node picked majority of the time.
         assert!(low_latency_count > 600);

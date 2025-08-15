@@ -15,7 +15,9 @@ use super::SHARD_SIZE;
 /// If `buf.len()` is already aligned, no action is taken.
 pub fn pad_outgoing(buf: &mut Vec<u8>) {
     let rem = buf.len() % SHARD_SIZE;
-    if rem == 0 { return; }
+    if rem == 0 {
+        return;
+    }
     let pad_len = SHARD_SIZE - rem;
     buf.resize(buf.len() + pad_len, 0u8);
 }
@@ -25,7 +27,11 @@ pub fn pad_outgoing(buf: &mut Vec<u8>) {
 /// `actual_len` is expected to be obtained from the Nyx frame header.
 #[must_use]
 pub fn trim_incoming(buf: &[u8], actual_len: usize) -> &[u8] {
-    if actual_len > buf.len() { buf } else { &buf[..actual_len] }
+    if actual_len > buf.len() {
+        buf
+    } else {
+        &buf[..actual_len]
+    }
 }
 
 #[cfg(test)]
@@ -49,4 +55,4 @@ mod tests {
         assert_eq!(slice.len(), original_len);
         assert!(slice.iter().all(|b| *b == 7));
     }
-} 
+}

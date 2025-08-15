@@ -3,8 +3,8 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
 use super::ReorderBuffer;
+use std::collections::HashMap;
 
 /// MultipathReceiver buffers packets per PathID and returns in-order frames.
 pub struct MultipathReceiver {
@@ -13,7 +13,11 @@ pub struct MultipathReceiver {
 
 impl MultipathReceiver {
     /// Create empty receiver.
-    pub fn new() -> Self { Self { buffers: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            buffers: HashMap::new(),
+        }
+    }
 
     /// Push a received packet.
     /// Returns a vector of in-order packets now ready for consumption.
@@ -51,12 +55,15 @@ impl MultipathReceiver {
     /// Push a packet but treat the first observed sequence number on a path as the base.
     /// This is used by higher layers (e.g., `StreamLayer`) that consider the first packet
     /// to establish ordering for that path regardless of its numeric value.
-    pub fn push_with_observed_base(&mut self, path_id: u8, seq: u64, payload: Vec<u8>) -> Vec<Vec<u8>> {
+    pub fn push_with_observed_base(
+        &mut self,
+        path_id: u8,
+        seq: u64,
+        payload: Vec<u8>,
+    ) -> Vec<Vec<u8>> {
         use std::collections::hash_map::Entry;
         match self.buffers.entry(path_id) {
-            Entry::Occupied(mut entry) => {
-                entry.get_mut().push(seq, payload)
-            }
+            Entry::Occupied(mut entry) => entry.get_mut().push(seq, payload),
             Entry::Vacant(v) => {
                 let mut buf = ReorderBuffer::new(seq);
                 let ready = buf.push(seq, payload);
@@ -85,4 +92,4 @@ mod tests {
         let ready2_flush = rx.push(2, 0, vec![0]);
         assert_eq!(ready2_flush, vec![vec![0]]);
     }
-} 
+}

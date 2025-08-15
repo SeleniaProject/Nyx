@@ -40,4 +40,4 @@ mod tests {
         // Expected mean around 0.1 s, allow 10% tolerance
         assert!((mean - 0.1).abs() < 0.02);
     }
-} 
+}

@@ -8,8 +8,8 @@
 //! - Route convergence properties
 
 use nyx_conformance::network_simulator::{
-    NetworkSimulator, SimulationConfig, SimulatedPacket, PacketPriority,
-    LatencyDistribution, LinkQuality,
+    LatencyDistribution, LinkQuality, NetworkSimulator, PacketPriority, SimulatedPacket,
+    SimulationConfig,
 };
 use nyx_stream::{MultipathReceiver, Sequencer};
 
@@ -110,12 +110,15 @@ impl PathSelector {
 
     fn add_path(&mut self, path_id: PathId, quality: PathQuality) {
         self.paths.insert(path_id, quality);
-        self.load_state.insert(path_id, LoadState {
-            packets_sent: 0,
-            bytes_sent: 0,
-            last_used: Instant::now(),
-            current_load: 0.0,
-        });
+        self.load_state.insert(
+            path_id,
+            LoadState {
+                packets_sent: 0,
+                bytes_sent: 0,
+                last_used: Instant::now(),
+                current_load: 0.0,
+            },
+        );
     }
 
     fn select_path(&mut self, packet_size: usize) -> Option<PathId> {
@@ -142,7 +145,7 @@ impl PathSelector {
         // Simple round-robin implementation
         let mut paths: Vec<_> = self.paths.keys().collect();
         paths.sort();
-        
+
         paths
             .iter()
             .filter_map(|&&pid| self.load_state.get(&pid).map(|ls| (pid, ls.packets_sent)))
@@ -156,13 +159,15 @@ impl PathSelector {
         let mut weights: Vec<(PathId, f64)> = Vec::with_capacity(self.paths.len());
         for (&path_id, q) in &self.paths {
             let w_rel = (1.0 - q.loss_rate).powf(2.0) * q.reliability_score; // [0,1]
-            let w_lat = 1.0 / (q.latency_ms + 1.0);                          // small positive
-            let w_bw  = (q.bandwidth_mbps / 100.0).sqrt();                    // soft bandwidth bias
-            let w = w_rel * 0.6 + w_lat * 0.25 + w_bw * 0.15 + 1e-6;          // epsilon to avoid zero
+            let w_lat = 1.0 / (q.latency_ms + 1.0); // small positive
+            let w_bw = (q.bandwidth_mbps / 100.0).sqrt(); // soft bandwidth bias
+            let w = w_rel * 0.6 + w_lat * 0.25 + w_bw * 0.15 + 1e-6; // epsilon to avoid zero
             total_weight += w;
             weights.push((path_id, w));
         }
-        if total_weight <= 0.0 { return None; }
+        if total_weight <= 0.0 {
+            return None;
+        }
 
         // If some paths are unused, prefer the highest-weight among unused once to bootstrap fairness
         let mut unused_best: Option<(PathId, f64)> = None;
@@ -176,14 +181,24 @@ impl PathSelector {
                 }
             }
         }
-        if let Some((pid, _)) = unused_best { return Some(pid); }
+        if let Some((pid, _)) = unused_best {
+            return Some(pid);
+        }
 
         // Choose the path with the largest negative gap from its ideal proportion
-        let total_sent: f64 = self.load_state.values().map(|l| l.packets_sent as f64).sum();
+        let total_sent: f64 = self
+            .load_state
+            .values()
+            .map(|l| l.packets_sent as f64)
+            .sum();
         let mut best_deficit = f64::NEG_INFINITY;
         let mut best_path: Option<PathId> = None;
         for (pid, w) in &weights {
-            let sent = self.load_state.get(pid).map(|l| l.packets_sent as f64).unwrap_or(0.0);
+            let sent = self
+                .load_state
+                .get(pid)
+                .map(|l| l.packets_sent as f64)
+                .unwrap_or(0.0);
             let ideal = (total_sent * (*w / total_weight)).floor();
             let deficit = ideal - sent;
             if deficit > best_deficit {
@@ -193,20 +208,29 @@ impl PathSelector {
         }
         // Fallback: choose the highest weight if deficits are equal (e.g., at start)
         if best_deficit <= 0.0 {
-            best_path = weights.into_iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).map(|(pid, _)| pid);
+            best_path = weights
+                .into_iter()
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                .map(|(pid, _)| pid);
         }
         best_path
     }
 
     fn select_least_loaded(&self) -> Option<PathId> {
-        self.load_state.iter()
+        self.load_state
+            .iter()
             .min_by(|(_, a), (_, b)| a.current_load.partial_cmp(&b.current_load).unwrap())
             .map(|(&path_id, _)| path_id)
     }
 
     fn select_best_quality(&self) -> Option<PathId> {
-        self.paths.iter()
-            .max_by(|(_, a), (_, b)| a.reliability_score.partial_cmp(&b.reliability_score).unwrap())
+        self.paths
+            .iter()
+            .max_by(|(_, a), (_, b)| {
+                a.reliability_score
+                    .partial_cmp(&b.reliability_score)
+                    .unwrap()
+            })
             .map(|(&path_id, _)| path_id)
     }
 
@@ -218,16 +242,24 @@ impl PathSelector {
             if let Some(load) = self.load_state.get(&path_id) {
                 if load.packets_sent == 0 {
                     let w = 1.0 / (quality.latency_ms + 1.0) * (1.0 - quality.loss_rate);
-                    match unused_best { Some((_, bw)) if w <= bw => {} _ => unused_best = Some((path_id, w)) }
+                    match unused_best {
+                        Some((_, bw)) if w <= bw => {}
+                        _ => unused_best = Some((path_id, w)),
+                    }
                 }
             }
         }
-        if let Some((pid, _)) = unused_best { return Some(pid); }
+        if let Some((pid, _)) = unused_best {
+            return Some(pid);
+        }
 
         let mut best_path = None;
         let mut best_score = f64::NEG_INFINITY;
         for (&path_id, quality) in &self.paths {
-            let load = match self.load_state.get(&path_id) { Some(l) => l, None => continue };
+            let load = match self.load_state.get(&path_id) {
+                Some(l) => l,
+                None => continue,
+            };
             let latency_score = 1.0 / (quality.latency_ms + 1.0);
             let bandwidth_score = (quality.bandwidth_mbps / 100.0).sqrt();
             let reliability_score = (1.0 - quality.loss_rate).powf(2.0) * quality.reliability_score;
@@ -238,7 +270,10 @@ impl PathSelector {
                 + reliability_score * 0.45
                 + congestion_score * 0.10;
             let composite_score = base - 0.015 * load.current_load;
-            if composite_score > best_score { best_score = composite_score; best_path = Some(path_id); }
+            if composite_score > best_score {
+                best_score = composite_score;
+                best_path = Some(path_id);
+            }
         }
         best_path
     }
@@ -248,7 +283,7 @@ impl PathSelector {
             load.packets_sent += 1;
             load.bytes_sent += packet_size as u64;
             load.last_used = Instant::now();
-            
+
             // Update current load (exponential moving average)
             let new_load = packet_size as f64 / 1500.0; // Normalize by MTU
             load.current_load = load.current_load * 0.9 + new_load * 0.1;
@@ -270,7 +305,10 @@ impl PathSelector {
 async fn test_multipath_packet_delivery() {
     let config = SimulationConfig {
         packet_loss_rate: 0.05, // 5% loss
-        latency_distribution: LatencyDistribution::Normal { mean: 50.0, std_dev: 10.0 },
+        latency_distribution: LatencyDistribution::Normal {
+            mean: 50.0,
+            std_dev: 10.0,
+        },
         bandwidth_limit_mbps: 100.0,
         max_nodes: 10,
         duration: Duration::from_secs(60),
@@ -278,7 +316,7 @@ async fn test_multipath_packet_delivery() {
     };
 
     let simulator = NetworkSimulator::new(config);
-    
+
     // Set up network topology with multiple paths
     for i in 1..=5 {
         simulator.add_node(i, Some((i as f64, 0.0))).await;
@@ -328,14 +366,21 @@ async fn test_multipath_packet_delivery() {
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     let results = simulator.get_results().await;
-    
+
     // Verify packet delivery
     assert!(results.packets_received > 0, "No packets were delivered");
-    assert!(results.packets_received <= packets_sent, "More packets received than sent");
-    
+    assert!(
+        results.packets_received <= packets_sent,
+        "More packets received than sent"
+    );
+
     // Verify reasonable delivery rate (accounting for loss)
     let delivery_rate = results.packets_received as f64 / packets_sent as f64;
-    assert!(delivery_rate > 0.8, "Delivery rate too low: {}", delivery_rate);
+    assert!(
+        delivery_rate > 0.8,
+        "Delivery rate too low: {}",
+        delivery_rate
+    );
 
     simulator.stop().await;
 }
@@ -346,29 +391,38 @@ async fn test_path_selection_algorithms() {
     let mut selector = PathSelector::new(SelectionStrategy::WeightedRoundRobin);
 
     // Add paths with different qualities
-    selector.add_path(1, PathQuality {
-        latency_ms: 10.0,
-        bandwidth_mbps: 100.0,
-        loss_rate: 0.01,
-        reliability_score: 0.95,
-        congestion_level: 0.1,
-    });
+    selector.add_path(
+        1,
+        PathQuality {
+            latency_ms: 10.0,
+            bandwidth_mbps: 100.0,
+            loss_rate: 0.01,
+            reliability_score: 0.95,
+            congestion_level: 0.1,
+        },
+    );
 
-    selector.add_path(2, PathQuality {
-        latency_ms: 50.0,
-        bandwidth_mbps: 50.0,
-        loss_rate: 0.05,
-        reliability_score: 0.85,
-        congestion_level: 0.3,
-    });
+    selector.add_path(
+        2,
+        PathQuality {
+            latency_ms: 50.0,
+            bandwidth_mbps: 50.0,
+            loss_rate: 0.05,
+            reliability_score: 0.85,
+            congestion_level: 0.3,
+        },
+    );
 
-    selector.add_path(3, PathQuality {
-        latency_ms: 100.0,
-        bandwidth_mbps: 25.0,
-        loss_rate: 0.1,
-        reliability_score: 0.75,
-        congestion_level: 0.5,
-    });
+    selector.add_path(
+        3,
+        PathQuality {
+            latency_ms: 100.0,
+            bandwidth_mbps: 25.0,
+            loss_rate: 0.1,
+            reliability_score: 0.75,
+            congestion_level: 0.5,
+        },
+    );
 
     // Test path selection
     let mut path_usage = HashMap::new();
@@ -379,8 +433,14 @@ async fn test_path_selection_algorithms() {
     }
 
     // Verify that better quality paths are used more frequently
-    assert!(path_usage[&1] > path_usage[&2], "High quality path should be used more");
-    assert!(path_usage[&2] > path_usage[&3], "Medium quality path should be used more than low quality");
+    assert!(
+        path_usage[&1] > path_usage[&2],
+        "High quality path should be used more"
+    );
+    assert!(
+        path_usage[&2] > path_usage[&3],
+        "Medium quality path should be used more than low quality"
+    );
 }
 
 /// Test load balancing across multiple paths
@@ -388,7 +448,7 @@ async fn test_path_selection_algorithms() {
 async fn test_multipath_load_balancing() {
     let config = SimulationConfig::default();
     let simulator = NetworkSimulator::new(config);
-    
+
     // Set up network with multiple equal-quality paths
     for i in 1..=6 {
         simulator.add_node(i, Some((i as f64, 0.0))).await;
@@ -403,30 +463,37 @@ async fn test_multipath_load_balancing() {
 
     // Create 3 equal paths: 1->2->6, 1->3->6, 1->4->6
     for intermediate in 2..=4 {
-        simulator.add_link(1, intermediate, link_quality.clone()).await;
-        simulator.add_link(intermediate, 6, link_quality.clone()).await;
+        simulator
+            .add_link(1, intermediate, link_quality.clone())
+            .await;
+        simulator
+            .add_link(intermediate, 6, link_quality.clone())
+            .await;
     }
 
     simulator.start().await.unwrap();
 
     // Send packets and track path usage
     let mut path_selector = PathSelector::new(SelectionStrategy::RoundRobin);
-    
+
     for path_id in 2..=4 {
-        path_selector.add_path(path_id as u8, PathQuality {
-            latency_ms: 25.0,
-            bandwidth_mbps: 100.0,
-            loss_rate: 0.01,
-            reliability_score: 0.9,
-            congestion_level: 0.1,
-        });
+        path_selector.add_path(
+            path_id as u8,
+            PathQuality {
+                latency_ms: 25.0,
+                bandwidth_mbps: 100.0,
+                loss_rate: 0.01,
+                reliability_score: 0.9,
+                congestion_level: 0.1,
+            },
+        );
     }
 
     let mut path_usage = HashMap::new();
     for i in 0..300 {
         if let Some(path_id) = path_selector.select_path(1000) {
             *path_usage.entry(path_id).or_insert(0) += 1;
-            
+
             let packet = SimulatedPacket {
                 id: i,
                 source: 1,
@@ -436,7 +503,7 @@ async fn test_multipath_load_balancing() {
                 size_bytes: 1000,
                 priority: PacketPriority::Normal,
             };
-            
+
             let _ = simulator.send_packet(packet).await;
         }
     }
@@ -448,9 +515,14 @@ async fn test_multipath_load_balancing() {
 
     for (&path_id, &usage) in &path_usage {
         let diff = (usage as i32 - expected_per_path as i32).abs() as u32;
-        assert!(diff <= tolerance, 
-            "Path {} usage {} differs too much from expected {} (tolerance: {})", 
-            path_id, usage, expected_per_path, tolerance);
+        assert!(
+            diff <= tolerance,
+            "Path {} usage {} differs too much from expected {} (tolerance: {})",
+            path_id,
+            usage,
+            expected_per_path,
+            tolerance
+        );
     }
 
     simulator.stop().await;
@@ -461,7 +533,7 @@ async fn test_multipath_load_balancing() {
 async fn test_path_failure_recovery() {
     let config = SimulationConfig::default();
     let simulator = NetworkSimulator::new(config);
-    
+
     // Set up network topology
     for i in 1..=4 {
         simulator.add_node(i, Some((i as f64, 0.0))).await;
@@ -483,23 +555,29 @@ async fn test_path_failure_recovery() {
     simulator.start().await.unwrap();
 
     let mut path_selector = PathSelector::new(SelectionStrategy::Adaptive);
-    
-    // Add both paths
-    path_selector.add_path(2, PathQuality {
-        latency_ms: 30.0,
-        bandwidth_mbps: 100.0,
-        loss_rate: 0.01,
-        reliability_score: 0.9,
-        congestion_level: 0.1,
-    });
 
-    path_selector.add_path(3, PathQuality {
-        latency_ms: 30.0,
-        bandwidth_mbps: 100.0,
-        loss_rate: 0.01,
-        reliability_score: 0.9,
-        congestion_level: 0.1,
-    });
+    // Add both paths
+    path_selector.add_path(
+        2,
+        PathQuality {
+            latency_ms: 30.0,
+            bandwidth_mbps: 100.0,
+            loss_rate: 0.01,
+            reliability_score: 0.9,
+            congestion_level: 0.1,
+        },
+    );
+
+    path_selector.add_path(
+        3,
+        PathQuality {
+            latency_ms: 30.0,
+            bandwidth_mbps: 100.0,
+            loss_rate: 0.01,
+            reliability_score: 0.9,
+            congestion_level: 0.1,
+        },
+    );
 
     // Send packets normally
     let mut successful_sends = 0;
@@ -514,7 +592,7 @@ async fn test_path_failure_recovery() {
                 size_bytes: 1000,
                 priority: PacketPriority::Normal,
             };
-            
+
             if simulator.send_packet(packet).await.is_ok() {
                 successful_sends += 1;
             }
@@ -539,7 +617,7 @@ async fn test_path_failure_recovery() {
                 size_bytes: 1000,
                 priority: PacketPriority::Normal,
             };
-            
+
             if simulator.send_packet(packet).await.is_ok() {
                 successful_sends += 1;
             }
@@ -547,7 +625,10 @@ async fn test_path_failure_recovery() {
     }
 
     // Verify that packets continued to be sent after path failure
-    assert!(successful_sends > 50, "Should continue sending after path failure");
+    assert!(
+        successful_sends > 50,
+        "Should continue sending after path failure"
+    );
 
     simulator.stop().await;
 }
@@ -555,16 +636,15 @@ async fn test_path_failure_recovery() {
 /// Property-based test for multipath routing correctness
 #[tokio::test]
 async fn test_multipath_routing_correctness() {
-    let test_cases = vec![
-        (5, 3, 50, 0.05),
-        (7, 4, 100, 0.1),
-        (4, 2, 30, 0.02),
-    ];
+    let test_cases = vec![(5, 3, 50, 0.05), (7, 4, 100, 0.1), (4, 2, 30, 0.02)];
 
     for (node_count, path_count, packet_count, loss_rate) in test_cases {
         let config = SimulationConfig {
             packet_loss_rate: loss_rate,
-            latency_distribution: LatencyDistribution::Normal { mean: 50.0, std_dev: 10.0 },
+            latency_distribution: LatencyDistribution::Normal {
+                mean: 50.0,
+                std_dev: 10.0,
+            },
             bandwidth_limit_mbps: 100.0,
             max_nodes: node_count,
             duration: Duration::from_secs(30),
@@ -572,7 +652,7 @@ async fn test_multipath_routing_correctness() {
         };
 
         let simulator = NetworkSimulator::new(config);
-        
+
         // Set up nodes
         for i in 1..=node_count {
             simulator.add_node(i, Some((i as f64, 0.0))).await;
@@ -589,7 +669,9 @@ async fn test_multipath_routing_correctness() {
         // Connect nodes in a way that creates multiple paths
         for i in 2..=std::cmp::min(path_count + 1, node_count - 1) {
             simulator.add_link(1, i, link_quality.clone()).await;
-            simulator.add_link(i, node_count, link_quality.clone()).await;
+            simulator
+                .add_link(i, node_count, link_quality.clone())
+                .await;
         }
 
         simulator.start().await.unwrap();
@@ -616,23 +698,34 @@ async fn test_multipath_routing_correctness() {
         tokio::time::sleep(Duration::from_millis(700)).await;
 
         let results = simulator.get_results().await;
-        
+
         // Properties to verify:
         // 1. Some packets should be delivered (unless loss rate is very high)
         if loss_rate < 0.15 {
-            assert!(results.packets_received > 0, "No packets delivered with reasonable loss rate");
+            assert!(
+                results.packets_received > 0,
+                "No packets delivered with reasonable loss rate"
+            );
         }
-        
+
         // 2. Cannot receive more packets than sent
-        assert!(results.packets_received <= packets_sent as u64, 
-            "Received more packets than sent: {} > {}", results.packets_received, packets_sent);
-        
+        assert!(
+            results.packets_received <= packets_sent as u64,
+            "Received more packets than sent: {} > {}",
+            results.packets_received,
+            packets_sent
+        );
+
         // 3. Loss rate should be reasonable
         if packets_sent > 0 {
             let actual_loss_rate = results.packets_lost as f64 / packets_sent as f64;
             // In stressed simulated timing, allow a small fixed margin beyond 2x to avoid false negatives
-            assert!(actual_loss_rate <= loss_rate * 2.0 + 0.05, 
-                "Actual loss rate {} exceeds expected {}", actual_loss_rate, loss_rate * 2.0 + 0.05);
+            assert!(
+                actual_loss_rate <= loss_rate * 2.0 + 0.05,
+                "Actual loss rate {} exceeds expected {}",
+                actual_loss_rate,
+                loss_rate * 2.0 + 0.05
+            );
         }
 
         simulator.stop().await;
@@ -643,23 +736,23 @@ async fn test_multipath_routing_correctness() {
 #[tokio::test]
 async fn test_multipath_receiver_ordering() {
     let mut receiver = MultipathReceiver::new();
-    
+
     // Test in-order delivery per path
     let result1 = receiver.push(1, 0, vec![0]);
     assert_eq!(result1, vec![vec![0]]);
-    
+
     // Out of order packet should be buffered
     let result2 = receiver.push(1, 2, vec![2]);
     assert!(result2.is_empty());
-    
+
     // Fill the gap
     let result3 = receiver.push(1, 1, vec![1]);
     assert_eq!(result3, vec![vec![1], vec![2]]);
-    
+
     // Test independent paths
     let result4 = receiver.push(2, 0, vec![10]);
     assert_eq!(result4, vec![vec![10]]);
-    
+
     // Verify path independence
     let result5 = receiver.push(1, 3, vec![3]);
     assert_eq!(result5, vec![vec![3]]);
@@ -669,7 +762,7 @@ async fn test_multipath_receiver_ordering() {
 #[tokio::test]
 async fn test_sequencer_path_independence() {
     let mut sequencer = Sequencer::new();
-    
+
     // Each path should have independent sequence numbers
     assert_eq!(sequencer.next(10), 0);
     assert_eq!(sequencer.next(20), 0);
@@ -691,7 +784,10 @@ mod async_tests {
     ) -> RoutingTestResults {
         let config = SimulationConfig {
             packet_loss_rate: 0.02,
-            latency_distribution: LatencyDistribution::Normal { mean: 30.0, std_dev: 5.0 },
+            latency_distribution: LatencyDistribution::Normal {
+                mean: 30.0,
+                std_dev: 5.0,
+            },
             bandwidth_limit_mbps: 200.0,
             max_nodes: node_count,
             duration,
@@ -699,7 +795,7 @@ mod async_tests {
         };
 
         let simulator = NetworkSimulator::new(config);
-        
+
         // Set up topology
         for i in 1..=node_count {
             simulator.add_node(i, Some((i as f64, 0.0))).await;
@@ -715,7 +811,9 @@ mod async_tests {
         // Create multiple paths
         for i in 2..=std::cmp::min(path_count + 1, node_count - 1) {
             simulator.add_link(1, i, link_quality.clone()).await;
-            simulator.add_link(i, node_count, link_quality.clone()).await;
+            simulator
+                .add_link(i, node_count, link_quality.clone())
+                .await;
         }
 
         simulator.start().await.unwrap();
@@ -727,19 +825,22 @@ mod async_tests {
         // Send packets with load balancing
         let mut selector = PathSelector::new(SelectionStrategy::Adaptive);
         for path_id in 2..=std::cmp::min(path_count + 1, node_count - 1) {
-            selector.add_path(path_id as u8, PathQuality {
-                latency_ms: 15.0,
-                bandwidth_mbps: 100.0,
-                loss_rate: 0.01,
-                reliability_score: 0.9,
-                congestion_level: 0.1,
-            });
+            selector.add_path(
+                path_id as u8,
+                PathQuality {
+                    latency_ms: 15.0,
+                    bandwidth_mbps: 100.0,
+                    loss_rate: 0.01,
+                    reliability_score: 0.9,
+                    congestion_level: 0.1,
+                },
+            );
         }
 
         for i in 0..packet_count {
             if let Some(path_id) = selector.select_path(1000) {
                 *path_usage.entry(path_id).or_insert(0) += 1;
-                
+
                 let packet = SimulatedPacket {
                     id: i as u64,
                     source: 1,
@@ -765,9 +866,11 @@ mod async_tests {
         // Calculate load balancing score
         let total_usage: u32 = path_usage.values().sum();
         let expected_per_path = total_usage as f64 / path_usage.len() as f64;
-        let variance: f64 = path_usage.values()
+        let variance: f64 = path_usage
+            .values()
             .map(|&usage| (usage as f64 - expected_per_path).powi(2))
-            .sum::<f64>() / path_usage.len() as f64;
+            .sum::<f64>()
+            / path_usage.len() as f64;
         let load_balance_score = 1.0 / (1.0 + variance / expected_per_path);
 
         simulator.stop().await;
@@ -777,7 +880,8 @@ mod async_tests {
             packets_delivered: results.packets_received as u32,
             packets_lost: results.packets_lost as u32,
             avg_latency_ms: results.avg_latency_ms,
-            path_utilization: path_usage.into_iter()
+            path_utilization: path_usage
+                .into_iter()
                 .map(|(k, v)| (k, v as f64 / total_usage as f64))
                 .collect(),
             load_balance_score,
@@ -788,10 +892,14 @@ mod async_tests {
     #[tokio::test]
     async fn test_multipath_stress_small() {
         let results = run_multipath_stress_test(5, 3, 100, Duration::from_secs(10)).await;
-        
+
         assert!(results.packets_delivered > 0, "No packets delivered");
-        assert!(results.load_balance_score > 0.7, "Poor load balancing: {}", results.load_balance_score);
-        
+        assert!(
+            results.load_balance_score > 0.7,
+            "Poor load balancing: {}",
+            results.load_balance_score
+        );
+
         let delivery_rate = results.packets_delivered as f64 / results.packets_sent as f64;
         assert!(delivery_rate > 0.9, "Low delivery rate: {}", delivery_rate);
     }
@@ -799,10 +907,14 @@ mod async_tests {
     #[tokio::test]
     async fn test_multipath_stress_medium() {
         let results = run_multipath_stress_test(8, 4, 500, Duration::from_secs(30)).await;
-        
+
         assert!(results.packets_delivered > 0, "No packets delivered");
-        assert!(results.load_balance_score > 0.6, "Poor load balancing: {}", results.load_balance_score);
-        
+        assert!(
+            results.load_balance_score > 0.6,
+            "Poor load balancing: {}",
+            results.load_balance_score
+        );
+
         let delivery_rate = results.packets_delivered as f64 / results.packets_sent as f64;
         assert!(delivery_rate > 0.85, "Low delivery rate: {}", delivery_rate);
     }

@@ -26,12 +26,12 @@ impl BasicMetrics {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn increment(&mut self) {
         self.counter += 1;
         self.last_updated = SystemTime::now();
     }
-    
+
     pub fn get_counter(&self) -> u64 {
         self.counter
     }

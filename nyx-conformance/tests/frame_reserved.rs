@@ -7,4 +7,4 @@ fn header_reserved_type_error() {
     let (_, hdr) = parse_header_ext(&bytes).expect("parse");
     // Reserved type should be 3
     assert_eq!(hdr.hdr.frame_type, 3);
-} 
+}

@@ -11,4 +11,4 @@ fn multipath_cross_path_ordering() {
     // Path1 seq0 arrives, now path1 releases 0 then 1.
     let out2 = rx.push(1, 0, vec![b'b']);
     assert_eq!(out2, vec![vec![b'b'], vec![b'a']]);
-} 
+}

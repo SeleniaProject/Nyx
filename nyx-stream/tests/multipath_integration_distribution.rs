@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use nyx_stream::multipath::{MultipathManager, MultipathConfig};
 use nyx_core::types::PathId;
+use nyx_stream::multipath::{MultipathConfig, MultipathManager};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -35,7 +35,10 @@ fn multipath_wrr_distribution_matches_weights() {
     let stats = mgr.get_path_stats();
     let mut w_sum: u64 = 0;
     let mut w_map = std::collections::HashMap::new();
-    for (pid, st) in &stats { w_sum += st.weight as u64; w_map.insert(*pid, st.weight as f64); }
+    for (pid, st) in &stats {
+        w_sum += st.weight as u64;
+        w_map.insert(*pid, st.weight as f64);
+    }
     let r1 = counts.get(&1).copied().unwrap_or(0) as f64 / total as f64;
     let r2 = counts.get(&2).copied().unwrap_or(0) as f64 / total as f64;
     let r3 = counts.get(&3).copied().unwrap_or(0) as f64 / total as f64;
@@ -44,9 +47,18 @@ fn multipath_wrr_distribution_matches_weights() {
     let e3 = w_map.get(&3).unwrap() / w_sum as f64;
     // 許容誤差 20% (短い試行数でのばらつき考慮)
     let tol = 0.20;
-    assert!((r1 - e1).abs() <= e1 * tol, "path1 ratio={r1} expected={e1}");
-    assert!((r2 - e2).abs() <= e2 * tol, "path2 ratio={r2} expected={e2}");
-    assert!((r3 - e3).abs() <= e3 * tol, "path3 ratio={r3} expected={e3}");
+    assert!(
+        (r1 - e1).abs() <= e1 * tol,
+        "path1 ratio={r1} expected={e1}"
+    );
+    assert!(
+        (r2 - e2).abs() <= e2 * tol,
+        "path2 ratio={r2} expected={e2}"
+    );
+    assert!(
+        (r3 - e3).abs() <= e3 * tol,
+        "path3 ratio={r3} expected={e3}"
+    );
 
     // Hop count is computed and kept within bounds
     let pkt = mgr.send_data(vec![1]).expect("no path selected");

@@ -1,5 +1,5 @@
-use nyx_mix::adaptive::AdaptiveCoverGenerator;
 use nyx_core::mobile::MobilePowerState::*;
+use nyx_mix::adaptive::AdaptiveCoverGenerator;
 
 #[test]
 fn low_power_lambda_scales() {
@@ -11,4 +11,4 @@ fn low_power_lambda_scales() {
     // Back to foreground
     gen.apply_power_state(Foreground);
     assert!(gen.current_lambda() >= base);
-} 
+}

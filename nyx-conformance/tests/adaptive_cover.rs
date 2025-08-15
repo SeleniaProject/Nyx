@@ -14,7 +14,7 @@ fn utilization_estimator_basic_throughput() {
 #[test]
 fn adaptive_cover_increases_lambda_on_low_util() {
     let mut gen = AdaptiveCoverGenerator::new(5.0, 0.5); // base λ 5 events/sec
-    // Capture initial delay distribution sample.
+                                                         // Capture initial delay distribution sample.
     let d_initial = gen.next_delay();
     // Simulate zero real traffic for a while – utilization remains low.
     for _ in 0..20 {
@@ -37,4 +37,4 @@ fn adaptive_cover_decreases_delay_after_high_util() {
     // Next delay should become significantly shorter (higher λ) than initial.
     let d_after = gen.next_delay();
     assert!(d_after < d_before);
-} 
+}

@@ -8,12 +8,11 @@
 //! - Performance degradation detection and analysis
 
 use nyx_conformance::network_simulator::{
-    NetworkSimulator, SimulationConfig, SimulatedPacket, PacketPriority,
-    LatencyDistribution, LinkQuality,
+    LatencyDistribution, LinkQuality, NetworkSimulator, PacketPriority, SimulatedPacket,
+    SimulationConfig,
 };
 use nyx_conformance::property_tester::{
-    PropertyTester, PropertyTestConfig,
-    U32Generator, BoundsProperty, PredicateProperty,
+    BoundsProperty, PredicateProperty, PropertyTestConfig, PropertyTester, U32Generator,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -196,7 +195,10 @@ impl LoadTester {
     pub fn new(config: LoadTestConfig) -> Self {
         let sim_config = SimulationConfig {
             packet_loss_rate: 0.01,
-            latency_distribution: LatencyDistribution::Normal { mean: 25.0, std_dev: 5.0 },
+            latency_distribution: LatencyDistribution::Normal {
+                mean: 25.0,
+                std_dev: 5.0,
+            },
             bandwidth_limit_mbps: 1000.0,
             max_nodes: config.connection_count + 10,
             duration: config.test_duration,
@@ -217,7 +219,9 @@ impl LoadTester {
         self.setup_network_topology().await;
 
         // Start resource monitoring
-        self.resource_monitor.start_monitoring(self.config.monitoring_interval).await;
+        self.resource_monitor
+            .start_monitoring(self.config.monitoring_interval)
+            .await;
 
         // Start metrics collection
         {
@@ -240,10 +244,10 @@ impl LoadTester {
         let analysis = self.analyze_performance(&metrics);
         let test_passed = self.evaluate_test_criteria(&metrics);
 
-        let failure_reasons = if test_passed { 
-            Vec::new() 
-        } else { 
-            self.get_failure_reasons(&metrics) 
+        let failure_reasons = if test_passed {
+            Vec::new()
+        } else {
+            self.get_failure_reasons(&metrics)
         };
 
         LoadTestResults {
@@ -263,7 +267,8 @@ impl LoadTester {
 
         // Create client nodes
         for i in 2..=(self.config.connection_count + 1) {
-            let angle = 2.0 * std::f64::consts::PI * (i - 2) as f64 / self.config.connection_count as f64;
+            let angle =
+                2.0 * std::f64::consts::PI * (i - 2) as f64 / self.config.connection_count as f64;
             let x = 10.0 * angle.cos();
             let y = 10.0 * angle.sin();
             self.simulator.add_node(i, Some((x, y))).await;
@@ -285,9 +290,8 @@ impl LoadTester {
     /// Execute the main load test
     async fn execute_load_test(&self) -> bool {
         let test_duration = self.config.test_duration;
-        let packet_interval = Duration::from_nanos(
-            1_000_000_000 / self.config.target_throughput_pps as u64
-        );
+        let packet_interval =
+            Duration::from_nanos(1_000_000_000 / self.config.target_throughput_pps as u64);
 
         let start_time = Instant::now();
         let mut packet_id = 0u64;
@@ -295,7 +299,7 @@ impl LoadTester {
         while start_time.elapsed() < test_duration {
             let metrics_collector = Arc::clone(&self.metrics_collector);
             let packet_size = self.config.packet_size;
-            
+
             let packet = SimulatedPacket {
                 id: packet_id,
                 source: 2 + (packet_id % self.config.connection_count as u64) as u32,
@@ -338,7 +342,8 @@ impl LoadTester {
 
         let test_duration = collector.get_test_duration();
         let throughput_pps = collector.packets_sent as f64 / test_duration.as_secs_f64();
-        let throughput_mbps = (collector.bytes_sent * 8) as f64 / (test_duration.as_secs_f64() * 1_000_000.0);
+        let throughput_mbps =
+            (collector.bytes_sent * 8) as f64 / (test_duration.as_secs_f64() * 1_000_000.0);
 
         PerformanceMetrics {
             start_time: collector.start_time.unwrap_or_else(Instant::now),
@@ -369,9 +374,12 @@ impl LoadTester {
             bottlenecks.push(PerformanceBottleneck {
                 bottleneck_type: BottleneckType::Latency,
                 severity: (metrics.avg_latency_ms / self.config.max_latency_ms - 1.0).min(1.0),
-                description: format!("Average latency {:.2}ms exceeds target {:.2}ms", 
-                    metrics.avg_latency_ms, self.config.max_latency_ms),
-                mitigation: "Consider optimizing packet processing or reducing network load".to_string(),
+                description: format!(
+                    "Average latency {:.2}ms exceeds target {:.2}ms",
+                    metrics.avg_latency_ms, self.config.max_latency_ms
+                ),
+                mitigation: "Consider optimizing packet processing or reducing network load"
+                    .to_string(),
             });
             recommendations.push("Optimize packet processing pipeline".to_string());
         }
@@ -381,23 +389,30 @@ impl LoadTester {
             bottlenecks.push(PerformanceBottleneck {
                 bottleneck_type: BottleneckType::PacketLoss,
                 severity: (metrics.loss_rate / self.config.max_loss_rate - 1.0).min(1.0),
-                description: format!("Packet loss rate {:.3} exceeds target {:.3}", 
-                    metrics.loss_rate, self.config.max_loss_rate),
+                description: format!(
+                    "Packet loss rate {:.3} exceeds target {:.3}",
+                    metrics.loss_rate, self.config.max_loss_rate
+                ),
                 mitigation: "Increase buffer sizes or reduce sending rate".to_string(),
             });
             recommendations.push("Implement better flow control".to_string());
         }
 
         // Check resource usage
-        if let Some(max_memory) = metrics.resource_snapshots.iter()
+        if let Some(max_memory) = metrics
+            .resource_snapshots
+            .iter()
             .map(|s| s.memory_usage_mb)
-            .max_by(|a, b| a.partial_cmp(b).unwrap()) {
-            if max_memory > 1000.0 { // 1GB threshold
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+        {
+            if max_memory > 1000.0 {
+                // 1GB threshold
                 bottlenecks.push(PerformanceBottleneck {
                     bottleneck_type: BottleneckType::Memory,
                     severity: (max_memory / 1000.0 - 1.0).min(1.0),
                     description: format!("Peak memory usage {:.1}MB is high", max_memory),
-                    mitigation: "Optimize memory allocation and implement memory pooling".to_string(),
+                    mitigation: "Optimize memory allocation and implement memory pooling"
+                        .to_string(),
                 });
                 recommendations.push("Implement memory pooling for packet buffers".to_string());
             }
@@ -412,9 +427,12 @@ impl LoadTester {
         let efficiency_score = if metrics.resource_snapshots.is_empty() {
             0.8 // Default score if no resource data
         } else {
-            let avg_cpu = metrics.resource_snapshots.iter()
+            let avg_cpu = metrics
+                .resource_snapshots
+                .iter()
                 .map(|s| s.cpu_usage_percent)
-                .sum::<f64>() / metrics.resource_snapshots.len() as f64;
+                .sum::<f64>()
+                / metrics.resource_snapshots.len() as f64;
             (100.0 - avg_cpu) / 100.0
         };
 
@@ -428,10 +446,10 @@ impl LoadTester {
 
     /// Evaluate if test passed all criteria
     fn evaluate_test_criteria(&self, metrics: &PerformanceMetrics) -> bool {
-        metrics.avg_latency_ms <= self.config.max_latency_ms &&
-        metrics.loss_rate <= self.config.max_loss_rate &&
-        metrics.connection_success_rate >= 0.95 &&
-        metrics.throughput_pps >= self.config.target_throughput_pps as f64 * 0.9
+        metrics.avg_latency_ms <= self.config.max_latency_ms
+            && metrics.loss_rate <= self.config.max_loss_rate
+            && metrics.connection_success_rate >= 0.95
+            && metrics.throughput_pps >= self.config.target_throughput_pps as f64 * 0.9
     }
 
     /// Get failure reasons
@@ -439,23 +457,31 @@ impl LoadTester {
         let mut reasons = Vec::new();
 
         if metrics.avg_latency_ms > self.config.max_latency_ms {
-            reasons.push(format!("Average latency {:.2}ms exceeds limit {:.2}ms", 
-                metrics.avg_latency_ms, self.config.max_latency_ms));
+            reasons.push(format!(
+                "Average latency {:.2}ms exceeds limit {:.2}ms",
+                metrics.avg_latency_ms, self.config.max_latency_ms
+            ));
         }
 
         if metrics.loss_rate > self.config.max_loss_rate {
-            reasons.push(format!("Packet loss rate {:.3} exceeds limit {:.3}", 
-                metrics.loss_rate, self.config.max_loss_rate));
+            reasons.push(format!(
+                "Packet loss rate {:.3} exceeds limit {:.3}",
+                metrics.loss_rate, self.config.max_loss_rate
+            ));
         }
 
         if metrics.connection_success_rate < 0.95 {
-            reasons.push(format!("Connection success rate {:.3} below 95%", 
-                metrics.connection_success_rate));
+            reasons.push(format!(
+                "Connection success rate {:.3} below 95%",
+                metrics.connection_success_rate
+            ));
         }
 
         if metrics.throughput_pps < self.config.target_throughput_pps as f64 * 0.9 {
-            reasons.push(format!("Throughput {:.1} pps below 90% of target {}", 
-                metrics.throughput_pps, self.config.target_throughput_pps));
+            reasons.push(format!(
+                "Throughput {:.1} pps below 90% of target {}",
+                metrics.throughput_pps, self.config.target_throughput_pps
+            ));
         }
 
         reasons
@@ -599,13 +625,14 @@ impl MetricsCollector {
 
         let mut sorted = self.latency_samples.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         let index = ((sorted.len() as f64 - 1.0) * percentile) as usize;
         sorted[index.min(sorted.len() - 1)]
     }
 
     fn get_max_latency(&self) -> f64 {
-        self.latency_samples.iter()
+        self.latency_samples
+            .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .copied()
             .unwrap_or(0.0)
@@ -646,8 +673,14 @@ async fn test_small_load() {
     let results = tester.run_load_test().await;
 
     assert!(results.metrics.packets_sent > 0, "Should send some packets");
-    assert!(results.metrics.throughput_pps > 0.0, "Should have positive throughput");
-    assert!(!results.metrics.resource_snapshots.is_empty(), "Should collect resource snapshots");
+    assert!(
+        results.metrics.throughput_pps > 0.0,
+        "Should have positive throughput"
+    );
+    assert!(
+        !results.metrics.resource_snapshots.is_empty(),
+        "Should collect resource snapshots"
+    );
 }
 
 #[tokio::test]
@@ -667,14 +700,31 @@ async fn test_medium_load() {
     let results = tester.run_load_test().await;
 
     // Allow high variance in CI: require at least 10% of theoretical target OR >= 50% of achieved throughput*duration (both lenient)
-    let theoretical = config_clone.target_throughput_pps as f64 * config_clone.test_duration.as_secs_f64();
+    let theoretical =
+        config_clone.target_throughput_pps as f64 * config_clone.test_duration.as_secs_f64();
     let min10 = (theoretical * 0.10) as u64;
-    let achieved = (results.metrics.throughput_pps * config_clone.test_duration.as_secs_f64() * 0.5) as u64;
+    let achieved =
+        (results.metrics.throughput_pps * config_clone.test_duration.as_secs_f64() * 0.5) as u64;
     let expected_min = min10.min(achieved.max(1));
-    assert!(results.metrics.packets_sent as u64 >= expected_min, "Should send substantial packets (>= {}), got {} (theoretical {}, achieved_throughput {})", expected_min, results.metrics.packets_sent, theoretical as u64, achieved);
+    assert!(
+        results.metrics.packets_sent as u64 >= expected_min,
+        "Should send substantial packets (>= {}), got {} (theoretical {}, achieved_throughput {})",
+        expected_min,
+        results.metrics.packets_sent,
+        theoretical as u64,
+        achieved
+    );
     let min_throughput = (config_clone.target_throughput_pps as f64 * 0.10).max(1.0);
-    assert!(results.metrics.throughput_pps >= min_throughput, "Should achieve reasonable throughput (>= {}), got {}", min_throughput, results.metrics.throughput_pps);
-    assert!(results.analysis.scalability_score > 0.0, "Should have scalability score");
+    assert!(
+        results.metrics.throughput_pps >= min_throughput,
+        "Should achieve reasonable throughput (>= {}), got {}",
+        min_throughput,
+        results.metrics.throughput_pps
+    );
+    assert!(
+        results.analysis.scalability_score > 0.0,
+        "Should have scalability score"
+    );
 }
 
 #[tokio::test]
@@ -695,9 +745,11 @@ async fn test_performance_analysis() {
     // With strict requirements, we might detect bottlenecks
     assert!(results.analysis.scalability_score >= 0.0 && results.analysis.scalability_score <= 1.0);
     assert!(results.analysis.efficiency_score >= 0.0 && results.analysis.efficiency_score <= 1.0);
-    
+
     // Should have some analysis results
-    assert!(!results.analysis.recommendations.is_empty() || results.analysis.bottlenecks.is_empty());
+    assert!(
+        !results.analysis.recommendations.is_empty() || results.analysis.bottlenecks.is_empty()
+    );
 }
 
 #[tokio::test]
@@ -716,14 +768,25 @@ async fn test_resource_monitoring() {
     let results = tester.run_load_test().await;
 
     // Should have collected resource snapshots
-    assert!(!results.metrics.resource_snapshots.is_empty(), "Should collect resource snapshots");
-    
+    assert!(
+        !results.metrics.resource_snapshots.is_empty(),
+        "Should collect resource snapshots"
+    );
+
     // Verify snapshot data is reasonable
     for snapshot in &results.metrics.resource_snapshots {
-        assert!(snapshot.memory_usage_mb > 0.0, "Memory usage should be positive");
-        assert!(snapshot.cpu_usage_percent >= 0.0 && snapshot.cpu_usage_percent <= 100.0, 
-            "CPU usage should be 0-100%");
-        assert!(snapshot.network_usage_mbps >= 0.0, "Network usage should be non-negative");
+        assert!(
+            snapshot.memory_usage_mb > 0.0,
+            "Memory usage should be positive"
+        );
+        assert!(
+            snapshot.cpu_usage_percent >= 0.0 && snapshot.cpu_usage_percent <= 100.0,
+            "CPU usage should be 0-100%"
+        );
+        assert!(
+            snapshot.network_usage_mbps >= 0.0,
+            "Network usage should be non-negative"
+        );
     }
 }
 
@@ -751,18 +814,24 @@ async fn test_property_based_performance() {
             simulated_throughput >= expected_min_throughput
         },
         "throughput_scaling",
-        "Throughput should scale with connection count"
+        "Throughput should scale with connection count",
     )));
 
     // Property: latency should remain bounded
     tester.add_property(Box::new(BoundsProperty::new(
-        10u32, 200u32, "connection_count_bounds"
+        10u32,
+        200u32,
+        "connection_count_bounds",
     )));
 
     let results = tester.run_all_tests();
-    
+
     assert_eq!(results.len(), 2, "Should run both properties");
     for result in &results {
-        assert!(result.success_rate > 0.8, "Properties should mostly pass: {}", result.property_name);
+        assert!(
+            result.success_rate > 0.8,
+            "Properties should mostly pass: {}",
+            result.property_name
+        );
     }
 }

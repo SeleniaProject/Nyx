@@ -31,7 +31,7 @@
 //! use std::time::Duration;
 //!
 //! let mut scheduler = WeightedRoundRobinScheduler::new();
-//! 
+//!
 //! // Add paths with RTT measurements
 //! scheduler.update_path(1, Duration::from_millis(10)); // Fast path, high weight
 //! scheduler.update_path(2, Duration::from_millis(50)); // Slower path, lower weight
@@ -58,7 +58,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{debug, trace, warn};
 
-use nyx_core::types::{PathId, is_valid_user_path_id};
+use nyx_core::types::{is_valid_user_path_id, PathId};
 
 /// Default weight scale factor for RTT to weight conversion
 pub const DEFAULT_WEIGHT_SCALE: f64 = 1000.0;
@@ -121,9 +121,18 @@ fn calculate_weight_from_rtt(rtt: Duration, scale: f64) -> u32 {
     if rtt_ms <= 0.0 {
         return MAX_WEIGHT;
     }
-    
+
     let weight = (scale / rtt_ms).round() as u32;
     weight.clamp(MIN_WEIGHT, MAX_WEIGHT)
+}
+
+/// Calculate weight from RTT and loss rate using inverse RTT scaled by (1 - loss_rate).
+/// Loss rate is clamped to [0.0, 0.99] to avoid zeroing weights completely.
+fn calculate_weight_from_quality(rtt: Duration, loss_rate: f64, scale: f64) -> u32 {
+    let base = calculate_weight_from_rtt(rtt, scale) as f64;
+    let loss = loss_rate.clamp(0.0, 0.99);
+    let adjusted = base * (1.0 - loss);
+    adjusted.round() as u32
 }
 
 /// Weighted Round Robin scheduler for multipath routing
@@ -195,7 +204,7 @@ impl WeightedRoundRobinScheduler {
                 // Update existing path
                 let old_weight = state.original_weight as u64;
                 state.update_rtt(rtt, self.weight_scale);
-                
+
                 // Adjust total weight
                 self.total_weight = self.total_weight.saturating_sub(old_weight);
                 self.total_weight = self.total_weight.saturating_add(new_weight as u64);
@@ -229,6 +238,57 @@ impl WeightedRoundRobinScheduler {
         Ok(())
     }
 
+    /// Add or update a path with RTT and loss rate measurement (enhanced quality model)
+    pub fn update_path_with_quality(
+        &mut self,
+        path_id: PathId,
+        rtt: Duration,
+        loss_rate: f64,
+    ) -> Result<(), String> {
+        if !is_valid_user_path_id(path_id) {
+            return Err(format!("PathID {} is not in valid user range", path_id));
+        }
+
+        let new_weight = calculate_weight_from_quality(rtt, loss_rate, self.weight_scale);
+
+        match self.paths.get_mut(&path_id) {
+            Some(state) => {
+                let old_weight = state.original_weight as u64;
+                state.update_rtt(rtt, self.weight_scale);
+                // Overwrite recalculated weight with quality-adjusted value
+                state.original_weight = new_weight;
+                self.total_weight = self.total_weight.saturating_sub(old_weight);
+                self.total_weight = self.total_weight.saturating_add(new_weight as u64);
+                debug!(
+                    path_id = path_id,
+                    old_weight = old_weight,
+                    new_weight = new_weight,
+                    rtt_ms = rtt.as_millis(),
+                    loss_rate = loss_rate,
+                    total_weight = self.total_weight,
+                    "Updated path RTT+loss and weight"
+                );
+            }
+            None => {
+                let mut state = PathState::new(new_weight, rtt);
+                // Ensure state weight equals quality-adjusted
+                state.original_weight = new_weight;
+                self.paths.insert(path_id, state);
+                self.total_weight = self.total_weight.saturating_add(new_weight as u64);
+                debug!(
+                    path_id = path_id,
+                    weight = new_weight,
+                    rtt_ms = rtt.as_millis(),
+                    loss_rate = loss_rate,
+                    total_paths = self.paths.len(),
+                    total_weight = self.total_weight,
+                    "Added new path (quality) to WRR scheduler"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Remove a path from the scheduler
     ///
     /// # Arguments
@@ -240,8 +300,10 @@ impl WeightedRoundRobinScheduler {
     /// `true` if path was removed, `false` if not found
     pub fn remove_path(&mut self, path_id: PathId) -> bool {
         if let Some(state) = self.paths.remove(&path_id) {
-            self.total_weight = self.total_weight.saturating_sub(state.original_weight as u64);
-            
+            self.total_weight = self
+                .total_weight
+                .saturating_sub(state.original_weight as u64);
+
             debug!(
                 path_id = path_id,
                 removed_weight = state.original_weight,
@@ -272,12 +334,15 @@ impl WeightedRoundRobinScheduler {
         // Step 1: Increment all current weights by their original weights
         for state in self.paths.values_mut() {
             if state.is_active {
-                state.current_weight = state.current_weight.saturating_add(state.original_weight as i64);
+                state.current_weight = state
+                    .current_weight
+                    .saturating_add(state.original_weight as i64);
             }
         }
 
         // Step 2: Find path with maximum current weight
-        let selected_path = self.paths
+        let selected_path = self
+            .paths
             .iter()
             .filter(|(_, state)| state.is_active)
             .max_by_key(|(_, state)| state.current_weight)
@@ -286,9 +351,11 @@ impl WeightedRoundRobinScheduler {
         // Step 3: Adjust selected path's current weight
         if let Some(path_id) = selected_path {
             if let Some(state) = self.paths.get_mut(&path_id) {
-                state.current_weight = state.current_weight.saturating_sub(self.total_weight as i64);
+                state.current_weight = state
+                    .current_weight
+                    .saturating_sub(self.total_weight as i64);
                 state.mark_selected();
-                
+
                 self.last_selected = Some(path_id);
                 self.total_selections += 1;
 
@@ -314,14 +381,14 @@ impl WeightedRoundRobinScheduler {
         if let Some(state) = self.paths.get_mut(&path_id) {
             let old_active = state.is_active;
             state.is_active = active;
-            
+
             debug!(
                 path_id = path_id,
                 old_active = old_active,
                 new_active = active,
                 "Changed path active state"
             );
-            
+
             true
         } else {
             false
@@ -365,7 +432,7 @@ impl WeightedRoundRobinScheduler {
         for state in self.paths.values_mut() {
             state.current_weight = 0;
         }
-        
+
         debug!(
             total_paths = self.paths.len(),
             "Reset all current weights to zero"
@@ -452,7 +519,7 @@ mod tests {
     #[test]
     fn test_path_addition() {
         let mut scheduler = WeightedRoundRobinScheduler::new();
-        
+
         // Add valid path
         let result = scheduler.update_path(1, Duration::from_millis(50));
         assert!(result.is_ok());
@@ -468,9 +535,11 @@ mod tests {
     #[test]
     fn test_path_removal() {
         let mut scheduler = WeightedRoundRobinScheduler::new();
-        
+
         scheduler.update_path(1, Duration::from_millis(50)).unwrap();
-        scheduler.update_path(2, Duration::from_millis(100)).unwrap();
+        scheduler
+            .update_path(2, Duration::from_millis(100))
+            .unwrap();
         assert_eq!(scheduler.paths.len(), 2);
 
         // Remove existing path
@@ -486,25 +555,25 @@ mod tests {
     fn test_weight_calculation() {
         let weight1 = calculate_weight_from_rtt(Duration::from_millis(10), DEFAULT_WEIGHT_SCALE);
         let weight2 = calculate_weight_from_rtt(Duration::from_millis(100), DEFAULT_WEIGHT_SCALE);
-        
+
         // Lower RTT should yield higher weight
         assert!(weight1 > weight2);
         assert_eq!(weight1, 100); // 1000/10
-        assert_eq!(weight2, 10);  // 1000/100
+        assert_eq!(weight2, 10); // 1000/100
     }
 
     #[test]
     fn test_smooth_wrr_distribution() {
         let mut scheduler = WeightedRoundRobinScheduler::new();
-        
+
         // Add paths with different RTTs
-        scheduler.update_path(1, Duration::from_millis(10)).unwrap();  // Weight: 100
-        scheduler.update_path(2, Duration::from_millis(20)).unwrap();  // Weight: 50
-        scheduler.update_path(3, Duration::from_millis(50)).unwrap();  // Weight: 20
-        
+        scheduler.update_path(1, Duration::from_millis(10)).unwrap(); // Weight: 100
+        scheduler.update_path(2, Duration::from_millis(20)).unwrap(); // Weight: 50
+        scheduler.update_path(3, Duration::from_millis(50)).unwrap(); // Weight: 20
+
         let mut counts = HashMap::new();
         const ITERATIONS: usize = 1700; // Multiple of total weight (170)
-        
+
         for _ in 0..ITERATIONS {
             if let Some(path_id) = scheduler.select_path() {
                 *counts.entry(path_id).or_insert(0) += 1;
@@ -517,15 +586,27 @@ mod tests {
 
         // Path 1 (weight 100) should get ~59% (100/170)
         let path1_ratio = counts[&1] as f64 / total_selections as f64;
-        assert!(path1_ratio > 0.55 && path1_ratio < 0.65, "Path 1 ratio: {}", path1_ratio);
+        assert!(
+            path1_ratio > 0.55 && path1_ratio < 0.65,
+            "Path 1 ratio: {}",
+            path1_ratio
+        );
 
-        // Path 2 (weight 50) should get ~29% (50/170) 
+        // Path 2 (weight 50) should get ~29% (50/170)
         let path2_ratio = counts[&2] as f64 / total_selections as f64;
-        assert!(path2_ratio > 0.25 && path2_ratio < 0.35, "Path 2 ratio: {}", path2_ratio);
+        assert!(
+            path2_ratio > 0.25 && path2_ratio < 0.35,
+            "Path 2 ratio: {}",
+            path2_ratio
+        );
 
         // Path 3 (weight 20) should get ~12% (20/170)
         let path3_ratio = counts[&3] as f64 / total_selections as f64;
-        assert!(path3_ratio > 0.08 && path3_ratio < 0.16, "Path 3 ratio: {}", path3_ratio);
+        assert!(
+            path3_ratio > 0.08 && path3_ratio < 0.16,
+            "Path 3 ratio: {}",
+            path3_ratio
+        );
     }
 
     #[test]
@@ -542,7 +623,7 @@ mod tests {
 
         // Deactivate path 2
         scheduler.set_path_active(2, false);
-        
+
         // Only path 1 should be selected
         for _ in 0..10 {
             assert_eq!(scheduler.select_path(), Some(1));
@@ -550,11 +631,11 @@ mod tests {
 
         // Reactivate path 2
         scheduler.set_path_active(2, true);
-        
+
         // Now both paths should be selectable
         let mut path1_selected = false;
         let mut path2_selected = false;
-        
+
         for _ in 0..20 {
             match scheduler.select_path() {
                 Some(1) => path1_selected = true,
@@ -562,15 +643,20 @@ mod tests {
                 _ => {}
             }
         }
-        
-        assert!(path1_selected && path2_selected, "Both paths should be selected");
+
+        assert!(
+            path1_selected && path2_selected,
+            "Both paths should be selected"
+        );
     }
 
     #[test]
     fn test_stats() {
         let mut scheduler = WeightedRoundRobinScheduler::new();
         scheduler.update_path(1, Duration::from_millis(50)).unwrap();
-        scheduler.update_path(2, Duration::from_millis(100)).unwrap();
+        scheduler
+            .update_path(2, Duration::from_millis(100))
+            .unwrap();
         scheduler.set_path_active(2, false);
 
         let stats = scheduler.stats();
@@ -586,17 +672,46 @@ mod tests {
     fn test_weight_scale_adjustment() {
         let mut scheduler = WeightedRoundRobinScheduler::with_weight_scale(2000.0);
         scheduler.update_path(1, Duration::from_millis(10)).unwrap();
-        
+
         // With scale 2000, weight should be 200 (2000/10)
         let path_info = scheduler.path_info();
         assert_eq!(path_info[0].weight, 200);
-        
+
         // Change scale and update path
         scheduler.set_weight_scale(500.0);
         scheduler.update_path(1, Duration::from_millis(10)).unwrap();
-        
+
         // Now weight should be 50 (500/10)
         let path_info = scheduler.path_info();
         assert_eq!(path_info[0].weight, 50);
+    }
+
+    #[test]
+    fn test_loss_weighting_affects_distribution() {
+        let mut scheduler = WeightedRoundRobinScheduler::new();
+        // Same RTT, different loss: path1 low loss, path2 higher loss
+        scheduler
+            .update_path_with_quality(1, Duration::from_millis(50), 0.01)
+            .unwrap();
+        scheduler
+            .update_path_with_quality(2, Duration::from_millis(50), 0.20)
+            .unwrap();
+
+        let mut c1 = 0u32;
+        let mut c2 = 0u32;
+        for _ in 0..1000 {
+            match scheduler.select_path() {
+                Some(1) => c1 += 1,
+                Some(2) => c2 += 1,
+                _ => {}
+            }
+        }
+        // Low loss path should be preferred
+        assert!(
+            c1 > c2,
+            "expected path1 selections > path2, got {} vs {}",
+            c1,
+            c2
+        );
     }
 }

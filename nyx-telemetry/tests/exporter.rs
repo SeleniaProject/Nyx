@@ -1,6 +1,6 @@
-use nyx_telemetry::{TelemetryConfig, TelemetryCollector};
-use hyper::{Client, body::to_bytes};
 use hyper::client::HttpConnector;
+use hyper::{body::to_bytes, Client};
+use nyx_telemetry::{TelemetryCollector, TelemetryConfig};
 
 #[tokio::test]
 async fn exporter_serves_metrics() {

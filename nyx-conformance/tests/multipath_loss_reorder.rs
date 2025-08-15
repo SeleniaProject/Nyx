@@ -1,4 +1,3 @@
-
 use nyx_stream::MultipathReceiver;
 
 /// Verify that the receiver does not release packets when a gap (loss) exists
@@ -39,4 +38,4 @@ fn multipath_independent_reorder() {
     // Now path 10 gets its missing packet and both should flush in order.
     let out_p10 = rx.push(10, 0, vec![b'A']);
     assert_eq!(out_p10, vec![vec![b'A'], vec![b'B']]);
-} 
+}

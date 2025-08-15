@@ -49,12 +49,12 @@ pub struct NodeInfo {
 // Performance metrics for the daemon
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PerformanceMetrics {
-    pub cover_traffic_rate: f64,        // packets/sec
-    pub avg_latency_ms: f64,            // milliseconds
-    pub packet_loss_rate: f64,          // 0.0-1.0
-    pub bandwidth_utilization: f64,     // 0.0-1.0
-    pub cpu_usage: f64,                 // 0.0-1.0
-    pub memory_usage_mb: f64,           // megabytes
+    pub cover_traffic_rate: f64,    // packets/sec
+    pub avg_latency_ms: f64,        // milliseconds
+    pub packet_loss_rate: f64,      // 0.0-1.0
+    pub bandwidth_utilization: f64, // 0.0-1.0
+    pub cpu_usage: f64,             // 0.0-1.0
+    pub memory_usage_mb: f64,       // megabytes
     pub total_packets_sent: u64,
     pub total_packets_received: u64,
     pub retransmissions: u64,
@@ -318,7 +318,7 @@ impl<T> Request<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
-    
+
     pub fn into_inner(self) -> T {
         self.inner
     }
@@ -333,7 +333,7 @@ impl<T> Response<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
-    
+
     pub fn into_inner(self) -> T {
         self.inner
     }

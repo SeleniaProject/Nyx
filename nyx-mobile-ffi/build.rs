@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    
+
     match target_os.as_str() {
         "ios" => {
             println!("cargo:rustc-link-lib=framework=UIKit");
@@ -15,7 +15,7 @@ fn main() {
             if let Ok(_) = env::var("NYX_IOS_ENABLE_BACKGROUND_NETWORKING") {
                 println!("cargo:rustc-link-lib=framework=SystemConfiguration");
             }
-            
+
             // Add search path for iOS FFI library
             let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
             println!("cargo:rustc-link-search=native={}", out_dir.display());
@@ -27,7 +27,7 @@ fn main() {
             // Link native libraries commonly required by JNI and networking
             println!("cargo:rustc-link-lib=dl");
             println!("cargo:rustc-link-lib=c");
-            
+
             // Add search path for Android FFI library
             let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
             println!("cargo:rustc-link-search=native={}", out_dir.display());
@@ -38,7 +38,7 @@ fn main() {
             println!("cargo:warning=Mobile FFI not available on {}", target_os);
         }
     }
-    
+
     // Re-run build script if any of these files change
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../nyx-mobile-ffi/src/");

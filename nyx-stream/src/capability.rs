@@ -60,11 +60,25 @@ pub struct Capability {
 
 impl Capability {
     /// Create *required* capability with empty data.
-    pub fn required(id: u32) -> Self { Self { id, flags: FLAG_REQUIRED, data: Vec::new() } }
+    pub fn required(id: u32) -> Self {
+        Self {
+            id,
+            flags: FLAG_REQUIRED,
+            data: Vec::new(),
+        }
+    }
     /// Create *optional* capability with empty data.
-    pub fn optional(id: u32) -> Self { Self { id, flags: 0, data: Vec::new() } }
+    pub fn optional(id: u32) -> Self {
+        Self {
+            id,
+            flags: 0,
+            data: Vec::new(),
+        }
+    }
     /// Returns `true` if capability is marked as required.
-    pub fn is_required(&self) -> bool { self.flags & FLAG_REQUIRED != 0 }
+    pub fn is_required(&self) -> bool {
+        self.flags & FLAG_REQUIRED != 0
+    }
 }
 
 /// CBOR encode capability list.
@@ -95,7 +109,10 @@ pub enum NegotiationError {
 ///
 /// Returns `Ok(())` when negotiation succeeds, or `Err(NegotiationError)` on
 /// first unsupported required capability.
-pub fn negotiate(local_supported: &[u32], peer_caps: &[Capability]) -> Result<(), NegotiationError> {
+pub fn negotiate(
+    local_supported: &[u32],
+    peer_caps: &[Capability],
+) -> Result<(), NegotiationError> {
     for cap in peer_caps {
         if cap.is_required() && !local_supported.contains(&cap.id) {
             return Err(NegotiationError::Unsupported(cap.id));
@@ -122,6 +139,9 @@ mod tests {
         // supported
         assert!(negotiate(&[10, 30], &peer).is_ok());
         // unsupported required
-        assert_eq!(negotiate(&[30], &peer).unwrap_err(), NegotiationError::Unsupported(10));
+        assert_eq!(
+            negotiate(&[30], &peer).unwrap_err(),
+            NegotiationError::Unsupported(10)
+        );
     }
-} 
+}

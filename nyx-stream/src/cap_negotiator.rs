@@ -5,7 +5,7 @@
 //! implementation and returns an optional CLOSE frame payload when
 //! negotiation fails.
 
-use crate::capability::{decode_caps, negotiate, Capability, LOCAL_CAP_IDS, NegotiationError};
+use crate::capability::{decode_caps, negotiate, Capability, NegotiationError, LOCAL_CAP_IDS};
 use crate::management::build_close_unsupported_cap;
 
 /// Perform capability negotiation.
@@ -20,15 +20,16 @@ pub fn perform_cap_negotiation(peer_caps_buf: &[u8]) -> Result<Vec<Capability>, 
         Ok(v) => v,
         Err(_) => {
             // Malformed CBOR – treat as PROTOCOL_VIOLATION (0x01)
-            return Err(crate::management::build_close_frame(0x01, b"malformed capability CBOR"));
+            return Err(crate::management::build_close_frame(
+                0x01,
+                b"malformed capability CBOR",
+            ));
         }
     };
 
     match negotiate(LOCAL_CAP_IDS, &peer_caps) {
         Ok(()) => Ok(peer_caps),
-        Err(NegotiationError::Unsupported(id)) => {
-            Err(build_close_unsupported_cap(id))
-        }
+        Err(NegotiationError::Unsupported(id)) => Err(build_close_unsupported_cap(id)),
     }
 }
 
@@ -48,7 +49,11 @@ mod tests {
     #[test]
     fn negotiation_failure_builds_close() {
         // Remote requires an unsupported capability 0xDEAD_BEEF
-        let remote_caps = vec![Capability { id: 0xDEAD_BEEF, flags: FLAG_REQUIRED, data: Vec::new() }];
+        let remote_caps = vec![Capability {
+            id: 0xDEAD_BEEF,
+            flags: FLAG_REQUIRED,
+            data: Vec::new(),
+        }];
         let buf = encode_caps(&remote_caps);
         let err = perform_cap_negotiation(&buf).expect_err("expected failure");
         // Parse generated CLOSE frame
@@ -61,11 +66,15 @@ mod tests {
     #[test]
     fn negotiation_ignores_optional_unknown() {
         // Remote advertises an optional capability we don't know (0xBEEF)
-        let remote_caps = vec![Capability { id: 0xBEEF, flags: 0, data: Vec::new() }];
+        let remote_caps = vec![Capability {
+            id: 0xBEEF,
+            flags: 0,
+            data: Vec::new(),
+        }];
         let buf = encode_caps(&remote_caps);
         // Should succeed because capability is not required
         let peer = perform_cap_negotiation(&buf).expect("optional cap allowed");
         assert_eq!(peer.len(), 1);
         assert_eq!(peer[0].id, 0xBEEF);
     }
-} 
+}

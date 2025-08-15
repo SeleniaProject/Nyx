@@ -1,6 +1,6 @@
-use fluent_bundle::{FluentBundle, FluentResource, FluentArgs};
-use unic_langid::LanguageIdentifier;
+use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use once_cell::sync::Lazy;
+use unic_langid::LanguageIdentifier;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Lang {
@@ -36,7 +36,10 @@ const ZH_FTL: &str = r#"init-success = Nyx 守护进程已启动（端口 { $por
 config-reload = 配置已重新加载
 "#;
 
-fn make_bundle(lang: LanguageIdentifier, src: &'static str) -> FluentBundle<&'static FluentResource> {
+fn make_bundle(
+    lang: LanguageIdentifier,
+    src: &'static str,
+) -> FluentBundle<&'static FluentResource> {
     // Leak the resource to obtain a 'static reference suitable for FluentBundle.
     let res: &'static FluentResource = Box::leak(Box::new(
         FluentResource::try_new(src.to_owned()).expect("valid FTL"),
@@ -82,7 +85,9 @@ pub fn tr(lang: Lang, key: &str, args: Option<&FluentArgs>) -> String {
                     &empty_args
                 }
             };
-            return fallback_bundle.format_pattern(pattern, Some(args_ref), &mut errors).into_owned();
+            return fallback_bundle
+                .format_pattern(pattern, Some(args_ref), &mut errors)
+                .into_owned();
         }
     }
     key.to_string()
@@ -99,4 +104,4 @@ mod tests {
         let msg = tr(Lang::En, "init-success", Some(&args));
         assert!(msg.contains("43300"));
     }
-} 
+}

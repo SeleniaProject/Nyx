@@ -1,9 +1,8 @@
 #![cfg(feature = "plugin")]
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64_URL;
-use base64::Engine;
-use hyper::{Body, Client, Method, Request};
+use base64::{engine::general_purpose, Engine as _};
 use hyper::client::HttpConnector;
+use hyper::{Body, Client, Method, Request};
 use tokio::time::{sleep, Duration};
 
 fn find_free_port() -> u16 {
@@ -15,11 +14,17 @@ fn find_free_port() -> u16 {
 
 fn locate_daemon_binary() -> String {
     // 1) Standard Cargo-provided env vars
-    if let Ok(p) = std::env::var("CARGO_BIN_EXE_nyx_daemon") { return p; }
-    if let Ok(p) = std::env::var("CARGO_BIN_EXE_nyx-daemon") { return p; }
+    if let Ok(p) = std::env::var("CARGO_BIN_EXE_nyx_daemon") {
+        return p;
+    }
+    if let Ok(p) = std::env::var("CARGO_BIN_EXE_nyx-daemon") {
+        return p;
+    }
     for (k, v) in std::env::vars() {
         // Accept both hyphenated and underscored suffixes
-        if k.starts_with("CARGO_BIN_EXE_") && (k.ends_with("nyx-daemon") || k.ends_with("nyx_daemon")) {
+        if k.starts_with("CARGO_BIN_EXE_")
+            && (k.ends_with("nyx-daemon") || k.ends_with("nyx_daemon"))
+        {
             return v;
         }
     }
@@ -55,7 +60,9 @@ fn locate_daemon_binary() -> String {
                 let mut p = root.clone();
                 p.push(prof);
                 p.push(format!("{}{}", name, exe_suffix));
-                if p.exists() { return p.to_string_lossy().into_owned(); }
+                if p.exists() {
+                    return p.to_string_lossy().into_owned();
+                }
             }
         }
     }
@@ -69,8 +76,13 @@ fn locate_daemon_binary() -> String {
                 for e in rd.flatten() {
                     let path = e.path();
                     if let Some(fname) = path.file_name().and_then(|s| s.to_str()) {
-                        let is_candidate = fname.starts_with("nyx-daemon") || fname.starts_with("nyx_daemon");
-                        let exe_ok = if cfg!(windows) { fname.ends_with(".exe") } else { true };
+                        let is_candidate =
+                            fname.starts_with("nyx-daemon") || fname.starts_with("nyx_daemon");
+                        let exe_ok = if cfg!(windows) {
+                            fname.ends_with(".exe")
+                        } else {
+                            true
+                        };
                         if is_candidate && exe_ok && path.is_file() {
                             return path.to_string_lossy().into_owned();
                         }
@@ -101,7 +113,11 @@ async fn http_get_json(client: &Client<HttpConnector>, url: &str) -> serde_json:
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn http_post_json(client: &Client<HttpConnector>, url: &str, json: &serde_json::Value) -> serde_json::Value {
+async fn http_post_json(
+    client: &Client<HttpConnector>,
+    url: &str,
+    json: &serde_json::Value,
+) -> serde_json::Value {
     let uri: hyper::Uri = url.parse().unwrap();
     let body = serde_json::to_vec(json).unwrap();
     let req = Request::builder()
@@ -116,7 +132,12 @@ async fn http_post_json(client: &Client<HttpConnector>, url: &str, json: &serde_
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn http_post_bytes(client: &Client<HttpConnector>, url: &str, body: Vec<u8>, content_type: &str) -> serde_json::Value {
+async fn http_post_bytes(
+    client: &Client<HttpConnector>,
+    url: &str,
+    body: Vec<u8>,
+    content_type: &str,
+) -> serde_json::Value {
     let uri: hyper::Uri = url.parse().unwrap();
     let req = Request::builder()
         .method(Method::POST)
@@ -140,7 +161,9 @@ async fn wasm_handshake_success_autopilot_like() {
     // wait for readiness
     for _ in 0..50u8 {
         if let Ok(uri) = format!("{}/api/v1/info", base).parse::<hyper::Uri>() {
-            if client.get(uri).await.is_ok() { break; }
+            if client.get(uri).await.is_ok() {
+                break;
+            }
         }
         sleep(Duration::from_millis(50)).await;
     }
@@ -149,15 +172,31 @@ async fn wasm_handshake_success_autopilot_like() {
     let empty_ids: Vec<u32> = Vec::new();
     let mut cbor = Vec::new();
     ciborium::ser::into_writer(&empty_ids, &mut cbor).unwrap();
-    let body = serde_json::json!({"required_cbor_b64": B64_URL.encode(&cbor)});
-    let _ = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/required", base), &body).await;
+    let body =
+        serde_json::json!({"required_cbor_b64": general_purpose::URL_SAFE_NO_PAD.encode(&cbor)});
+    let _ = http_post_json(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/required", base),
+        &body,
+    )
+    .await;
 
     // start
-    let start = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/start", base), &serde_json::json!({})).await;
+    let start = http_post_json(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/start", base),
+        &serde_json::json!({}),
+    )
+    .await;
     assert!(start["started"].as_bool().unwrap_or(false));
 
     // complete
-    let complete = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/complete", base), &serde_json::json!({})).await;
+    let complete = http_post_json(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/complete", base),
+        &serde_json::json!({}),
+    )
+    .await;
     assert_eq!(complete["ok"], true);
 
     let _ = child.kill();
@@ -173,7 +212,9 @@ async fn wasm_handshake_fail_on_unsupported_required() {
     // wait for readiness
     for _ in 0..50u8 {
         if let Ok(uri) = format!("{}/api/v1/info", base).parse::<hyper::Uri>() {
-            if client.get(uri).await.is_ok() { break; }
+            if client.get(uri).await.is_ok() {
+                break;
+            }
         }
         sleep(Duration::from_millis(50)).await;
     }
@@ -182,11 +223,22 @@ async fn wasm_handshake_fail_on_unsupported_required() {
     let ids = vec![424242u32];
     let mut cbor = Vec::new();
     ciborium::ser::into_writer(&ids, &mut cbor).unwrap();
-    let body = serde_json::json!({"required_cbor_b64": B64_URL.encode(&cbor)});
-    let _ = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/required", base), &body).await;
+    let body =
+        serde_json::json!({"required_cbor_b64": general_purpose::URL_SAFE_NO_PAD.encode(&cbor)});
+    let _ = http_post_json(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/required", base),
+        &body,
+    )
+    .await;
 
     // start
-    let _ = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/start", base), &serde_json::json!({})).await;
+    let _ = http_post_json(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/start", base),
+        &serde_json::json!({}),
+    )
+    .await;
 
     // craft peer SETTINGS for required 424242 (format: count:u16, then id:u32, min_major:u16, min_minor:u16, cap:u8, cfg_len:u16)
     let mut peer = Vec::new();
@@ -196,20 +248,35 @@ async fn wasm_handshake_fail_on_unsupported_required() {
     peer.extend_from_slice(&(0u16.to_be_bytes()));
     peer.push(2u8); // Required
     peer.extend_from_slice(&(0u16.to_be_bytes())); // no config
-    let _ = http_post_bytes(&client, &format!("{}/api/v1/wasm/handshake/process-peer-settings", base), peer, "application/octet-stream").await;
+    let _ = http_post_bytes(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/process-peer-settings", base),
+        peer,
+        "application/octet-stream",
+    )
+    .await;
 
     // complete -> incompatible
-    let complete = http_post_json(&client, &format!("{}/api/v1/wasm/handshake/complete", base), &serde_json::json!({})).await;
+    let complete = http_post_json(
+        &client,
+        &format!("{}/api/v1/wasm/handshake/complete", base),
+        &serde_json::json!({}),
+    )
+    .await;
     assert_eq!(complete["ok"], false);
     assert_eq!(complete["result"], "incompatible");
 
     // CLOSE(0x07) explicit: build unsupported cap close and verify daemon decodes it
     let close_payload = nyx_stream::build_close_unsupported_cap(424242);
-    let decoded = http_post_bytes(&client, &format!("{}/api/v1/wasm/close", base), close_payload, "application/nyx-close").await;
+    let decoded = http_post_bytes(
+        &client,
+        &format!("{}/api/v1/wasm/close", base),
+        close_payload,
+        "application/nyx-close",
+    )
+    .await;
     assert_eq!(decoded["accepted"], true);
     assert_eq!(decoded["code"], 7);
 
     let _ = child.kill();
 }
-
-

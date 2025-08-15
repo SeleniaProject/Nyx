@@ -27,9 +27,9 @@
 //! * Not constant-time – do *not* use with secret inputs.
 //! * Suitable for reference network-delay enforcement within Nyx cMix.
 
+use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use lazy_static::lazy_static;
 // MontgomeryInt over BigUint requires custom Reducer impl, omitted here.
 
 /// Public prime ℓ for Wesolowski (2^128 + 51).
@@ -78,7 +78,11 @@ pub fn verify(x: &BigUint, y: &BigUint, pi: &BigUint, n: &BigUint, t: u64) -> bo
     // lhs = π^{ℓ} * x^{r} mod n
     let lhs = {
         let a = pi.modpow(&*L_PRIME, n);
-        let b = if r.is_zero() { BigUint::one() } else { x.modpow(&r, n) };
+        let b = if r.is_zero() {
+            BigUint::one()
+        } else {
+            x.modpow(&r, n)
+        };
         (a * b) % n
     };
     &lhs == y
@@ -103,10 +107,7 @@ pub fn prove_mont(x: &BigUint, n: &BigUint, t: u64) -> (BigUint, BigUint) {
     let q = (&exp_two - &r) / &*L_PRIME;
 
     // Parallelise the expensive operations: y evaluation and π exponentiation.
-    let (y, pi) = rayon::join(
-        || fast_pow2(x, n, t),
-        || x.modpow(&q, n),
-    );
+    let (y, pi) = rayon::join(|| fast_pow2(x, n, t), || x.modpow(&q, n));
 
     (y, pi)
 }
@@ -163,4 +164,4 @@ mod tests_mont {
         // Accept wide tolerance because tiny modulus yields faster loops.
         assert!(elapsed.as_millis() <= (target_ms as u128 * 3 + 1));
     }
-} 
+}

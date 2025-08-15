@@ -15,4 +15,4 @@ fn hkdf_label_separation() {
     let custom2 = hkdf_expand(ikm, KdfLabel::Custom(b"my-label"), 32);
     assert_eq!(custom1, custom2);
     assert_ne!(custom1, session);
-} 
+}

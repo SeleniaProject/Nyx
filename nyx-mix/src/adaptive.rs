@@ -3,11 +3,11 @@
 
 #![forbid(unsafe_code)]
 
+use super::anonymity::{AnonymityEvaluator, DEFAULT_WINDOW_SEC as ANON_WINDOW_SEC};
 use crate::cover::CoverGenerator;
+use nyx_core::low_power::LOW_POWER_COVER_RATIO;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-use nyx_core::low_power::LOW_POWER_COVER_RATIO;
-use super::anonymity::{AnonymityEvaluator, DEFAULT_WINDOW_SEC as ANON_WINDOW_SEC};
 
 /// Sliding-window utilization estimator (bytes per second).
 pub struct UtilizationEstimator {
@@ -114,8 +114,17 @@ impl AdaptiveCoverGenerator {
     /// Update base λ (events/sec). Respects current power state when updating internal generator.
     pub fn set_base_lambda(&mut self, base_lambda: f64) {
         self.base_lambda = base_lambda.max(0.0);
-        let low = self.manual_low_power || matches!(self.power_state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
-        let target = if low { self.base_lambda * LOW_POWER_COVER_RATIO } else { self.base_lambda };
+        let low = self.manual_low_power
+            || matches!(
+                self.power_state,
+                nyx_core::mobile::MobilePowerState::ScreenOff
+                    | nyx_core::mobile::MobilePowerState::Discharging
+            );
+        let target = if low {
+            self.base_lambda * LOW_POWER_COVER_RATIO
+        } else {
+            self.base_lambda
+        };
         if (self.gen.lambda - target).abs() / (self.gen.lambda.max(1e-9)) > 0.01 {
             self.gen = CoverGenerator::new(target);
         }
@@ -127,7 +136,9 @@ impl AdaptiveCoverGenerator {
     }
 
     /// Update desired anonymity score target (0..1).
-    pub fn set_anonymity_target(&mut self, target: f64) { self.anonymity_target = target.clamp(0.0, 1.0); }
+    pub fn set_anonymity_target(&mut self, target: f64) {
+        self.anonymity_target = target.clamp(0.0, 1.0);
+    }
 
     /// Snapshot of internal state for monitoring/diagnostics.
     pub fn stats(&self) -> AdaptiveStats {
@@ -147,7 +158,11 @@ impl AdaptiveCoverGenerator {
     pub fn apply_power_state(&mut self, state: nyx_core::mobile::MobilePowerState) {
         self.power_state = state;
         // If entering low-power conditions, reduce λ immediately.
-        let low = matches!(state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
+        let low = matches!(
+            state,
+            nyx_core::mobile::MobilePowerState::ScreenOff
+                | nyx_core::mobile::MobilePowerState::Discharging
+        );
         if low {
             // Strong reduction per spec constant LOW_POWER_COVER_RATIO
             self.gen = CoverGenerator::new(self.base_lambda * LOW_POWER_COVER_RATIO);
@@ -164,19 +179,29 @@ impl AdaptiveCoverGenerator {
     /// Produce next delay. Internal λ adjusted each call.
     pub fn next_delay(&mut self) -> Duration {
         // Low Power Mode: either explicit flag or battery discharging. Scale λ to 0.3×.
-        let low_power_detected = self.manual_low_power || matches!(self.power_state, nyx_core::mobile::MobilePowerState::ScreenOff | nyx_core::mobile::MobilePowerState::Discharging);
+        let low_power_detected = self.manual_low_power
+            || matches!(
+                self.power_state,
+                nyx_core::mobile::MobilePowerState::ScreenOff
+                    | nyx_core::mobile::MobilePowerState::Discharging
+            );
         if low_power_detected {
-            if self.gen.lambda > self.base_lambda * LOW_POWER_COVER_RATIO { // align with spec constant
+            if self.gen.lambda > self.base_lambda * LOW_POWER_COVER_RATIO {
+                // align with spec constant
                 self.gen = CoverGenerator::new(self.base_lambda * LOW_POWER_COVER_RATIO);
             }
         }
-    let util_bps = self.estimator.throughput_bps();
+        let util_bps = self.estimator.throughput_bps();
         // Heuristic: assume 1 packet ≈1200B, convert to packets/s
         let util_pps = util_bps / 1200.0;
-    // Update smoothed utilisation (EMA with α=0.3)
-    let alpha = 0.3;
-    self.util_ema = if self.util_ema == 0.0 { util_pps } else { self.util_ema + alpha * (util_pps - self.util_ema) };
-    let util_smoothed = self.util_ema;
+        // Update smoothed utilisation (EMA with α=0.3)
+        let alpha = 0.3;
+        self.util_ema = if self.util_ema == 0.0 {
+            util_pps
+        } else {
+            self.util_ema + alpha * (util_pps - self.util_ema)
+        };
+        let util_smoothed = self.util_ema;
         // target cover pps so that cover/(cover+real) ≈ target_ratio
         let target_cover_pps = if self.target_ratio >= 1.0 {
             self.base_lambda
@@ -195,9 +220,13 @@ impl AdaptiveCoverGenerator {
         // When utilization increases we want higher cover event rate (shorter delays) to
         // preserve anonymity ratio quickly. Use max with base so λ never below base, and also
         // add a mild reactive boost proportional to util packets/s.
-    // Reactive boost: escalate more aggressively so single burst of many packets
-    // immediately shortens delay for test determinism. Scale 0.1 * util_pps.
-    let reactive_boost = if util_smoothed > 1.0 { (util_smoothed * 0.1).min(self.base_lambda * 1.0) } else { 0.0 };
+        // Reactive boost: escalate more aggressively so single burst of many packets
+        // immediately shortens delay for test determinism. Scale 0.1 * util_pps.
+        let reactive_boost = if util_smoothed > 1.0 {
+            (util_smoothed * 0.1).min(self.base_lambda * 1.0)
+        } else {
+            0.0
+        };
         // Band controller: if utilisation below band.low reduce λ (but not below 0.5 base),
         // if above band.high increase λ (up to 4× base). Works multiplicatively.
         let (band_low, band_high) = self.util_band;
@@ -205,22 +234,37 @@ impl AdaptiveCoverGenerator {
             0.7
         } else if util_smoothed > band_high {
             1.3
-        } else { 1.0 };
-        let min_bound = if low_power_detected { self.base_lambda * LOW_POWER_COVER_RATIO } else { self.base_lambda * 0.5 };
-        let base_for_max = if low_power_detected { self.base_lambda * LOW_POWER_COVER_RATIO } else { self.base_lambda };
+        } else {
+            1.0
+        };
+        let min_bound = if low_power_detected {
+            self.base_lambda * LOW_POWER_COVER_RATIO
+        } else {
+            self.base_lambda * 0.5
+        };
+        let base_for_max = if low_power_detected {
+            self.base_lambda * LOW_POWER_COVER_RATIO
+        } else {
+            self.base_lambda
+        };
         let new_lambda = ((base_for_max.max(target_cover_pps) + reactive_boost) * band_adjust)
             .clamp(min_bound, self.base_lambda * 4.0); // bounds
-        // Re-initialize internal generator if λ change is >10%
+                                                       // Re-initialize internal generator if λ change is >10%
         if (new_lambda - self.gen.lambda).abs() / self.gen.lambda > 0.1 {
             self.gen = CoverGenerator::new(new_lambda);
         }
         let mut d = self.gen.next_delay();
         // Low utilization heuristic: if real traffic essentially zero keep delay
         // non-increasing to satisfy expectation that cover traffic does not slow down.
-    if util_smoothed < 0.1 { // effectively idle
+        if util_smoothed < 0.1 {
+            // effectively idle
             match self.low_util_min_delay {
                 Some(min_d) => {
-                    if d > min_d { d = min_d; } else { self.low_util_min_delay = Some(d); }
+                    if d > min_d {
+                        d = min_d;
+                    } else {
+                        self.low_util_min_delay = Some(d);
+                    }
                 }
                 None => self.low_util_min_delay = Some(d),
             }
@@ -241,7 +285,7 @@ impl AdaptiveCoverGenerator {
         self.last_util_smoothed = util_smoothed;
         self.anonymity_evaluator.record_delay(d);
         // Telemetry hooks (feature gated) for λ deviation
-        #[cfg(feature="telemetry")]
+        #[cfg(feature = "telemetry")]
         {
             let adjusted_cover_pps = self.gen.lambda;
             let total_pps = util_smoothed + adjusted_cover_pps;
@@ -249,15 +293,20 @@ impl AdaptiveCoverGenerator {
                 let achieved_ratio = adjusted_cover_pps / total_pps;
                 self.last_ratio_deviation = achieved_ratio - self.target_ratio;
                 self.last_cover_pps = adjusted_cover_pps;
-                tracing::trace!(cover_pps=adjusted_cover_pps, util_pps=util_smoothed, ratio_dev=self.last_ratio_deviation, "adaptive_cover_rate_update");
+                tracing::trace!(
+                    cover_pps = adjusted_cover_pps,
+                    util_pps = util_smoothed,
+                    ratio_dev = self.last_ratio_deviation,
+                    "adaptive_cover_rate_update"
+                );
                 // Export via nyx-telemetry Prometheus helpers when available
-                #[cfg(feature="prometheus")]
+                #[cfg(feature = "prometheus")]
                 {
                     nyx_telemetry::set_cover_traffic_pps(adjusted_cover_pps);
                     nyx_telemetry::set_cover_ratio_deviation(self.last_ratio_deviation);
                 }
                 // Also export via metrics crate for daemon Prometheus exporter integration
-                #[cfg(feature="metrics")]
+                #[cfg(feature = "metrics")]
                 {
                     metrics::gauge!("nyx_cover_traffic_pps").set(adjusted_cover_pps);
                     metrics::gauge!("nyx_cover_ratio_deviation").set(self.last_ratio_deviation);
@@ -283,10 +332,14 @@ impl AdaptiveCoverGenerator {
     }
 
     /// Current λ value.
-    pub fn current_lambda(&self) -> f64 { self.gen.lambda }
+    pub fn current_lambda(&self) -> f64 {
+        self.gen.lambda
+    }
 
     /// Set utilisation control band. Expect low < high.
-    pub fn set_util_band(&mut self, low: f64, high: f64) { self.util_band = (low.min(high), high.max(low)); }
+    pub fn set_util_band(&mut self, low: f64, high: f64) {
+        self.util_band = (low.min(high), high.max(low));
+    }
 }
 
 /// Read-only snapshot of adaptive generator state.
@@ -320,10 +373,15 @@ mod tests {
         let mut acg = AdaptiveCoverGenerator::new(20.0, 0.4);
         acg.set_util_band(0.2, 0.6);
         // Simulate low utilisation (no records) -> expect λ not exploding and may reduce toward >=10.
-        for _ in 0..5 { acg.next_delay(); }
+        for _ in 0..5 {
+            acg.next_delay();
+        }
         let low_phase_lambda = acg.current_lambda();
         // Simulate heavy utilisation bursts.
-        for _ in 0..50 { acg.record_real_bytes(1200 * 3); acg.next_delay(); }
+        for _ in 0..50 {
+            acg.record_real_bytes(1200 * 3);
+            acg.next_delay();
+        }
         let high_phase_lambda = acg.current_lambda();
         assert!(high_phase_lambda >= low_phase_lambda);
     }
@@ -341,11 +399,18 @@ mod tests {
     fn high_util_monotonic_shorter_delay() {
         let mut acg = AdaptiveCoverGenerator::new(15.0, 0.5);
         // Drive utilisation high
-        for _ in 0..10 { acg.record_real_bytes(1200 * 5); }
+        for _ in 0..10 {
+            acg.record_real_bytes(1200 * 5);
+        }
         let d1 = acg.next_delay();
         // more utilisation
-        for _ in 0..10 { acg.record_real_bytes(1200 * 5); }
+        for _ in 0..10 {
+            acg.record_real_bytes(1200 * 5);
+        }
         let d2 = acg.next_delay();
-        assert!(d2 <= d1, "expected non-increasing delay under high utilisation");
+        assert!(
+            d2 <= d1,
+            "expected non-increasing delay under high utilisation"
+        );
     }
-} 
+}

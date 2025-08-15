@@ -44,7 +44,10 @@ impl WeightedRrScheduler {
     /// Create an empty scheduler. Add paths via [`update_path`].
     #[must_use]
     pub fn new() -> Self {
-        Self { paths: HashMap::new(), total_weight: 0 }
+        Self {
+            paths: HashMap::new(),
+            total_weight: 0,
+        }
     }
 
     /// Insert or update a path with the latest RTT sample (milliseconds).
@@ -60,7 +63,13 @@ impl WeightedRrScheduler {
                 state.weight = new_weight;
             }
             None => {
-                self.paths.insert(path_id, PathState { weight: new_weight, current: 0 });
+                self.paths.insert(
+                    path_id,
+                    PathState {
+                        weight: new_weight,
+                        current: 0,
+                    },
+                );
                 self.total_weight += new_weight;
             }
         }
@@ -78,7 +87,9 @@ impl WeightedRrScheduler {
     /// Returns `None` if no paths are available.
     #[must_use]
     pub fn next(&mut self) -> Option<u8> {
-        if self.paths.is_empty() { return None; }
+        if self.paths.is_empty() {
+            return None;
+        }
         // 1. Increase `current` by each weight.
         for st in self.paths.values_mut() {
             st.current += st.weight;
@@ -93,10 +104,14 @@ impl WeightedRrScheduler {
 
     /// Returns current number of active paths.
     #[must_use]
-    pub fn len(&self) -> usize { self.paths.len() }
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
     /// Whether no paths are present.
     #[must_use]
-    pub fn is_empty(&self) -> bool { self.paths.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
 }
 
 #[cfg(test)]

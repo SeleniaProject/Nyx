@@ -13,19 +13,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::plugin::{
-    PluginHeader, PluginRegistry, PluginDispatcher, PluginCapability,
-    PluginHandshake, PluginFrame, PluginError, PluginId,
-    plugin_flags
-};
 use super::frame::{
-    FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_DATA,
-    FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR,
-    FRAME_TYPE_PLUGIN_START, FRAME_TYPE_PLUGIN_END, is_plugin_frame
+    is_plugin_frame, FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_DATA, FRAME_TYPE_PLUGIN_END,
+    FRAME_TYPE_PLUGIN_ERROR, FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_START,
 };
- 
-use super::settings::{StreamSettings, setting_ids};
-    use super::management::{SettingsFrame, Setting, self};
+use super::plugin::{
+    plugin_flags, PluginCapability, PluginDispatcher, PluginError, PluginFrame, PluginHandshake,
+    PluginHeader, PluginId, PluginRegistry,
+};
+
+use super::management::{self, Setting, SettingsFrame};
+use super::settings::{setting_ids, StreamSettings};
 
 /// Test Plugin Framework Frame Type reservation (0x50-0x5F)
 #[cfg(test)]
@@ -195,7 +193,9 @@ mod settings_plugin_tests {
         let frame = settings.to_frame();
 
         // Verify plugin required settings are included
-        let plugin_settings: Vec<_> = frame.settings.iter()
+        let plugin_settings: Vec<_> = frame
+            .settings
+            .iter()
             .filter(|s| s.id == setting_ids::PLUGIN_REQUIRED)
             .collect();
 
@@ -210,10 +210,22 @@ mod settings_plugin_tests {
     fn test_settings_frame_plugin_deserialization() {
         let frame = SettingsFrame {
             settings: vec![
-                Setting { id: setting_ids::MAX_STREAMS, value: 256 },
-                Setting { id: setting_ids::PLUGIN_REQUIRED, value: 3001 },
-                Setting { id: setting_ids::PLUGIN_REQUIRED, value: 3002 },
-                Setting { id: setting_ids::PQ_SUPPORTED, value: 1 },
+                Setting {
+                    id: setting_ids::MAX_STREAMS,
+                    value: 256,
+                },
+                Setting {
+                    id: setting_ids::PLUGIN_REQUIRED,
+                    value: 3001,
+                },
+                Setting {
+                    id: setting_ids::PLUGIN_REQUIRED,
+                    value: 3002,
+                },
+                Setting {
+                    id: setting_ids::PQ_SUPPORTED,
+                    value: 1,
+                },
             ],
         };
 
@@ -243,11 +255,16 @@ mod settings_plugin_tests {
 
         // Local collects remote frame then validates: should detect unsupported required plugin (9002)
         // Here we emulate validation logic: required set difference.
-        let remote_required: std::collections::HashSet<_> = remote.get_required_plugins().into_iter().collect();
-        let local_supported: std::collections::HashSet<_> = local.get_required_plugins().into_iter().collect();
+        let remote_required: std::collections::HashSet<_> =
+            remote.get_required_plugins().into_iter().collect();
+        let local_supported: std::collections::HashSet<_> =
+            local.get_required_plugins().into_iter().collect();
 
         // Remote demands 9002 we don't have -> should trigger UNSUPPORTED_CAP (0x07) CLOSE semantics.
-        let diff: Vec<_> = remote_required.difference(&local_supported).cloned().collect();
+        let diff: Vec<_> = remote_required
+            .difference(&local_supported)
+            .cloned()
+            .collect();
         assert_eq!(diff, vec![9002]);
 
         // emulate generation of close frame error code (management::ERR_UNSUPPORTED_CAP == 0x07)
@@ -316,7 +333,9 @@ mod registry_tests {
     #[tokio::test]
     async fn test_plugin_event_system() {
         let registry = PluginRegistry::new();
-        let mut event_rx = registry.take_event_receiver().expect("Failed to get event receiver");
+        let mut event_rx = registry
+            .take_event_receiver()
+            .expect("Failed to get event receiver");
 
         let capability = PluginCapability {
             id: 5001,
@@ -390,7 +409,8 @@ mod frame_processing_tests {
 
         let frame_type = data_frame.frame_type();
         let encoded = data_frame.encode().expect("Failed to encode data frame");
-        let decoded = PluginFrame::decode(frame_type, &encoded).expect("Failed to decode data frame");
+        let decoded =
+            PluginFrame::decode(frame_type, &encoded).expect("Failed to decode data frame");
 
         assert_eq!(decoded.frame_type(), FRAME_TYPE_PLUGIN_DATA);
 
@@ -412,27 +432,41 @@ mod frame_processing_tests {
             config: HashMap::new(),
         };
 
-        registry.register_plugin(capability).expect("Failed to register plugin");
+        registry
+            .register_plugin(capability)
+            .expect("Failed to register plugin");
 
         // Test data frame processing
         let mut data_payload = Vec::new();
-        ciborium::ser::into_writer(&PluginFrame::Data {
-            plugin_id: 7001,
-            payload: vec![1, 2, 3, 4, 5],
-        }, &mut data_payload).expect("Failed to serialize data frame");
+        ciborium::ser::into_writer(
+            &PluginFrame::Data {
+                plugin_id: 7001,
+                payload: vec![1, 2, 3, 4, 5],
+            },
+            &mut data_payload,
+        )
+        .expect("Failed to serialize data frame");
 
-        let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_DATA, &data_payload).await;
+        let result = dispatcher
+            .process_frame(FRAME_TYPE_PLUGIN_DATA, &data_payload)
+            .await;
         assert!(result.is_ok());
 
         // Test control frame processing
         let mut control_payload = Vec::new();
-        ciborium::ser::into_writer(&PluginFrame::Control {
-            plugin_id: 7001,
-            command: "ping".to_string(),
-            params: HashMap::new(),
-        }, &mut control_payload).expect("Failed to serialize control frame");
+        ciborium::ser::into_writer(
+            &PluginFrame::Control {
+                plugin_id: 7001,
+                command: "ping".to_string(),
+                params: HashMap::new(),
+            },
+            &mut control_payload,
+        )
+        .expect("Failed to serialize control frame");
 
-        let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_CONTROL, &control_payload).await;
+        let result = dispatcher
+            .process_frame(FRAME_TYPE_PLUGIN_CONTROL, &control_payload)
+            .await;
         assert!(result.is_ok());
 
         println!("✓ Plugin dispatcher frame processing works correctly");
@@ -448,17 +482,25 @@ mod frame_processing_tests {
         assert!(result.is_err());
 
         // Test malformed CBOR data
-        let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_DATA, b"invalid cbor").await;
+        let result = dispatcher
+            .process_frame(FRAME_TYPE_PLUGIN_DATA, b"invalid cbor")
+            .await;
         assert!(result.is_err());
 
         // Test unregistered plugin
         let mut data_payload = Vec::new();
-        ciborium::ser::into_writer(&PluginFrame::Data {
-            plugin_id: 9999, // Unregistered plugin
-            payload: vec![1, 2, 3],
-        }, &mut data_payload).expect("Failed to serialize data frame");
+        ciborium::ser::into_writer(
+            &PluginFrame::Data {
+                plugin_id: 9999, // Unregistered plugin
+                payload: vec![1, 2, 3],
+            },
+            &mut data_payload,
+        )
+        .expect("Failed to serialize data frame");
 
-        let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_DATA, &data_payload).await;
+        let result = dispatcher
+            .process_frame(FRAME_TYPE_PLUGIN_DATA, &data_payload)
+            .await;
         assert!(result.is_err());
 
         println!("✓ Invalid frame handling works correctly");
@@ -496,17 +538,20 @@ async fn run_plugin_framework_integration_tests() {
         },
     };
 
-    registry.register_plugin(test_capability.clone()).expect("Failed to register test plugin");
+    registry
+        .register_plugin(test_capability.clone())
+        .expect("Failed to register test plugin");
 
     // 2. Test SETTINGS frame with plugin requirements
     {
         let mut stream_settings = settings.write().await;
         stream_settings.add_required_plugin(8001);
-        
+
         let settings_frame = stream_settings.to_frame();
-        assert!(settings_frame.settings.iter().any(|s| 
-            s.id == setting_ids::PLUGIN_REQUIRED && s.value == 8001
-        ));
+        assert!(settings_frame
+            .settings
+            .iter()
+            .any(|s| s.id == setting_ids::PLUGIN_REQUIRED && s.value == 8001));
     }
 
     // 3. Test complete plugin handshake flow
@@ -518,9 +563,13 @@ async fn run_plugin_framework_integration_tests() {
 
     let handshake_frame = PluginFrame::Handshake(handshake);
     let frame_type = handshake_frame.frame_type();
-    let encoded_handshake = handshake_frame.encode().expect("Failed to encode handshake");
+    let encoded_handshake = handshake_frame
+        .encode()
+        .expect("Failed to encode handshake");
 
-    let result = dispatcher.process_frame(frame_type, &encoded_handshake).await;
+    let result = dispatcher
+        .process_frame(frame_type, &encoded_handshake)
+        .await;
     assert!(result.is_ok());
 
     // 4. Test plugin data exchange
@@ -530,7 +579,9 @@ async fn run_plugin_framework_integration_tests() {
     };
 
     let data_encoded = data_frame.encode().expect("Failed to encode data frame");
-    let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_DATA, &data_encoded).await;
+    let result = dispatcher
+        .process_frame(FRAME_TYPE_PLUGIN_DATA, &data_encoded)
+        .await;
     assert!(result.is_ok());
 
     // 5. Test plugin control operations
@@ -544,8 +595,12 @@ async fn run_plugin_framework_integration_tests() {
         params: control_params,
     };
 
-    let control_encoded = control_frame.encode().expect("Failed to encode control frame");
-    let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_CONTROL, &control_encoded).await;
+    let control_encoded = control_frame
+        .encode()
+        .expect("Failed to encode control frame");
+    let result = dispatcher
+        .process_frame(FRAME_TYPE_PLUGIN_CONTROL, &control_encoded)
+        .await;
     assert!(result.is_ok());
 
     // 6. Test plugin error handling
@@ -556,7 +611,9 @@ async fn run_plugin_framework_integration_tests() {
     };
 
     let error_encoded = error_frame.encode().expect("Failed to encode error frame");
-    let result = dispatcher.process_frame(FRAME_TYPE_PLUGIN_ERROR, &error_encoded).await;
+    let result = dispatcher
+        .process_frame(FRAME_TYPE_PLUGIN_ERROR, &error_encoded)
+        .await;
     // Error frames should still be processed successfully
     assert!(result.is_err()); // But return error due to error content
 

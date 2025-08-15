@@ -16,13 +16,16 @@
 
 #![forbid(unsafe_code)]
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use quinn::{Endpoint, EndpointConfig, TransportConfig, ServerConfig, ClientConfig, Connection, NewConnection};
-use quinn::crypto::rustls::{TlsAcceptor, TlsConnector};
-use rcgen::{generate_simple_self_signed, KeyPair};
-use tokio::sync::mpsc;
-use tracing::{info, error, instrument, Instrument};
 use futures::StreamExt;
+use quinn::crypto::rustls::{TlsAcceptor, TlsConnector};
+use quinn::{
+    ClientConfig, Connection, Endpoint, EndpointConfig, NewConnection, ServerConfig,
+    TransportConfig,
+};
+use rcgen::{generate_simple_self_signed, KeyPair};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use tokio::sync::mpsc;
+use tracing::{error, info, instrument, Instrument};
 
 /// Default QUIC idle timeout (10s).
 const MAX_IDLE_TIMEOUT_MS: u64 = 10_000;
@@ -54,16 +57,34 @@ fn generate_or_load_cert() -> anyhow::Result<(rustls::Certificate, rustls::Priva
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            let mut cert_file = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(&cert_path)?;
+            let mut cert_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&cert_path)?;
             cert_file.write_all(&cert_der)?;
-            let mut key_file = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(cert_path.with_extension("key"))?;
+            let mut key_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(cert_path.with_extension("key"))?;
             key_file.write_all(&key.0)?;
         }
         #[cfg(not(unix))]
         {
-            let mut cert_file = OpenOptions::new().create(true).write(true).truncate(true).open(&cert_path)?;
+            let mut cert_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&cert_path)?;
             cert_file.write_all(&cert_der)?;
-            let mut key_file = OpenOptions::new().create(true).write(true).truncate(true).open(cert_path.with_extension("key"))?;
+            let mut key_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(cert_path.with_extension("key"))?;
             key_file.write_all(&key.0)?;
         }
         Ok((rustls::Certificate(cert_der), key))
@@ -97,20 +118,29 @@ impl QuicEndpoint {
         let (tx, rx) = mpsc::channel::<(SocketAddr, Vec<u8>)>(1024);
 
         // Spawn task accepting connections.
-        tokio::spawn(async move {
-            while let Some(conn) = incoming_conn.next().await {
-                match conn.await {
-                    Ok(new_conn) => {
-                        info!("quic: new connection from {}", new_conn.connection.remote_address());
-                        let tx_clone = tx.clone();
-                        tokio::spawn(Self::recv_task(new_conn.connection, tx_clone));
+        tokio::spawn(
+            async move {
+                while let Some(conn) = incoming_conn.next().await {
+                    match conn.await {
+                        Ok(new_conn) => {
+                            info!(
+                                "quic: new connection from {}",
+                                new_conn.connection.remote_address()
+                            );
+                            let tx_clone = tx.clone();
+                            tokio::spawn(Self::recv_task(new_conn.connection, tx_clone));
+                        }
+                        Err(e) => error!("quic accept error: {e}"),
                     }
-                    Err(e) => error!("quic accept error: {e}")
                 }
             }
-        }.instrument(tracing::info_span!("quic_accept_loop")));
+            .instrument(tracing::info_span!("quic_accept_loop")),
+        );
 
-        Ok(Self { endpoint, incoming: rx })
+        Ok(Self {
+            endpoint,
+            incoming: rx,
+        })
     }
 
     #[instrument(name = "quic_datagram_recv", skip(conn, tx), fields(peer = %conn.remote_address()))]
@@ -152,7 +182,8 @@ impl QuicConnection {
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse()?)?;
         endpoint.set_default_client_config(client_cfg);
 
-        let NewConnection { connection, .. } = endpoint.connect(server_addr.parse()?, "nyx")?.await?;
+        let NewConnection { connection, .. } =
+            endpoint.connect(server_addr.parse()?, "nyx")?.await?;
         Ok(Self { connection })
     }
 
@@ -172,7 +203,10 @@ impl QuicConnection {
     }
 
     /// Remote address.
-    #[must_use] pub fn peer_addr(&self) -> SocketAddr { self.connection.remote_address() }
+    #[must_use]
+    pub fn peer_addr(&self) -> SocketAddr {
+        self.connection.remote_address()
+    }
 }
 
 #[cfg(test)]
@@ -184,11 +218,16 @@ mod tests {
     async fn quic_datagram_roundtrip() {
         let _ = tracing_subscriber::fmt::try_init();
         let endpoint = QuicEndpoint::bind(4567).await.expect("bind");
-        let conn = QuicConnection::connect("127.0.0.1:4567").await.expect("connect");
+        let conn = QuicConnection::connect("127.0.0.1:4567")
+            .await
+            .expect("connect");
         conn.send(b"hello").expect("send");
         // Receive from endpoint channel
         let mut rx = endpoint.incoming;
-        let got = timeout(Duration::from_secs(2), rx.recv()).await.unwrap().unwrap();
+        let got = timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(got.1, b"hello");
     }
 }
@@ -202,10 +241,10 @@ impl rustls::client::ServerCertVerifier for NoVerifier {
         _end_entity: &rustls::Certificate,
         _intermediates: &[rustls::Certificate],
         _server_name: &rustls::pki_types::ServerName,
-        _scts: &mut dyn Iterator<Item=&[u8]>,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp: &Option<&[u8]>,
         _now: std::time::SystemTime,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
-} 
+}

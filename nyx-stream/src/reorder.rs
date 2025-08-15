@@ -26,20 +26,35 @@ pub struct ReorderBuffer<T> {
 impl<T> ReorderBuffer<T> {
     /// Create a new buffer starting at `initial_seq`.
     pub fn new(initial_seq: u64) -> Self {
-    Self { next_seq: initial_seq, initial_seq, window: BTreeMap::new(), max_window: 32, pending: Vec::new(), delivered_any: false, rebased: false }
+        Self {
+            next_seq: initial_seq,
+            initial_seq,
+            window: BTreeMap::new(),
+            max_window: 32,
+            pending: Vec::new(),
+            delivered_any: false,
+            rebased: false,
+        }
     }
 
     /// Push packet with `seq`. Returns a vector of in-order packets now ready.
-    pub fn push(&mut self, seq: u64, pkt: T) -> Vec<T> where T: Clone {
+    pub fn push(&mut self, seq: u64, pkt: T) -> Vec<T>
+    where
+        T: Clone,
+    {
         if seq < self.next_seq {
             // 初回配達前で initial より小さい値が来た => リベースモードへ
             if !self.delivered_any && seq < self.initial_seq {
                 self.rebased = true;
                 self.window.insert(seq, pkt);
-                if seq < self.next_seq { self.next_seq = seq; }
+                if seq < self.next_seq {
+                    self.next_seq = seq;
+                }
             } else if !self.delivered_any {
                 self.window.insert(seq, pkt);
-                if seq < self.next_seq { self.next_seq = seq; }
+                if seq < self.next_seq {
+                    self.next_seq = seq;
+                }
             } else {
                 // 既に delivery 後の過去パケットは破棄
                 return Vec::new();
@@ -72,22 +87,30 @@ impl<T> ReorderBuffer<T> {
             self.next_seq += 1;
             progressed = true;
         }
-        if progressed { self.delivered_any = true; }
+        if progressed {
+            self.delivered_any = true;
+        }
         if self.window.len() < self.max_window / 4 && self.max_window > 32 {
             self.max_window /= 2;
         }
         while self.window.len() > self.max_window {
             if let Some((&last, _)) = self.window.iter().rev().next() {
                 self.window.remove(&last);
-            } else { break; }
+            } else {
+                break;
+            }
         }
     }
 
     /// Pop a single in-order packet if available.
     pub fn pop_front(&mut self) -> Option<T> {
         // まず pending が空なら進展を収集
-    if self.pending.is_empty() { self.fill_pending(); }
-        if self.pending.is_empty() { return None; }
+        if self.pending.is_empty() {
+            self.fill_pending();
+        }
+        if self.pending.is_empty() {
+            return None;
+        }
         Some(self.pending.remove(0))
     }
 
@@ -105,8 +128,12 @@ impl<T> ReorderBuffer<T> {
 }
 
 impl<T> ReorderBuffer<T> {
-    pub fn len(&self) -> usize { self.pending.len() + self.window.len() }
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
+    pub fn len(&self) -> usize {
+        self.pending.len() + self.window.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[cfg(test)]
@@ -119,8 +146,8 @@ mod tests {
         // Push out-of-order: 1,0,2
         assert!(buf.push(1, 1).is_empty());
         let r1 = buf.push(0, 0);
-        assert_eq!(r1, vec![0,1]);
+        assert_eq!(r1, vec![0, 1]);
         let r2 = buf.push(2, 2);
         assert_eq!(r2, vec![2]);
     }
-} 
+}

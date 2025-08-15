@@ -1,5 +1,5 @@
-use nyx_stream::{Capability, encode_caps, decode_caps, negotiate, NegotiationError};
 use nyx_stream::management::ERR_UNSUPPORTED_CAP;
+use nyx_stream::{decode_caps, encode_caps, negotiate, Capability, NegotiationError};
 
 #[test]
 fn capability_encode_decode_roundtrip() {
@@ -19,4 +19,4 @@ fn capability_negotiation_success_and_failure() {
     assert_eq!(err, NegotiationError::Unsupported(42));
     // constant check
     assert_eq!(ERR_UNSUPPORTED_CAP, 0x07);
-} 
+}

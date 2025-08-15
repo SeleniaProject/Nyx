@@ -2,7 +2,7 @@
 
 //! Plugin Frame (Type 0x50–0x5F) processing and integration.
 //!
-//! This module provides comprehensive support for Plugin Frames as specified in 
+//! This module provides comprehensive support for Plugin Frames as specified in
 //! Nyx Protocol v1.0 §7. Plugin frames enable third-party extensions to exchange
 //! custom data over established Nyx connections while maintaining security and
 //! performance isolation.
@@ -21,27 +21,26 @@
 //! - Unknown required plugins trigger connection termination (0x07)
 //! - Plugin IPC channels provide sandboxed execution environment
 
-use std::collections::HashMap;
 #[cfg(feature = "plugin")]
 use bytes::{Bytes, BytesMut};
-use tracing::{debug, error, warn, trace};
 #[cfg(feature = "plugin")]
-use nom::{IResult, number::complete::u8 as parse_u8, bytes::complete::take};
+use nom::{bytes::complete::take, number::complete::u8 as parse_u8, IResult};
+use std::collections::HashMap;
+use tracing::{error, warn};
 
 #[cfg(feature = "plugin")]
-use crate::plugin::{PluginHeader};
+use crate::plugin::PluginHeader;
 #[cfg(feature = "plugin")]
-use crate::plugin_registry::{PluginRegistry, Permission};
+use crate::plugin_dispatch::{DispatchError, PluginDispatcher, PluginRuntimeStats};
 #[cfg(feature = "plugin")]
-use crate::plugin_dispatch::{PluginDispatcher, DispatchError, PluginRuntimeStats};
+use crate::plugin_registry::{Permission, PluginRegistry};
 
-use crate::frame::{FrameHeader, parse_header_ext, ParsedHeader};
-use crate::management::{CloseFrame, build_close_unsupported_cap, ERR_UNSUPPORTED_CAP};
-use schemars::JsonSchema;
+use crate::frame::{parse_header_ext, FrameHeader};
+use crate::management::build_close_unsupported_cap;
 
 /// Plugin Frame type range (0x50-0x5F = 80-95 decimal)
-pub const PLUGIN_FRAME_TYPE_MIN: u8 = 80;  // 0x50
-pub const PLUGIN_FRAME_TYPE_MAX: u8 = 95;  // 0x5F
+pub const PLUGIN_FRAME_TYPE_MIN: u8 = 80; // 0x50
+pub const PLUGIN_FRAME_TYPE_MAX: u8 = 95; // 0x5F
 
 /// Maximum size for plugin frame payload (16MB - header overhead)
 pub const MAX_PLUGIN_PAYLOAD_SIZE: usize = 16 * 1024 * 1024 - 1024;
@@ -114,7 +113,7 @@ impl PluginFrameProcessor {
             frame_counts: HashMap::new(),
         }
     }
-    
+
     /// Create a minimal processor for builds without plugin support
     #[cfg(not(feature = "plugin"))]
     pub fn new() -> Self {
@@ -129,14 +128,20 @@ impl PluginFrameProcessor {
     }
 
     /// Parse raw frame bytes into structured plugin frame
-    pub fn parse_plugin_frame<'a>(&self, frame_data: &'a [u8]) -> Result<ParsedPluginFrame<'a>, PluginFrameError> {
+    pub fn parse_plugin_frame<'a>(
+        &self,
+        frame_data: &'a [u8],
+    ) -> Result<ParsedPluginFrame<'a>, PluginFrameError> {
         // Parse base frame header with optional path_id
-        let (remaining, parsed_header) = parse_header_ext(frame_data)
-            .map_err(|e| PluginFrameError::ValidationError(format!("Frame header parse error: {}", e)))?;
-        
+        let (remaining, parsed_header) = parse_header_ext(frame_data).map_err(|e| {
+            PluginFrameError::ValidationError(format!("Frame header parse error: {}", e))
+        })?;
+
         // Validate frame type is in plugin range
         if !Self::is_plugin_frame_type(parsed_header.hdr.frame_type) {
-            return Err(PluginFrameError::InvalidFrameType(parsed_header.hdr.frame_type));
+            return Err(PluginFrameError::InvalidFrameType(
+                parsed_header.hdr.frame_type,
+            ));
         }
 
         // Check frame size limits
@@ -149,14 +154,16 @@ impl PluginFrameProcessor {
 
         // Ensure we have enough data for the declared frame length
         if remaining.len() < parsed_header.hdr.length as usize {
-            return Err(PluginFrameError::ValidationError(
-                format!("Insufficient data: have {} bytes, need {}", remaining.len(), parsed_header.hdr.length)
-            ));
+            return Err(PluginFrameError::ValidationError(format!(
+                "Insufficient data: have {} bytes, need {}",
+                remaining.len(),
+                parsed_header.hdr.length
+            )));
         }
 
         // Extract frame payload according to declared length
         let frame_payload = &remaining[..parsed_header.hdr.length as usize];
-        
+
         // Parse CBOR header - this consumes the beginning of frame_payload
         #[cfg(feature = "plugin")]
         {
@@ -164,7 +171,8 @@ impl PluginFrameProcessor {
                 .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
 
             // Calculate CBOR header size to determine payload split
-            let cbor_header_bytes = plugin_header.encode()
+            let cbor_header_bytes = plugin_header
+                .encode()
                 .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
             let payload_start = cbor_header_bytes.len();
 
@@ -177,7 +185,9 @@ impl PluginFrameProcessor {
 
             debug!(
                 "Parsed plugin frame: type=0x{:02X}, plugin_id={}, payload_len={}",
-                parsed_header.hdr.frame_type, plugin_header.id, payload.len()
+                parsed_header.hdr.frame_type,
+                plugin_header.id,
+                payload.len()
             );
 
             return Ok(ParsedPluginFrame {
@@ -191,17 +201,26 @@ impl PluginFrameProcessor {
         #[cfg(not(feature = "plugin"))]
         {
             // Non-plugin builds do not support parsing plugin frames fully
-            Err(PluginFrameError::ValidationError("Plugin support not enabled".to_string()))
+            Err(PluginFrameError::ValidationError(
+                "Plugin support not enabled".to_string(),
+            ))
         }
     }
 
     /// Process a parsed plugin frame through validation and dispatch
     #[cfg(feature = "plugin")]
-    pub async fn process_plugin_frame(&mut self, frame: ParsedPluginFrame<'_>) -> Result<PluginFrameResult, PluginFrameError> {
+    pub async fn process_plugin_frame(
+        &mut self,
+        frame: ParsedPluginFrame<'_>,
+    ) -> Result<PluginFrameResult, PluginFrameError> {
         let plugin_id = frame.plugin_header.id;
-        
-        trace!("Processing plugin frame: id={}, flags=0x{:02X}, payload_len={}", 
-               plugin_id, frame.plugin_header.flags, frame.payload.len());
+
+        trace!(
+            "Processing plugin frame: id={}, flags=0x{:02X}, payload_len={}",
+            plugin_id,
+            frame.plugin_header.flags,
+            frame.payload.len()
+        );
 
         // Update telemetry counters
         *self.frame_counts.entry(plugin_id).or_insert(0) += 1;
@@ -212,13 +231,19 @@ impl PluginFrameProcessor {
             None => {
                 // Check if plugin is marked as required
                 if frame.plugin_header.flags & PLUGIN_FLAG_REQUIRED != 0 {
-                    warn!("Required plugin {} not supported, connection must close", plugin_id);
+                    warn!(
+                        "Required plugin {} not supported, connection must close",
+                        plugin_id
+                    );
                     return Ok(PluginFrameResult::RequireClose {
                         plugin_id,
                         reason: format!("Required plugin {} not available", plugin_id),
                     });
                 } else {
-                    debug!("Optional plugin {} not available, ignoring frame", plugin_id);
+                    debug!(
+                        "Optional plugin {} not available, ignoring frame",
+                        plugin_id
+                    );
                     return Ok(PluginFrameResult::Ignored { plugin_id });
                 }
             }
@@ -243,9 +268,19 @@ impl PluginFrameProcessor {
         };
 
         // Delegate to dispatcher with full validation and IPC routing
-        match self.dispatcher.dispatch_plugin_frame(frame.frame_header.frame_type, std::mem::take(&mut frame_bytes)).await {
+        match self
+            .dispatcher
+            .dispatch_plugin_frame(
+                frame.frame_header.frame_type,
+                std::mem::take(&mut frame_bytes),
+            )
+            .await
+        {
             Ok(()) => {
-                debug!("Plugin frame dispatched to runtime for plugin {}", plugin_id);
+                debug!(
+                    "Plugin frame dispatched to runtime for plugin {}",
+                    plugin_id
+                );
                 Ok(PluginFrameResult::Dispatched { plugin_id })
             }
             Err(dispatch_err) => {
@@ -255,7 +290,10 @@ impl PluginFrameProcessor {
                     DE::InsufficientPermissions(id) => Err(PluginFrameError::PermissionDenied(id)),
                     DE::InvalidFrameType(ft) => Err(PluginFrameError::InvalidFrameType(ft)),
                     DE::CborError(e) => Err(PluginFrameError::CborError(e.to_string())),
-                    other => Err(PluginFrameError::ValidationError(format!("dispatch error: {}", other))),
+                    other => Err(PluginFrameError::ValidationError(format!(
+                        "dispatch error: {}",
+                        other
+                    ))),
                 }
             }
         }
@@ -263,13 +301,16 @@ impl PluginFrameProcessor {
 
     /// Stub implementation for non-plugin builds
     #[cfg(not(feature = "plugin"))]
-    pub async fn process_plugin_frame(&mut self, frame: ParsedPluginFrame<'_>) -> Result<PluginFrameResult, PluginFrameError> {
+    pub async fn process_plugin_frame(
+        &mut self,
+        frame: ParsedPluginFrame<'_>,
+    ) -> Result<PluginFrameResult, PluginFrameError> {
         // For non-plugin builds, reject all plugin frames
         let plugin_id = 0; // Cannot access frame.plugin_header.id without plugin feature
-        
+
         warn!("Plugin frame received but plugin support not enabled");
-        Ok(PluginFrameResult::Error { 
-            error: "Plugin support not compiled in".to_string() 
+        Ok(PluginFrameResult::Error {
+            error: "Plugin support not compiled in".to_string(),
         })
     }
 
@@ -291,8 +332,8 @@ impl PluginFrameProcessor {
     /// (Testing/Docs) Export JSON Schemas for PluginHeader / PluginFrame
     #[cfg(feature = "plugin")]
     pub fn export_json_schemas() -> serde_json::Value {
-        use schemars::{schema_for};
-        use crate::plugin::{PluginHeader, PluginFrame, PluginHandshake, PluginCapability};
+        use crate::plugin::{PluginCapability, PluginFrame, PluginHandshake, PluginHeader};
+        use schemars::schema_for;
         serde_json::json!({
             "PluginHeader": schema_for!(PluginHeader),
             "PluginFrame": schema_for!(PluginFrame),
@@ -324,12 +365,13 @@ pub fn build_plugin_frame(
     validate_plugin_frame_type(frame_type)?;
 
     // Encode CBOR header
-    let cbor_header = plugin_header.encode()
+    let cbor_header = plugin_header
+        .encode()
         .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
-    
+
     // Calculate total payload length (CBOR + plugin data)
     let total_payload_len = cbor_header.len() + payload.len();
-    
+
     // Check size limits
     if total_payload_len > MAX_PLUGIN_PAYLOAD_SIZE {
         return Err(PluginFrameError::FrameTooLarge {
@@ -347,15 +389,20 @@ pub fn build_plugin_frame(
 
     // Use builder to create header bytes with optional path_id
     let header_bytes = crate::builder::build_header_ext(frame_header, path_id);
-    
+
     // Assemble complete frame
     let mut frame_bytes = Vec::with_capacity(header_bytes.len() + total_payload_len);
     frame_bytes.extend_from_slice(&header_bytes);
     frame_bytes.extend_from_slice(&cbor_header);
     frame_bytes.extend_from_slice(payload);
 
-    debug!("Built plugin frame: type=0x{:02X}, total_len={}, cbor_len={}, payload_len={}", 
-           frame_type, frame_bytes.len(), cbor_header.len(), payload.len());
+    debug!(
+        "Built plugin frame: type=0x{:02X}, total_len={}, cbor_len={}, payload_len={}",
+        frame_type,
+        frame_bytes.len(),
+        cbor_header.len(),
+        payload.len()
+    );
 
     Ok(frame_bytes)
 }
@@ -370,7 +417,7 @@ mod tests {
         assert!(PluginFrameProcessor::is_plugin_frame_type(0x50));
         assert!(PluginFrameProcessor::is_plugin_frame_type(0x55));
         assert!(PluginFrameProcessor::is_plugin_frame_type(0x5F));
-        
+
         // Invalid frame types
         assert!(!PluginFrameProcessor::is_plugin_frame_type(0x4F));
         assert!(!PluginFrameProcessor::is_plugin_frame_type(0x60));
@@ -381,7 +428,7 @@ mod tests {
     fn test_frame_type_validation() {
         assert!(validate_plugin_frame_type(0x50).is_ok());
         assert!(validate_plugin_frame_type(0x5F).is_ok());
-        
+
         let err = validate_plugin_frame_type(0x30).unwrap_err();
         matches!(err, PluginFrameError::InvalidFrameType(0x30));
     }
@@ -390,7 +437,7 @@ mod tests {
     #[test]
     fn test_build_plugin_frame() {
         use crate::plugin::PluginHeader;
-        
+
         let header = PluginHeader {
             id: 12345,
             flags: 0x01,
@@ -399,11 +446,12 @@ mod tests {
 
         let frame = build_plugin_frame(
             0x52, // frame type
-            0x00, // frame flags  
+            0x00, // frame flags
             None, // no path_id
             &header,
             b"payload_data",
-        ).expect("build frame");
+        )
+        .expect("build frame");
 
         assert!(!frame.is_empty());
         assert!(frame.len() > 20); // Should have header + CBOR + payload
@@ -417,7 +465,7 @@ mod tests {
             size: large_size,
             max: MAX_PLUGIN_PAYLOAD_SIZE,
         };
-        
+
         assert!(format!("{}", err).contains("too large"));
     }
 }

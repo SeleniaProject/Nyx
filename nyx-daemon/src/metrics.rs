@@ -1,16 +1,16 @@
-use std::sync::atomic::{AtomicU64, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
-use std::collections::HashMap;
 use crate::push::{PushManager, PushMessage};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 
-use sysinfo::{System, Pid};
+use sysinfo::{Pid, System};
 use tokio::sync::{broadcast, RwLock};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 // Registry is handled internally by metrics-exporter-prometheus
 
 // Import alert system types
-use crate::alert_system::{AlertStatistics};
+use crate::alert_system::AlertStatistics;
 
 /// Enhanced metrics collector for comprehensive daemon performance monitoring
 #[derive(Debug)]
@@ -24,31 +24,31 @@ pub struct MetricsCollector {
     pub packets_sent: Arc<AtomicU64>,
     pub packets_received: Arc<AtomicU64>,
     pub retransmissions: Arc<AtomicU64>,
-    
+
     // Connection tracking
     pub active_streams: Arc<AtomicU32>,
     pub connected_peers: Arc<AtomicU32>,
     pub total_connections: Arc<AtomicU64>,
     pub failed_connections: Arc<AtomicU64>,
-    
+
     // Performance metrics
     pub cover_traffic_rate: Arc<RwLock<f64>>,
     pub avg_latency_ms: Arc<RwLock<f64>>,
     pub packet_loss_rate: Arc<RwLock<f64>>,
     pub bandwidth_utilization: Arc<RwLock<f64>>,
-    
+
     // System monitoring
     pub system: Arc<RwLock<System>>,
     pub start_time: SystemTime,
     pub last_update: Arc<RwLock<Instant>>,
-    
+
     // Mix routes tracking
     pub mix_routes: Arc<RwLock<Vec<String>>>,
-    
+
     // Latency tracking for averages
     pub latency_samples: Arc<RwLock<Vec<f64>>>,
     pub max_latency_samples: usize,
-    
+
     // Additional performance tracking
     pub bandwidth_samples: Arc<RwLock<Vec<f64>>>,
     pub cpu_samples: Arc<RwLock<Vec<f64>>>,
@@ -61,7 +61,7 @@ impl MetricsCollector {
     pub fn new() -> Self {
         let mut system = System::new_all();
         system.refresh_all();
-        
+
         Self {
             // Basic counters
             total_requests: Arc::new(AtomicU64::new(0)),
@@ -72,31 +72,31 @@ impl MetricsCollector {
             packets_sent: Arc::new(AtomicU64::new(0)),
             packets_received: Arc::new(AtomicU64::new(0)),
             retransmissions: Arc::new(AtomicU64::new(0)),
-            
+
             // Connection tracking
             active_streams: Arc::new(AtomicU32::new(0)),
             connected_peers: Arc::new(AtomicU32::new(0)),
             total_connections: Arc::new(AtomicU64::new(0)),
             failed_connections: Arc::new(AtomicU64::new(0)),
-            
+
             // Performance metrics
             cover_traffic_rate: Arc::new(RwLock::new(0.0)),
             avg_latency_ms: Arc::new(RwLock::new(0.0)),
             packet_loss_rate: Arc::new(RwLock::new(0.0)),
             bandwidth_utilization: Arc::new(RwLock::new(0.0)),
-            
+
             // System monitoring
             system: Arc::new(RwLock::new(system)),
             start_time: SystemTime::now(),
             last_update: Arc::new(RwLock::new(Instant::now())),
-            
+
             // Mix routes tracking
             mix_routes: Arc::new(RwLock::new(Vec::new())),
-            
+
             // Latency tracking
             latency_samples: Arc::new(RwLock::new(Vec::new())),
             max_latency_samples: 1000, // Keep last 1000 samples for averaging
-            
+
             // Additional performance tracking
             bandwidth_samples: Arc::new(RwLock::new(Vec::new())),
             cpu_samples: Arc::new(RwLock::new(Vec::new())),
@@ -120,7 +120,7 @@ impl MetricsCollector {
         let bandwidth_samples = Arc::clone(&self.bandwidth_samples);
         let cpu_samples = Arc::clone(&self.cpu_samples);
         let memory_samples = Arc::clone(&self.memory_samples);
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             let mut last_bytes_sent = 0u64;
@@ -128,58 +128,60 @@ impl MetricsCollector {
             let mut last_packets_sent = 0u64;
             let mut last_packets_received = 0u64;
             let mut last_retransmissions = 0u64;
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Update system information
                 {
                     let mut sys = system.write().await;
                     sys.refresh_all();
                 }
-                
+
                 // Calculate rates
                 let current_bytes_sent = bytes_sent.load(Ordering::Relaxed);
                 let current_bytes_received = bytes_received.load(Ordering::Relaxed);
                 let current_packets_sent = packets_sent.load(Ordering::Relaxed);
                 let current_packets_received = packets_received.load(Ordering::Relaxed);
                 let current_retransmissions = retransmissions.load(Ordering::Relaxed);
-                
+
                 // Calculate cover traffic rate (packets per second)
                 let packets_delta = (current_packets_sent - last_packets_sent) as f64;
                 {
                     let mut rate = cover_traffic_rate.write().await;
                     *rate = packets_delta; // packets per second
                 }
-                
+
                 // Calculate bandwidth utilization (simplified)
-                let bytes_delta = (current_bytes_sent + current_bytes_received) - 
-                                 (last_bytes_sent + last_bytes_received);
+                let bytes_delta = (current_bytes_sent + current_bytes_received)
+                    - (last_bytes_sent + last_bytes_received);
                 let bandwidth_mbps = (bytes_delta as f64 * 8.0) / (1024.0 * 1024.0); // Convert to Mbps
-                
+
                 // Store bandwidth sample
                 {
                     let mut samples = bandwidth_samples.write().await;
                     samples.push(bandwidth_mbps);
-                    if samples.len() > 100 { // Keep last 100 samples
+                    if samples.len() > 100 {
+                        // Keep last 100 samples
                         samples.remove(0);
                     }
                 }
-                
+
                 {
                     let mut util = bandwidth_utilization.write().await;
                     *util = (bandwidth_mbps / 1000.0).min(1.0); // Assume 1Gbps max, normalize to 0-1
                 }
-                
+
                 // Update system metrics and store samples
                 {
                     let mut sys = system.write().await;
                     sys.refresh_cpu();
                     sys.refresh_memory();
-                    
+
                     let cpu_usage = sys.global_cpu_info().cpu_usage() as f64;
-                    let memory_usage = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
-                    
+                    let memory_usage =
+                        (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
+
                     // Store CPU samples
                     {
                         let mut samples = cpu_samples.write().await;
@@ -188,7 +190,7 @@ impl MetricsCollector {
                             samples.remove(0);
                         }
                     }
-                    
+
                     // Store memory samples
                     {
                         let mut samples = memory_samples.write().await;
@@ -198,7 +200,7 @@ impl MetricsCollector {
                         }
                     }
                 }
-                
+
                 // Calculate packet loss rate
                 let total_packets = current_packets_sent + current_packets_received;
                 let loss_rate = if total_packets > 0 {
@@ -210,14 +212,14 @@ impl MetricsCollector {
                     let mut loss = packet_loss_rate.write().await;
                     *loss = loss_rate;
                 }
-                
+
                 // Update last values
                 last_bytes_sent = current_bytes_sent;
                 last_bytes_received = current_bytes_received;
                 last_packets_sent = current_packets_sent;
                 last_packets_received = current_packets_received;
                 last_retransmissions = current_retransmissions;
-                
+
                 // Update last update time
                 {
                     let mut update_time = last_update.write().await;
@@ -318,29 +320,29 @@ impl MetricsCollector {
     pub fn record_connection_attempt(&self) {
         self.connection_attempts.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_successful_connection(&self) {
         self.successful_connections.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     // Latency tracking
     pub async fn record_latency(&self, latency_ms: f64) {
         let mut samples = self.latency_samples.write().await;
         samples.push(latency_ms);
-        
+
         // Keep only the most recent samples
         if samples.len() > self.max_latency_samples {
             samples.remove(0);
         }
-        
+
         // Update average latency
         let avg = samples.iter().sum::<f64>() / samples.len() as f64;
         drop(samples); // Release the lock before acquiring another one
-        
+
         let mut avg_latency = self.avg_latency_ms.write().await;
         *avg_latency = avg;
     }
-    
+
     // Bandwidth tracking
     pub async fn record_bandwidth(&self, bandwidth_mbps: f64) {
         let mut samples = self.bandwidth_samples.write().await;
@@ -349,22 +351,24 @@ impl MetricsCollector {
             samples.remove(0);
         }
     }
-    
+
     // Get performance statistics
     pub async fn get_bandwidth_samples(&self) -> Vec<f64> {
         self.bandwidth_samples.read().await.clone()
     }
-    
+
     pub async fn get_cpu_samples(&self) -> Vec<f64> {
         self.cpu_samples.read().await.clone()
     }
-    
+
     pub async fn get_memory_samples(&self) -> Vec<f64> {
         self.memory_samples.read().await.clone()
     }
 
     pub fn get_uptime(&self) -> Duration {
-        SystemTime::now().duration_since(self.start_time).unwrap_or_default()
+        SystemTime::now()
+            .duration_since(self.start_time)
+            .unwrap_or_default()
     }
 
     pub async fn get_performance_metrics(&self) -> crate::proto::PerformanceMetrics {
@@ -377,7 +381,9 @@ impl MetricsCollector {
         let (cpu_usage, memory_usage_mb) = {
             let system = self.system.read().await;
             let current_pid = std::process::id();
-            if let Some(process) = system.process(sysinfo::Pid::from(current_pid.try_into().unwrap_or(0))) {
+            if let Some(process) =
+                system.process(sysinfo::Pid::from(current_pid.try_into().unwrap_or(0)))
+            {
                 (
                     process.cpu_usage() as f64 / 100.0, // Convert to 0-1 range
                     process.memory() as f64 / (1024.0 * 1024.0), // Convert to MB
@@ -425,7 +431,12 @@ impl MetricsCollector {
                     if let Ok(status) = fs::read_to_string("/proc/self/status") {
                         for line in status.lines() {
                             if let Some(rest) = line.strip_prefix("Threads:") {
-                                threads = rest.trim().split_whitespace().next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+                                threads = rest
+                                    .trim()
+                                    .split_whitespace()
+                                    .next()
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(0);
                                 break;
                             }
                         }
@@ -437,7 +448,10 @@ impl MetricsCollector {
                 #[cfg(unix)]
                 let fd_count: u32 = {
                     use std::fs;
-                    fs::read_dir("/proc/self/fd").ok().map(|it| it.count() as u32).unwrap_or(0)
+                    fs::read_dir("/proc/self/fd")
+                        .ok()
+                        .map(|it| it.count() as u32)
+                        .unwrap_or(0)
                 };
                 #[cfg(not(unix))]
                 let fd_count: u32 = 0;
@@ -699,11 +713,11 @@ pub struct ComprehensiveMetrics {
     system_metrics: Arc<RwLock<SystemMetrics>>,
     network_metrics: Arc<RwLock<NetworkMetrics>>,
     error_metrics: Arc<RwLock<ErrorMetrics>>,
-    
+
     // Historical data for trend analysis
     metrics_history: Arc<RwLock<Vec<MetricsSnapshot>>>,
     max_history_size: usize,
-    
+
     // Alert system
     alert_thresholds: Arc<RwLock<HashMap<String, AlertThreshold>>>,
     active_alerts: Arc<RwLock<HashMap<String, Alert>>>,
@@ -711,11 +725,11 @@ pub struct ComprehensiveMetrics {
     alert_routes: Arc<RwLock<Vec<AlertRoute>>>,
     suppression_rules: Arc<RwLock<Vec<SuppressionRule>>>,
     alert_sender: broadcast::Sender<Alert>,
-    
+
     // System monitoring
     system: Arc<RwLock<System>>,
     start_time: SystemTime,
-    
+
     // Base metrics collector for compatibility
     base_collector: Arc<MetricsCollector>,
 
@@ -758,9 +772,9 @@ impl ComprehensiveMetrics {
     pub fn new(base_collector: Arc<MetricsCollector>) -> Self {
         let mut system = System::new_all();
         system.refresh_all();
-        
+
         let (alert_sender, alert_receiver) = broadcast::channel(1000);
-        
+
         Self {
             layer_metrics: Arc::new(RwLock::new(HashMap::new())),
             system_metrics: Arc::new(RwLock::new(SystemMetrics::default())),
@@ -786,18 +800,18 @@ impl ComprehensiveMetrics {
         self.push_manager = Some(push);
         self
     }
-    
+
     /// Collect all metrics from all layers
     pub async fn collect_all(&self) -> MetricsSnapshot {
         // Update system metrics
         self.update_system_metrics().await;
-        
+
         // Update network metrics from base collector
         self.update_network_metrics().await;
-        
+
         // Update layer metrics
         self.update_layer_metrics().await;
-        
+
         // Create snapshot
         let snapshot = MetricsSnapshot {
             timestamp: SystemTime::now(),
@@ -807,83 +821,108 @@ impl ComprehensiveMetrics {
             error_metrics: self.error_metrics.read().await.clone(),
             performance_metrics: self.base_collector.get_performance_metrics().await,
         };
-        
+
         // Store in history
         let mut history = self.metrics_history.write().await;
         history.push(snapshot.clone());
         if history.len() > self.max_history_size {
             history.remove(0);
         }
-        
+
         // Check for alerts
         self.check_alerts(&snapshot).await;
-        
+
         snapshot
     }
-    
+
     /// Update system metrics
     async fn update_system_metrics(&self) {
         {
             let mut system = self.system.write().await;
             system.refresh_all();
-            
+
             let uptime = SystemTime::now()
                 .duration_since(self.start_time)
                 .unwrap_or_default()
                 .as_secs();
-            
+
             let mut metrics = self.system_metrics.write().await;
             metrics.cpu_usage_percent = system.global_cpu_info().cpu_usage() as f64;
             metrics.memory_usage_bytes = system.used_memory();
             metrics.memory_total_bytes = system.total_memory();
             metrics.uptime_seconds = uptime;
-            
+
             // Get process-specific metrics
             let current_pid = std::process::id();
             if let Some(process) = system.process(Pid::from(current_pid.try_into().unwrap_or(0))) {
                 metrics.open_file_descriptors = 0; // Would need platform-specific implementation
                 metrics.thread_count = 0; // Would need platform-specific implementation
             }
-            
+
             // Network metrics from base collector
             metrics.network_bytes_sent = self.base_collector.bytes_sent.load(Ordering::Relaxed);
-            metrics.network_bytes_received = self.base_collector.bytes_received.load(Ordering::Relaxed);
+            metrics.network_bytes_received =
+                self.base_collector.bytes_received.load(Ordering::Relaxed);
         }
     }
-    
+
     /// Update network metrics
     async fn update_network_metrics(&self) {
         let mut metrics = self.network_metrics.write().await;
-        
+
         metrics.active_connections = self.base_collector.active_streams.load(Ordering::Relaxed);
-        metrics.total_connections = self.base_collector.total_connections.load(Ordering::Relaxed);
-        metrics.failed_connections = self.base_collector.failed_connections.load(Ordering::Relaxed);
-        
-        let total_attempts = self.base_collector.connection_attempts.load(Ordering::Relaxed);
-        let successful = self.base_collector.successful_connections.load(Ordering::Relaxed);
+        metrics.total_connections = self
+            .base_collector
+            .total_connections
+            .load(Ordering::Relaxed);
+        metrics.failed_connections = self
+            .base_collector
+            .failed_connections
+            .load(Ordering::Relaxed);
+
+        let total_attempts = self
+            .base_collector
+            .connection_attempts
+            .load(Ordering::Relaxed);
+        let successful = self
+            .base_collector
+            .successful_connections
+            .load(Ordering::Relaxed);
         metrics.connection_success_rate = if total_attempts > 0 {
             successful as f64 / total_attempts as f64
         } else {
             1.0
         };
-        
-        metrics.average_latency = Duration::from_millis(
-            *self.base_collector.avg_latency_ms.read().await as u64
-        );
+
+        metrics.average_latency =
+            Duration::from_millis(*self.base_collector.avg_latency_ms.read().await as u64);
         metrics.packet_loss_rate = *self.base_collector.packet_loss_rate.read().await;
         metrics.bandwidth_utilization = *self.base_collector.bandwidth_utilization.read().await;
         metrics.peer_count = self.base_collector.connected_peers.load(Ordering::Relaxed);
-        metrics.route_count = self.base_collector.get_mix_routes().await.len().try_into().unwrap_or(0);
+        metrics.route_count = self
+            .base_collector
+            .get_mix_routes()
+            .await
+            .len()
+            .try_into()
+            .unwrap_or(0);
     }
-    
+
     /// Update layer-specific metrics
     async fn update_layer_metrics(&self) {
         let mut layer_metrics = self.layer_metrics.write().await;
-        
+
         // Update each layer's metrics
-        for layer_type in [LayerType::Crypto, LayerType::Stream, LayerType::Mix, LayerType::Fec, LayerType::Transport] {
-            let metrics = layer_metrics.entry(layer_type.clone()).or_insert_with(|| {
-                LayerMetrics {
+        for layer_type in [
+            LayerType::Crypto,
+            LayerType::Stream,
+            LayerType::Mix,
+            LayerType::Fec,
+            LayerType::Transport,
+        ] {
+            let metrics = layer_metrics
+                .entry(layer_type.clone())
+                .or_insert_with(|| LayerMetrics {
                     layer_type: layer_type.clone(),
                     status: LayerStatus::default(),
                     throughput: 0.0,
@@ -895,32 +934,30 @@ impl ComprehensiveMetrics {
                     active_connections: 0,
                     queue_depth: 0,
                     last_updated: SystemTime::UNIX_EPOCH,
-                }
-            });
-            
+                });
+
             // Update common metrics from base collector
             metrics.bytes_processed = match layer_type {
                 LayerType::Transport => {
-                    self.base_collector.bytes_sent.load(Ordering::Relaxed) +
-                    self.base_collector.bytes_received.load(Ordering::Relaxed)
-                },
+                    self.base_collector.bytes_sent.load(Ordering::Relaxed)
+                        + self.base_collector.bytes_received.load(Ordering::Relaxed)
+                }
                 _ => metrics.bytes_processed, // Would be updated by specific layer implementations
             };
-            
+
             metrics.packets_processed = match layer_type {
                 LayerType::Transport => {
-                    self.base_collector.packets_sent.load(Ordering::Relaxed) +
-                    self.base_collector.packets_received.load(Ordering::Relaxed)
-                },
+                    self.base_collector.packets_sent.load(Ordering::Relaxed)
+                        + self.base_collector.packets_received.load(Ordering::Relaxed)
+                }
                 _ => metrics.packets_processed,
             };
-            
+
             metrics.active_connections = self.base_collector.active_streams.load(Ordering::Relaxed);
-            metrics.latency = Duration::from_millis(
-                *self.base_collector.avg_latency_ms.read().await as u64
-            );
+            metrics.latency =
+                Duration::from_millis(*self.base_collector.avg_latency_ms.read().await as u64);
             metrics.last_updated = SystemTime::now();
-            
+
             // Set status based on error rates and activity
             metrics.status = if metrics.error_rate > 10.0 {
                 LayerStatus::Failed
@@ -933,17 +970,17 @@ impl ComprehensiveMetrics {
             };
         }
     }
-    
+
     /// Check for alert conditions using comprehensive alert system
     async fn check_alerts(&self, snapshot: &MetricsSnapshot) {
         use crate::alert_system::AlertSystem;
-        
+
         // Create a temporary alert system for checking thresholds
         let alert_system = AlertSystem::new();
-        
+
         // Check thresholds and generate alerts
         let new_alerts = alert_system.check_thresholds(snapshot).await;
-        
+
         // Process each new alert
         for alert in new_alerts {
             // Add to active alerts
@@ -951,7 +988,7 @@ impl ComprehensiveMetrics {
                 let mut active_alerts = self.active_alerts.write().await;
                 active_alerts.insert(alert.id.clone(), alert.clone());
             }
-            
+
             // Add to history
             {
                 let mut history = self.alert_history.write().await;
@@ -960,31 +997,32 @@ impl ComprehensiveMetrics {
                     action: AlertAction::Created,
                     timestamp: SystemTime::now(),
                 });
-                
+
                 // Trim history if needed
                 if history.len() > 10000 {
                     history.remove(0);
                 }
             }
-            
+
             // Route alert through configured handlers
             self.route_alert(&alert).await;
-            
+
             // Broadcast alert
             let _ = self.alert_sender.send(alert);
         }
     }
-    
+
     /// Route alert through configured handlers
     async fn route_alert(&self, alert: &Alert) {
         let routes = self.alert_routes.read().await;
-        
+
         for route in routes.iter() {
             // Check severity filter
-            if !route.severity_filter.is_empty() && !route.severity_filter.contains(&alert.severity) {
+            if !route.severity_filter.is_empty() && !route.severity_filter.contains(&alert.severity)
+            {
                 continue;
             }
-            
+
             // Check layer filter
             if !route.layer_filter.is_empty() {
                 if let Some(alert_layer) = &alert.layer {
@@ -995,11 +1033,11 @@ impl ComprehensiveMetrics {
                     continue;
                 }
             }
-            
+
             // Handle alert based on handler type
             self.handle_alert(alert, &route.handler).await;
         }
-        
+
         // Default console output if no routes configured
         if routes.is_empty() {
             tracing::warn!(
@@ -1011,7 +1049,7 @@ impl ComprehensiveMetrics {
             );
         }
     }
-    
+
     /// Handle alert based on handler type
     async fn handle_alert(&self, alert: &Alert, handler: &AlertHandler) {
         match handler {
@@ -1023,42 +1061,62 @@ impl ComprehensiveMetrics {
                     description = %alert.description,
                     "ALERT"
                 );
-            },
+            }
             AlertHandler::Log => {
-                log::warn!("Alert: {} - {} - {}", alert.title, alert.description, alert.current_value);
-            },
+                log::warn!(
+                    "Alert: {} - {} - {}",
+                    alert.title,
+                    alert.description,
+                    alert.current_value
+                );
+            }
             AlertHandler::Email(email) => {
                 log::info!("Would send email alert to {}: {}", email, alert.title);
-            },
+            }
             AlertHandler::Webhook(url) => {
                 log::info!("Would send webhook to {}: {}", url, alert.title);
-            },
+            }
         }
 
         // Send critical alerts to push manager if attached
         if alert.severity == AlertSeverity::Critical {
             if let Some(pm) = &self.push_manager {
                 let topic = format!("alerts/{}", alert.metric);
-                let payload = format!("{}: {} (value={}, threshold={})", alert.title, alert.description, alert.current_value, alert.threshold);
+                let payload = format!(
+                    "{}: {} (value={}, threshold={})",
+                    alert.title, alert.description, alert.current_value, alert.threshold
+                );
                 pm.publish(&topic, &payload);
             }
         }
     }
-    
+
     /// Record an error for metrics tracking
-    pub async fn record_error(&self, layer: LayerType, error_type: String, message: String, severity: ErrorSeverity) {
+    pub async fn record_error(
+        &self,
+        layer: LayerType,
+        error_type: String,
+        message: String,
+        severity: ErrorSeverity,
+    ) {
         let mut error_metrics = self.error_metrics.write().await;
-        
+
         error_metrics.total_errors += 1;
-        *error_metrics.errors_by_layer.entry(layer.clone()).or_insert(0) += 1;
-        *error_metrics.errors_by_type.entry(error_type.clone()).or_insert(0) += 1;
-        
+        *error_metrics
+            .errors_by_layer
+            .entry(layer.clone())
+            .or_insert(0) += 1;
+        *error_metrics
+            .errors_by_type
+            .entry(error_type.clone())
+            .or_insert(0) += 1;
+
         match severity {
             ErrorSeverity::Critical => error_metrics.critical_errors += 1,
             ErrorSeverity::Warning => error_metrics.warning_errors += 1,
             _ => {}
         }
-        
+
         let error_info = ErrorInfo {
             timestamp: SystemTime::now(),
             layer,
@@ -1067,83 +1125,93 @@ impl ComprehensiveMetrics {
             context: HashMap::new(),
             severity,
         };
-        
+
         error_metrics.recent_errors.push(error_info);
-        
+
         // Keep only recent errors (last 100)
         if error_metrics.recent_errors.len() > 100 {
             error_metrics.recent_errors.remove(0);
         }
-        
+
         // Update error rate (errors per minute)
         let now = SystemTime::now();
         let one_minute_ago = now - Duration::from_secs(60);
-        let recent_error_count = error_metrics.recent_errors.iter()
+        let recent_error_count = error_metrics
+            .recent_errors
+            .iter()
             .filter(|e| e.timestamp > one_minute_ago)
             .count();
         error_metrics.error_rate = recent_error_count as f64;
     }
-    
+
     /// Generate performance analysis
     pub async fn analyze_performance(&self) -> PerformanceAnalysis {
         let snapshot = self.collect_all().await;
         let history = self.metrics_history.read().await;
-        
+
         let mut bottlenecks = Vec::new();
         let mut recommendations = Vec::new();
         let mut trends = HashMap::new();
         let mut anomalies = Vec::new();
-        
+
         // Analyze CPU usage
         if snapshot.system_metrics.cpu_usage_percent > 80.0 {
             bottlenecks.push("High CPU usage detected".to_string());
             recommendations.push("Consider optimizing CPU-intensive operations".to_string());
         }
-        
+
         // Analyze memory usage
-        let memory_percent = (snapshot.system_metrics.memory_usage_bytes as f64 / 
-                            snapshot.system_metrics.memory_total_bytes as f64) * 100.0;
+        let memory_percent = (snapshot.system_metrics.memory_usage_bytes as f64
+            / snapshot.system_metrics.memory_total_bytes as f64)
+            * 100.0;
         if memory_percent > 85.0 {
             bottlenecks.push("High memory usage detected".to_string());
-            recommendations.push("Consider implementing memory optimization strategies".to_string());
+            recommendations
+                .push("Consider implementing memory optimization strategies".to_string());
         }
-        
+
         // Analyze network performance
         if snapshot.network_metrics.packet_loss_rate > 1.0 {
             bottlenecks.push("High packet loss rate detected".to_string());
             recommendations.push("Check network connectivity and congestion".to_string());
         }
-        
+
         // Calculate trends if we have historical data
         if history.len() > 10 {
-            let recent_snapshots = &history[history.len()-10..];
-            
+            let recent_snapshots = &history[history.len() - 10..];
+
             // CPU trend
-            let cpu_values: Vec<f64> = recent_snapshots.iter()
+            let cpu_values: Vec<f64> = recent_snapshots
+                .iter()
                 .map(|s| s.system_metrics.cpu_usage_percent)
                 .collect();
             let cpu_trend = self.calculate_trend(&cpu_values);
             trends.insert("cpu_usage_trend".to_string(), cpu_trend);
-            
+
             // Memory trend
-            let memory_values: Vec<f64> = recent_snapshots.iter()
-                .map(|s| (s.system_metrics.memory_usage_bytes as f64 / 
-                         s.system_metrics.memory_total_bytes as f64) * 100.0)
+            let memory_values: Vec<f64> = recent_snapshots
+                .iter()
+                .map(|s| {
+                    (s.system_metrics.memory_usage_bytes as f64
+                        / s.system_metrics.memory_total_bytes as f64)
+                        * 100.0
+                })
                 .collect();
             let memory_trend = self.calculate_trend(&memory_values);
             trends.insert("memory_usage_trend".to_string(), memory_trend);
-            
+
             // Latency trend
-            let latency_values: Vec<f64> = recent_snapshots.iter()
+            let latency_values: Vec<f64> = recent_snapshots
+                .iter()
                 .map(|s| s.network_metrics.average_latency.as_millis() as f64)
                 .collect();
             let latency_trend = self.calculate_trend(&latency_values);
             trends.insert("latency_trend".to_string(), latency_trend);
         }
-        
+
         // Calculate overall health score
         let mut health_score = 1.0;
-        
+
         // Deduct for high resource usage
         if snapshot.system_metrics.cpu_usage_percent > 80.0 {
             health_score -= 0.2;
@@ -1157,9 +1225,9 @@ impl ComprehensiveMetrics {
         if snapshot.error_metrics.error_rate > 5.0 {
             health_score -= 0.3;
         }
-        
+
         health_score = f64::max(health_score, 0.0);
-        
+
         PerformanceAnalysis {
             overall_health: health_score,
             bottlenecks,
@@ -1168,33 +1236,33 @@ impl ComprehensiveMetrics {
             anomalies,
         }
     }
-    
+
     /// Calculate trend from a series of values (positive = increasing, negative = decreasing)
     fn calculate_trend(&self, values: &[f64]) -> f64 {
         if values.len() < 2 {
             return 0.0;
         }
-        
-        let first_half = &values[0..values.len()/2];
-        let second_half = &values[values.len()/2..];
-        
+
+        let first_half = &values[0..values.len() / 2];
+        let second_half = &values[values.len() / 2..];
+
         let first_avg = first_half.iter().sum::<f64>() / first_half.len() as f64;
         let second_avg = second_half.iter().sum::<f64>() / second_half.len() as f64;
-        
+
         ((second_avg - first_avg) / first_avg) * 100.0
     }
-    
+
     /// Generate alerts based on current metrics
     pub async fn generate_alerts(&self) -> Vec<Alert> {
         let active_alerts = self.active_alerts.read().await;
         active_alerts.values().cloned().collect()
     }
-    
+
     /// Subscribe to alerts
     pub fn subscribe_alerts(&self) -> broadcast::Receiver<Alert> {
         self.alert_sender.subscribe()
     }
-    
+
     /// Update alert threshold
     pub async fn set_alert_threshold(&self, metric: String, threshold: f64) {
         let mut thresholds = self.alert_thresholds.write().await;
@@ -1210,19 +1278,19 @@ impl ComprehensiveMetrics {
         };
         thresholds.insert(metric, threshold_item);
     }
-    
+
     /// Add alert threshold with full configuration
     pub async fn add_alert_threshold(&self, threshold_id: String, threshold: AlertThreshold) {
         let mut thresholds = self.alert_thresholds.write().await;
         thresholds.insert(threshold_id, threshold);
     }
-    
+
     /// Remove alert threshold
     pub async fn remove_alert_threshold(&self, threshold_id: &str) -> bool {
         let mut thresholds = self.alert_thresholds.write().await;
         thresholds.remove(threshold_id).is_some()
     }
-    
+
     /// Add alert route
     pub async fn add_alert_route(&self, route: AlertRoute) {
         let mut routes = self.alert_routes.write().await;
@@ -1230,7 +1298,15 @@ impl ComprehensiveMetrics {
     }
 
     /// Convenience: send an explicit critical alert (also pushes via PushManager when attached)
-    pub async fn send_critical_alert(&self, title: &str, description: &str, metric: &str, value: f64, threshold: f64, layer: Option<LayerType>) {
+    pub async fn send_critical_alert(
+        &self,
+        title: &str,
+        description: &str,
+        metric: &str,
+        value: f64,
+        threshold: f64,
+        layer: Option<LayerType>,
+    ) {
         let alert = Alert {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: SystemTime::now(),
@@ -1252,18 +1328,18 @@ impl ComprehensiveMetrics {
         self.route_alert(&alert).await;
         let _ = self.alert_sender.send(alert);
     }
-    
+
     /// Add suppression rule
     pub async fn add_suppression_rule(&self, rule: SuppressionRule) {
         let mut rules = self.suppression_rules.write().await;
         rules.push(rule);
     }
-    
+
     /// Get active alerts
     pub async fn get_active_alerts(&self) -> HashMap<String, Alert> {
         self.active_alerts.read().await.clone()
     }
-    
+
     /// Get alert history
     pub async fn get_alert_history(&self, limit: Option<usize>) -> Vec<AlertHistoryEntry> {
         let history = self.alert_history.read().await;
@@ -1273,15 +1349,15 @@ impl ComprehensiveMetrics {
             history.clone()
         }
     }
-    
+
     /// Resolve an active alert
     pub async fn resolve_alert(&self, alert_id: &str) -> Result<(), String> {
         let mut active_alerts = self.active_alerts.write().await;
-        
+
         if let Some(mut alert) = active_alerts.remove(alert_id) {
             alert.resolved = true;
             alert.resolved_at = Some(SystemTime::now());
-            
+
             // Add to history
             let mut history = self.alert_history.write().await;
             history.push(AlertHistoryEntry {
@@ -1289,20 +1365,20 @@ impl ComprehensiveMetrics {
                 action: AlertAction::Resolved,
                 timestamp: SystemTime::now(),
             });
-            
+
             Ok(())
         } else {
             Err(format!("Alert with ID {} not found", alert_id))
         }
     }
-    
+
     /// Get alert statistics
     pub async fn get_alert_statistics(&self) -> AlertStatistics {
         use crate::alert_system::AlertStatistics;
-        
+
         let active_alerts = self.active_alerts.read().await;
         let history = self.alert_history.read().await;
-        
+
         let mut stats = AlertStatistics {
             total_active: active_alerts.len(),
             active_by_severity: HashMap::new(),
@@ -1310,41 +1386,60 @@ impl ComprehensiveMetrics {
             total_created_today: 0,
             most_frequent_metrics: HashMap::new(),
         };
-        
+
         // Count active alerts by severity
         for alert in active_alerts.values() {
-            *stats.active_by_severity.entry(alert.severity.clone()).or_insert(0) += 1;
+            *stats
+                .active_by_severity
+                .entry(alert.severity.clone())
+                .or_insert(0) += 1;
         }
-        
+
         // Analyze history
-        let today = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() / 86400;
-        
+        let today = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            / 86400;
+
         for entry in history.iter() {
             match entry.action {
                 AlertAction::Resolved => stats.total_resolved += 1,
                 AlertAction::Created => {
-                   let entry_day = entry.timestamp.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() / 86400;
+                    let entry_day = entry
+                        .timestamp
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                        / 86400;
                     if entry_day == today {
                         stats.total_created_today += 1;
                     }
-                    
-                    *stats.most_frequent_metrics.entry(entry.alert.metric.clone()).or_insert(0) += 1;
-                },
-                _ => {},
+
+                    *stats
+                        .most_frequent_metrics
+                        .entry(entry.alert.metric.clone())
+                        .or_insert(0) += 1;
+                }
+                _ => {}
             }
         }
-        
+
         stats
     }
-    
+
     /// Get metrics history
     pub async fn get_metrics_history(&self, limit: Option<usize>) -> Vec<MetricsSnapshot> {
         let history = self.metrics_history.read().await;
         match limit {
             Some(n) => {
-                let start = if history.len() > n { history.len() - n } else { 0 };
+                let start = if history.len() > n {
+                    history.len() - n
+                } else {
+                    0
+                };
                 history[start..].to_vec()
-            },
+            }
             None => history.clone(),
         }
     }
@@ -1402,42 +1497,46 @@ impl TrendAnalyzer {
     pub fn new(window_size: usize) -> Self {
         Self { window_size }
     }
-    
+
     /// Analyze trend and predict future values
     pub fn analyze_trend(&self, values: &[f64]) -> TrendAnalysis {
         if values.len() < 3 {
             return TrendAnalysis::default();
         }
-        
+
         let recent_values = if values.len() > self.window_size {
             &values[values.len() - self.window_size..]
         } else {
             values
         };
-        
+
         // Calculate linear regression
         let n = recent_values.len() as f64;
         let x_sum: f64 = (0..recent_values.len()).map(|i| i as f64).sum();
         let y_sum: f64 = recent_values.iter().sum();
-        let xy_sum: f64 = recent_values.iter().enumerate()
+        let xy_sum: f64 = recent_values
+            .iter()
+            .enumerate()
             .map(|(i, &y)| i as f64 * y)
             .sum();
         let x2_sum: f64 = (0..recent_values.len()).map(|i| (i as f64).powi(2)).sum();
-        
+
         let slope = (n * xy_sum - x_sum * y_sum) / (n * x2_sum - x_sum.powi(2));
         let intercept = (y_sum - slope * x_sum) / n;
-        
+
         // Predict next few values
         let predictions: Vec<f64> = (recent_values.len()..recent_values.len() + 5)
             .map(|i| slope * i as f64 + intercept)
             .collect();
-        
+
         // Calculate variance for confidence
         let mean = y_sum / n;
-        let variance = recent_values.iter()
+        let variance = recent_values
+            .iter()
             .map(|&y| (y - mean).powi(2))
-            .sum::<f64>() / n;
-        
+            .sum::<f64>()
+            / n;
+
         TrendAnalysis {
             slope,
             predictions,
@@ -1480,9 +1579,9 @@ impl SystemResourceMonitor {
     pub fn new() -> Self {
         let mut system = System::new_all();
         system.refresh_all();
-        
+
         let (alert_sender, _) = broadcast::channel(1000);
-        
+
         Self {
             system: Arc::new(RwLock::new(system)),
             resource_history: Arc::new(RwLock::new(Vec::new())),
@@ -1493,48 +1592,51 @@ impl SystemResourceMonitor {
             trend_analyzer: TrendAnalyzer::new(20),
         }
     }
-    
+
     /// Start continuous resource monitoring
     pub fn start_monitoring(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         let monitor = Arc::clone(&self);
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(monitor.monitoring_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if let Err(e) = monitor.collect_system_metrics().await {
                     tracing::error!(target = "nyx-daemon::metrics", error = %e, "Error collecting system metrics");
                 }
-                
+
                 monitor.check_resource_alerts().await;
             }
         })
     }
-    
+
     /// Compute a lightweight performance snapshot derived from existing counters
     pub async fn performance_snapshot(&self) -> (f64, f64, f64) {
         // avg_latency_ms and packet_loss_rate are approximated from recent history if available
         // Fallbacks default to neutral values
         let history = self.resource_history.read().await;
-        let (avg_latency_ms, packet_loss_rate, connection_success_rate) = if let Some(last) = history.last() {
-            // When integrated with full metrics pipeline, these would come from stream/transport stats
-            (last.load_average * 1000.0, 0.0_f64, 1.0_f64)
-        } else {
-            (0.0_f64, 0.0_f64, 1.0_f64)
-        };
+        let (avg_latency_ms, packet_loss_rate, connection_success_rate) =
+            if let Some(last) = history.last() {
+                // When integrated with full metrics pipeline, these would come from stream/transport stats
+                (last.load_average * 1000.0, 0.0_f64, 1.0_f64)
+            } else {
+                (0.0_f64, 0.0_f64, 1.0_f64)
+            };
         (avg_latency_ms, packet_loss_rate, connection_success_rate)
     }
 
     /// Collect comprehensive system metrics
-    pub async fn collect_system_metrics(&self) -> Result<SystemMetrics, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn collect_system_metrics(
+        &self,
+    ) -> Result<SystemMetrics, Box<dyn std::error::Error + Send + Sync>> {
         let mut system = self.system.write().await;
         system.refresh_all();
-        
+
         let current_pid = std::process::id();
         let process = system.process(Pid::from(current_pid.try_into().unwrap_or(0)));
-        
+
         let metrics = SystemMetrics {
             cpu_usage_percent: system.global_cpu_info().cpu_usage() as f64,
             memory_usage_bytes: system.used_memory(),
@@ -1547,17 +1649,17 @@ impl SystemResourceMonitor {
             load_average: self.get_load_average().await,
             uptime_seconds: sysinfo::System::uptime(),
         };
-        
+
         // Store in history
         let mut history = self.resource_history.write().await;
         history.push(metrics.clone());
         if history.len() > self.max_history_size {
             history.remove(0);
         }
-        
+
         Ok(metrics)
     }
-    
+
     /// Get file descriptor count (platform-specific implementation needed)
     async fn get_file_descriptor_count(&self) -> u32 {
         #[cfg(unix)]
@@ -1573,7 +1675,7 @@ impl SystemResourceMonitor {
             0
         }
     }
-    
+
     /// Get thread count (platform-specific implementation needed)
     async fn get_thread_count(&self) -> u32 {
         #[cfg(unix)]
@@ -1582,7 +1684,9 @@ impl SystemResourceMonitor {
                 for line in status.lines() {
                     if line.starts_with("Threads:") {
                         if let Some(count_str) = line.split_whitespace().nth(1) {
-                            if let Ok(count) = count_str.parse::<u32>() { return count; }
+                            if let Ok(count) = count_str.parse::<u32>() {
+                                return count;
+                            }
                         }
                     }
                 }
@@ -1593,11 +1697,13 @@ impl SystemResourceMonitor {
         {
             let sys = self.system.read().await;
             let pid = std::process::id();
-            if let Some(_p) = sys.process(sysinfo::Pid::from(pid as usize)) { return 0; }
+            if let Some(_p) = sys.process(sysinfo::Pid::from(pid as usize)) {
+                return 0;
+            }
             0
         }
     }
-    
+
     /// Get disk usage
     async fn get_disk_usage(&self) -> u64 {
         // Approximation: sum (total - available) across disks if available; else 0.
@@ -1608,8 +1714,11 @@ impl SystemResourceMonitor {
             // Simplified: metadata length of root dir entries aggregated (rough size proxy). Not precise but monotonic for change detection.
             if let Ok(read_dir) = std::fs::read_dir("/") {
                 let mut total: u64 = 0;
-                for e in read_dir.flatten().take(10_000) { // cap to avoid huge traversal
-                    if let Ok(md) = e.metadata() { total = total.saturating_add(md.len()); }
+                for e in read_dir.flatten().take(10_000) {
+                    // cap to avoid huge traversal
+                    if let Ok(md) = e.metadata() {
+                        total = total.saturating_add(md.len());
+                    }
                 }
                 return total;
             }
@@ -1621,7 +1730,7 @@ impl SystemResourceMonitor {
             0
         }
     }
-    
+
     /// Get load average (Unix-specific)
     async fn get_load_average(&self) -> f64 {
         #[cfg(unix)]
@@ -1634,87 +1743,113 @@ impl SystemResourceMonitor {
             0.0 // Not available on Windows
         }
     }
-    
+
     /// Check for resource-based alerts
     async fn check_resource_alerts(&self) {
         if let Ok(metrics) = self.collect_system_metrics().await {
             let thresholds = self.thresholds.read().await;
-            
+
             // Check CPU usage
             if metrics.cpu_usage_percent > thresholds.cpu_critical {
                 self.send_alert(
                     "cpu_critical",
                     AlertSeverity::Critical,
                     "Critical CPU Usage",
-                    &format!("CPU usage is {:.1}%, exceeding critical threshold of {:.1}%", 
-                            metrics.cpu_usage_percent, thresholds.cpu_critical),
+                    &format!(
+                        "CPU usage is {:.1}%, exceeding critical threshold of {:.1}%",
+                        metrics.cpu_usage_percent, thresholds.cpu_critical
+                    ),
                     metrics.cpu_usage_percent,
                     thresholds.cpu_critical,
-                ).await;
+                )
+                .await;
             } else if metrics.cpu_usage_percent > thresholds.cpu_warning {
                 self.send_alert(
                     "cpu_warning",
                     AlertSeverity::Warning,
                     "High CPU Usage",
-                    &format!("CPU usage is {:.1}%, exceeding warning threshold of {:.1}%", 
-                            metrics.cpu_usage_percent, thresholds.cpu_warning),
+                    &format!(
+                        "CPU usage is {:.1}%, exceeding warning threshold of {:.1}%",
+                        metrics.cpu_usage_percent, thresholds.cpu_warning
+                    ),
                     metrics.cpu_usage_percent,
                     thresholds.cpu_warning,
-                ).await;
+                )
+                .await;
             }
-            
+
             // Check memory usage
-            let memory_percent = (metrics.memory_usage_bytes as f64 / metrics.memory_total_bytes as f64) * 100.0;
+            let memory_percent =
+                (metrics.memory_usage_bytes as f64 / metrics.memory_total_bytes as f64) * 100.0;
             if memory_percent > thresholds.memory_critical {
                 self.send_alert(
                     "memory_critical",
                     AlertSeverity::Critical,
                     "Critical Memory Usage",
-                    &format!("Memory usage is {:.1}%, exceeding critical threshold of {:.1}%", 
-                            memory_percent, thresholds.memory_critical),
+                    &format!(
+                        "Memory usage is {:.1}%, exceeding critical threshold of {:.1}%",
+                        memory_percent, thresholds.memory_critical
+                    ),
                     memory_percent,
                     thresholds.memory_critical,
-                ).await;
+                )
+                .await;
             } else if memory_percent > thresholds.memory_warning {
                 self.send_alert(
                     "memory_warning",
                     AlertSeverity::Warning,
                     "High Memory Usage",
-                    &format!("Memory usage is {:.1}%, exceeding warning threshold of {:.1}%", 
-                            memory_percent, thresholds.memory_warning),
+                    &format!(
+                        "Memory usage is {:.1}%, exceeding warning threshold of {:.1}%",
+                        memory_percent, thresholds.memory_warning
+                    ),
                     memory_percent,
                     thresholds.memory_warning,
-                ).await;
+                )
+                .await;
             }
-            
+
             // Check file descriptors
             if metrics.open_file_descriptors > thresholds.file_descriptor_critical {
                 self.send_alert(
                     "fd_critical",
                     AlertSeverity::Critical,
                     "Critical File Descriptor Usage",
-                    &format!("Open file descriptors: {}, exceeding critical threshold of {}", 
-                            metrics.open_file_descriptors, thresholds.file_descriptor_critical),
+                    &format!(
+                        "Open file descriptors: {}, exceeding critical threshold of {}",
+                        metrics.open_file_descriptors, thresholds.file_descriptor_critical
+                    ),
                     metrics.open_file_descriptors as f64,
                     thresholds.file_descriptor_critical as f64,
-                ).await;
+                )
+                .await;
             } else if metrics.open_file_descriptors > thresholds.file_descriptor_warning {
                 self.send_alert(
                     "fd_warning",
                     AlertSeverity::Warning,
                     "High File Descriptor Usage",
-                    &format!("Open file descriptors: {}, exceeding warning threshold of {}", 
-                            metrics.open_file_descriptors, thresholds.file_descriptor_warning),
+                    &format!(
+                        "Open file descriptors: {}, exceeding warning threshold of {}",
+                        metrics.open_file_descriptors, thresholds.file_descriptor_warning
+                    ),
                     metrics.open_file_descriptors as f64,
                     thresholds.file_descriptor_warning as f64,
-                ).await;
+                )
+                .await;
             }
         }
     }
-    
+
     /// Send an alert
-    async fn send_alert(&self, id: &str, severity: AlertSeverity, title: &str, description: &str, 
-                       current_value: f64, threshold: f64) {
+    async fn send_alert(
+        &self,
+        id: &str,
+        severity: AlertSeverity,
+        title: &str,
+        description: &str,
+        current_value: f64,
+        threshold: f64,
+    ) {
         let alert = Alert {
             id: id.to_string(),
             timestamp: SystemTime::now(),
@@ -1729,45 +1864,61 @@ impl SystemResourceMonitor {
             resolved: false,
             resolved_at: None,
         };
-        
+
         let _ = self.alert_sender.send(alert);
     }
-    
+
     /// Analyze resource usage trends
     pub async fn analyze_resource_trends(&self) -> HashMap<String, TrendAnalysis> {
         let history = self.resource_history.read().await;
         let mut trends = HashMap::new();
-        
+
         if history.len() < 3 {
             return trends;
         }
-        
+
         // CPU trend
         let cpu_values: Vec<f64> = history.iter().map(|m| m.cpu_usage_percent).collect();
-        trends.insert("cpu_usage".to_string(), self.trend_analyzer.analyze_trend(&cpu_values));
-        
+        trends.insert(
+            "cpu_usage".to_string(),
+            self.trend_analyzer.analyze_trend(&cpu_values),
+        );
+
         // Memory trend
-        let memory_values: Vec<f64> = history.iter()
+        let memory_values: Vec<f64> = history
+            .iter()
             .map(|m| (m.memory_usage_bytes as f64 / m.memory_total_bytes as f64) * 100.0)
             .collect();
-        trends.insert("memory_usage".to_string(), self.trend_analyzer.analyze_trend(&memory_values));
-        
+        trends.insert(
+            "memory_usage".to_string(),
+            self.trend_analyzer.analyze_trend(&memory_values),
+        );
+
         // File descriptor trend
-        let fd_values: Vec<f64> = history.iter().map(|m| m.open_file_descriptors as f64).collect();
-        trends.insert("file_descriptors".to_string(), self.trend_analyzer.analyze_trend(&fd_values));
-        
+        let fd_values: Vec<f64> = history
+            .iter()
+            .map(|m| m.open_file_descriptors as f64)
+            .collect();
+        trends.insert(
+            "file_descriptors".to_string(),
+            self.trend_analyzer.analyze_trend(&fd_values),
+        );
+
         // Thread count trend
         let thread_values: Vec<f64> = history.iter().map(|m| m.thread_count as f64).collect();
-        trends.insert("thread_count".to_string(), self.trend_analyzer.analyze_trend(&thread_values));
-        
+        trends.insert(
+            "thread_count".to_string(),
+            self.trend_analyzer.analyze_trend(&thread_values),
+        );
+
         trends
     }
-    
+
     /// Predict future resource usage
     pub async fn predict_resource_usage(&self, minutes_ahead: u32) -> HashMap<String, Vec<f64>> {
         let trends = self.analyze_resource_trends().await;
         let mut predictions = HashMap::new();
-        
+
         for (metric, trend) in trends {
             if trend.confidence > 0.5 {
                 // Extend predictions to the requested time
@@ -1780,33 +1931,35 @@ impl SystemResourceMonitor {
                 predictions.insert(metric, extended_predictions);
             }
         }
-        
+
         predictions
     }
-    
+
     /// Assess overall system health
     pub async fn assess_system_health(&self) -> SystemHealthAssessment {
         let metrics = match self.collect_system_metrics().await {
             Ok(m) => m,
-            Err(_) => return SystemHealthAssessment {
-                overall_score: 0.0,
-                cpu_health: 0.0,
-                memory_health: 0.0,
-                network_health: 0.0,
-                disk_health: 0.0,
-                stability_score: 0.0,
-                performance_score: 0.0,
-                recommendations: vec!["Unable to collect system metrics".to_string()],
-                warnings: vec!["System monitoring unavailable".to_string()],
-                critical_issues: vec!["Cannot assess system health".to_string()],
-            },
+            Err(_) => {
+                return SystemHealthAssessment {
+                    overall_score: 0.0,
+                    cpu_health: 0.0,
+                    memory_health: 0.0,
+                    network_health: 0.0,
+                    disk_health: 0.0,
+                    stability_score: 0.0,
+                    performance_score: 0.0,
+                    recommendations: vec!["Unable to collect system metrics".to_string()],
+                    warnings: vec!["System monitoring unavailable".to_string()],
+                    critical_issues: vec!["Cannot assess system health".to_string()],
+                }
+            }
         };
-        
+
         let thresholds = self.thresholds.read().await;
         let mut recommendations = Vec::new();
         let mut warnings = Vec::new();
         let mut critical_issues = Vec::new();
-        
+
         // Assess CPU health
         let cpu_health = if metrics.cpu_usage_percent > thresholds.cpu_critical {
             critical_issues.push("CPU usage is critically high".to_string());
@@ -1819,9 +1972,10 @@ impl SystemResourceMonitor {
         } else {
             1.0
         };
-        
+
         // Assess memory health
-        let memory_percent = (metrics.memory_usage_bytes as f64 / metrics.memory_total_bytes as f64) * 100.0;
+        let memory_percent =
+            (metrics.memory_usage_bytes as f64 / metrics.memory_total_bytes as f64) * 100.0;
         let memory_health = if memory_percent > thresholds.memory_critical {
             critical_issues.push("Memory usage is critically high".to_string());
             recommendations.push("Free up memory or add more RAM".to_string());
@@ -1833,9 +1987,10 @@ impl SystemResourceMonitor {
         } else {
             1.0
         };
-        
+
         // Assess network health (based on observed metrics)
-        let (avg_latency_ms, packet_loss_rate, connection_success_rate) = self.performance_snapshot().await;
+        let (avg_latency_ms, packet_loss_rate, connection_success_rate) =
+            self.performance_snapshot().await;
         let latency_ms = avg_latency_ms as f64;
         let loss = packet_loss_rate.max(0.0);
         let success = connection_success_rate.max(0.0).min(1.0);
@@ -1848,10 +2003,14 @@ impl SystemResourceMonitor {
         // Assess disk health using worst free-percent across non-readonly disks
         let (mut total_disk, mut free_disk) = (0u128, 0u128);
         {
-        // sysinfo::disks() removed in recent versions; fallback not available cross-platform without C.
-        // Keep zeros which makes disk health neutral unless Windows branch provided above populates it.
+            // sysinfo::disks() removed in recent versions; fallback not available cross-platform without C.
+            // Keep zeros which makes disk health neutral unless Windows branch provided above populates it.
         }
-        let used_pct = if total_disk > 0 { (1.0 - (free_disk as f64 / total_disk as f64)) * 100.0 } else { 0.0 };
+        let used_pct = if total_disk > 0 {
+            (1.0 - (free_disk as f64 / total_disk as f64)) * 100.0
+        } else {
+            0.0
+        };
         let disk_health = if used_pct > thresholds.disk_critical {
             critical_issues.push("Disk usage is critically high".to_string());
             recommendations.push("Free disk space or expand storage".to_string());
@@ -1863,19 +2022,27 @@ impl SystemResourceMonitor {
         } else {
             1.0
         };
-        
+
         // Calculate stability score based on trends
         let trends = self.analyze_resource_trends().await;
-        let stability_score = trends.values()
-            .map(|trend| if trend.volatility < 10.0 { 1.0 } else { 1.0 - (trend.volatility / 100.0) })
-            .fold(0.0, |acc, score| acc + score) / trends.len() as f64;
-        
+        let stability_score = trends
+            .values()
+            .map(|trend| {
+                if trend.volatility < 10.0 {
+                    1.0
+                } else {
+                    1.0 - (trend.volatility / 100.0)
+                }
+            })
+            .fold(0.0, |acc, score| acc + score)
+            / trends.len() as f64;
+
         // Calculate performance score
         let performance_score = (cpu_health + memory_health + network_health + disk_health) / 4.0;
-        
+
         // Calculate overall score
         let overall_score = (performance_score + stability_score) / 2.0;
-        
+
         SystemHealthAssessment {
             overall_score,
             cpu_health,
@@ -1889,24 +2056,28 @@ impl SystemResourceMonitor {
             critical_issues,
         }
     }
-    
+
     /// Get resource usage history
     pub async fn get_resource_history(&self, limit: Option<usize>) -> Vec<SystemMetrics> {
         let history = self.resource_history.read().await;
         match limit {
             Some(n) => {
-                let start = if history.len() > n { history.len() - n } else { 0 };
+                let start = if history.len() > n {
+                    history.len() - n
+                } else {
+                    0
+                };
                 history[start..].to_vec()
-            },
+            }
             None => history.clone(),
         }
     }
-    
+
     /// Subscribe to resource alerts
     pub fn subscribe_alerts(&self) -> broadcast::Receiver<Alert> {
         self.alert_sender.subscribe()
     }
-    
+
     /// Update resource thresholds
     pub async fn update_thresholds(&self, thresholds: ResourceThresholds) {
         let mut current_thresholds = self.thresholds.write().await;
@@ -1949,36 +2120,36 @@ pub enum ErrorType {
     ConnectionRefused,
     NetworkUnreachable,
     PacketLoss,
-    
+
     // Crypto errors
     KeyDerivationFailure,
     EncryptionFailure,
     DecryptionFailure,
     HandshakeFailure,
-    
+
     // Stream errors
     StreamClosed,
     FlowControlViolation,
     BufferOverflow,
     FrameCorruption,
-    
+
     // System errors
     OutOfMemory,
     FileSystemError,
     PermissionDenied,
     ResourceExhausted,
-    
+
     // Protocol errors
     ProtocolViolation,
     InvalidMessage,
     SequenceError,
     VersionMismatch,
-    
+
     // Configuration errors
     InvalidConfiguration,
     MissingConfiguration,
     ConfigurationConflict,
-    
+
     // Unknown/Other
     Unknown(String),
 }
@@ -2015,10 +2186,10 @@ pub struct ErrorPattern {
 /// Error thresholds for alerting
 #[derive(Debug, Clone)]
 pub struct ErrorThresholds {
-    pub error_rate_warning: f64,    // errors per minute
+    pub error_rate_warning: f64, // errors per minute
     pub error_rate_critical: f64,
-    pub critical_error_threshold: u32,  // number of critical errors
-    pub pattern_match_threshold: u32,   // pattern occurrences
+    pub critical_error_threshold: u32, // number of critical errors
+    pub pattern_match_threshold: u32,  // pattern occurrences
     pub cascade_detection_window: Duration,
 }
 
@@ -2060,14 +2231,17 @@ pub struct DependencyGraph {
 impl Default for DependencyGraph {
     fn default() -> Self {
         let mut dependencies = HashMap::new();
-        
+
         // Define layer dependencies
-        dependencies.insert(LayerType::Stream, vec![LayerType::Crypto, LayerType::Transport]);
+        dependencies.insert(
+            LayerType::Stream,
+            vec![LayerType::Crypto, LayerType::Transport],
+        );
         dependencies.insert(LayerType::Mix, vec![LayerType::Stream, LayerType::Crypto]);
         dependencies.insert(LayerType::Fec, vec![LayerType::Transport]);
         dependencies.insert(LayerType::Transport, vec![]);
         dependencies.insert(LayerType::Crypto, vec![]);
-        
+
         Self { dependencies }
     }
 }
@@ -2076,74 +2250,80 @@ impl ErrorClassificationSystem {
     /// Create a new error classification system
     pub fn new() -> Self {
         let (alert_sender, _) = broadcast::channel(1000);
-        
+
         let mut error_patterns = HashMap::new();
-        
+
         // Define common error patterns
-        error_patterns.insert("connection_cascade".to_string(), ErrorPattern {
-            pattern_id: "connection_cascade".to_string(),
-            description: "Multiple connection failures in short time".to_string(),
-            error_types: vec![ErrorType::ConnectionTimeout, ErrorType::ConnectionRefused],
-            frequency_threshold: 5,
-            time_window: Duration::from_secs(120),
-            likely_causes: vec![
-                "Network connectivity issues".to_string(),
-                "Server overload".to_string(),
-                "Firewall blocking connections".to_string(),
-            ],
-            recommended_actions: vec![
-                "Check network connectivity".to_string(),
-                "Verify server status".to_string(),
-                "Review firewall rules".to_string(),
-            ],
-            layers: vec![LayerType::Transport],
-            severity_escalation: true,
-            root_causes: vec![
-                "Network connectivity issues".to_string(),
-                "Server overload".to_string(),
-                "Firewall blocking connections".to_string(),
-            ],
-            mitigation_steps: vec![
-                "Check network connectivity".to_string(),
-                "Verify server status".to_string(),
-                "Review firewall rules".to_string(),
-            ],
-            occurrences: 0,
-            last_occurrence: SystemTime::UNIX_EPOCH,
-        });
-        
-        error_patterns.insert("crypto_failure_cascade".to_string(), ErrorPattern {
-            pattern_id: "crypto_failure_cascade".to_string(),
-            description: "Cryptographic operation failures".to_string(),
-            error_types: vec![ErrorType::KeyDerivationFailure, ErrorType::HandshakeFailure],
-            frequency_threshold: 3,
-            time_window: Duration::from_secs(60),
-            likely_causes: vec![
-                "Key synchronization issues".to_string(),
-                "Clock skew".to_string(),
-                "Corrupted key material".to_string(),
-            ],
-            recommended_actions: vec![
-                "Verify time synchronization".to_string(),
-                "Check key rotation status".to_string(),
-                "Restart crypto layer".to_string(),
-            ],
-            layers: vec![LayerType::Crypto],
-            severity_escalation: true,
-            root_causes: vec![
-                "Key synchronization issues".to_string(),
-                "Clock skew".to_string(),
-                "Corrupted key material".to_string(),
-            ],
-            mitigation_steps: vec![
-                "Verify time synchronization".to_string(),
-                "Check key rotation status".to_string(),
-                "Restart crypto layer".to_string(),
-            ],
-            occurrences: 0,
-            last_occurrence: SystemTime::UNIX_EPOCH,
-        });
-        
+        error_patterns.insert(
+            "connection_cascade".to_string(),
+            ErrorPattern {
+                pattern_id: "connection_cascade".to_string(),
+                description: "Multiple connection failures in short time".to_string(),
+                error_types: vec![ErrorType::ConnectionTimeout, ErrorType::ConnectionRefused],
+                frequency_threshold: 5,
+                time_window: Duration::from_secs(120),
+                likely_causes: vec![
+                    "Network connectivity issues".to_string(),
+                    "Server overload".to_string(),
+                    "Firewall blocking connections".to_string(),
+                ],
+                recommended_actions: vec![
+                    "Check network connectivity".to_string(),
+                    "Verify server status".to_string(),
+                    "Review firewall rules".to_string(),
+                ],
+                layers: vec![LayerType::Transport],
+                severity_escalation: true,
+                root_causes: vec![
+                    "Network connectivity issues".to_string(),
+                    "Server overload".to_string(),
+                    "Firewall blocking connections".to_string(),
+                ],
+                mitigation_steps: vec![
+                    "Check network connectivity".to_string(),
+                    "Verify server status".to_string(),
+                    "Review firewall rules".to_string(),
+                ],
+                occurrences: 0,
+                last_occurrence: SystemTime::UNIX_EPOCH,
+            },
+        );
+
+        error_patterns.insert(
+            "crypto_failure_cascade".to_string(),
+            ErrorPattern {
+                pattern_id: "crypto_failure_cascade".to_string(),
+                description: "Cryptographic operation failures".to_string(),
+                error_types: vec![ErrorType::KeyDerivationFailure, ErrorType::HandshakeFailure],
+                frequency_threshold: 3,
+                time_window: Duration::from_secs(60),
+                likely_causes: vec![
+                    "Key synchronization issues".to_string(),
+                    "Clock skew".to_string(),
+                    "Corrupted key material".to_string(),
+                ],
+                recommended_actions: vec![
+                    "Verify time synchronization".to_string(),
+                    "Check key rotation status".to_string(),
+                    "Restart crypto layer".to_string(),
+                ],
+                layers: vec![LayerType::Crypto],
+                severity_escalation: true,
+                root_causes: vec![
+                    "Key synchronization issues".to_string(),
+                    "Clock skew".to_string(),
+                    "Corrupted key material".to_string(),
+                ],
+                mitigation_steps: vec![
+                    "Verify time synchronization".to_string(),
+                    "Check key rotation status".to_string(),
+                    "Restart crypto layer".to_string(),
+                ],
+                occurrences: 0,
+                last_occurrence: SystemTime::UNIX_EPOCH,
+            },
+        );
+
         // Initialize correlation rules
         let correlation_rules = vec![
             CorrelationRule {
@@ -2160,10 +2340,11 @@ impl ErrorClassificationSystem {
                 time_window: Duration::from_secs(180),
                 confidence: 0.8,
                 root_cause: "Network partition".to_string(),
-                explanation: "Network connectivity issues affecting multiple connections".to_string(),
+                explanation: "Network connectivity issues affecting multiple connections"
+                    .to_string(),
             },
         ];
-        
+
         Self {
             error_history: Arc::new(RwLock::new(Vec::new())),
             error_patterns: Arc::new(RwLock::new(error_patterns)),
@@ -2176,7 +2357,7 @@ impl ErrorClassificationSystem {
             error_thresholds: Arc::new(RwLock::new(ErrorThresholds::default())),
         }
     }
-    
+
     /// Classify and record an error
     pub async fn classify_error(
         &self,
@@ -2188,7 +2369,7 @@ impl ErrorClassificationSystem {
         let error_type = self.classify_error_type(&error_message, &context);
         let severity = self.assess_severity(&error_type, &context);
         let user_impact = self.assess_user_impact(&error_type, &severity);
-        
+
         let classified_error = ClassifiedError {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: SystemTime::now(),
@@ -2203,34 +2384,34 @@ impl ErrorClassificationSystem {
             recovery_action: self.suggest_recovery_action(&error_type),
             root_cause: None, // Will be filled by root cause analysis
         };
-        
+
         // Store in history
         let mut history = self.error_history.write().await;
         history.push(classified_error.clone());
         if history.len() > self.max_history_size {
             history.remove(0);
         }
-        
+
         // Perform pattern analysis
         self.analyze_error_patterns().await;
-        
+
         // Perform root cause analysis
         let root_cause = self.analyze_root_cause(&classified_error).await;
-        
+
         // Update the error with root cause if found
         let mut updated_error = classified_error;
         updated_error.root_cause = root_cause;
-        
+
         // Check for alerts
         self.check_error_alerts(&updated_error).await;
-        
+
         updated_error
     }
-    
+
     /// Classify error type based on message and context
     fn classify_error_type(&self, message: &str, context: &HashMap<String, String>) -> ErrorType {
         let message_lower = message.to_lowercase();
-        
+
         // Network errors
         if message_lower.contains("timeout") || message_lower.contains("timed out") {
             return ErrorType::ConnectionTimeout;
@@ -2244,7 +2425,7 @@ impl ErrorClassificationSystem {
         if message_lower.contains("packet loss") || message_lower.contains("lost packets") {
             return ErrorType::PacketLoss;
         }
-        
+
         // Crypto errors
         if message_lower.contains("key derivation") || message_lower.contains("hpke") {
             return ErrorType::KeyDerivationFailure;
@@ -2258,7 +2439,7 @@ impl ErrorClassificationSystem {
         if message_lower.contains("handshake") || message_lower.contains("noise") {
             return ErrorType::HandshakeFailure;
         }
-        
+
         // Stream errors
         if message_lower.contains("stream closed") || message_lower.contains("connection closed") {
             return ErrorType::StreamClosed;
@@ -2272,7 +2453,7 @@ impl ErrorClassificationSystem {
         if message_lower.contains("frame") && message_lower.contains("corrupt") {
             return ErrorType::FrameCorruption;
         }
-        
+
         // System errors
         if message_lower.contains("out of memory") || message_lower.contains("oom") {
             return ErrorType::OutOfMemory;
@@ -2283,7 +2464,7 @@ impl ErrorClassificationSystem {
         if message_lower.contains("resource") && message_lower.contains("exhausted") {
             return ErrorType::ResourceExhausted;
         }
-        
+
         // Protocol errors
         if message_lower.contains("protocol") && message_lower.contains("violation") {
             return ErrorType::ProtocolViolation;
@@ -2297,7 +2478,7 @@ impl ErrorClassificationSystem {
         if message_lower.contains("version") && message_lower.contains("mismatch") {
             return ErrorType::VersionMismatch;
         }
-        
+
         // Configuration errors
         if message_lower.contains("configuration") || message_lower.contains("config") {
             if message_lower.contains("invalid") {
@@ -2310,7 +2491,7 @@ impl ErrorClassificationSystem {
                 return ErrorType::ConfigurationConflict;
             }
         }
-        
+
         // Check context for additional clues
         if let Some(error_code) = context.get("error_code") {
             match error_code.as_str() {
@@ -2322,98 +2503,113 @@ impl ErrorClassificationSystem {
                 _ => {}
             }
         }
-        
+
         ErrorType::Unknown(message.to_string())
     }
-    
+
     /// Assess error severity
-    fn assess_severity(&self, error_type: &ErrorType, context: &HashMap<String, String>) -> ErrorSeverity {
+    fn assess_severity(
+        &self,
+        error_type: &ErrorType,
+        context: &HashMap<String, String>,
+    ) -> ErrorSeverity {
         match error_type {
             // Critical errors that can cause system failure
-            ErrorType::OutOfMemory | 
-            ErrorType::ResourceExhausted => ErrorSeverity::Critical,
-            
+            ErrorType::OutOfMemory | ErrorType::ResourceExhausted => ErrorSeverity::Critical,
+
             // High severity errors affecting functionality
-            ErrorType::KeyDerivationFailure |
-            ErrorType::HandshakeFailure |
-            ErrorType::ProtocolViolation => ErrorSeverity::Error,
-            
+            ErrorType::KeyDerivationFailure
+            | ErrorType::HandshakeFailure
+            | ErrorType::ProtocolViolation => ErrorSeverity::Error,
+
             // Medium severity errors with potential workarounds
-            ErrorType::ConnectionTimeout |
-            ErrorType::ConnectionRefused |
-            ErrorType::StreamClosed => ErrorSeverity::Warning,
-            
+            ErrorType::ConnectionTimeout
+            | ErrorType::ConnectionRefused
+            | ErrorType::StreamClosed => ErrorSeverity::Warning,
+
             // Low severity errors that are recoverable
-            ErrorType::PacketLoss |
-            ErrorType::FlowControlViolation => ErrorSeverity::Info,
-            
+            ErrorType::PacketLoss | ErrorType::FlowControlViolation => ErrorSeverity::Info,
+
             // Configuration errors vary by context
-            ErrorType::InvalidConfiguration |
-            ErrorType::MissingConfiguration => ErrorSeverity::Error,
+            ErrorType::InvalidConfiguration | ErrorType::MissingConfiguration => {
+                ErrorSeverity::Error
+            }
             ErrorType::ConfigurationConflict => ErrorSeverity::Warning,
-            
+
             // Unknown errors default to warning
             ErrorType::Unknown(_) => ErrorSeverity::Warning,
-            
+
             _ => ErrorSeverity::Info,
         }
     }
-    
+
     /// Assess user impact
     fn assess_user_impact(&self, error_type: &ErrorType, severity: &ErrorSeverity) -> UserImpact {
         match (error_type, severity) {
-            (ErrorType::OutOfMemory, _) |
-            (ErrorType::ResourceExhausted, _) => UserImpact::Critical,
-            
-            (ErrorType::KeyDerivationFailure, _) |
-            (ErrorType::HandshakeFailure, _) => UserImpact::High,
-            
-            (ErrorType::ConnectionTimeout, ErrorSeverity::Error) |
-            (ErrorType::ConnectionRefused, ErrorSeverity::Error) => UserImpact::Medium,
-            
-            (ErrorType::PacketLoss, _) |
-            (ErrorType::FlowControlViolation, _) => UserImpact::Low,
-            
+            (ErrorType::OutOfMemory, _) | (ErrorType::ResourceExhausted, _) => UserImpact::Critical,
+
+            (ErrorType::KeyDerivationFailure, _) | (ErrorType::HandshakeFailure, _) => {
+                UserImpact::High
+            }
+
+            (ErrorType::ConnectionTimeout, ErrorSeverity::Error)
+            | (ErrorType::ConnectionRefused, ErrorSeverity::Error) => UserImpact::Medium,
+
+            (ErrorType::PacketLoss, _) | (ErrorType::FlowControlViolation, _) => UserImpact::Low,
+
             (_, ErrorSeverity::Critical) => UserImpact::Critical,
             (_, ErrorSeverity::Error) => UserImpact::High,
             (_, ErrorSeverity::Warning) => UserImpact::Medium,
             (_, ErrorSeverity::Info) => UserImpact::Low,
-            
+
             _ => UserImpact::None,
         }
     }
-    
+
     /// Suggest recovery action
     fn suggest_recovery_action(&self, error_type: &ErrorType) -> Option<String> {
         match error_type {
-            ErrorType::ConnectionTimeout => Some("Retry connection with exponential backoff".to_string()),
-            ErrorType::ConnectionRefused => Some("Check service availability and retry".to_string()),
+            ErrorType::ConnectionTimeout => {
+                Some("Retry connection with exponential backoff".to_string())
+            }
+            ErrorType::ConnectionRefused => {
+                Some("Check service availability and retry".to_string())
+            }
             ErrorType::NetworkUnreachable => Some("Verify network connectivity".to_string()),
-            ErrorType::KeyDerivationFailure => Some("Regenerate keys and retry handshake".to_string()),
+            ErrorType::KeyDerivationFailure => {
+                Some("Regenerate keys and retry handshake".to_string())
+            }
             ErrorType::HandshakeFailure => Some("Reset connection and retry handshake".to_string()),
             ErrorType::StreamClosed => Some("Reestablish stream connection".to_string()),
-            ErrorType::BufferOverflow => Some("Increase buffer size or implement backpressure".to_string()),
-            ErrorType::OutOfMemory => Some("Free memory and restart affected components".to_string()),
-            ErrorType::InvalidConfiguration => Some("Validate and correct configuration".to_string()),
+            ErrorType::BufferOverflow => {
+                Some("Increase buffer size or implement backpressure".to_string())
+            }
+            ErrorType::OutOfMemory => {
+                Some("Free memory and restart affected components".to_string())
+            }
+            ErrorType::InvalidConfiguration => {
+                Some("Validate and correct configuration".to_string())
+            }
             _ => None,
         }
     }
-    
+
     /// Analyze error patterns
     async fn analyze_error_patterns(&self) {
         let history = self.error_history.read().await;
         let patterns = self.error_patterns.read().await;
-        
+
         let now = SystemTime::now();
-        
+
         for pattern in patterns.values() {
-            let recent_errors: Vec<&ClassifiedError> = history.iter()
+            let recent_errors: Vec<&ClassifiedError> = history
+                .iter()
                 .filter(|e| {
-                    now.duration_since(e.timestamp).unwrap_or_default() <= pattern.time_window &&
-                    pattern.error_types.contains(&e.error_type)
+                    now.duration_since(e.timestamp).unwrap_or_default() <= pattern.time_window
+                        && pattern.error_types.contains(&e.error_type)
                 })
                 .collect();
-            
+
             if recent_errors.len() >= pattern.frequency_threshold as usize {
                 // Pattern detected - send alert
                 let alert = Alert {
@@ -2441,67 +2637,82 @@ impl ErrorClassificationSystem {
                     resolved: false,
                     resolved_at: None,
                 };
-                
+
                 let _ = self.alert_sender.send(alert);
             }
         }
     }
-    
+
     /// Analyze root cause
     async fn analyze_root_cause(&self, error: &ClassifiedError) -> Option<String> {
         let history = self.error_history.read().await;
-        
+
         for rule in &self.root_cause_analyzer.correlation_rules {
             if rule.trigger_errors.contains(&error.error_type) {
                 // Look for correlated errors in the time window
                 let window_start = error.timestamp - rule.time_window;
-                let correlated_errors: Vec<&ClassifiedError> = history.iter()
+                let correlated_errors: Vec<&ClassifiedError> = history
+                    .iter()
                     .filter(|e| {
-                        e.timestamp >= window_start &&
-                        e.timestamp <= error.timestamp &&
-                        rule.trigger_errors.contains(&e.error_type)
+                        e.timestamp >= window_start
+                            && e.timestamp <= error.timestamp
+                            && rule.trigger_errors.contains(&e.error_type)
                     })
                     .collect();
-                
+
                 if correlated_errors.len() >= 2 {
                     return Some(format!("{}: {}", rule.root_cause, rule.explanation));
                 }
             }
         }
-        
+
         // Check for dependency-based root causes
-        if let Some(dependencies) = self.root_cause_analyzer.dependency_graph.dependencies.get(&error.layer) {
+        if let Some(dependencies) = self
+            .root_cause_analyzer
+            .dependency_graph
+            .dependencies
+            .get(&error.layer)
+        {
             for dep_layer in dependencies {
-                let dep_errors: Vec<&ClassifiedError> = history.iter()
+                let dep_errors: Vec<&ClassifiedError> = history
+                    .iter()
                     .filter(|e| {
-                        e.layer == *dep_layer &&
-                        error.timestamp.duration_since(e.timestamp).unwrap_or_default() <= Duration::from_secs(300)
+                        e.layer == *dep_layer
+                            && error
+                                .timestamp
+                                .duration_since(e.timestamp)
+                                .unwrap_or_default()
+                                <= Duration::from_secs(300)
                     })
                     .collect();
-                
+
                 if !dep_errors.is_empty() {
                     return Some(format!("Dependency failure in {:?} layer", dep_layer));
                 }
             }
         }
-        
+
         None
     }
-    
+
     /// Check for error-based alerts
     async fn check_error_alerts(&self, error: &ClassifiedError) {
         let thresholds = self.error_thresholds.read().await;
-        
+
         // Check for critical error threshold
         if error.severity == ErrorSeverity::Critical {
             let history = self.error_history.read().await;
-            let recent_critical = history.iter()
+            let recent_critical = history
+                .iter()
                 .filter(|e| {
-                    e.severity == ErrorSeverity::Critical &&
-                    SystemTime::now().duration_since(e.timestamp).unwrap_or_default() <= Duration::from_secs(600)
+                    e.severity == ErrorSeverity::Critical
+                        && SystemTime::now()
+                            .duration_since(e.timestamp)
+                            .unwrap_or_default()
+                            <= Duration::from_secs(600)
                 })
                 .count();
-            
+
             if recent_critical >= thresholds.critical_error_threshold as usize {
                 let alert = Alert {
                     id: "critical_error_threshold".to_string(),
@@ -2520,21 +2731,25 @@ impl ErrorClassificationSystem {
                     resolved: false,
                     resolved_at: None,
                 };
-                
+
                 let _ = self.alert_sender.send(alert);
             }
         }
-        
+
         // Check error rate
         let history = self.error_history.read().await;
-        let recent_errors = history.iter()
+        let recent_errors = history
+            .iter()
             .filter(|e| {
-                SystemTime::now().duration_since(e.timestamp).unwrap_or_default() <= Duration::from_secs(60)
+                SystemTime::now()
+                    .duration_since(e.timestamp)
+                    .unwrap_or_default()
+                    <= Duration::from_secs(60)
             })
             .count();
-        
+
         let error_rate = recent_errors as f64;
-        
+
         if error_rate > thresholds.error_rate_critical {
             let alert = Alert {
                 id: "error_rate_critical".to_string(),
@@ -2553,7 +2768,7 @@ impl ErrorClassificationSystem {
                 resolved: false,
                 resolved_at: None,
             };
-            
+
             let _ = self.alert_sender.send(alert);
         } else if error_rate > thresholds.error_rate_warning {
             let alert = Alert {
@@ -2573,27 +2788,33 @@ impl ErrorClassificationSystem {
                 resolved: false,
                 resolved_at: None,
             };
-            
+
             let _ = self.alert_sender.send(alert);
         }
     }
-    
+
     /// Get error statistics
     pub async fn get_error_statistics(&self) -> ErrorStatistics {
         let history = self.error_history.read().await;
         let now = SystemTime::now();
-        
+
         let mut stats = ErrorStatistics::default();
-        
+
         for error in history.iter() {
             stats.total_errors += 1;
-            
+
             // Count by layer
-            *stats.errors_by_layer.entry(error.layer.clone()).or_insert(0) += 1;
-            
+            *stats
+                .errors_by_layer
+                .entry(error.layer.clone())
+                .or_insert(0) += 1;
+
             // Count by type
-            *stats.errors_by_type.entry(error.error_type.clone()).or_insert(0) += 1;
-            
+            *stats
+                .errors_by_type
+                .entry(error.error_type.clone())
+                .or_insert(0) += 1;
+
             // Count by severity
             match error.severity {
                 ErrorSeverity::Critical => stats.critical_errors += 1,
@@ -2602,66 +2823,78 @@ impl ErrorClassificationSystem {
                 ErrorSeverity::Info => stats.info_count += 1,
                 ErrorSeverity::Debug => stats.debug_count += 1,
             }
-            
+
             // Recent errors (last hour)
-            if now.duration_since(error.timestamp).unwrap_or_default() <= Duration::from_secs(3600) {
+            if now.duration_since(error.timestamp).unwrap_or_default() <= Duration::from_secs(3600)
+            {
                 stats.recent_errors += 1;
             }
         }
-        
+
         // Calculate error rate (errors per minute in last hour)
         stats.error_rate = stats.recent_errors as f64 / 60.0;
-        
+
         stats
     }
-    
+
     /// Get error trends
     pub async fn get_error_trends(&self, time_window: Duration) -> HashMap<ErrorType, Vec<u32>> {
         let history = self.error_history.read().await;
         let now = SystemTime::now();
         let window_start = now - time_window;
-        
+
         let mut trends = HashMap::new();
-        
+
         // Create time buckets (e.g., hourly buckets)
         let bucket_duration = Duration::from_secs(3600);
         let bucket_count = (time_window.as_secs() / bucket_duration.as_secs()) as usize;
-        
+
         for error in history.iter() {
             if error.timestamp >= window_start {
-                let bucket_index = ((now.duration_since(error.timestamp).unwrap_or_default().as_secs() / bucket_duration.as_secs()) as usize).min(bucket_count - 1);
-                
-                let trend = trends.entry(error.error_type.clone()).or_insert_with(|| vec![0; bucket_count]);
+                let bucket_index = ((now
+                    .duration_since(error.timestamp)
+                    .unwrap_or_default()
+                    .as_secs()
+                    / bucket_duration.as_secs()) as usize)
+                    .min(bucket_count - 1);
+
+                let trend = trends
+                    .entry(error.error_type.clone())
+                    .or_insert_with(|| vec![0; bucket_count]);
                 trend[bucket_count - 1 - bucket_index] += 1;
             }
         }
-        
+
         trends
     }
-    
+
     /// Subscribe to error alerts
     pub fn subscribe_alerts(&self) -> broadcast::Receiver<Alert> {
         self.alert_sender.subscribe()
     }
-    
+
     /// Get error history
     pub async fn get_error_history(&self, limit: Option<usize>) -> Vec<ClassifiedError> {
         let history = self.error_history.read().await;
         match limit {
             Some(n) => {
-                let start = if history.len() > n { history.len() - n } else { 0 };
+                let start = if history.len() > n {
+                    history.len() - n
+                } else {
+                    0
+                };
                 history[start..].to_vec()
-            },
+            }
             None => history.clone(),
         }
     }
-    
+
     /// Add custom error pattern
     pub async fn add_error_pattern(&self, pattern: ErrorPattern) {
         let mut patterns = self.error_patterns.write().await;
         patterns.insert(pattern.pattern_id.clone(), pattern);
     }
-    
+
     /// Update error thresholds
     pub async fn update_thresholds(&self, thresholds: ErrorThresholds) {
         let mut current_thresholds = self.error_thresholds.write().await;
@@ -2694,8 +2927,6 @@ pub struct ErrorAnalysisSystem {
     max_history_size: usize,
     analysis_window: Duration,
 }
-
-
 
 /// Classification rule for automatic error categorization
 #[derive(Debug, Clone)]
@@ -2784,9 +3015,9 @@ pub struct ErrorEvent {
 #[derive(Debug, Clone)]
 pub struct ImpactAssessment {
     pub affected_layers: Vec<LayerType>,
-    pub performance_impact: f64, // 0.0 to 1.0
+    pub performance_impact: f64,  // 0.0 to 1.0
     pub availability_impact: f64, // 0.0 to 1.0
-    pub user_impact: f64, // 0.0 to 1.0
+    pub user_impact: f64,         // 0.0 to 1.0
     pub business_impact: String,
 }
 
@@ -2802,16 +3033,16 @@ pub struct ErrorTrendAnalysis {
 pub struct PrometheusExporter {
     /// HTTP server for metrics endpoint
     server_handle: Option<tokio::task::JoinHandle<()>>,
-    
+
     /// Metrics collection interval
     collection_interval: Duration,
-    
+
     /// Reference to comprehensive metrics collector
     metrics_collector: Arc<ComprehensiveMetrics>,
-    
+
     /// Server address for metrics endpoint
     server_addr: std::net::SocketAddr,
-    
+
     /// Metrics labels for consistent labeling
     default_labels: HashMap<String, String>,
 
@@ -2828,7 +3059,7 @@ impl PrometheusExporter {
         let mut default_labels = HashMap::new();
         default_labels.insert("service".to_string(), "nyx-daemon".to_string());
         default_labels.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
-        
+
         Self {
             server_handle: None,
             collection_interval: Duration::from_secs(15),
@@ -2838,17 +3069,17 @@ impl PrometheusExporter {
             server_started_at: None,
         }
     }
-    
+
     /// Start the Prometheus metrics server with enhanced features
     pub async fn start_server(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use axum::{
+            http::{header, HeaderMap, HeaderValue, StatusCode},
+            response::IntoResponse,
             routing::get,
             Router,
-            response::IntoResponse,
-            http::{StatusCode, HeaderMap, HeaderValue, header},
         };
-        use std::sync::Arc;
         use std::collections::HashMap as StdHashMap;
+        use std::sync::Arc;
 
         // Record server start time for uptime calculation
         self.server_started_at = Some(std::time::Instant::now());
@@ -2869,9 +3100,20 @@ impl PrometheusExporter {
                         header::CONTENT_TYPE,
                         HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
                     );
-                    match Self::export_metrics_with_options(metrics_collector, default_labels, params).await {
+                    match Self::export_metrics_with_options(
+                        metrics_collector,
+                        default_labels,
+                        params,
+                    )
+                    .await
+                    {
                         Ok(body) => (StatusCode::OK, headers, body).into_response(),
-                        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, headers, format!("error exporting metrics: {}", e)).into_response(),
+                        Err(e) => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            headers,
+                            format!("error exporting metrics: {}", e),
+                        )
+                            .into_response(),
                     }
                 }
             }
@@ -2885,17 +3127,21 @@ impl PrometheusExporter {
                 async move {
                     match Self::check_system_health(metrics_collector).await {
                         Ok(json) => (StatusCode::OK, json.to_string()),
-                        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"status":"error","message":e.to_string()}).to_string()),
+                        Err(e) => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            serde_json::json!({"status":"error","message":e.to_string()})
+                                .to_string(),
+                        ),
                     }
                 }
             }
         };
-        
+
         // Define handler functions to ensure Send trait compliance
         async fn ready_handler() -> (StatusCode, &'static str) {
             (StatusCode::OK, "Ready")
         }
-        
+
         async fn index_handler() -> impl IntoResponse {
             let html = r#"
                 <html>
@@ -2912,63 +3158,71 @@ impl PrometheusExporter {
             "#;
             (StatusCode::OK, [("content-type", "text/html")], html)
         }
-        
+
         // Create the application with enhanced routing
         let app = Router::new()
             .route("/metrics", get(metrics_handler))
             .route("/health", get(health_handler))
             .route("/ready", get(ready_handler))
             .route("/", get(index_handler));
-        
+
         // Start the server with enhanced error handling
-        let listener = tokio::net::TcpListener::bind(self.server_addr).await
+        let listener = tokio::net::TcpListener::bind(self.server_addr)
+            .await
             .map_err(|e| format!("Failed to bind to {}: {}", self.server_addr, e))?;
-        
-        let actual_addr = listener.local_addr()
+
+        let actual_addr = listener
+            .local_addr()
             .map_err(|e| format!("Failed to get local address: {}", e))?;
-        
+
         // Spawn the server as a tokio task
         let server_handle = tokio::spawn(async move {
-            info!("Prometheus metrics server starting on http://{}", actual_addr);
+            info!(
+                "Prometheus metrics server starting on http://{}",
+                actual_addr
+            );
             info!("Metrics endpoint: http://{}/metrics", actual_addr);
             info!("Health endpoint: http://{}/health", actual_addr);
-            
+
             if let Err(e) = axum::serve(listener, app).await {
                 error!("Prometheus server error: {}", e);
             } else {
                 info!("Prometheus server stopped gracefully");
             }
         });
-        
+
         self.server_handle = Some(server_handle);
-        
+
         // Start periodic metrics collection
         self.start_metrics_collection().await;
-        
-        info!("Prometheus exporter started successfully on {}", actual_addr);
+
+        info!(
+            "Prometheus exporter started successfully on {}",
+            actual_addr
+        );
         Ok(())
     }
-    
+
     /// Start periodic metrics collection and registration
     async fn start_metrics_collection(&self) {
         let metrics_collector = Arc::clone(&self.metrics_collector);
         let interval = self.collection_interval;
-        
+
         tokio::task::spawn_local(async move {
             let mut interval_timer = tokio::time::interval(interval);
-            
+
             loop {
                 interval_timer.tick().await;
-                
+
                 // Collect current metrics snapshot
                 let _snapshot = metrics_collector.collect_all().await;
-                
+
                 // Metrics are exported on-demand via HTTP endpoint
                 // This just ensures regular collection happens
             }
         });
     }
-    
+
     /// Export metrics in Prometheus format with enhanced options
     async fn export_metrics_with_options(
         metrics_collector: Arc<ComprehensiveMetrics>,
@@ -2977,20 +3231,20 @@ impl PrometheusExporter {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let snapshot = metrics_collector.collect_all().await;
         let mut output = String::new();
-        
+
         // Check for format parameter (future extensibility)
         let _format = params.get("format").unwrap_or(&"prometheus".to_string());
-        
+
         // Add metadata with enhanced information
         output.push_str("# HELP nyx_info Information about the Nyx daemon\n");
         output.push_str("# TYPE nyx_info gauge\n");
         output.push_str(&format!(
-            "nyx_info{{version=\"{}\",build_time=\"{}\",git_commit=\"{}\"}} 1\n", 
+            "nyx_info{{version=\"{}\",build_time=\"{}\",git_commit=\"{}\"}} 1\n",
             env!("CARGO_PKG_VERSION"),
             option_env!("BUILD_TIME").unwrap_or("unknown"),
             option_env!("GIT_COMMIT").unwrap_or("unknown")
         ));
-        
+
         // Add collection timestamp
         output.push_str("# HELP nyx_metrics_collection_timestamp_seconds Timestamp when metrics were collected\n");
         output.push_str("# TYPE nyx_metrics_collection_timestamp_seconds gauge\n");
@@ -3002,43 +3256,51 @@ impl PrometheusExporter {
                 .as_secs()
         ));
         output.push_str("\n");
-        
+
         // Export metrics based on requested categories
         let include_system = params.get("include").map_or(true, |v| v.contains("system"));
-        let include_network = params.get("include").map_or(true, |v| v.contains("network"));
+        let include_network = params
+            .get("include")
+            .map_or(true, |v| v.contains("network"));
         let include_layers = params.get("include").map_or(true, |v| v.contains("layers"));
-        let include_performance = params.get("include").map_or(true, |v| v.contains("performance"));
+        let include_performance = params
+            .get("include")
+            .map_or(true, |v| v.contains("performance"));
         let include_errors = params.get("include").map_or(true, |v| v.contains("errors"));
         let include_alerts = params.get("include").map_or(true, |v| v.contains("alerts"));
-        
+
         if include_system {
             Self::export_system_metrics(&mut output, &snapshot.system_metrics, &default_labels)?;
         }
-        
+
         if include_network {
             Self::export_network_metrics(&mut output, &snapshot.network_metrics, &default_labels)?;
         }
-        
+
         if include_layers {
             Self::export_layer_metrics(&mut output, &snapshot.layer_metrics, &default_labels)?;
         }
-        
+
         if include_performance {
-            Self::export_performance_metrics(&mut output, &snapshot.performance_metrics, &default_labels)?;
+            Self::export_performance_metrics(
+                &mut output,
+                &snapshot.performance_metrics,
+                &default_labels,
+            )?;
         }
-        
+
         if include_errors {
             Self::export_error_metrics(&mut output, &snapshot.error_metrics, &default_labels)?;
         }
-        
+
         if include_alerts {
             let active_alerts = metrics_collector.get_active_alerts().await;
             Self::export_alert_metrics(&mut output, &active_alerts, &default_labels)?;
         }
-        
+
         Ok(output)
     }
-    
+
     /// Export metrics in Prometheus format (legacy method for backward compatibility)
     async fn export_metrics(
         metrics_collector: Arc<ComprehensiveMetrics>,
@@ -3046,70 +3308,89 @@ impl PrometheusExporter {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         Self::export_metrics_with_options(metrics_collector, default_labels, HashMap::new()).await
     }
-    
+
     /// Perform system health checks
     async fn check_system_health(
         metrics_collector: Arc<ComprehensiveMetrics>,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let snapshot = metrics_collector.collect_all().await;
         let mut checks = serde_json::Map::new();
-        
+
         // Check system resources
         let cpu_healthy = snapshot.system_metrics.cpu_usage_percent < 90.0;
-        checks.insert("cpu".to_string(), serde_json::json!({
-            "healthy": cpu_healthy,
-            "usage_percent": snapshot.system_metrics.cpu_usage_percent,
-            "threshold": 90.0
-        }));
-        
-        let memory_usage_percent = (snapshot.system_metrics.memory_usage_bytes as f64 / 
-                                   snapshot.system_metrics.memory_total_bytes as f64) * 100.0;
+        checks.insert(
+            "cpu".to_string(),
+            serde_json::json!({
+                "healthy": cpu_healthy,
+                "usage_percent": snapshot.system_metrics.cpu_usage_percent,
+                "threshold": 90.0
+            }),
+        );
+
+        let memory_usage_percent = (snapshot.system_metrics.memory_usage_bytes as f64
+            / snapshot.system_metrics.memory_total_bytes as f64)
+            * 100.0;
         let memory_healthy = memory_usage_percent < 85.0;
-        checks.insert("memory".to_string(), serde_json::json!({
-            "healthy": memory_healthy,
-            "usage_percent": memory_usage_percent,
-            "threshold": 85.0
-        }));
-        
+        checks.insert(
+            "memory".to_string(),
+            serde_json::json!({
+                "healthy": memory_healthy,
+                "usage_percent": memory_usage_percent,
+                "threshold": 85.0
+            }),
+        );
+
         // Check file descriptors
         let fd_healthy = snapshot.system_metrics.open_file_descriptors < 8192; // Reasonable limit
-        checks.insert("file_descriptors".to_string(), serde_json::json!({
-            "healthy": fd_healthy,
-            "count": snapshot.system_metrics.open_file_descriptors,
-            "threshold": 8192
-        }));
-        
+        checks.insert(
+            "file_descriptors".to_string(),
+            serde_json::json!({
+                "healthy": fd_healthy,
+                "count": snapshot.system_metrics.open_file_descriptors,
+                "threshold": 8192
+            }),
+        );
+
         // Check network connectivity
         let network_healthy = snapshot.network_metrics.connection_success_rate > 0.8;
-        checks.insert("network".to_string(), serde_json::json!({
-            "healthy": network_healthy,
-            "success_rate": snapshot.network_metrics.connection_success_rate,
-            "threshold": 0.8
-        }));
-        
+        checks.insert(
+            "network".to_string(),
+            serde_json::json!({
+                "healthy": network_healthy,
+                "success_rate": snapshot.network_metrics.connection_success_rate,
+                "threshold": 0.8
+            }),
+        );
+
         // Check layer health
         let mut layer_health = true;
         let mut layer_statuses = serde_json::Map::new();
-        
+
         for (layer_type, metrics) in &snapshot.layer_metrics {
             let layer_healthy = !matches!(metrics.status, LayerStatus::Failed);
             layer_health &= layer_healthy;
-            
-            layer_statuses.insert(format!("{:?}", layer_type).to_lowercase(), serde_json::json!({
-                "healthy": layer_healthy,
-                "status": format!("{:?}", metrics.status),
-                "error_rate": metrics.error_rate
-            }));
+
+            layer_statuses.insert(
+                format!("{:?}", layer_type).to_lowercase(),
+                serde_json::json!({
+                    "healthy": layer_healthy,
+                    "status": format!("{:?}", metrics.status),
+                    "error_rate": metrics.error_rate
+                }),
+            );
         }
-        
-        checks.insert("layers".to_string(), serde_json::json!({
-            "healthy": layer_health,
-            "details": layer_statuses
-        }));
-        
+
+        checks.insert(
+            "layers".to_string(),
+            serde_json::json!({
+                "healthy": layer_health,
+                "details": layer_statuses
+            }),
+        );
+
         Ok(serde_json::Value::Object(checks))
     }
-    
+
     /// Export system metrics in Prometheus format
     fn export_system_metrics(
         output: &mut String,
@@ -3117,49 +3398,75 @@ impl PrometheusExporter {
         labels: &HashMap<String, String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let label_str = Self::format_labels(labels);
-        
+
         // CPU usage
         output.push_str("# HELP nyx_cpu_usage_percent CPU usage percentage\n");
         output.push_str("# TYPE nyx_cpu_usage_percent gauge\n");
-        output.push_str(&format!("nyx_cpu_usage_percent{{{label_str}}} {}\n", metrics.cpu_usage_percent));
-        
+        output.push_str(&format!(
+            "nyx_cpu_usage_percent{{{label_str}}} {}\n",
+            metrics.cpu_usage_percent
+        ));
+
         // Memory metrics
         output.push_str("# HELP nyx_memory_usage_bytes Memory usage in bytes\n");
         output.push_str("# TYPE nyx_memory_usage_bytes gauge\n");
-        output.push_str(&format!("nyx_memory_usage_bytes{{{label_str}}} {}\n", metrics.memory_usage_bytes));
-        
+        output.push_str(&format!(
+            "nyx_memory_usage_bytes{{{label_str}}} {}\n",
+            metrics.memory_usage_bytes
+        ));
+
         output.push_str("# HELP nyx_memory_total_bytes Total memory in bytes\n");
         output.push_str("# TYPE nyx_memory_total_bytes gauge\n");
-        output.push_str(&format!("nyx_memory_total_bytes{{{label_str}}} {}\n", metrics.memory_total_bytes));
-        
+        output.push_str(&format!(
+            "nyx_memory_total_bytes{{{label_str}}} {}\n",
+            metrics.memory_total_bytes
+        ));
+
         // Network I/O
         output.push_str("# HELP nyx_network_bytes_sent_total Total bytes sent over network\n");
         output.push_str("# TYPE nyx_network_bytes_sent_total counter\n");
-        output.push_str(&format!("nyx_network_bytes_sent_total{{{label_str}}} {}\n", metrics.network_bytes_sent));
-        
-        output.push_str("# HELP nyx_network_bytes_received_total Total bytes received over network\n");
+        output.push_str(&format!(
+            "nyx_network_bytes_sent_total{{{label_str}}} {}\n",
+            metrics.network_bytes_sent
+        ));
+
+        output.push_str(
+            "# HELP nyx_network_bytes_received_total Total bytes received over network\n",
+        );
         output.push_str("# TYPE nyx_network_bytes_received_total counter\n");
-        output.push_str(&format!("nyx_network_bytes_received_total{{{label_str}}} {}\n", metrics.network_bytes_received));
-        
+        output.push_str(&format!(
+            "nyx_network_bytes_received_total{{{label_str}}} {}\n",
+            metrics.network_bytes_received
+        ));
+
         // File descriptors
         output.push_str("# HELP nyx_open_file_descriptors Number of open file descriptors\n");
         output.push_str("# TYPE nyx_open_file_descriptors gauge\n");
-        output.push_str(&format!("nyx_open_file_descriptors{{{label_str}}} {}\n", metrics.open_file_descriptors));
-        
+        output.push_str(&format!(
+            "nyx_open_file_descriptors{{{label_str}}} {}\n",
+            metrics.open_file_descriptors
+        ));
+
         // Threads
         output.push_str("# HELP nyx_thread_count Number of threads\n");
         output.push_str("# TYPE nyx_thread_count gauge\n");
-        output.push_str(&format!("nyx_thread_count{{{label_str}}} {}\n", metrics.thread_count));
-        
+        output.push_str(&format!(
+            "nyx_thread_count{{{label_str}}} {}\n",
+            metrics.thread_count
+        ));
+
         // Uptime
         output.push_str("# HELP nyx_uptime_seconds Uptime in seconds\n");
         output.push_str("# TYPE nyx_uptime_seconds counter\n");
-        output.push_str(&format!("nyx_uptime_seconds{{{label_str}}} {}\n", metrics.uptime_seconds));
-        
+        output.push_str(&format!(
+            "nyx_uptime_seconds{{{label_str}}} {}\n",
+            metrics.uptime_seconds
+        ));
+
         output.push_str("\n");
         Ok(())
     }
-    
+
     /// Export network metrics in Prometheus format
     fn export_network_metrics(
         output: &mut String,
@@ -3167,52 +3474,79 @@ impl PrometheusExporter {
         labels: &HashMap<String, String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let label_str = Self::format_labels(labels);
-        
+
         // Connection metrics
         output.push_str("# HELP nyx_active_connections Number of active connections\n");
         output.push_str("# TYPE nyx_active_connections gauge\n");
-        output.push_str(&format!("nyx_active_connections{{{label_str}}} {}\n", metrics.active_connections));
-        
+        output.push_str(&format!(
+            "nyx_active_connections{{{label_str}}} {}\n",
+            metrics.active_connections
+        ));
+
         output.push_str("# HELP nyx_total_connections_total Total connections established\n");
         output.push_str("# TYPE nyx_total_connections_total counter\n");
-        output.push_str(&format!("nyx_total_connections_total{{{label_str}}} {}\n", metrics.total_connections));
-        
+        output.push_str(&format!(
+            "nyx_total_connections_total{{{label_str}}} {}\n",
+            metrics.total_connections
+        ));
+
         output.push_str("# HELP nyx_failed_connections_total Total failed connections\n");
         output.push_str("# TYPE nyx_failed_connections_total counter\n");
-        output.push_str(&format!("nyx_failed_connections_total{{{label_str}}} {}\n", metrics.failed_connections));
-        
+        output.push_str(&format!(
+            "nyx_failed_connections_total{{{label_str}}} {}\n",
+            metrics.failed_connections
+        ));
+
         output.push_str("# HELP nyx_connection_success_rate Connection success rate\n");
         output.push_str("# TYPE nyx_connection_success_rate gauge\n");
-        output.push_str(&format!("nyx_connection_success_rate{{{label_str}}} {}\n", metrics.connection_success_rate));
-        
+        output.push_str(&format!(
+            "nyx_connection_success_rate{{{label_str}}} {}\n",
+            metrics.connection_success_rate
+        ));
+
         // Latency
         output.push_str("# HELP nyx_average_latency_seconds Average latency in seconds\n");
         output.push_str("# TYPE nyx_average_latency_seconds gauge\n");
-        output.push_str(&format!("nyx_average_latency_seconds{{{label_str}}} {}\n", metrics.average_latency.as_secs_f64()));
-        
+        output.push_str(&format!(
+            "nyx_average_latency_seconds{{{label_str}}} {}\n",
+            metrics.average_latency.as_secs_f64()
+        ));
+
         // Packet loss
         output.push_str("# HELP nyx_packet_loss_rate Packet loss rate\n");
         output.push_str("# TYPE nyx_packet_loss_rate gauge\n");
-        output.push_str(&format!("nyx_packet_loss_rate{{{label_str}}} {}\n", metrics.packet_loss_rate));
-        
+        output.push_str(&format!(
+            "nyx_packet_loss_rate{{{label_str}}} {}\n",
+            metrics.packet_loss_rate
+        ));
+
         // Bandwidth utilization
         output.push_str("# HELP nyx_bandwidth_utilization Bandwidth utilization ratio\n");
         output.push_str("# TYPE nyx_bandwidth_utilization gauge\n");
-        output.push_str(&format!("nyx_bandwidth_utilization{{{label_str}}} {}\n", metrics.bandwidth_utilization));
-        
+        output.push_str(&format!(
+            "nyx_bandwidth_utilization{{{label_str}}} {}\n",
+            metrics.bandwidth_utilization
+        ));
+
         // Peer and route counts
         output.push_str("# HELP nyx_peer_count Number of connected peers\n");
         output.push_str("# TYPE nyx_peer_count gauge\n");
-        output.push_str(&format!("nyx_peer_count{{{label_str}}} {}\n", metrics.peer_count));
-        
+        output.push_str(&format!(
+            "nyx_peer_count{{{label_str}}} {}\n",
+            metrics.peer_count
+        ));
+
         output.push_str("# HELP nyx_route_count Number of available routes\n");
         output.push_str("# TYPE nyx_route_count gauge\n");
-        output.push_str(&format!("nyx_route_count{{{label_str}}} {}\n", metrics.route_count));
-        
+        output.push_str(&format!(
+            "nyx_route_count{{{label_str}}} {}\n",
+            metrics.route_count
+        ));
+
         output.push_str("\n");
         Ok(())
     }
-    
+
     /// Export layer-specific metrics in Prometheus format
     fn export_layer_metrics(
         output: &mut String,
@@ -3224,7 +3558,7 @@ impl PrometheusExporter {
             let mut layer_labels = labels.clone();
             layer_labels.insert("layer".to_string(), layer_name.clone());
             let label_str = Self::format_labels(&layer_labels);
-            
+
             // Layer status
             output.push_str(&format!("# HELP nyx_layer_status Layer status (0=Initializing, 1=Active, 2=Degraded, 3=Failed, 4=Shutdown)\n"));
             output.push_str(&format!("# TYPE nyx_layer_status gauge\n"));
@@ -3235,48 +3569,86 @@ impl PrometheusExporter {
                 LayerStatus::Failed => 3,
                 LayerStatus::Shutdown => 4,
             };
-            output.push_str(&format!("nyx_layer_status{{{label_str}}} {}\n", status_value));
-            
+            output.push_str(&format!(
+                "nyx_layer_status{{{label_str}}} {}\n",
+                status_value
+            ));
+
             // Throughput
             output.push_str(&format!("# HELP nyx_layer_throughput_bytes_per_second Layer throughput in bytes per second\n"));
-            output.push_str(&format!("# TYPE nyx_layer_throughput_bytes_per_second gauge\n"));
-            output.push_str(&format!("nyx_layer_throughput_bytes_per_second{{{label_str}}} {}\n", metrics.throughput));
-            
+            output.push_str(&format!(
+                "# TYPE nyx_layer_throughput_bytes_per_second gauge\n"
+            ));
+            output.push_str(&format!(
+                "nyx_layer_throughput_bytes_per_second{{{label_str}}} {}\n",
+                metrics.throughput
+            ));
+
             // Latency
-            output.push_str(&format!("# HELP nyx_layer_latency_seconds Layer latency in seconds\n"));
+            output.push_str(&format!(
+                "# HELP nyx_layer_latency_seconds Layer latency in seconds\n"
+            ));
             output.push_str(&format!("# TYPE nyx_layer_latency_seconds gauge\n"));
-            output.push_str(&format!("nyx_layer_latency_seconds{{{label_str}}} {}\n", metrics.latency.as_secs_f64()));
-            
+            output.push_str(&format!(
+                "nyx_layer_latency_seconds{{{label_str}}} {}\n",
+                metrics.latency.as_secs_f64()
+            ));
+
             // Error rate
             output.push_str(&format!("# HELP nyx_layer_error_rate Layer error rate\n"));
             output.push_str(&format!("# TYPE nyx_layer_error_rate gauge\n"));
-            output.push_str(&format!("nyx_layer_error_rate{{{label_str}}} {}\n", metrics.error_rate));
-            
+            output.push_str(&format!(
+                "nyx_layer_error_rate{{{label_str}}} {}\n",
+                metrics.error_rate
+            ));
+
             // Packets processed
-            output.push_str(&format!("# HELP nyx_layer_packets_processed_total Total packets processed by layer\n"));
-            output.push_str(&format!("# TYPE nyx_layer_packets_processed_total counter\n"));
-            output.push_str(&format!("nyx_layer_packets_processed_total{{{label_str}}} {}\n", metrics.packets_processed));
-            
+            output.push_str(&format!(
+                "# HELP nyx_layer_packets_processed_total Total packets processed by layer\n"
+            ));
+            output.push_str(&format!(
+                "# TYPE nyx_layer_packets_processed_total counter\n"
+            ));
+            output.push_str(&format!(
+                "nyx_layer_packets_processed_total{{{label_str}}} {}\n",
+                metrics.packets_processed
+            ));
+
             // Bytes processed
-            output.push_str(&format!("# HELP nyx_layer_bytes_processed_total Total bytes processed by layer\n"));
+            output.push_str(&format!(
+                "# HELP nyx_layer_bytes_processed_total Total bytes processed by layer\n"
+            ));
             output.push_str(&format!("# TYPE nyx_layer_bytes_processed_total counter\n"));
-            output.push_str(&format!("nyx_layer_bytes_processed_total{{{label_str}}} {}\n", metrics.bytes_processed));
-            
+            output.push_str(&format!(
+                "nyx_layer_bytes_processed_total{{{label_str}}} {}\n",
+                metrics.bytes_processed
+            ));
+
             // Active connections
-            output.push_str(&format!("# HELP nyx_layer_active_connections Active connections for layer\n"));
+            output.push_str(&format!(
+                "# HELP nyx_layer_active_connections Active connections for layer\n"
+            ));
             output.push_str(&format!("# TYPE nyx_layer_active_connections gauge\n"));
-            output.push_str(&format!("nyx_layer_active_connections{{{label_str}}} {}\n", metrics.active_connections));
-            
+            output.push_str(&format!(
+                "nyx_layer_active_connections{{{label_str}}} {}\n",
+                metrics.active_connections
+            ));
+
             // Queue depth
-            output.push_str(&format!("# HELP nyx_layer_queue_depth Queue depth for layer\n"));
+            output.push_str(&format!(
+                "# HELP nyx_layer_queue_depth Queue depth for layer\n"
+            ));
             output.push_str(&format!("# TYPE nyx_layer_queue_depth gauge\n"));
-            output.push_str(&format!("nyx_layer_queue_depth{{{label_str}}} {}\n", metrics.queue_depth));
+            output.push_str(&format!(
+                "nyx_layer_queue_depth{{{label_str}}} {}\n",
+                metrics.queue_depth
+            ));
         }
-        
+
         output.push_str("\n");
         Ok(())
     }
-    
+
     /// Export performance metrics in Prometheus format
     fn export_performance_metrics(
         output: &mut String,
@@ -3284,54 +3656,85 @@ impl PrometheusExporter {
         labels: &HashMap<String, String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let label_str = Self::format_labels(labels);
-        
+
         // Cover traffic rate
         output.push_str("# HELP nyx_cover_traffic_rate Cover traffic rate in packets per second\n");
         output.push_str("# TYPE nyx_cover_traffic_rate gauge\n");
-        output.push_str(&format!("nyx_cover_traffic_rate{{{label_str}}} {}\n", metrics.cover_traffic_rate));
-        
+        output.push_str(&format!(
+            "nyx_cover_traffic_rate{{{label_str}}} {}\n",
+            metrics.cover_traffic_rate
+        ));
+
         // Average latency
         output.push_str("# HELP nyx_avg_latency_milliseconds Average latency in milliseconds\n");
         output.push_str("# TYPE nyx_avg_latency_milliseconds gauge\n");
-        output.push_str(&format!("nyx_avg_latency_milliseconds{{{label_str}}} {}\n", metrics.avg_latency_ms));
-        
+        output.push_str(&format!(
+            "nyx_avg_latency_milliseconds{{{label_str}}} {}\n",
+            metrics.avg_latency_ms
+        ));
+
         // Packet loss rate
         output.push_str("# HELP nyx_packet_loss_rate_percent Packet loss rate as percentage\n");
         output.push_str("# TYPE nyx_packet_loss_rate_percent gauge\n");
-        output.push_str(&format!("nyx_packet_loss_rate_percent{{{label_str}}} {}\n", metrics.packet_loss_rate * 100.0));
-        
+        output.push_str(&format!(
+            "nyx_packet_loss_rate_percent{{{label_str}}} {}\n",
+            metrics.packet_loss_rate * 100.0
+        ));
+
         // Bandwidth utilization
-        output.push_str("# HELP nyx_bandwidth_utilization_percent Bandwidth utilization as percentage\n");
+        output.push_str(
+            "# HELP nyx_bandwidth_utilization_percent Bandwidth utilization as percentage\n",
+        );
         output.push_str("# TYPE nyx_bandwidth_utilization_percent gauge\n");
-        output.push_str(&format!("nyx_bandwidth_utilization_percent{{{label_str}}} {}\n", metrics.bandwidth_utilization * 100.0));
-        
+        output.push_str(&format!(
+            "nyx_bandwidth_utilization_percent{{{label_str}}} {}\n",
+            metrics.bandwidth_utilization * 100.0
+        ));
+
         // CPU usage
         output.push_str("# HELP nyx_process_cpu_usage_percent Process CPU usage percentage\n");
         output.push_str("# TYPE nyx_process_cpu_usage_percent gauge\n");
-        output.push_str(&format!("nyx_process_cpu_usage_percent{{{label_str}}} {}\n", metrics.cpu_usage * 100.0));
-        
+        output.push_str(&format!(
+            "nyx_process_cpu_usage_percent{{{label_str}}} {}\n",
+            metrics.cpu_usage * 100.0
+        ));
+
         // Memory usage
-        output.push_str("# HELP nyx_process_memory_usage_megabytes Process memory usage in megabytes\n");
+        output.push_str(
+            "# HELP nyx_process_memory_usage_megabytes Process memory usage in megabytes\n",
+        );
         output.push_str("# TYPE nyx_process_memory_usage_megabytes gauge\n");
-        output.push_str(&format!("nyx_process_memory_usage_megabytes{{{label_str}}} {}\n", metrics.memory_usage_mb));
-        
+        output.push_str(&format!(
+            "nyx_process_memory_usage_megabytes{{{label_str}}} {}\n",
+            metrics.memory_usage_mb
+        ));
+
         // Packet counters
         output.push_str("# HELP nyx_packets_sent_total Total packets sent\n");
         output.push_str("# TYPE nyx_packets_sent_total counter\n");
-        output.push_str(&format!("nyx_packets_sent_total{{{label_str}}} {}\n", metrics.total_packets_sent));
-        
+        output.push_str(&format!(
+            "nyx_packets_sent_total{{{label_str}}} {}\n",
+            metrics.total_packets_sent
+        ));
+
         output.push_str("# HELP nyx_packets_received_total Total packets received\n");
         output.push_str("# TYPE nyx_packets_received_total counter\n");
-        output.push_str(&format!("nyx_packets_received_total{{{label_str}}} {}\n", metrics.total_packets_received));
-        
+        output.push_str(&format!(
+            "nyx_packets_received_total{{{label_str}}} {}\n",
+            metrics.total_packets_received
+        ));
+
         output.push_str("# HELP nyx_retransmissions_total Total retransmissions\n");
         output.push_str("# TYPE nyx_retransmissions_total counter\n");
-        output.push_str(&format!("nyx_retransmissions_total{{{label_str}}} {}\n", metrics.retransmissions));
-        
+        output.push_str(&format!(
+            "nyx_retransmissions_total{{{label_str}}} {}\n",
+            metrics.retransmissions
+        ));
+
         output.push_str("\n");
         Ok(())
     }
-    
+
     /// Export error metrics in Prometheus format
     fn export_error_metrics(
         output: &mut String,
@@ -3339,54 +3742,72 @@ impl PrometheusExporter {
         labels: &HashMap<String, String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let label_str = Self::format_labels(labels);
-        
+
         // Total errors
         output.push_str("# HELP nyx_errors_total Total number of errors\n");
         output.push_str("# TYPE nyx_errors_total counter\n");
-        output.push_str(&format!("nyx_errors_total{{{label_str}}} {}\n", metrics.total_errors));
-        
+        output.push_str(&format!(
+            "nyx_errors_total{{{label_str}}} {}\n",
+            metrics.total_errors
+        ));
+
         // Error rate
         output.push_str("# HELP nyx_error_rate Errors per minute\n");
         output.push_str("# TYPE nyx_error_rate gauge\n");
-        output.push_str(&format!("nyx_error_rate{{{label_str}}} {}\n", metrics.error_rate));
-        
+        output.push_str(&format!(
+            "nyx_error_rate{{{label_str}}} {}\n",
+            metrics.error_rate
+        ));
+
         // Critical errors
         output.push_str("# HELP nyx_critical_errors_total Total critical errors\n");
         output.push_str("# TYPE nyx_critical_errors_total counter\n");
-        output.push_str(&format!("nyx_critical_errors_total{{{label_str}}} {}\n", metrics.critical_errors));
-        
+        output.push_str(&format!(
+            "nyx_critical_errors_total{{{label_str}}} {}\n",
+            metrics.critical_errors
+        ));
+
         // Warning errors
         output.push_str("# HELP nyx_warning_errors_total Total warning errors\n");
         output.push_str("# TYPE nyx_warning_errors_total counter\n");
-        output.push_str(&format!("nyx_warning_errors_total{{{label_str}}} {}\n", metrics.warning_errors));
-        
+        output.push_str(&format!(
+            "nyx_warning_errors_total{{{label_str}}} {}\n",
+            metrics.warning_errors
+        ));
+
         // Errors by layer
         for (layer, count) in &metrics.errors_by_layer {
             let layer_name = format!("{:?}", layer).to_lowercase();
             let mut layer_labels = labels.clone();
             layer_labels.insert("layer".to_string(), layer_name);
             let layer_label_str = Self::format_labels(&layer_labels);
-            
+
             output.push_str("# HELP nyx_errors_by_layer_total Errors by layer\n");
             output.push_str("# TYPE nyx_errors_by_layer_total counter\n");
-            output.push_str(&format!("nyx_errors_by_layer_total{{{layer_label_str}}} {}\n", count));
+            output.push_str(&format!(
+                "nyx_errors_by_layer_total{{{layer_label_str}}} {}\n",
+                count
+            ));
         }
-        
+
         // Errors by type
         for (error_type, count) in &metrics.errors_by_type {
             let mut type_labels = labels.clone();
             type_labels.insert("error_type".to_string(), error_type.clone());
             let type_label_str = Self::format_labels(&type_labels);
-            
+
             output.push_str("# HELP nyx_errors_by_type_total Errors by type\n");
             output.push_str("# TYPE nyx_errors_by_type_total counter\n");
-            output.push_str(&format!("nyx_errors_by_type_total{{{type_label_str}}} {}\n", count));
+            output.push_str(&format!(
+                "nyx_errors_by_type_total{{{type_label_str}}} {}\n",
+                count
+            ));
         }
-        
+
         output.push_str("\n");
         Ok(())
     }
-    
+
     /// Export alert metrics in Prometheus format
     fn export_alert_metrics(
         output: &mut String,
@@ -3394,39 +3815,45 @@ impl PrometheusExporter {
         labels: &HashMap<String, String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let label_str = Self::format_labels(labels);
-        
+
         // Total active alerts
         output.push_str("# HELP nyx_active_alerts Total number of active alerts\n");
         output.push_str("# TYPE nyx_active_alerts gauge\n");
-        output.push_str(&format!("nyx_active_alerts{{{label_str}}} {}\n", active_alerts.len()));
-        
+        output.push_str(&format!(
+            "nyx_active_alerts{{{label_str}}} {}\n",
+            active_alerts.len()
+        ));
+
         // Alerts by severity
         let mut severity_counts = HashMap::new();
         for alert in active_alerts.values() {
             *severity_counts.entry(&alert.severity).or_insert(0) += 1;
         }
-        
+
         for (severity, count) in severity_counts {
             let severity_name = format!("{:?}", severity).to_lowercase();
             let mut severity_labels = labels.clone();
             severity_labels.insert("severity".to_string(), severity_name);
             let severity_label_str = Self::format_labels(&severity_labels);
-            
+
             output.push_str("# HELP nyx_alerts_by_severity Active alerts by severity\n");
             output.push_str("# TYPE nyx_alerts_by_severity gauge\n");
-            output.push_str(&format!("nyx_alerts_by_severity{{{severity_label_str}}} {}\n", count));
+            output.push_str(&format!(
+                "nyx_alerts_by_severity{{{severity_label_str}}} {}\n",
+                count
+            ));
         }
-        
+
         output.push_str("\n");
         Ok(())
     }
-    
+
     /// Format labels for Prometheus metrics
     fn format_labels(labels: &HashMap<String, String>) -> String {
         if labels.is_empty() {
             return String::new();
         }
-        
+
         let mut label_pairs: Vec<String> = labels
             .iter()
             .map(|(k, v)| format!("{}=\"{}\"", k, v))
@@ -3434,7 +3861,7 @@ impl PrometheusExporter {
         label_pairs.sort();
         label_pairs.join(",")
     }
-    
+
     /// Stop the Prometheus server
     pub async fn stop(&mut self) {
         if let Some(handle) = self.server_handle.take() {
@@ -3442,44 +3869,50 @@ impl PrometheusExporter {
             let _ = handle.await;
         }
     }
-    
+
     /// Get the server address
     pub fn server_addr(&self) -> std::net::SocketAddr {
         self.server_addr
     }
-    
+
     /// Set collection interval
     pub fn set_collection_interval(&mut self, interval: Duration) {
         self.collection_interval = interval;
     }
-    
+
     /// Add default label
     pub fn add_default_label(&mut self, key: String, value: String) {
         self.default_labels.insert(key, value);
     }
-    
+
     /// Get metrics endpoint URL
     pub fn metrics_url(&self) -> String {
         format!("http://{}/metrics", self.server_addr)
     }
-    
+
     /// Get health endpoint URL
     pub fn health_url(&self) -> String {
         format!("http://{}/health", self.server_addr)
     }
-    
+
     /// Check if server is running
     pub fn is_running(&self) -> bool {
-        self.server_handle.as_ref().map_or(false, |h| !h.is_finished())
+        self.server_handle
+            .as_ref()
+            .map_or(false, |h| !h.is_finished())
     }
-    
+
     /// Get server statistics
     pub async fn get_server_stats(&self) -> ServerStats {
         let is_running = self.is_running();
         let uptime = if is_running {
-            self.server_started_at.map(|t| t.elapsed()).or(Some(Duration::from_secs(0)))
-        } else { None };
-        
+            self.server_started_at
+                .map(|t| t.elapsed())
+                .or(Some(Duration::from_secs(0)))
+        } else {
+            None
+        };
+
         ServerStats {
             is_running,
             server_addr: self.server_addr,
@@ -3488,7 +3921,7 @@ impl PrometheusExporter {
             default_labels: self.default_labels.clone(),
         }
     }
-    
+
     /// Restart the server with new configuration
     pub async fn restart(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Restarting Prometheus metrics server");
@@ -3496,15 +3929,18 @@ impl PrometheusExporter {
         tokio::time::sleep(Duration::from_millis(100)).await; // Brief pause
         self.start_server().await
     }
-    
+
     /// Graceful shutdown with timeout
-    pub async fn shutdown_gracefully(&mut self, timeout: Duration) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn shutdown_gracefully(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(handle) = self.server_handle.take() {
             info!("Shutting down Prometheus metrics server gracefully");
-            
+
             // Try graceful shutdown first
             handle.abort();
-            
+
             // Wait for shutdown with timeout
             match tokio::time::timeout(timeout, handle).await {
                 Ok(_) => {

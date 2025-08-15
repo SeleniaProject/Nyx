@@ -1,4 +1,4 @@
-use nyx_transport::ice::{ice_lite_handshake};
+use nyx_transport::ice::ice_lite_handshake;
 use tokio::net::UdpSocket;
 
 #[tokio::test]
@@ -23,4 +23,4 @@ async fn ice_lite_txid_mismatch() {
 
     let ok = ice_lite_handshake(&sock_a, addr_b).await;
     assert!(!ok, "Handshake should fail on txid mismatch");
-} 
+}

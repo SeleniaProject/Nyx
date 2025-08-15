@@ -1,12 +1,21 @@
 #![forbid(unsafe_code)]
-use nyx_stream::tx::{TxQueue, TimingConfig};
-use tracing::subscriber::with_default;
-use tracing_subscriber::{Registry, layer::SubscriberExt};
-use tracing_subscriber::fmt::format::FmtSpan;
+use nyx_stream::tx::{TimingConfig, TxQueue};
 use std::sync::{Arc, Mutex};
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 struct Buf(Arc<Mutex<String>>);
-impl std::io::Write for Buf { fn write(&mut self, b:&[u8])->std::io::Result<usize>{ let mut g=self.0.lock().unwrap(); g.push_str(&String::from_utf8_lossy(b)); Ok(b.len()) } fn flush(&mut self)->std::io::Result<()> { Ok(()) } }
+impl std::io::Write for Buf {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        let mut g = self.0.lock().unwrap();
+        g.push_str(&String::from_utf8_lossy(b));
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 #[test]
 fn span_includes_path_and_cid_fields() {
     // Capture tracing output and ensure instrument macro produced fields.
@@ -22,10 +31,24 @@ fn span_includes_path_and_cid_fields() {
     let subscriber = Registry::default().with(layer);
     with_default(subscriber, || {
         let q = TxQueue::new(TimingConfig::default());
-        tokio::runtime::Handle::current().block_on(async { q.send_with_path(7, vec![1,2,3]).await; });
+        tokio::runtime::Handle::current().block_on(async {
+            q.send_with_path(7, vec![1, 2, 3]).await;
+        });
     });
     let logs = store.lock().unwrap().clone();
-    assert!(logs.contains("nyx.stream.send"), "expected span name in logs: {:?}", logs);
-    assert!(logs.contains("path_id"), "expected path_id attribute present: {}", logs);
-    assert!(logs.contains("cid"), "expected cid attribute present: {}", logs);
+    assert!(
+        logs.contains("nyx.stream.send"),
+        "expected span name in logs: {:?}",
+        logs
+    );
+    assert!(
+        logs.contains("path_id"),
+        "expected path_id attribute present: {}",
+        logs
+    );
+    assert!(
+        logs.contains("cid"),
+        "expected cid attribute present: {}",
+        logs
+    );
 }

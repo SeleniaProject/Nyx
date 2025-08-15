@@ -10,7 +10,11 @@ pub struct Sequencer {
 }
 
 impl Sequencer {
-    pub fn new() -> Self { Self { counters: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            counters: HashMap::new(),
+        }
+    }
 
     /// Obtain next sequence number for `path_id`.
     pub fn next(&mut self, path_id: u8) -> u64 {
@@ -33,4 +37,4 @@ mod tests {
         assert_eq!(seq.next(2), 0);
         assert_eq!(seq.next(1), 2);
     }
-} 
+}

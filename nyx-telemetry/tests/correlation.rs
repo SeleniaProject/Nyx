@@ -1,10 +1,19 @@
 #![forbid(unsafe_code)]
-use nyx_telemetry::{TelemetryCollector, TelemetryConfig, record_stream_send};
+use nyx_telemetry::{record_stream_send, TelemetryCollector, TelemetryConfig};
 
 // Integration (simplified): direct hook invocation simulates nyx-stream send and updates counter.
 #[tokio::test]
 async fn stream_send_hook_increments_counter_and_system_metrics_collects() {
-    let cfg = TelemetryConfig { metrics_enabled: true, metrics_port: 19091, collection_interval: 60, otlp_enabled: false, otlp_endpoint: None, trace_sampling: 1.0, attribute_filter_config: None, exporter_recovery: true };
+    let cfg = TelemetryConfig {
+        metrics_enabled: true,
+        metrics_port: 19091,
+        collection_interval: 60,
+        otlp_enabled: false,
+        otlp_endpoint: None,
+        trace_sampling: 1.0,
+        attribute_filter_config: None,
+        exporter_recovery: true,
+    };
     let collector = TelemetryCollector::new(cfg).expect("collector");
     collector.init_light().await.expect("init light");
 
@@ -12,7 +21,12 @@ async fn stream_send_hook_increments_counter_and_system_metrics_collects() {
     record_stream_send(7, "cid-test");
     record_stream_send(7, "cid-test");
     let after = collector.stream_send_count(7).unwrap_or(0);
-    assert!(after >= before + 2, "counter didn't increase as expected: before={} after={}", before, after);
+    assert!(
+        after >= before + 2,
+        "counter didn't increase as expected: before={} after={}",
+        before,
+        after
+    );
 
     // Force system metrics collection and assert gauges updated (non-negative & plausible bounds)
     collector.collect_once_for_test().await;

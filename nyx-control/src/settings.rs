@@ -3,8 +3,8 @@
 
 #![forbid(unsafe_code)]
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// SETTINGS payload structure.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -26,9 +26,15 @@ pub struct Settings {
     pub pq_supported: bool,
 }
 
-const fn default_max_streams() -> u32 { 256 }
-const fn default_max_data() -> u32 { 1_048_576 }
-const fn default_idle() -> u16 { 30 }
+const fn default_max_streams() -> u32 {
+    256
+}
+const fn default_max_data() -> u32 {
+    1_048_576
+}
+const fn default_idle() -> u16 {
+    30
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -54,7 +60,10 @@ pub fn validate_settings(json: &[u8]) -> Result<Settings, String> {
 
     // Basic schema validation (types) first
     compiled.validate(&val).map_err(|err_iter| {
-        let joined = err_iter.map(|e| e.to_string()).collect::<Vec<_>>().join(", ");
+        let joined = err_iter
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("schema error: {}", joined)
     })?;
 
@@ -67,9 +76,21 @@ pub fn validate_settings(json: &[u8]) -> Result<Settings, String> {
     }
 
     // Enforce bounds/relations beyond JSONSchema:
-    if let Some(ms) = val.get("max_streams").and_then(|v| v.as_u64()) { if ms == 0 { return Err("schema error: max_streams must be > 0".into()); } }
-    if let Some(md) = val.get("max_data").and_then(|v| v.as_u64()) { if md < 4096 { return Err("schema error: max_data too small (min 4096)".into()); } }
-    if let Some(idle) = val.get("idle_timeout").and_then(|v| v.as_u64()) { if idle < 5 || idle > 3600 { return Err("schema error: idle_timeout out of range [5, 3600]".into()); } }
+    if let Some(ms) = val.get("max_streams").and_then(|v| v.as_u64()) {
+        if ms == 0 {
+            return Err("schema error: max_streams must be > 0".into());
+        }
+    }
+    if let Some(md) = val.get("max_data").and_then(|v| v.as_u64()) {
+        if md < 4096 {
+            return Err("schema error: max_data too small (min 4096)".into());
+        }
+    }
+    if let Some(idle) = val.get("idle_timeout").and_then(|v| v.as_u64()) {
+        if idle < 5 || idle > 3600 {
+            return Err("schema error: idle_timeout out of range [5, 3600]".into());
+        }
+    }
 
     Ok(serde_json::from_value(val).unwrap())
-} 
+}

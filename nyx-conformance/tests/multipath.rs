@@ -18,4 +18,4 @@ fn sequencer_per_path_independent() {
     assert_eq!(seq.next(10), 1);
     assert_eq!(seq.next(20), 0);
     assert_eq!(seq.next(10), 2);
-} 
+}

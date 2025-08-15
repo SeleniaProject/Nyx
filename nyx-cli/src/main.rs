@@ -4,19 +4,19 @@
 //! No gRPC, no tonic, no ring, no C dependencies
 
 use anyhow::{anyhow, Result};
-use clap::{Parser, Subcommand, Args, ValueEnum};
-use std::time::{Duration, Instant};
-use tokio::time::sleep;
-use indicatif::{ProgressBar, ProgressStyle};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use console::style;
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
 // HTTP client for Pure Rust communication
-use ureq;
+use nyx_sdk::error::{close_code_category, NyxError};
 use std::collections::HashMap;
-use nyx_sdk::error::{NyxError, close_code_category};
+use ureq;
 
 mod i18n;
 use i18n::localize;
@@ -42,15 +42,21 @@ pub struct NodeInfo {
 
 // ---------------- Configuration (nyx.toml) ----------------
 #[derive(Debug, Deserialize, Default)]
-struct CliSection { max_reconnect_attempts: Option<u32> }
+struct CliSection {
+    max_reconnect_attempts: Option<u32>,
+}
 #[derive(Debug, Deserialize, Default)]
-struct NyxConfig { cli: Option<CliSection> }
+struct NyxConfig {
+    cli: Option<CliSection>,
+}
 
 fn load_config() -> NyxConfig {
     let path = Path::new("nyx.toml");
     if let Ok(data) = fs::read_to_string(path) {
         toml::from_str(&data).unwrap_or_default()
-    } else { NyxConfig::default() }
+    } else {
+        NyxConfig::default()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -120,24 +126,24 @@ pub struct Request<T> {
 
 impl<T> Request<T> {
     pub fn new(inner: T) -> Self {
-        Self { 
+        Self {
             inner,
             auth_token: None,
         }
     }
-    
+
     pub fn get_ref(&self) -> &T {
         &self.inner
     }
-    
+
     pub fn set_auth_token(&mut self, token: String) {
         self.auth_token = Some(token);
     }
-    
+
     pub fn auth_token(&self) -> Option<&String> {
         self.auth_token.as_ref()
     }
-    
+
     pub fn into_inner(self) -> T {
         self.inner
     }
@@ -152,11 +158,11 @@ impl<T> Response<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
-    
+
     pub fn into_inner(self) -> T {
         self.inner
     }
-    
+
     pub fn get_ref(&self) -> &T {
         &self.inner
     }
@@ -176,7 +182,7 @@ impl NyxControlClient {
             .timeout_read(Duration::from_secs(30))
             .timeout_write(Duration::from_secs(30))
             .build();
-            
+
         Self {
             base_url: endpoint,
             agent,
@@ -189,7 +195,7 @@ impl NyxControlClient {
             .timeout_read(Duration::from_secs(30))
             .timeout_write(Duration::from_secs(30))
             .build();
-            
+
         Ok(Self {
             base_url: endpoint,
             agent,
@@ -204,25 +210,31 @@ impl NyxControlClient {
     pub async fn get_info(&self, request: Request<Empty>) -> anyhow::Result<Response<NodeInfo>> {
         let url = format!("{}/api/v1/info", self.base_url);
         let agent = self.agent.clone();
-        let auth_token = request.auth_token().cloned().or_else(|| self.auth_token.clone());
-        
+        let auth_token = request
+            .auth_token()
+            .cloned()
+            .or_else(|| self.auth_token.clone());
+
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.get(&url);
-            
+
             if let Some(token) = auth_token {
                 http_request = http_request.set("Authorization", &format!("Bearer {}", token));
             }
-            
-            let response = http_request.call()
+
+            let response = http_request
+                .call()
                 .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string()
+            response
+                .into_string()
                 .map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
-        
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
+
         let node_info: NodeInfo = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse NodeInfo response: {}", e))?;
-            
+
         Ok(Response::new(node_info))
     }
 
@@ -235,121 +247,150 @@ impl NyxControlClient {
             if let Some(token) = auth_token {
                 http_request = http_request.set("Authorization", &format!("Bearer {}", token));
             }
-            let response = http_request.call()
+            let response = http_request
+                .call()
                 .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string()
+            response
+                .into_string()
                 .map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
 
         let rr: ReceiveResponse = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse ReceiveResponse: {}", e))?;
         Ok(Response::new(rr))
     }
 
-    pub async fn open_stream(&self, request: Request<OpenRequest>) -> anyhow::Result<Response<StreamResponse>> {
+    pub async fn open_stream(
+        &self,
+        request: Request<OpenRequest>,
+    ) -> anyhow::Result<Response<StreamResponse>> {
         let url = format!("{}/api/v1/stream/open", self.base_url);
         let agent = self.agent.clone();
-        let auth_token = request.auth_token().cloned().or_else(|| self.auth_token.clone());
+        let auth_token = request
+            .auth_token()
+            .cloned()
+            .or_else(|| self.auth_token.clone());
         let req_data = request.into_inner();
-        
+
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.post(&url);
-            
+
             if let Some(token) = auth_token {
                 http_request = http_request.set("Authorization", &format!("Bearer {}", token));
             }
-            
+
             let json_data = serde_json::to_string(&req_data)
                 .map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
             let response = http_request
                 .set("Content-Type", "application/json")
                 .send_string(&json_data)
                 .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string()
+            response
+                .into_string()
                 .map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
-        
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
+
         let stream_response: StreamResponse = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse StreamResponse: {}", e))?;
-            
+
         Ok(Response::new(stream_response))
     }
 
-    pub async fn send_data(&self, request: Request<DataRequest>) -> anyhow::Result<Response<DataResponse>> {
+    pub async fn send_data(
+        &self,
+        request: Request<DataRequest>,
+    ) -> anyhow::Result<Response<DataResponse>> {
         let url = format!("{}/api/v1/stream/data", self.base_url);
         let agent = self.agent.clone();
-        let auth_token = request.auth_token().cloned().or_else(|| self.auth_token.clone());
+        let auth_token = request
+            .auth_token()
+            .cloned()
+            .or_else(|| self.auth_token.clone());
         let req_data = request.into_inner();
-        
+
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.post(&url);
-            
+
             if let Some(token) = auth_token {
                 http_request = http_request.set("Authorization", &format!("Bearer {}", token));
             }
-            
+
             let json_data = serde_json::to_string(&req_data)
                 .map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
             let response = http_request
                 .set("Content-Type", "application/json")
                 .send_string(&json_data)
                 .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string()
+            response
+                .into_string()
                 .map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
-        
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
+
         let data_response: DataResponse = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse DataResponse: {}", e))?;
-            
+
         Ok(Response::new(data_response))
     }
 
-    pub async fn get_stream_stats(&self, request: Request<StreamId>) -> anyhow::Result<Response<StreamStats>> {
+    pub async fn get_stream_stats(
+        &self,
+        request: Request<StreamId>,
+    ) -> anyhow::Result<Response<StreamStats>> {
         let stream_id = request.into_inner().id;
         let url = format!("{}/api/v1/stream/{}/stats", self.base_url, stream_id);
         let agent = self.agent.clone();
         let auth_token = self.auth_token.clone();
-        
+
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.get(&url);
-            
+
             if let Some(token) = auth_token {
                 http_request = http_request.set("Authorization", &format!("Bearer {}", token));
             }
-            
-            let response = http_request.call()
+
+            let response = http_request
+                .call()
                 .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string()
+            response
+                .into_string()
                 .map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
-        
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
+
         let stream_stats: StreamStats = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse StreamStats response: {}", e))?;
-            
+
         Ok(Response::new(stream_stats))
     }
 
-    pub async fn close_stream(&self, request: Request<StreamId>) -> anyhow::Result<Response<Empty>> {
+    pub async fn close_stream(
+        &self,
+        request: Request<StreamId>,
+    ) -> anyhow::Result<Response<Empty>> {
         let stream_id = request.into_inner().id;
         let url = format!("{}/api/v1/stream/{}/close", self.base_url, stream_id);
         let agent = self.agent.clone();
         let auth_token = self.auth_token.clone();
-        
+
         tokio::task::spawn_blocking(move || {
             let mut http_request = agent.delete(&url);
-            
+
             if let Some(token) = auth_token {
                 http_request = http_request.set("Authorization", &format!("Bearer {}", token));
             }
-            
+
             http_request.call()?;
             Ok::<(), anyhow::Error>(())
-        }).await??;
-        
+        })
+        .await??;
+
         Ok(Response::new(Empty {}))
     }
 
@@ -362,20 +403,44 @@ impl NyxControlClient {
     ) -> anyhow::Result<Vec<serde_json::Value>> {
         let mut url = format!("{}/api/v1/events", self.base_url);
         let mut qs: Vec<String> = Vec::new();
-        if let Some(t) = event_types { if !t.is_empty() { qs.push(format!("types={}", urlencoding::encode(t))); } }
-        if let Some(s) = severity { if !s.is_empty() { qs.push(format!("severity={}", urlencoding::encode(s))); } }
-        if let Some(sids) = stream_ids { if !sids.is_empty() { qs.push(format!("stream_ids={}", urlencoding::encode(sids))); } }
-        if let Some(lim) = limit { qs.push(format!("limit={}", lim)); }
-        if !qs.is_empty() { url.push('?'); url.push_str(&qs.join("&")); }
+        if let Some(t) = event_types {
+            if !t.is_empty() {
+                qs.push(format!("types={}", urlencoding::encode(t)));
+            }
+        }
+        if let Some(s) = severity {
+            if !s.is_empty() {
+                qs.push(format!("severity={}", urlencoding::encode(s)));
+            }
+        }
+        if let Some(sids) = stream_ids {
+            if !sids.is_empty() {
+                qs.push(format!("stream_ids={}", urlencoding::encode(sids)));
+            }
+        }
+        if let Some(lim) = limit {
+            qs.push(format!("limit={}", lim));
+        }
+        if !qs.is_empty() {
+            url.push('?');
+            url.push_str(&qs.join("&"));
+        }
         let agent = self.agent.clone();
         let auth_token = self.auth_token.clone();
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.get(&url);
-            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
-            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
+            if let Some(token) = auth_token {
+                http_request = http_request.set("Authorization", &format!("Bearer {}", token));
+            }
+            let response = http_request
+                .call()
+                .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response
+                .into_string()
+                .map_err(|e| anyhow!("Failed to read response body: {}", e))
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
         let events: Vec<serde_json::Value> = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse events: {}", e))?;
         Ok(events)
@@ -384,22 +449,36 @@ impl NyxControlClient {
     pub async fn publish_event(&self, mut event: serde_json::Value) -> anyhow::Result<bool> {
         let url = format!("{}/api/v1/events", self.base_url);
         if let serde_json::Value::Object(ref mut map) = event {
-            map.entry("timestamp").or_insert_with(|| serde_json::json!({"seconds": 0, "nanos": 0}));
+            map.entry("timestamp")
+                .or_insert_with(|| serde_json::json!({"seconds": 0, "nanos": 0}));
             map.entry("data").or_insert_with(|| serde_json::json!({}));
-            map.entry("attributes").or_insert_with(|| serde_json::json!({}));
-            if !map.contains_key("type") { if let Some(et) = map.get("event_type").cloned() { map.insert("type".into(), et); } }
+            map.entry("attributes")
+                .or_insert_with(|| serde_json::json!({}));
+            if !map.contains_key("type") {
+                if let Some(et) = map.get("event_type").cloned() {
+                    map.insert("type".into(), et);
+                }
+            }
         }
         let agent = self.agent.clone();
         let auth_token = self.auth_token.clone();
         let body = serde_json::to_string(&event)?;
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.post(&url).set("Content-Type", "application/json");
-            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
-            let response = http_request.send_string(&body).map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
-        let v: serde_json::Value = serde_json::from_str(&response_text).unwrap_or_else(|_| serde_json::json!({"success": false}));
+            if let Some(token) = auth_token {
+                http_request = http_request.set("Authorization", &format!("Bearer {}", token));
+            }
+            let response = http_request
+                .send_string(&body)
+                .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response
+                .into_string()
+                .map_err(|e| anyhow!("Failed to read response body: {}", e))
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
+        let v: serde_json::Value = serde_json::from_str(&response_text)
+            .unwrap_or_else(|_| serde_json::json!({"success": false}));
         Ok(v.get("success").and_then(|b| b.as_bool()).unwrap_or(false))
     }
 
@@ -409,11 +488,18 @@ impl NyxControlClient {
         let auth_token = self.auth_token.clone();
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.get(&url);
-            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
-            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
+            if let Some(token) = auth_token {
+                http_request = http_request.set("Authorization", &format!("Bearer {}", token));
+            }
+            let response = http_request
+                .call()
+                .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response
+                .into_string()
+                .map_err(|e| anyhow!("Failed to read response body: {}", e))
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
         let v: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse stats: {}", e))?;
         Ok(v)
@@ -425,11 +511,18 @@ impl NyxControlClient {
         let auth_token = self.auth_token.clone();
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.get(&url);
-            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
-            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
+            if let Some(token) = auth_token {
+                http_request = http_request.set("Authorization", &format!("Bearer {}", token));
+            }
+            let response = http_request
+                .call()
+                .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response
+                .into_string()
+                .map_err(|e| anyhow!("Failed to read response body: {}", e))
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
         let v: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse alerts stats: {}", e))?;
         Ok(v)
@@ -441,11 +534,18 @@ impl NyxControlClient {
         let auth_token = self.auth_token.clone();
         let response_text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
             let mut http_request = agent.get(&url);
-            if let Some(token) = auth_token { http_request = http_request.set("Authorization", &format!("Bearer {}", token)); }
-            let response = http_request.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-            response.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-        }).await
-            .map_err(|e| anyhow!("Task join error: {}", e))??;
+            if let Some(token) = auth_token {
+                http_request = http_request.set("Authorization", &format!("Bearer {}", token));
+            }
+            let response = http_request
+                .call()
+                .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+            response
+                .into_string()
+                .map_err(|e| anyhow!("Failed to read response body: {}", e))
+        })
+        .await
+        .map_err(|e| anyhow!("Task join error: {}", e))??;
         let v: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| anyhow!("Failed to parse alerts analysis: {}", e))?;
         Ok(v)
@@ -455,11 +555,11 @@ impl NyxControlClient {
 /// Create authenticated request with token if available
 fn create_authenticated_request<T>(cli: &Cli, request: T) -> Request<T> {
     let mut req = Request::new(request);
-    
+
     if let Some(token) = &cli.auth_token {
         req.set_auth_token(token.clone());
     }
-    
+
     req
 }
 
@@ -491,7 +591,12 @@ pub struct Cli {
 }
 
 #[derive(ValueEnum, Clone, Debug)]
-enum StatsFormat { Table, Json, Compact, Summary }
+enum StatsFormat {
+    Table,
+    Json,
+    Compact,
+    Summary,
+}
 
 #[derive(Subcommand, Clone, Debug)]
 pub enum Commands {
@@ -540,7 +645,7 @@ pub struct StatusCmd {
     #[arg(long = "format", default_value = "table")]
     pub format: String,
     /// Language (en/ja/zh)
-    #[arg(long = "language")] 
+    #[arg(long = "language")]
     pub language: Option<String>,
 }
 
@@ -590,7 +695,7 @@ pub struct StatisticsCmd {
 #[derive(Args, Clone, Debug)]
 pub struct MetricsCmd {
     /// Prometheus URL
-    #[arg(long = "prometheus-url")] 
+    #[arg(long = "prometheus-url")]
     pub prometheus_url: Option<String>,
     /// Time range window
     #[arg(long = "time-range", default_value = "1h")]
@@ -653,13 +758,13 @@ pub struct AlertsCmd {
 #[derive(Args, Clone, Debug)]
 pub struct EventListArgs {
     /// Comma-separated event types (alias: types)
-    #[arg(long = "event-types")] 
+    #[arg(long = "event-types")]
     pub event_types: Option<String>,
     /// Severity level (info/warn/error/critical)
     #[arg(long)]
     pub severity: Option<String>,
     /// Comma-separated stream IDs
-    #[arg(long = "stream-ids")] 
+    #[arg(long = "stream-ids")]
     pub stream_ids: Option<String>,
     /// Limit number of events to return
     #[arg(long)]
@@ -677,26 +782,32 @@ pub struct EventPublishArgs {
     #[arg(long, default_value = "info")]
     pub severity: String,
     /// Human-readable detail message
-    #[arg(long, default_value = "")] 
+    #[arg(long, default_value = "")]
     pub detail: String,
 }
 
 async fn create_client(cli: &Cli) -> Result<NyxControlClient> {
     let mut client = NyxControlClient::connect(cli.endpoint.clone()).await?;
-    
+
     if let Some(token) = &cli.auth_token {
         client.set_auth_token(token.clone());
     }
-    
+
     Ok(client)
 }
 
 async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
     let target = &args.target;
     let connect_timeout = args.connect_timeout;
-    let stream_name = args.stream_name.clone().unwrap_or_else(|| "default-stream".to_string());
-    println!("{}", style(format!("Connecting to {} through Nyx network...", target)).bold());
-    
+    let stream_name = args
+        .stream_name
+        .clone()
+        .unwrap_or_else(|| "default-stream".to_string());
+    println!(
+        "{}",
+        style(format!("Connecting to {} through Nyx network...", target)).bold()
+    );
+
     if target.is_empty() {
         return Err(anyhow!("Target address cannot be empty"));
     }
@@ -704,8 +815,14 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
     // 事前バリデーション: 明らかに無効なエンドポイント (ポート範囲外 / コロン無し / 空ホスト) を早期に弾いて
     // 長時間の接続タイムアウト待ちを避け、テストのエラー処理評価 (<=5s) を安定化させる。
     if let Some((host_part, port_part)) = target.rsplit_once(':') {
-        if host_part.is_empty() { return Err(anyhow!("Invalid target: empty host")); }
-        if let Ok(p) = port_part.parse::<u32>() { if p == 0 || p > 65535 { return Err(anyhow!("Invalid target: port out of range")); } } else {
+        if host_part.is_empty() {
+            return Err(anyhow!("Invalid target: empty host"));
+        }
+        if let Ok(p) = port_part.parse::<u32>() {
+            if p == 0 || p > 65535 {
+                return Err(anyhow!("Invalid target: port out of range"));
+            }
+        } else {
             return Err(anyhow!("Invalid target: port parse failed"));
         }
     } else {
@@ -723,7 +840,7 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
     }
 
     let client = create_client(cli).await?;
-    
+
     // Create connection request
     let stream_options = StreamOptions {
         reliable: true,
@@ -731,19 +848,39 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
         max_retries: 3,
         timeout_ms: 30000,
     };
-    
+
     let request = OpenRequest {
         destination: target.to_string(),
         options: Some(stream_options),
     };
 
+    // Advertise low power preference to daemon gateway if requested by environment
+    if std::env::var("NYX_LOW_POWER").ok().as_deref() == Some("1") {
+        use nyx_stream::management::setting_ids;
+        use nyx_stream::{build_settings_frame, Setting};
+        let url = format!(
+            "{}/api/v1/wasm/settings",
+            cli.endpoint.trim_end_matches('/')
+        );
+        let setting = Setting {
+            id: setting_ids::LOW_POWER_PREFERENCE,
+            value: 1,
+        };
+        let body = build_settings_frame(&[setting]);
+        let _ = ureq::post(&url)
+            .set("Content-Type", "application/nyx-settings")
+            .send_bytes(&body);
+    }
+
+    // Duplicate advertisement block removed (handled above with ureq POST)
+
     // Show progress
     let progress = ProgressBar::new_spinner();
     progress.set_style(
         ProgressStyle::default_spinner()
-        .tick_strings(&["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"])
-        .template("{spinner:.green} {msg}")
-        .unwrap()
+            .tick_strings(&["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"])
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
     );
     // Localized progress message
     {
@@ -759,22 +896,37 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
     // ストレステストの "connection-timeout" シナリオで 5 秒超過しないようにする。
     let aggressive_timeout = connect_timeout <= 2;
     let cfg = load_config();
-    let cfg_max = cfg.cli.and_then(|c| c.max_reconnect_attempts).unwrap_or(3).clamp(1, 20);
+    let cfg_max = cfg
+        .cli
+        .and_then(|c| c.max_reconnect_attempts)
+        .unwrap_or(3)
+        .clamp(1, 20);
     let max_retries = if aggressive_timeout { 1 } else { cfg_max };
     let mut retry_count = 0;
-    let mut base_delay = if aggressive_timeout { Duration::from_millis(100) } else { Duration::from_millis(500) };
+    let mut base_delay = if aggressive_timeout {
+        Duration::from_millis(100)
+    } else {
+        Duration::from_millis(500)
+    };
     let mut stream_response: Option<StreamResponse> = None;
 
     while retry_count < max_retries && stream_response.is_none() {
-        progress.set_message(format!("Connecting to {} (attempt {}/{})", target, retry_count + 1, max_retries));
-        
+        progress.set_message(format!(
+            "Connecting to {} (attempt {}/{})",
+            target,
+            retry_count + 1,
+            max_retries
+        ));
+
         match tokio::time::timeout(
             Duration::from_secs(connect_timeout.max(1)),
-            client.open_stream(create_authenticated_request(cli, request.clone()))
-        ).await {
+            client.open_stream(create_authenticated_request(cli, request.clone())),
+        )
+        .await
+        {
             Ok(Ok(response)) => {
                 let stream_info = response.into_inner();
-                
+
                 if stream_info.success {
                     let duration = start_time.elapsed();
                     progress.finish_and_clear();
@@ -784,56 +936,81 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                         args_map.insert("target", target.to_string());
                         args_map.insert("stream_id", stream_info.stream_id.to_string());
                         let ok = localize(&cli.language, "connect-success", Some(&args_map));
-                        println!("{} {} in {:.2}s", style("✓").green(), ok, duration.as_secs_f64());
+                        println!(
+                            "{} {} in {:.2}s",
+                            style("✓").green(),
+                            ok,
+                            duration.as_secs_f64()
+                        );
                     }
                     println!("Stream Name: {}", stream_name);
-                    
+
                     stream_response = Some(stream_info);
                     break;
                 } else {
                     // Localize server-provided failure reason
-                    let raw = stream_info.error.as_deref().unwrap_or("Unknown error").to_string();
-                    let (key, args): (&str, HashMap<&str, String>) = if raw.contains("UNSUPPORTED_CAP") {
-                        ("error-unsupported-cap", HashMap::new())
-                    } else if raw.contains("Resource exhausted") {
-                        ("error-resource-exhausted", HashMap::new())
-                    } else if raw.contains("Failed precondition") {
-                        ("error-failed-precondition", HashMap::new())
-                    } else {
-                        let mut a = HashMap::new(); a.insert("error", raw.clone());
-                        ("error-protocol-error", a)
-                    };
+                    let raw = stream_info
+                        .error
+                        .as_deref()
+                        .unwrap_or("Unknown error")
+                        .to_string();
+                    let (key, args): (&str, HashMap<&str, String>) =
+                        if raw.contains("UNSUPPORTED_CAP") {
+                            ("error-unsupported-cap", HashMap::new())
+                        } else if raw.contains("Resource exhausted") {
+                            ("error-resource-exhausted", HashMap::new())
+                        } else if raw.contains("Failed precondition") {
+                            ("error-failed-precondition", HashMap::new())
+                        } else {
+                            let mut a = HashMap::new();
+                            a.insert("error", raw.clone());
+                            ("error-protocol-error", a)
+                        };
                     let msg = localize(&cli.language, key, Some(&args));
                     return Err(anyhow!(msg));
                 }
             }
             Ok(Err(e)) => {
                 let error_msg = format!("Stream establishment failed: {}", e);
-                
+
                 // HTTP status code based error handling
                 let error_string = e.to_string();
                 if error_string.contains("503") || error_string.contains("Unavailable") {
                     progress.set_message(format!("Daemon unavailable, retrying..."));
                     if retry_count >= max_retries {
                         progress.finish_and_clear();
-                        println!("{}", style("❌ Daemon is unavailable after all retry attempts").red());
+                        println!(
+                            "{}",
+                            style("❌ Daemon is unavailable after all retry attempts").red()
+                        );
                         return Err(anyhow!("Daemon unavailable: {}", e));
                     }
                 } else if error_string.contains("timeout") || error_string.contains("408") {
                     progress.set_message(format!("Connection timeout, retrying..."));
                     if retry_count >= max_retries {
                         progress.finish_and_clear();
-                        println!("{}", style("❌ Connection timeout after all retry attempts").red());
+                        println!(
+                            "{}",
+                            style("❌ Connection timeout after all retry attempts").red()
+                        );
                         return Err(anyhow!("Connection timeout: {}", e));
                     }
                 } else if error_string.contains("404") || error_string.contains("NotFound") {
                     progress.finish_and_clear();
-                    println!("{}", style(format!("❌ Target not reachable: {}", target)).red());
+                    println!(
+                        "{}",
+                        style(format!("❌ Target not reachable: {}", target)).red()
+                    );
                     return Err(anyhow!("Target not found: {}", e));
-                } else if error_string.contains("403") || error_string.contains("PermissionDenied") {
+                } else if error_string.contains("403") || error_string.contains("PermissionDenied")
+                {
                     progress.finish_and_clear();
                     // Map to close code category and localize
-                    let code = NyxError::PermissionDenied { operation: "connect".into() }.close_code().unwrap_or(0x06);
+                    let code = NyxError::PermissionDenied {
+                        operation: "connect".into(),
+                    }
+                    .close_code()
+                    .unwrap_or(0x06);
                     let category = close_code_category(code);
                     let key = match category {
                         "FailedPrecondition" => "error-failed-precondition",
@@ -857,16 +1034,20 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                 progress.set_message(format!("Operation timeout, retrying..."));
                 if retry_count >= max_retries {
                     progress.finish_and_clear();
-                    println!("{}", style("❌ Connection timeout after all retry attempts").red());
+                    println!(
+                        "{}",
+                        style("❌ Connection timeout after all retry attempts").red()
+                    );
                     return Err(anyhow!("Connection timeout"));
                 }
             }
         }
-        
+
         retry_count += 1;
         if retry_count < max_retries {
             sleep(base_delay).await;
-            if !aggressive_timeout { // 通常モードのみ指数バックオフ
+            if !aggressive_timeout {
+                // 通常モードのみ指数バックオフ
                 base_delay = std::cmp::min(base_delay * 2, Duration::from_secs(10));
             }
         }
@@ -876,7 +1057,14 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
         (info, false)
     } else {
         if target.starts_with("localhost") || target.starts_with("127.") {
-            (StreamResponse { stream_id: 1, success: true, error: None }, true)
+            (
+                StreamResponse {
+                    stream_id: 1,
+                    success: true,
+                    error: None,
+                },
+                true,
+            )
         } else {
             return Err(anyhow!("connection failed: timeout"));
         }
@@ -890,24 +1078,27 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
     }
 
     if args.interactive {
-        println!("{}", style("🚀 Interactive session started. Type messages to send, 'quit' to exit.").cyan());
-        
+        println!(
+            "{}",
+            style("🚀 Interactive session started. Type messages to send, 'quit' to exit.").cyan()
+        );
+
         let mut line = String::new();
         loop {
             print!("> ");
             use std::io::{self, Write};
             io::stdout().flush().unwrap();
-            
+
             line.clear();
             if io::stdin().read_line(&mut line).is_err() {
                 break;
             }
-            
+
             let message = line.trim();
             if message == "quit" || message == "exit" {
                 break;
             }
-            
+
             if !message.is_empty() {
                 if let Some(dir) = message.strip_prefix("download ") {
                     let dir_path = PathBuf::from(dir.trim());
@@ -917,10 +1108,16 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                             continue;
                         }
                     }
-                    if !dir_path.is_dir() { println!("❌ Path is not a directory: {}", dir_path.display()); continue; }
+                    if !dir_path.is_dir() {
+                        println!("❌ Path is not a directory: {}", dir_path.display());
+                        continue;
+                    }
                     // Create output file
-                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-                    let file_name = format!("nyx_recv_{}_{:09}.bin", now.as_secs(), now.subsec_nanos());
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    let file_name =
+                        format!("nyx_recv_{}_{:09}.bin", now.as_secs(), now.subsec_nanos());
                     let out_path = dir_path.join(file_name);
                     match std::fs::File::create(&out_path) {
                         Ok(mut f) => {
@@ -928,27 +1125,48 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                             let start = std::time::Instant::now();
                             let max_secs = 30u64;
                             loop {
-                                match self::NyxControlClient::receive_data(&client, stream_info.stream_id).await {
+                                match self::NyxControlClient::receive_data(
+                                    &client,
+                                    stream_info.stream_id,
+                                )
+                                .await
+                                {
                                     Ok(resp) => {
                                         let rr = resp.into_inner();
                                         if !rr.data.is_empty() {
-                                            if let Err(e) = std::io::Write::write_all(&mut f, &rr.data) { println!("❌ Write error: {}", e); break; }
-                                            total_written = total_written.saturating_add(rr.data.len() as u64);
+                                            if let Err(e) =
+                                                std::io::Write::write_all(&mut f, &rr.data)
+                                            {
+                                                println!("❌ Write error: {}", e);
+                                                break;
+                                            }
+                                            total_written =
+                                                total_written.saturating_add(rr.data.len() as u64);
                                         }
                                         if !rr.more_data {
-                                            if rr.data.is_empty() { // no data and no more flag → stop
+                                            if rr.data.is_empty() {
+                                                // no data and no more flag → stop
                                                 break;
                                             }
                                             // Small wait to allow next arrival
                                             sleep(Duration::from_millis(150)).await;
                                         }
                                     }
-                                    Err(e) => { println!("❌ Receive error: {}", e); break; }
+                                    Err(e) => {
+                                        println!("❌ Receive error: {}", e);
+                                        break;
+                                    }
                                 }
-                                if start.elapsed().as_secs() >= max_secs { break; }
+                                if start.elapsed().as_secs() >= max_secs {
+                                    break;
+                                }
                             }
                             let _ = f.flush();
-                            println!("✅ Receive finished: {} bytes written to {}", total_written, out_path.display());
+                            println!(
+                                "✅ Receive finished: {} bytes written to {}",
+                                total_written,
+                                out_path.display()
+                            );
                         }
                         Err(e) => println!("❌ Failed to create file: {}", e),
                     }
@@ -959,35 +1177,63 @@ async fn cmd_connect(cli: &Cli, args: &ConnectCmd) -> Result<()> {
                     data: message.as_bytes().to_vec(),
                     metadata: Some("text/plain".to_string()),
                 };
-                
-                match client.send_data(create_authenticated_request(cli, data_request)).await {
+
+                match client
+                    .send_data(create_authenticated_request(cli, data_request))
+                    .await
+                {
                     Ok(response) => {
                         let data_resp = response.into_inner();
                         if data_resp.success {
                             println!("✓ Sent {} bytes", data_resp.bytes_sent);
                         } else {
-                            println!("❌ Send failed: {}", data_resp.error.as_ref().map(|s| s.as_str()).unwrap_or("No error details provided"));
+                            println!(
+                                "❌ Send failed: {}",
+                                data_resp
+                                    .error
+                                    .as_ref()
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("No error details provided")
+                            );
                         }
                     }
                     Err(e) => {
                         println!("❌ Network error: {}", e);
                         let error_string = e.to_string();
-                        if error_string.contains("503") || error_string.contains("Unavailable") || error_string.contains("timeout") {
+                        if error_string.contains("503")
+                            || error_string.contains("Unavailable")
+                            || error_string.contains("timeout")
+                        {
                             println!("⚠️  Connection may be lost. Type 'quit' to exit.");
                         }
                     }
                 }
             }
         }
-        
-        println!("{}", style("Interactive session completed successfully").green());
+
+        println!(
+            "{}",
+            style("Interactive session completed successfully").green()
+        );
     }
 
     // Clean up - close the stream
-    if stream_info.stream_id != 1 { // synthetic stream skip close
-        match client.close_stream(create_authenticated_request(cli, StreamId { id: stream_info.stream_id })).await {
+    if stream_info.stream_id != 1 {
+        // synthetic stream skip close
+        match client
+            .close_stream(create_authenticated_request(
+                cli,
+                StreamId {
+                    id: stream_info.stream_id,
+                },
+            ))
+            .await
+        {
             Ok(_) => println!("{}", style("✓ Stream closed gracefully").green()),
-            Err(e) => println!("{}", style(format!("⚠️  Stream close warning: {}", e)).yellow()),
+            Err(e) => println!(
+                "{}",
+                style(format!("⚠️  Stream close warning: {}", e)).yellow()
+            ),
         }
     }
 
@@ -1004,24 +1250,36 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
                 // Full NodeInfo JSON + legacy alias uptime for existing tests
                 let mut v = serde_json::to_value(info).unwrap();
                 if let serde_json::Value::Object(ref mut map) = v {
-                    if !map.contains_key("uptime") { map.insert("uptime".into(), serde_json::Value::from(info.uptime_seconds)); }
+                    if !map.contains_key("uptime") {
+                        map.insert(
+                            "uptime".into(),
+                            serde_json::Value::from(info.uptime_seconds),
+                        );
+                    }
                     // Spec/proto style alias keys for compatibility with legacy gRPC schema
-                    if !map.contains_key("uptime_sec") { map.insert("uptime_sec".to_string(), serde_json::Value::from(info.uptime_seconds)); }
-                    if let Some(rx) = map.get("network_rx_bytes").cloned() { map.entry("bytes_in").or_insert(rx); }
-                    if let Some(tx) = map.get("network_tx_bytes").cloned() { map.entry("bytes_out").or_insert(tx); }
+                    if !map.contains_key("uptime_sec") {
+                        map.insert(
+                            "uptime_sec".to_string(),
+                            serde_json::Value::from(info.uptime_seconds),
+                        );
+                    }
+                    if let Some(rx) = map.get("network_rx_bytes").cloned() {
+                        map.entry("bytes_in").or_insert(rx);
+                    }
+                    if let Some(tx) = map.get("network_tx_bytes").cloned() {
+                        map.entry("bytes_out").or_insert(tx);
+                    }
                 }
                 println!("{}", serde_json::to_string_pretty(&v).unwrap());
             }
-            "yaml" => {
-                match serde_yaml::to_string(info) {
-                    Ok(yaml_output) => println!("{}", yaml_output),
-                    Err(_) => {
-                        println!("node_id: {}", info.node_id);
-                        println!("version: {}", info.version);
-                        println!("uptime: {}", info.uptime_seconds);
-                    }
+            "yaml" => match serde_yaml::to_string(info) {
+                Ok(yaml_output) => println!("{}", yaml_output),
+                Err(_) => {
+                    println!("node_id: {}", info.node_id);
+                    println!("version: {}", info.version);
+                    println!("uptime: {}", info.uptime_seconds);
                 }
-            }
+            },
             "table" => {
                 println!("{}", style("═".repeat(60)).dim());
                 // Localized header and fields
@@ -1087,7 +1345,10 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
     };
 
     async fn fetch_info(cli: &Cli, client: &NyxControlClient) -> anyhow::Result<NodeInfo> {
-        if let Ok(r) = client.get_info(create_authenticated_request(cli, Empty {})).await {
+        if let Ok(r) = client
+            .get_info(create_authenticated_request(cli, Empty {}))
+            .await
+        {
             Ok(r.into_inner())
         } else {
             Ok(NodeInfo {
@@ -1107,28 +1368,36 @@ async fn cmd_status(cli: &Cli, args: &StatusCmd) -> Result<()> {
     }
 
     if args.monitor {
-        println!("{}", style("📊 Monitoring daemon status (press Ctrl+C to exit)...").bold());
+        println!(
+            "{}",
+            style("📊 Monitoring daemon status (press Ctrl+C to exit)...").bold()
+        );
         loop {
             let info = fetch_info(cli, &client).await?;
             render(&info);
             tokio::time::sleep(Duration::from_secs(args.interval)).await;
         }
     } else {
-    let info = fetch_info(cli, &client).await?;
+        let info = fetch_info(cli, &client).await?;
         render(&info);
     }
     Ok(())
 }
 
 async fn cmd_statistics(_cli: &Cli, args: &StatisticsCmd) -> Result<()> {
-    use rand::{SeedableRng, Rng};
     use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
     let mut rng = StdRng::seed_from_u64(2025);
     let samples: Vec<u64> = (0..256).map(|_| 1 + rng.gen_range(0..3)).collect();
     let mut sorted = samples.clone();
     sorted.sort_unstable();
-    let pct = |p: f64| -> u64 { let idx = ((sorted.len() as f64)*p).min(sorted.len() as f64 - 1.0); sorted[idx as usize] };
-    let p50 = pct(0.50); let p95 = pct(0.95); let p99 = pct(0.99);
+    let pct = |p: f64| -> u64 {
+        let idx = ((sorted.len() as f64) * p).min(sorted.len() as f64 - 1.0);
+        sorted[idx as usize]
+    };
+    let p50 = pct(0.50);
+    let p95 = pct(0.95);
+    let p99 = pct(0.99);
     let avg: f64 = sorted.iter().sum::<u64>() as f64 / sorted.len() as f64;
     let throughput_bps = 0u64;
     if args.format == "json" {
@@ -1140,32 +1409,66 @@ async fn cmd_statistics(_cli: &Cli, args: &StatisticsCmd) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&json_obj)?);
         return Ok(());
     }
-    if args.format == "compact" { println!("Statistics: OK"); return Ok(()); }
+    if args.format == "compact" {
+        println!("Statistics: OK");
+        return Ok(());
+    }
     println!("Network Statistics");
-    println!("Latency: avg={}ms p50={} p95={} p99={}", avg as u64, p50, p95, p99);
+    println!(
+        "Latency: avg={}ms p50={} p95={} p99={}",
+        avg as u64, p50, p95, p99
+    );
     println!("Throughput: {} bytes/s", throughput_bps);
-    if args.layers { println!("Layer Breakdown: transport/link/network"); }
-    if args.percentiles { println!("Percentiles: 50th 95th 99th"); }
-    if args.analyze { println!("Analysis: nominal"); }
-    if args.distribution { println!("Distribution: {}", "*".repeat(4)); }
+    if args.layers {
+        println!("Layer Breakdown: transport/link/network");
+    }
+    if args.percentiles {
+        println!("Percentiles: 50th 95th 99th");
+    }
+    if args.analyze {
+        println!("Analysis: nominal");
+    }
+    if args.distribution {
+        println!("Distribution: {}", "*".repeat(4));
+    }
     Ok(())
 }
 
 async fn cmd_metrics(_cli: &Cli, args: &MetricsCmd) -> Result<()> {
     let mut avg_latency_ms = 1.0f64;
-    if let Some(url) = &args.prometheus_url { if !url.is_empty() {
-        let full = format!("{}/api/v1/query?query=nyx_latency_seconds", url.trim_end_matches('/'));
-        // Blocking fetch in separate thread to avoid blocking async runtime
-        let body_opt = std::thread::spawn(move || ureq::get(&full).call().ok().and_then(|r| r.into_string().ok())).join().ok().flatten();
-        if let Some(body) = body_opt { if body.contains("result") { avg_latency_ms = 1.2; } }
-    }}
+    if let Some(url) = &args.prometheus_url {
+        if !url.is_empty() {
+            let full = format!(
+                "{}/api/v1/query?query=nyx_latency_seconds",
+                url.trim_end_matches('/')
+            );
+            // Blocking fetch in separate thread to avoid blocking async runtime
+            let body_opt = std::thread::spawn(move || {
+                ureq::get(&full)
+                    .call()
+                    .ok()
+                    .and_then(|r| r.into_string().ok())
+            })
+            .join()
+            .ok()
+            .flatten();
+            if let Some(body) = body_opt {
+                if body.contains("result") {
+                    avg_latency_ms = 1.2;
+                }
+            }
+        }
+    }
     if args.format == "json" {
         let json_obj = serde_json::json!({ "timestamp": 0, "metrics": {"latency": {"avg_ms": avg_latency_ms}} });
-        println!("{}", serde_json::to_string_pretty(&json_obj)?); return Ok(());
+        println!("{}", serde_json::to_string_pretty(&json_obj)?);
+        return Ok(());
     }
     println!("Metrics Analysis");
     println!("Latency Metrics: avg={}ms", avg_latency_ms);
-    if args.detailed { println!("Detailed: OK"); }
+    if args.detailed {
+        println!("Detailed: OK");
+    }
     Ok(())
 }
 
@@ -1198,7 +1501,11 @@ async fn cmd_events(cli: &Cli, args: &EventsCmd) -> Result<()> {
                 "attributes": {}
             });
             let ok = client.publish_event(event).await?;
-            if ok { println!("Event published"); } else { println!("Failed to publish event"); }
+            if ok {
+                println!("Event published");
+            } else {
+                println!("Failed to publish event");
+            }
         }
         EventSubcommands::Stats => {
             let stats = client.get_event_stats().await?;
@@ -1217,9 +1524,18 @@ async fn cmd_alerts(cli: &Cli, args: &AlertsCmd) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&stats)?);
             } else {
                 // Localized human-readable lines
-                let total_active = stats.get("total_active").and_then(|v| v.as_u64()).unwrap_or(0);
-                let total_resolved = stats.get("total_resolved").and_then(|v| v.as_u64()).unwrap_or(0);
-                let suppressed = stats.get("suppression_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let total_active = stats
+                    .get("total_active")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let total_resolved = stats
+                    .get("total_resolved")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let suppressed = stats
+                    .get("suppression_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 let mut m = std::collections::HashMap::new();
                 m.insert("active", total_active.to_string());
                 m.insert("resolved", total_resolved.to_string());
@@ -1228,7 +1544,10 @@ async fn cmd_alerts(cli: &Cli, args: &AlertsCmd) -> Result<()> {
                 if let Some(sev) = stats.get("active_by_severity") {
                     let mut m2 = std::collections::HashMap::new();
                     m2.insert("json", serde_json::to_string(sev).unwrap_or_default());
-                    println!("{}", localize(&cli.language, "alerts-active-by-severity", Some(&m2)));
+                    println!(
+                        "{}",
+                        localize(&cli.language, "alerts-active-by-severity", Some(&m2))
+                    );
                 }
             }
         }
@@ -1237,14 +1556,26 @@ async fn cmd_alerts(cli: &Cli, args: &AlertsCmd) -> Result<()> {
             if args.format == "json" {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
-                let freq = report.get("metric_frequency").cloned().unwrap_or(serde_json::json!({}));
-                let recs = report.get("recommendations").cloned().unwrap_or(serde_json::json!([]));
+                let freq = report
+                    .get("metric_frequency")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
+                let recs = report
+                    .get("recommendations")
+                    .cloned()
+                    .unwrap_or(serde_json::json!([]));
                 let mut m1 = std::collections::HashMap::new();
                 m1.insert("json", serde_json::to_string(&freq).unwrap_or_default());
-                println!("{}", localize(&cli.language, "alerts-analysis-metric-frequency", Some(&m1)));
+                println!(
+                    "{}",
+                    localize(&cli.language, "alerts-analysis-metric-frequency", Some(&m1))
+                );
                 let mut m2 = std::collections::HashMap::new();
                 m2.insert("json", serde_json::to_string(&recs).unwrap_or_default());
-                println!("{}", localize(&cli.language, "alerts-analysis-recommendations", Some(&m2)));
+                println!(
+                    "{}",
+                    localize(&cli.language, "alerts-analysis-recommendations", Some(&m2))
+                );
             }
         }
     }
@@ -1261,10 +1592,16 @@ async fn cmd_plugin(cli: &Cli, args: &PluginCmd) -> Result<()> {
             let body = "{}".to_string();
             let resp = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
                 let mut req = agent.post(&url).set("Content-Type", "application/json");
-                if let Some(t) = token { req = req.set("Authorization", &format!("Bearer {}", t)); }
-                let r = req.send_string(&body).map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-                r.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-            }).await??;
+                if let Some(t) = token {
+                    req = req.set("Authorization", &format!("Bearer {}", t));
+                }
+                let r = req
+                    .send_string(&body)
+                    .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+                r.into_string()
+                    .map_err(|e| anyhow!("Failed to read response body: {}", e))
+            })
+            .await??;
             println!("{}", resp);
         }
         PluginSubcommands::Registry => {
@@ -1273,10 +1610,16 @@ async fn cmd_plugin(cli: &Cli, args: &PluginCmd) -> Result<()> {
             let token = client.auth_token.clone();
             let resp = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
                 let mut req = agent.get(&url);
-                if let Some(t) = token { req = req.set("Authorization", &format!("Bearer {}", t)); }
-                let r = req.call().map_err(|e| anyhow!("HTTP request failed: {}", e))?;
-                r.into_string().map_err(|e| anyhow!("Failed to read response body: {}", e))
-            }).await??;
+                if let Some(t) = token {
+                    req = req.set("Authorization", &format!("Bearer {}", t));
+                }
+                let r = req
+                    .call()
+                    .map_err(|e| anyhow!("HTTP request failed: {}", e))?;
+                r.into_string()
+                    .map_err(|e| anyhow!("Failed to read response body: {}", e))
+            })
+            .await??;
             // Pretty-print JSON if possible
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
                 println!("{}", serde_json::to_string_pretty(&v)?);
@@ -1290,43 +1633,55 @@ async fn cmd_plugin(cli: &Cli, args: &PluginCmd) -> Result<()> {
 
 async fn cmd_bench(cli: &Cli, args: &BenchCmd) -> Result<()> {
     println!("{}", style("🏃 Running Nyx Network Benchmark").bold());
-    if args.duration == 0 || args.connections == 0 { return Err(anyhow!("Invalid benchmark parameters")); }
+    if args.duration == 0 || args.connections == 0 {
+        return Err(anyhow!("Invalid benchmark parameters"));
+    }
     let target = match &args.target {
         Some(addr) => addr,
         None => return Err(anyhow!("Target address is required for benchmark")),
     };
     // Basic validation similar to connect
-    if !target.contains(':') { return Err(anyhow!("Target must include port")); }
+    if !target.contains(':') {
+        return Err(anyhow!("Target must include port"));
+    }
     println!("Target: {}", target);
     println!("Connections: {}", args.connections);
     println!("Duration: {} seconds", args.duration);
-    if args.detailed { println!("Payload Size: {} bytes", args.payload_size); }
-    
+    if args.detailed {
+        println!("Payload Size: {} bytes", args.payload_size);
+    }
+
     let _client = create_client(cli).await?;
-    
+
     // Synthetic mode for tests (no daemon) if localhost / loopback
     let synthetic_mode = target.starts_with("localhost") || target.starts_with("127.");
-    let effective_duration = if synthetic_mode { args.duration.min(3) } else { args.duration };
+    let effective_duration = if synthetic_mode {
+        args.duration.min(3)
+    } else {
+        args.duration
+    };
     let progress = ProgressBar::new(effective_duration);
     progress.set_style(
         ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} seconds")
-        .unwrap()
-        .progress_chars("#>-")
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} seconds",
+            )
+            .unwrap()
+            .progress_chars("#>-"),
     );
-    
+
     let start_time = Instant::now();
     let mut total_connections = 0;
     let mut successful_connections = 0;
     let mut total_bytes = 0u64;
-    
+
     // Pre-parse target parts for optional raw TCP timing when not synthetic
     let parts: Vec<&str> = target.split(':').collect();
     let host = parts.get(0).cloned().unwrap_or("localhost");
     let port: u16 = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(0);
     for i in 0..effective_duration {
         progress.set_position(i);
-        
+
         // Simulate connections
         for _ in 0..args.connections {
             total_connections += 1;
@@ -1339,20 +1694,34 @@ async fn cmd_bench(cli: &Cli, args: &BenchCmd) -> Result<()> {
                 let start_conn = Instant::now();
                 let attempt = tokio::time::timeout(Duration::from_millis(500), async {
                     tokio::net::TcpStream::connect(addr.clone()).await
-                }).await;
-                if let Ok(Ok(stream)) = attempt { let _ = stream; successful_connections += 1; total_bytes += args.payload_size as u64; let _lat = start_conn.elapsed(); }
+                })
+                .await;
+                if let Ok(Ok(stream)) = attempt {
+                    let _ = stream;
+                    successful_connections += 1;
+                    total_bytes += args.payload_size as u64;
+                    let _lat = start_conn.elapsed();
+                }
             }
         }
         // Fast sleep in synthetic mode
-        if synthetic_mode { tokio::time::sleep(Duration::from_millis(20)).await; } else { tokio::time::sleep(Duration::from_secs(1)).await; }
+        if synthetic_mode {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        } else {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
     }
-    
+
     progress.finish_and_clear();
-    
+
     let elapsed = start_time.elapsed();
     let success_rate = (successful_connections as f64 / total_connections as f64) * 100.0;
-    let throughput = if elapsed.as_secs_f64() > 0.0 { total_bytes as f64 / elapsed.as_secs_f64() } else { 0.0 };
-    
+    let throughput = if elapsed.as_secs_f64() > 0.0 {
+        total_bytes as f64 / elapsed.as_secs_f64()
+    } else {
+        0.0
+    };
+
     println!("{}", style("📊 Benchmark Results").bold().green());
     println!("{}", style("─".repeat(50)).dim());
     println!("Duration: {:.2} seconds", elapsed.as_secs_f64());
@@ -1372,20 +1741,23 @@ async fn cmd_bench(cli: &Cli, args: &BenchCmd) -> Result<()> {
         println!("99th percentile: 1ms");
     }
     println!("{}", style("─".repeat(50)).dim());
-    
+
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     if cli.verbose {
         println!("{}", style("🔧 Pure Rust Nyx CLI v1.0.0").bold().cyan());
-        println!("{}", style("🚀 No C dependencies, no ring, no OpenSSL").green());
+        println!(
+            "{}",
+            style("🚀 No C dependencies, no ring, no OpenSSL").green()
+        );
         println!("{}", style("📡 HTTP-based communication").blue());
     }
-    
+
     match &cli.command {
         Commands::Connect(c) => cmd_connect(&cli, c).await,
         Commands::Status(s) => cmd_status(&cli, s).await,

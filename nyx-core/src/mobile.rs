@@ -12,11 +12,11 @@
 //! The implementation uses platform-specific APIs through FFI bindings
 //! and provides a unified Rust interface for the Nyx daemon.
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::interval;
-use serde::{Serialize, Deserialize};
 use tracing::{debug, info};
 
 /// Mobile device power state information.
@@ -213,7 +213,7 @@ impl MobileStateMonitor {
         if *state != new_state {
             *state = new_state;
             *self.last_update.write().await = Instant::now();
-            
+
             info!("Power state changed: {:?}", new_state);
             let _ = self.power_tx.send(new_state);
         }
@@ -225,7 +225,7 @@ impl MobileStateMonitor {
         if *state != new_state {
             *state = new_state;
             *self.last_update.write().await = Instant::now();
-            
+
             info!("App state changed: {:?}", new_state);
             let _ = self.app_tx.send(new_state);
         }
@@ -237,7 +237,7 @@ impl MobileStateMonitor {
         if *state != new_state {
             *state = new_state;
             *self.last_update.write().await = Instant::now();
-            
+
             info!("Network state changed: {:?}", new_state);
             let _ = self.network_tx.send(new_state);
         }
@@ -255,7 +255,8 @@ impl MobileStateMonitor {
         }
 
         // Power saver conditions
-        if power.battery_level < 20 || app == AppState::Background || network == NetworkState::None {
+        if power.battery_level < 20 || app == AppState::Background || network == NetworkState::None
+        {
             return PowerProfile::PowerSaver;
         }
 
@@ -275,14 +276,14 @@ impl MobileStateMonitor {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(30));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Update power profile based on current conditions
                 let mut state = power_state.write().await;
                 let old_profile = state.power_profile;
-                
+
                 // Simplified profile determination
                 let new_profile = if state.low_power_mode || state.battery_level < 10 {
                     PowerProfile::UltraLowPower
@@ -296,7 +297,10 @@ impl MobileStateMonitor {
 
                 if old_profile != new_profile {
                     state.power_profile = new_profile;
-                    debug!("Power profile changed: {:?} -> {:?}", old_profile, new_profile);
+                    debug!(
+                        "Power profile changed: {:?} -> {:?}",
+                        old_profile, new_profile
+                    );
                     let _ = power_tx.send(*state);
                 }
             }
@@ -307,23 +311,23 @@ impl MobileStateMonitor {
     #[cfg(target_os = "ios")]
     async fn start_ios_monitoring(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting iOS state monitoring");
-        
+
         // iOS implementation would use UIKit and Core Foundation APIs
         // For now, simulate with periodic updates
         let monitor = Arc::new(self.clone());
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Simulate iOS battery monitoring
                 let battery_level = ios_get_battery_level().await.unwrap_or(100);
                 let is_charging = ios_is_charging().await.unwrap_or(false);
                 let screen_on = ios_is_screen_on().await.unwrap_or(true);
                 let low_power_mode = ios_is_low_power_mode().await.unwrap_or(false);
-                
+
                 let power_state = PowerState {
                     battery_level,
                     is_charging,
@@ -331,43 +335,45 @@ impl MobileStateMonitor {
                     low_power_mode,
                     power_profile: monitor.determine_power_profile().await,
                 };
-                
+
                 monitor.update_power_state(power_state).await;
-                
+
                 // Monitor app state
                 let app_state = ios_get_app_state().await.unwrap_or(AppState::Active);
                 monitor.update_app_state(app_state).await;
-                
+
                 // Monitor network state
                 let network_state = ios_get_network_state().await.unwrap_or(NetworkState::WiFi);
                 monitor.update_network_state(network_state).await;
             }
         });
-        
+
         Ok(())
     }
 
     /// Start Android-specific monitoring.
     #[cfg(target_os = "android")]
-    async fn start_android_monitoring(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn start_android_monitoring(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting Android state monitoring");
-        
+
         // Android implementation would use JNI to access Android APIs
         // For now, simulate with periodic updates
         let monitor = Arc::new(self.clone());
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Simulate Android battery monitoring
                 let battery_level = android_get_battery_level().await.unwrap_or(100);
                 let is_charging = android_is_charging().await.unwrap_or(false);
                 let screen_on = android_is_screen_on().await.unwrap_or(true);
                 let low_power_mode = android_is_power_save_mode().await.unwrap_or(false);
-                
+
                 let power_state = PowerState {
                     battery_level,
                     is_charging,
@@ -375,19 +381,21 @@ impl MobileStateMonitor {
                     low_power_mode,
                     power_profile: monitor.determine_power_profile().await,
                 };
-                
+
                 monitor.update_power_state(power_state).await;
-                
+
                 // Monitor app state
                 let app_state = android_get_app_state().await.unwrap_or(AppState::Active);
                 monitor.update_app_state(app_state).await;
-                
+
                 // Monitor network state
-                let network_state = android_get_network_state().await.unwrap_or(NetworkState::WiFi);
+                let network_state = android_get_network_state()
+                    .await
+                    .unwrap_or(NetworkState::WiFi);
                 monitor.update_network_state(network_state).await;
             }
         });
-        
+
         Ok(())
     }
 }
@@ -476,13 +484,15 @@ async fn android_get_app_state() -> Result<AppState, Box<dyn std::error::Error +
 }
 
 #[cfg(target_os = "android")]
-async fn android_get_network_state() -> Result<NetworkState, Box<dyn std::error::Error + Send + Sync>> {
+async fn android_get_network_state(
+) -> Result<NetworkState, Box<dyn std::error::Error + Send + Sync>> {
     // In production, this would call into nyx-mobile-ffi
     Ok(NetworkState::WiFi)
 }
 
 /// Global mobile state monitor instance.
-static MOBILE_MONITOR: once_cell::sync::OnceCell<MobileStateMonitor> = once_cell::sync::OnceCell::new();
+static MOBILE_MONITOR: once_cell::sync::OnceCell<MobileStateMonitor> =
+    once_cell::sync::OnceCell::new();
 
 /// Initialize global mobile state monitor.
 pub fn init_mobile_monitor() -> &'static MobileStateMonitor {
@@ -503,21 +513,27 @@ mod tests {
     async fn test_power_profile_scaling() {
         assert_eq!(PowerProfile::HighPerformance.cover_traffic_scale(), 1.0);
         assert_eq!(PowerProfile::UltraLowPower.cover_traffic_scale(), 0.1);
-        
-        assert_eq!(PowerProfile::HighPerformance.keepalive_interval(), Duration::from_secs(15));
-        assert_eq!(PowerProfile::UltraLowPower.keepalive_interval(), Duration::from_secs(120));
+
+        assert_eq!(
+            PowerProfile::HighPerformance.keepalive_interval(),
+            Duration::from_secs(15)
+        );
+        assert_eq!(
+            PowerProfile::UltraLowPower.keepalive_interval(),
+            Duration::from_secs(120)
+        );
     }
 
     #[tokio::test]
     async fn test_mobile_state_monitor() {
         let monitor = MobileStateMonitor::new();
-        
+
         // Test initial state
         let power = monitor.power_state().await;
         assert_eq!(power.battery_level, 100);
         assert!(!power.is_charging);
         assert!(power.screen_on);
-        
+
         // Test state updates
         let new_power = PowerState {
             battery_level: 50,
@@ -526,7 +542,7 @@ mod tests {
             low_power_mode: true,
             power_profile: PowerProfile::PowerSaver,
         };
-        
+
         monitor.update_power_state(new_power).await;
         let updated_power = monitor.power_state().await;
         assert_eq!(updated_power.battery_level, 50);
@@ -537,7 +553,7 @@ mod tests {
     #[tokio::test]
     async fn test_power_profile_determination() {
         let monitor = MobileStateMonitor::new();
-        
+
         // Test ultra low power conditions
         let ultra_low_power = PowerState {
             battery_level: 5,
@@ -546,7 +562,7 @@ mod tests {
             low_power_mode: true,
             power_profile: PowerProfile::HighPerformance, // Will be overridden
         };
-        
+
         monitor.update_power_state(ultra_low_power).await;
         let profile = monitor.determine_power_profile().await;
         assert_eq!(profile, PowerProfile::UltraLowPower);
@@ -556,7 +572,7 @@ mod tests {
     async fn test_state_subscriptions() {
         let monitor = MobileStateMonitor::new();
         let mut power_rx = monitor.subscribe_power();
-        
+
         // Update power state in background task
         let monitor_clone = monitor.clone();
         tokio::spawn(async move {
@@ -570,9 +586,9 @@ mod tests {
             };
             monitor_clone.update_power_state(new_state).await;
         });
-        
+
         // Receive notification
         let received_state = power_rx.recv().await.unwrap();
         assert_eq!(received_state.battery_level, 25);
     }
-} 
+}

@@ -27,13 +27,13 @@ pub extern "C" fn nyx_mobile_get_platform() -> c_int {
         debug!("Platform detected: iOS");
         PLATFORM_IOS
     }
-    
+
     #[cfg(target_os = "android")]
     {
         debug!("Platform detected: Android");
         PLATFORM_ANDROID
     }
-    
+
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         debug!("Platform detected: Other (desktop/server)");
@@ -51,7 +51,7 @@ pub extern "C" fn nyx_mobile_get_platform_name() -> *const c_char {
     } else {
         "Other"
     };
-    
+
     // Note: This returns a static string, so it's safe
     // In a real implementation, caller would need to manage memory
     platform_name.as_ptr() as *const c_char
@@ -71,33 +71,33 @@ pub extern "C" fn nyx_mobile_is_mobile_platform() -> c_int {
 #[no_mangle]
 pub extern "C" fn nyx_mobile_init_platform_monitoring() -> c_int {
     info!("Initializing platform-specific monitoring");
-    
+
     #[cfg(target_os = "ios")]
     {
-        use crate::ios::{ios_register_battery_notifications, ios_register_app_notifications};
-        
+        use crate::ios::{ios_register_app_notifications, ios_register_battery_notifications};
+
         let battery_result = ios_register_battery_notifications();
         let app_result = ios_register_app_notifications();
-        
+
         if battery_result != 0 || app_result != 0 {
             return -1;
         }
-        
+
         info!("iOS monitoring initialized successfully");
     }
-    
+
     #[cfg(target_os = "android")]
     {
         // Android monitoring is typically initialized through JNI
         // from the Java side when the application starts
         info!("Android monitoring ready (requires JNI initialization)");
     }
-    
+
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         info!("Desktop platform - mobile monitoring not available");
     }
-    
+
     0
 }
 
@@ -106,7 +106,7 @@ pub fn c_str_to_string(c_str: *const c_char) -> Result<String, std::str::Utf8Err
     if c_str.is_null() {
         return Ok(String::new());
     }
-    
+
     let cstr = unsafe { CStr::from_ptr(c_str) };
     cstr.to_str().map(|s| s.to_owned())
 }
@@ -132,32 +132,32 @@ pub extern "C" fn nyx_mobile_free_string(ptr: *mut c_char) {
 #[no_mangle]
 pub extern "C" fn nyx_mobile_get_capabilities() -> c_int {
     let mut capabilities = 0;
-    
+
     // Battery monitoring capability
     if cfg!(any(target_os = "ios", target_os = "android")) {
         capabilities |= 1; // CAPABILITY_BATTERY
     }
-    
+
     // App state monitoring capability
     if cfg!(any(target_os = "ios", target_os = "android")) {
         capabilities |= 2; // CAPABILITY_APP_STATE
     }
-    
+
     // Network monitoring capability
     if cfg!(any(target_os = "ios", target_os = "android")) {
         capabilities |= 4; // CAPABILITY_NETWORK
     }
-    
+
     // Power management capability
     if cfg!(any(target_os = "ios", target_os = "android")) {
         capabilities |= 8; // CAPABILITY_POWER_MANAGEMENT
     }
-    
+
     // Push notification capability (requires additional setup)
     if cfg!(any(target_os = "ios", target_os = "android")) {
         capabilities |= 16; // CAPABILITY_PUSH_NOTIFICATIONS
     }
-    
+
     debug!("Mobile capabilities: 0x{:x}", capabilities);
     capabilities
 }
@@ -213,7 +213,10 @@ pub extern "C" fn nyx_mobile_convert_close_code(close_code: u16) -> MobileError 
         _ => (ERROR_UNKNOWN_CLOSE_CODE, "Unknown close code category"),
     };
     let cstr = CString::new(msg).unwrap();
-    MobileError { code, message: cstr.into_raw() }
+    MobileError {
+        code,
+        message: cstr.into_raw(),
+    }
 }
 
 /// Configuration management
@@ -244,7 +247,7 @@ pub extern "C" fn nyx_mobile_set_config(config: *const MobileConfig) -> c_int {
     if config.is_null() {
         return ERROR_INVALID_PARAMETER;
     }
-    
+
     let cfg = unsafe { &*config };
     info!("Setting mobile config: polling_interval={}ms, battery={}, app_state={}, network={}, low_power_threshold={}%",
           cfg.polling_interval_ms,
@@ -252,10 +255,10 @@ pub extern "C" fn nyx_mobile_set_config(config: *const MobileConfig) -> c_int {
           cfg.enable_app_state_monitoring,
           cfg.enable_network_monitoring,
           cfg.low_power_mode_threshold);
-    
+
     // In a full implementation, this would update the global configuration
     // For now, we just log the settings
-    
+
     ERROR_SUCCESS
 }
 
@@ -271,34 +274,34 @@ pub extern "C" fn nyx_mobile_get_config() -> *const MobileConfig {
         enable_network_monitoring: 1,
         low_power_mode_threshold: 20,
     };
-    
+
     &DEFAULT_CONFIG
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_platform_detection() {
         let platform = nyx_mobile_get_platform();
         assert!(platform >= 0 && platform <= 2);
-        
+
         let is_mobile = nyx_mobile_is_mobile_platform();
         assert!(is_mobile == 0 || is_mobile == 1);
     }
-    
+
     #[test]
     fn test_capabilities() {
         let capabilities = nyx_mobile_get_capabilities();
         assert!(capabilities >= 0);
     }
-    
+
     #[test]
     fn test_error_messages() {
         let message = nyx_mobile_get_error_message(ERROR_SUCCESS);
         assert!(!message.is_null());
-        
+
         let message = nyx_mobile_get_error_message(ERROR_NOT_INITIALIZED);
         assert!(!message.is_null());
     }
@@ -308,42 +311,50 @@ mod tests {
         let e = nyx_mobile_convert_close_code(0x07);
         assert_eq!(e.code, ERROR_FAILED_PRECONDITION);
         // free allocated message to avoid leaks in test
-        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+        unsafe {
+            let _ = CString::from_raw(e.message as *mut c_char);
+        }
 
         let e = nyx_mobile_convert_close_code(0x21);
         assert_eq!(e.code, ERROR_RESOURCE_EXHAUSTED);
-        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+        unsafe {
+            let _ = CString::from_raw(e.message as *mut c_char);
+        }
 
         let e = nyx_mobile_convert_close_code(0x15);
         assert_eq!(e.code, ERROR_PERMISSION_DENIED);
-        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+        unsafe {
+            let _ = CString::from_raw(e.message as *mut c_char);
+        }
 
         let e = nyx_mobile_convert_close_code(0x99);
         assert_eq!(e.code, ERROR_UNKNOWN_CLOSE_CODE);
-        unsafe { let _ = CString::from_raw(e.message as *mut c_char); }
+        unsafe {
+            let _ = CString::from_raw(e.message as *mut c_char);
+        }
     }
-    
+
     #[test]
     fn test_config_management() {
         let config = nyx_mobile_get_config();
         assert!(!config.is_null());
-        
+
         let result = nyx_mobile_set_config(config);
         assert_eq!(result, ERROR_SUCCESS);
-        
+
         let result = nyx_mobile_set_config(std::ptr::null());
         assert_eq!(result, ERROR_INVALID_PARAMETER);
     }
-    
+
     #[test]
     fn test_string_utilities() {
         let test_str = "Hello, world!".to_string();
         let c_str = string_to_c_str(test_str.clone());
         assert!(!c_str.is_null());
-        
+
         let converted = c_str_to_string(c_str).unwrap();
         assert_eq!(converted, test_str);
-        
+
         nyx_mobile_free_string(c_str);
     }
 }

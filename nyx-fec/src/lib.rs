@@ -2,7 +2,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! RaptorQ and Reed-Solomon FEC implementation for Nyx packets.
-//! 
+//!
 //! NyxNet v1.0 includes complete RaptorQ fountain code implementation
 //! with adaptive redundancy control, replacing traditional Reed-Solomon
 //! for improved efficiency and resilience.
@@ -13,16 +13,11 @@
 use reed_solomon_erasure::{galois_8::ReedSolomon, Error as RSError};
 
 pub mod timing;
-pub use timing::{TimingObfuscator, TimingConfig, Packet};
+pub use timing::{Packet, TimingConfig, TimingObfuscator};
 
 pub mod raptorq;
 pub use raptorq::{
-    RaptorQCodec, 
-    AdaptiveRaptorQ, 
-    NetworkCondition, 
-    EncodingStats, 
-    DecodingStats, 
-    FECStats
+    AdaptiveRaptorQ, DecodingStats, EncodingStats, FECStats, NetworkCondition, RaptorQCodec,
 };
 
 pub mod padding;
@@ -41,7 +36,11 @@ pub const SIMD_ACCEL_ENABLED: bool = false;
 
 /// Return a human-readable runtime description for FEC backend.
 pub fn fec_backend_description() -> &'static str {
-    if SIMD_ACCEL_ENABLED { "SIMD-accelerated (no-std C backend)" } else { "Pure Rust (portable)" }
+    if SIMD_ACCEL_ENABLED {
+        "SIMD-accelerated (no-std C backend)"
+    } else {
+        "Pure Rust (portable)"
+    }
 }
 
 /// Nyx FEC codec.
@@ -59,7 +58,10 @@ impl nyx_core::zero_copy::integration::fec_integration::FecCodec for RaptorQCode
         packets.into_iter().map(|p| p.data().to_vec()).collect()
     }
 
-    fn decode(&self, symbols: &[Vec<u8>]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    fn decode(
+        &self,
+        symbols: &[Vec<u8>],
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         use ::raptorq::{EncodingPacket, PayloadId};
         // Rebuild EncodingPacket list; assume sentinel remains at index 0 if present.
         let mut packets: Vec<EncodingPacket> = Vec::with_capacity(symbols.len());
@@ -76,7 +78,13 @@ impl nyx_core::zero_copy::integration::fec_integration::FecCodec for RaptorQCode
         RaptorQCodec::decode(self, &packets).ok_or_else(|| "RaptorQ decode failed".into())
     }
 
-    fn current_redundancy(&self) -> f32 { self.get_stats().redundancy_history.last().copied().unwrap_or(0.0) }
+    fn current_redundancy(&self) -> f32 {
+        self.get_stats()
+            .redundancy_history
+            .last()
+            .copied()
+            .unwrap_or(0.0)
+    }
 }
 
 impl NyxFec {
@@ -95,7 +103,11 @@ impl NyxFec {
     /// Attempt to reconstruct missing shards.
     ///
     /// `present` is a parallel boolean slice indicating which shards are intact.
-    pub fn reconstruct(&self, shards: &mut [&mut [u8]], present: &mut [bool]) -> Result<(), RSError> {
+    pub fn reconstruct(
+        &self,
+        shards: &mut [&mut [u8]],
+        present: &mut [bool],
+    ) -> Result<(), RSError> {
         let mut tuples: Vec<(&mut [u8], bool)> = shards
             .iter_mut()
             .enumerate()
@@ -104,7 +116,9 @@ impl NyxFec {
         let res = self.rs.reconstruct(&mut tuples);
         if res.is_ok() {
             // Mark all shards as present now
-            for p in present.iter_mut() { *p = true; }
+            for p in present.iter_mut() {
+                *p = true;
+            }
         }
         res
     }

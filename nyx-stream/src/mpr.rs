@@ -51,7 +51,9 @@ impl MprDispatcher {
     }
 
     /// Remove a failed path.
-    pub fn remove_path(&mut self, path_id: u8) { self.scheduler.remove_path(path_id); }
+    pub fn remove_path(&mut self, path_id: u8) {
+        self.scheduler.remove_path(path_id);
+    }
 
     /// Record whether the last packet replica set was delivered successfully (at least one success).
     /// Adaptive logic: if recent loss ratio >20% increase k (up to max_k); if <5% decrease toward 1.
@@ -76,7 +78,9 @@ impl MprDispatcher {
         for _ in 0..self.k {
             if let Some(pid) = self.scheduler.next() {
                 // ensure uniqueness within this batch
-                if !paths.contains(&pid) { paths.push(pid); }
+                if !paths.contains(&pid) {
+                    paths.push(pid);
+                }
             }
         }
         paths
@@ -84,7 +88,9 @@ impl MprDispatcher {
 
     /// Current redundancy degree.
     #[must_use]
-    pub fn redundancy(&self) -> usize { self.k }
+    pub fn redundancy(&self) -> usize {
+        self.k
+    }
 }
 
 #[cfg(test)]
@@ -117,4 +123,4 @@ mod tests {
         }
         assert_eq!(mpr.redundancy(), 1);
     }
-} 
+}

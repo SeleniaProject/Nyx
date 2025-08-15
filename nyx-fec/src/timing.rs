@@ -3,9 +3,12 @@
 //! Timing obfuscator queue.
 //! Adds ±sigma randomized delay before releasing packets to mitigate timing analysis.
 
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
-use tokio::{sync::mpsc, time::{sleep, Duration}};
+use rand::{Rng, SeedableRng};
+use tokio::{
+    sync::mpsc,
+    time::{sleep, Duration},
+};
 
 /// Obfuscated packet with payload bytes.
 #[derive(Debug)]
@@ -21,7 +24,10 @@ pub struct TimingConfig {
 
 impl Default for TimingConfig {
     fn default() -> Self {
-        Self { mean_ms: 20.0, sigma_ms: 10.0 }
+        Self {
+            mean_ms: 20.0,
+            sigma_ms: 10.0,
+        }
     }
 }
 
@@ -48,7 +54,10 @@ impl TimingObfuscator {
                 }
             }
         });
-        Self { tx: int_tx, rx: out_rx }
+        Self {
+            tx: int_tx,
+            rx: out_rx,
+        }
     }
 
     /// Enqueue packet for delayed release.
@@ -65,19 +74,22 @@ impl TimingObfuscator {
     pub fn sender(&self) -> mpsc::Sender<Packet> {
         self.tx.clone()
     }
-} 
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{Instant, Duration};
+    use tokio::time::Instant;
 
     #[tokio::test]
     async fn delays_within_expected_distribution() {
-        let config = TimingConfig { mean_ms: 15.0, sigma_ms: 5.0 };
+        let config = TimingConfig {
+            mean_ms: 15.0,
+            sigma_ms: 5.0,
+        };
         let obf = TimingObfuscator::new(config);
         let start = Instant::now();
-        obf.enqueue(vec![1,2,3]).await;
+        obf.enqueue(vec![1, 2, 3]).await;
         let mut rx = obf;
         let _pkt = rx.recv().await.expect("packet");
         let elapsed = start.elapsed().as_millis();

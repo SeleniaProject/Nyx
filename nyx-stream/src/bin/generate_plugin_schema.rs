@@ -2,7 +2,8 @@
 //! Usage: cargo run -p nyx-stream --features plugin --bin generate_plugin_schema > plugin_schema.json
 
 fn main() {
-    #[cfg(feature = "plugin")] {
+    #[cfg(feature = "plugin")]
+    {
         let v = nyx_stream::plugin_frame::PluginFrameProcessor::export_json_schemas();
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
     }

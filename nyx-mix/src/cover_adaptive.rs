@@ -9,18 +9,18 @@
 //! The system uses Poisson distribution for traffic generation with dynamic
 //! lambda (λ) parameter adjustment based on real-time conditions.
 
+use crate::cover::CoverGenerator;
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::collections::VecDeque;
-use tokio::sync::{RwLock, broadcast, watch};
+use tokio::sync::{broadcast, watch, RwLock};
 use tokio::time::{interval, sleep_until, Instant as TokioInstant};
-use serde::{Serialize, Deserialize};
 use tracing::{debug, info, trace};
-use rand::Rng;
-use crate::cover::CoverGenerator;
 
 // Import mobile types
-use nyx_core::mobile::{PowerProfile, NetworkState, AppState};
+use nyx_core::mobile::{AppState, NetworkState, PowerProfile};
 
 /// Configuration for adaptive cover traffic generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,17 +63,17 @@ pub struct AdaptiveCoverConfig {
 impl Default for AdaptiveCoverConfig {
     fn default() -> Self {
         Self {
-            base_lambda: 2.0,           // 2 packets/second base rate
-            max_lambda: 10.0,           // Max 10 packets/second
-            min_lambda: 0.1,            // Min 0.1 packets/second
-            target_utilization: 0.35,   // deprecated semantic; kept for compat
-            target_cover_ratio: 0.35,   // 35% cover share target
-            adaptation_speed: 0.1,      // Moderate adaptation speed
-            analysis_window: 60,        // 1 minute analysis window
-            ema_beta: 0.3,              // Ratio smoothing beta
-            alpha_gain: 0.5,            // Control proportional gain
-            heartbeat_bump_sec: 60,     // Periodic micro bump when idle
-            low_power_decay_k: 0.18,    // ~10-15s to 80% convergence
+            base_lambda: 2.0,         // 2 packets/second base rate
+            max_lambda: 10.0,         // Max 10 packets/second
+            min_lambda: 0.1,          // Min 0.1 packets/second
+            target_utilization: 0.35, // deprecated semantic; kept for compat
+            target_cover_ratio: 0.35, // 35% cover share target
+            adaptation_speed: 0.1,    // Moderate adaptation speed
+            analysis_window: 60,      // 1 minute analysis window
+            ema_beta: 0.3,            // Ratio smoothing beta
+            alpha_gain: 0.5,          // Control proportional gain
+            heartbeat_bump_sec: 60,   // Periodic micro bump when idle
+            low_power_decay_k: 0.18,  // ~10-15s to 80% convergence
             mobile_adaptation: true,
             time_based_adaptation: true,
             network_adaptation: true,
@@ -136,9 +136,9 @@ pub struct AdaptiveCoverGenerator {
     /// Running statistics
     stats: Arc<RwLock<TrafficStats>>,
     /// Sliding window of generated cover bytes
-    cover_bytes_window: Arc<RwLock<SlidingWindow>>, 
+    cover_bytes_window: Arc<RwLock<SlidingWindow>>,
     /// Sliding window of real bytes recorded by upper layers
-    real_bytes_window: Arc<RwLock<SlidingWindow>>, 
+    real_bytes_window: Arc<RwLock<SlidingWindow>>,
     /// Smoothed cover ratio (EMA of C/(C+R))
     cover_ratio_ema: Arc<RwLock<f64>>,
     /// Last time real bytes were recorded (for heartbeat bump)
@@ -281,7 +281,9 @@ impl AdaptiveCoverGenerator {
         let last_real_activity = Arc::clone(&self.last_real_activity);
 
         tokio::spawn(async move {
-            let mut interval = interval(Duration::from_millis(config.read().await.adaptation_interval_ms));
+            let mut interval = interval(Duration::from_millis(
+                config.read().await.adaptation_interval_ms,
+            ));
             // Track low-power decay state and previous power scale to apply smooth transition
             let mut last_power_scale: f64 = 1.0;
             let mut decay_state: Option<(Instant, f64, f64)> = None; // (start, from, to)
@@ -301,7 +303,8 @@ impl AdaptiveCoverGenerator {
 
                 // Base feedforward lambda before feedback (ratio control)
                 let manual = cfg.manual_scale.unwrap_or(1.0);
-                let mut ff_lambda = cfg.base_lambda * manual * power_scale * network_scale * time_scale;
+                let mut ff_lambda =
+                    cfg.base_lambda * manual * power_scale * network_scale * time_scale;
 
                 // Apply low-power exponential decay when power scale drops significantly
                 if power_scale + 1e-6 < last_power_scale {
@@ -313,7 +316,9 @@ impl AdaptiveCoverGenerator {
                 last_power_scale = power_scale;
 
                 if let Some((start, from, to)) = decay_state {
-                    let t = Instant::now().saturating_duration_since(start).as_secs_f64();
+                    let t = Instant::now()
+                        .saturating_duration_since(start)
+                        .as_secs_f64();
                     let k = cfg.low_power_decay_k.max(0.01).min(1.0);
                     // λ_decay(t) = from*e^{-k t} + to*(1 - e^{-k t})
                     let e = (-k * t).exp();
@@ -343,8 +348,11 @@ impl AdaptiveCoverGenerator {
                 {
                     let mut ema = cover_ratio_ema.write().await;
                     let beta = cfg.ema_beta.clamp(0.0, 1.0);
-                    if *ema == 0.0 { *ema = cover_ratio_raw; }
-                    else { *ema = *ema * (1.0 - beta) + cover_ratio_raw * beta; }
+                    if *ema == 0.0 {
+                        *ema = cover_ratio_raw;
+                    } else {
+                        *ema = *ema * (1.0 - beta) + cover_ratio_raw * beta;
+                    }
                 }
                 let cover_ratio_smoothed = *cover_ratio_ema.read().await;
 
@@ -352,8 +360,13 @@ impl AdaptiveCoverGenerator {
                 let e_ratio = target_cover - cover_ratio_smoothed;
 
                 // Feedback update: λ_new = clamp(λ_old * (1 + α * e), min, max)
-                let alpha = if e_ratio >= 0.0 { cfg.alpha_gain } else { cfg.alpha_gain * 0.7 };
-                let fb_lambda = (*lambda * (1.0 + alpha * e_ratio)).clamp(cfg.min_lambda, cfg.max_lambda);
+                let alpha = if e_ratio >= 0.0 {
+                    cfg.alpha_gain
+                } else {
+                    cfg.alpha_gain * 0.7
+                };
+                let fb_lambda =
+                    (*lambda * (1.0 + alpha * e_ratio)).clamp(cfg.min_lambda, cfg.max_lambda);
 
                 // If caller requested immediate adaptation, converge to feedforward target directly.
                 let mut new_lambda = if cfg.adaptation_speed >= 1.0 {
@@ -361,14 +374,18 @@ impl AdaptiveCoverGenerator {
                 } else {
                     // Blend feedforward and feedback for stability
                     // Move a fraction toward ff_lambda while respecting bounds
-                    let toward_ff = *lambda + (ff_lambda - *lambda) * cfg.adaptation_speed.clamp(0.0, 1.0);
+                    let toward_ff =
+                        *lambda + (ff_lambda - *lambda) * cfg.adaptation_speed.clamp(0.0, 1.0);
                     let blended = 0.5 * fb_lambda + 0.5 * toward_ff;
                     blended.clamp(cfg.min_lambda, cfg.max_lambda)
                 };
 
                 // Heartbeat bump if no real activity for prolonged time
-                let idle_for = Instant::now().saturating_duration_since(*last_real_activity.read().await);
-                if idle_for.as_secs() >= cfg.heartbeat_bump_sec && new_lambda < (cfg.min_lambda * 1.5) {
+                let idle_for =
+                    Instant::now().saturating_duration_since(*last_real_activity.read().await);
+                if idle_for.as_secs() >= cfg.heartbeat_bump_sec
+                    && new_lambda < (cfg.min_lambda * 1.5)
+                {
                     new_lambda = (cfg.min_lambda * 1.5).min(cfg.max_lambda);
                 }
 
@@ -398,7 +415,10 @@ impl AdaptiveCoverGenerator {
                 metrics_guard.efficiency = efficiency;
 
                 // Update statistics
-                stats_guard.average_lambda = (stats_guard.average_lambda * (stats_guard.adaptation_count as f64 - 1.0) + *lambda) / stats_guard.adaptation_count as f64;
+                stats_guard.average_lambda = (stats_guard.average_lambda
+                    * (stats_guard.adaptation_count as f64 - 1.0)
+                    + *lambda)
+                    / stats_guard.adaptation_count as f64;
                 stats_guard.peak_lambda = stats_guard.peak_lambda.max(*lambda);
                 stats_guard.min_lambda = stats_guard.min_lambda.min(*lambda);
 
@@ -444,7 +464,8 @@ impl AdaptiveCoverGenerator {
 
                     metrics_guard.packets_generated = total_packets;
                     metrics_guard.actual_rate = total_packets as f64 / window_duration;
-                    metrics_guard.bandwidth_used = (total_bandwidth as f64 / window_duration) as u64;
+                    metrics_guard.bandwidth_used =
+                        (total_bandwidth as f64 / window_duration) as u64;
                 }
             }
         });
@@ -475,7 +496,7 @@ impl AdaptiveCoverGenerator {
                     let mut rng = rand::thread_rng();
                     Self::generate_packet_size(&mut rng)
                 };
-                
+
                 // Update history
                 let sample = TrafficSample {
                     timestamp: Instant::now(),
@@ -497,7 +518,11 @@ impl AdaptiveCoverGenerator {
                 stats_guard.total_bytes += packet_size as u64;
                 stats_guard.total_runtime = start_time.elapsed();
 
-                trace!("Generated cover packet: {} bytes, lambda: {:.3}", packet_size, lambda);
+                trace!(
+                    "Generated cover packet: {} bytes, lambda: {:.3}",
+                    packet_size,
+                    lambda
+                );
             }
         });
     }
@@ -552,9 +577,9 @@ impl AdaptiveCoverGenerator {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         let hour = (now / 3600) % 24;
-        
+
         // Scale based on typical usage patterns
         match hour {
             0..=6 => 0.3,   // Night: reduced activity
@@ -582,7 +607,7 @@ impl AdaptiveCoverGenerator {
     fn generate_packet_size(rng: &mut impl Rng) -> usize {
         // Generate realistic packet sizes based on typical network traffic
         let size_class: f64 = rng.gen();
-        
+
         if size_class < 0.4 {
             // Small packets (40-200 bytes) - 40%
             rng.gen_range(40..=200)
@@ -609,7 +634,11 @@ struct SlidingWindow {
 
 impl SlidingWindow {
     fn new(window_len: Duration) -> Self {
-        Self { window: VecDeque::new(), window_len, accumulated: 0 }
+        Self {
+            window: VecDeque::new(),
+            window_len,
+            accumulated: 0,
+        }
     }
 
     fn set_window_len(&mut self, len: Duration) {
@@ -665,7 +694,7 @@ impl CoverTrafficTester {
     /// Create a new cover traffic tester.
     pub fn new(config: AdaptiveCoverConfig) -> Self {
         let generator = AdaptiveCoverGenerator::new(config);
-        
+
         Self {
             generator,
             test_duration: Duration::from_secs(300), // 5 minutes default
@@ -678,14 +707,14 @@ impl CoverTrafficTester {
         info!("Starting cover traffic real-time tests");
 
         let mut results = TestResults::new();
-        
+
         // Start the generator
         self.generator.start().await?;
 
         // Run each test scenario
         for scenario in &self.test_scenarios {
             info!("Running test scenario: {}", scenario.name);
-            
+
             let scenario_result = self.run_scenario(scenario).await?;
             results.scenario_results.push(scenario_result);
         }
@@ -693,14 +722,19 @@ impl CoverTrafficTester {
         // Calculate overall results
         results.calculate_summary();
 
-        info!("Cover traffic tests completed. Overall success rate: {:.1}%", 
-              results.overall_success_rate * 100.0);
+        info!(
+            "Cover traffic tests completed. Overall success rate: {:.1}%",
+            results.overall_success_rate * 100.0
+        );
 
         Ok(results)
     }
 
     /// Run a single test scenario.
-    async fn run_scenario(&self, scenario: &TestScenario) -> Result<ScenarioResult, Box<dyn std::error::Error + Send + Sync>> {
+    async fn run_scenario(
+        &self,
+        scenario: &TestScenario,
+    ) -> Result<ScenarioResult, Box<dyn std::error::Error + Send + Sync>> {
         let start_time = Instant::now();
         let mut _lambda_samples = Vec::new();
         let mut metrics_rx = self.generator.subscribe_metrics();
@@ -713,7 +747,7 @@ impl CoverTrafficTester {
         let metrics_task = tokio::spawn(async move {
             let mut samples = Vec::new();
             let end_time = start_time + scenario_duration;
-            
+
             while Instant::now() < end_time {
                 if let Ok(metrics) = metrics_rx.recv().await {
                     samples.push(metrics.current_lambda);
@@ -729,7 +763,8 @@ impl CoverTrafficTester {
 
         // Analyze results
         let avg_lambda = _lambda_samples.iter().sum::<f64>() / _lambda_samples.len() as f64;
-        let in_range = avg_lambda >= scenario.expected_lambda_range.0 && avg_lambda <= scenario.expected_lambda_range.1;
+        let in_range = avg_lambda >= scenario.expected_lambda_range.0
+            && avg_lambda <= scenario.expected_lambda_range.1;
 
         Ok(ScenarioResult {
             name: scenario.name.clone(),
@@ -738,7 +773,9 @@ impl CoverTrafficTester {
             expected_range: scenario.expected_lambda_range,
             lambda_samples: _lambda_samples,
             success: in_range,
-            efficiency: self.calculate_scenario_efficiency(scenario, avg_lambda).await,
+            efficiency: self
+                .calculate_scenario_efficiency(scenario, avg_lambda)
+                .await,
         })
     }
 
@@ -754,7 +791,8 @@ impl CoverTrafficTester {
 
     /// Calculate efficiency for a scenario.
     async fn calculate_scenario_efficiency(&self, scenario: &TestScenario, avg_lambda: f64) -> f64 {
-        let target_lambda = (scenario.expected_lambda_range.0 + scenario.expected_lambda_range.1) / 2.0;
+        let target_lambda =
+            (scenario.expected_lambda_range.0 + scenario.expected_lambda_range.1) / 2.0;
         if target_lambda > 0.0 {
             1.0 - (avg_lambda - target_lambda).abs() / target_lambda
         } else {
@@ -831,12 +869,15 @@ impl TestResults {
     fn calculate_summary(&mut self) {
         let successful = self.scenario_results.iter().filter(|r| r.success).count();
         self.overall_success_rate = successful as f64 / self.scenario_results.len() as f64;
-        
+
         self.total_test_time = self.scenario_results.iter().map(|r| r.duration).sum();
-        
-        self.average_efficiency = self.scenario_results.iter()
+
+        self.average_efficiency = self
+            .scenario_results
+            .iter()
             .map(|r| r.efficiency)
-            .sum::<f64>() / self.scenario_results.len() as f64;
+            .sum::<f64>()
+            / self.scenario_results.len() as f64;
     }
 }
 
@@ -855,7 +896,7 @@ pub struct ScenarioResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use rand::thread_rng;
 
     #[tokio::test]
@@ -894,7 +935,7 @@ mod tests {
             min_lambda: 0.1,
             ..Default::default()
         };
-        
+
         let tester = CoverTrafficTester::new(config);
         assert_eq!(tester.test_scenarios.len(), 5);
     }
@@ -913,7 +954,7 @@ mod tests {
             base_lambda: 4.0,
             max_lambda: 10.0,
             min_lambda: 0.1,
-            adaptation_speed: 1.0, // immediate move to target
+            adaptation_speed: 1.0,    // immediate move to target
             manual_scale: Some(0.25), // target lambda initially 1.0
             adaptation_interval_ms: 50,
             mobile_adaptation: false,
@@ -927,7 +968,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(160)).await; // allow several cycles
 
         let lambda1 = generator.current_lambda().await;
-        assert!((lambda1 - 1.0).abs() < 0.15, "lambda should adapt down to ~1.0, got {}", lambda1);
+        assert!(
+            (lambda1 - 1.0).abs() < 0.15,
+            "lambda should adapt down to ~1.0, got {}",
+            lambda1
+        );
 
         // Update config to increase scale
         let mut new_cfg = config.clone();
@@ -936,7 +981,12 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(160)).await;
 
         let lambda2 = generator.current_lambda().await;
-        assert!(lambda2 > lambda1 + 0.5, "lambda should increase after manual_scale up ({} -> {})", lambda1, lambda2);
+        assert!(
+            lambda2 > lambda1 + 0.5,
+            "lambda should increase after manual_scale up ({} -> {})",
+            lambda1,
+            lambda2
+        );
         assert!(lambda2 <= 10.0);
     }
 
@@ -971,7 +1021,12 @@ mod tests {
         }
 
         let increased = generator.current_lambda().await;
-        assert!(increased > baseline, "lambda should increase under heavy real load ({} -> {})", baseline, increased);
+        assert!(
+            increased > baseline,
+            "lambda should increase under heavy real load ({} -> {})",
+            baseline,
+            increased
+        );
     }
 
     #[tokio::test]
@@ -993,6 +1048,10 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(1200)).await; // exceed heartbeat window
         let lambda_after_idle = generator.current_lambda().await;
-        assert!(lambda_after_idle >= 0.2 * 1.5 - 0.01, "heartbeat bump should raise lambda near 1.5x min; got {}", lambda_after_idle);
+        assert!(
+            lambda_after_idle >= 0.2 * 1.5 - 0.01,
+            "heartbeat bump should raise lambda near 1.5x min; got {}",
+            lambda_after_idle
+        );
     }
-} 
+}

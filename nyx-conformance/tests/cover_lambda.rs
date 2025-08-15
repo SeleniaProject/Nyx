@@ -10,4 +10,4 @@ fn cover_generator_lambda_one() {
     }
     let mean = acc / samples as f64;
     assert!((mean - 1.0).abs() < 0.2, "mean delay {} deviates", mean);
-} 
+}

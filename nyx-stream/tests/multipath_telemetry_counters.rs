@@ -1,10 +1,10 @@
-#![cfg(feature="telemetry")]
+#![cfg(feature = "telemetry")]
 #![forbid(unsafe_code)]
 
+use nyx_core::config::MultipathConfig;
+use nyx_stream::multipath::manager::MultipathManager;
 use prometheus::default_registry;
 use std::time::Duration;
-use nyx_stream::multipath::manager::MultipathManager;
-use nyx_core::config::MultipathConfig;
 
 #[tokio::test]
 async fn multipath_activation_deactivation_telemetry() {
@@ -19,19 +19,42 @@ async fn multipath_activation_deactivation_telemetry() {
     manager.add_path(12).await.unwrap();
     manager.remove_path(11, "test".into()).await.unwrap();
     // RTT updates
-    manager.update_path_rtt(10, Duration::from_millis(10)).await.ok();
-    manager.update_path_rtt(12, Duration::from_millis(25)).await.ok();
+    manager
+        .update_path_rtt(10, Duration::from_millis(10))
+        .await
+        .ok();
+    manager
+        .update_path_rtt(12, Duration::from_millis(25))
+        .await
+        .ok();
     // Stats snapshot updates active paths gauge
     let _ = manager.get_stats().await;
 
     let families = prometheus::gather();
-    let mut act=0f64; let mut deact=0f64; let mut active_g=None; let mut hist=false;
+    let mut act = 0f64;
+    let mut deact = 0f64;
+    let mut active_g = None;
+    let mut hist = false;
     for f in families {
         match f.get_name() {
-            "nyx_multipath_path_activated_total" => { if let Some(m)=f.get_metric().get(0) { act=m.get_counter().get_value(); } },
-            "nyx_multipath_path_deactivated_total" => { if let Some(m)=f.get_metric().get(0) { deact=m.get_counter().get_value(); } },
-            "nyx_multipath_active_paths" => { if let Some(m)=f.get_metric().get(0) { active_g=Some(m.get_gauge().get_value()); } },
-            "nyx_multipath_path_rtt_seconds" => { hist=true; },
+            "nyx_multipath_path_activated_total" => {
+                if let Some(m) = f.get_metric().get(0) {
+                    act = m.get_counter().get_value();
+                }
+            }
+            "nyx_multipath_path_deactivated_total" => {
+                if let Some(m) = f.get_metric().get(0) {
+                    deact = m.get_counter().get_value();
+                }
+            }
+            "nyx_multipath_active_paths" => {
+                if let Some(m) = f.get_metric().get(0) {
+                    active_g = Some(m.get_gauge().get_value());
+                }
+            }
+            "nyx_multipath_path_rtt_seconds" => {
+                hist = true;
+            }
             _ => {}
         }
     }

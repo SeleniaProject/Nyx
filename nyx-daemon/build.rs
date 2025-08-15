@@ -6,4 +6,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     .build_server(true)
     //     .compile(&["proto/control.proto"], &["proto"])?;
     Ok(())
-} 
+}

@@ -1,26 +1,28 @@
 #![forbid(unsafe_code)]
 
 //! Integrated Frame Handler with Flow Control
-//! 
+//!
 //! This module provides a unified interface for frame processing that combines
 //! frame handling, reassembly, flow control, and congestion management.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, RwLock, mpsc};
-use tracing::{debug, info, warn, error, trace};
 use thiserror::Error;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tracing::{debug, error, info, trace, warn};
 
-use crate::simple_frame_handler::FrameHandler;
-use crate::flow_controller::{FlowController, FlowControlError, FlowControlStats, NetworkStats};
-use crate::stream_frame::{StreamFrame, parse_stream_frame};
+use crate::flow_controller::{FlowControlError, FlowControlStats, FlowController, NetworkStats};
 #[cfg(feature = "plugin")]
 use crate::plugin_frame::{PluginFrameProcessor, PluginFrameResult};
 #[cfg(feature = "plugin")]
 use crate::plugin_registry::PluginRegistry;
+use crate::simple_frame_handler::FrameHandler;
+use crate::stream_frame::{parse_stream_frame, StreamFrame};
 #[cfg(feature = "plugin")]
-fn error_or(err: impl std::fmt::Display) -> String { err.to_string() }
+fn error_or(err: impl std::fmt::Display) -> String {
+    err.to_string()
+}
 
 /// Data that has been successfully reassembled from frames
 #[derive(Debug, Clone)]
@@ -95,16 +97,16 @@ impl StreamContext {
     }
 
     pub fn is_blocked(&self) -> bool {
-        matches!(self.state, 
-            StreamState::FlowControlBlocked | 
-            StreamState::CongestionBlocked | 
-            StreamState::BackpressureBlocked
+        matches!(
+            self.state,
+            StreamState::FlowControlBlocked
+                | StreamState::CongestionBlocked
+                | StreamState::BackpressureBlocked
         )
     }
 
     pub fn can_accept_frame(&self) -> bool {
-        self.state == StreamState::Active && 
-        self.backlog_size < self.max_backlog_size
+        self.state == StreamState::Active && self.backlog_size < self.max_backlog_size
     }
 }
 
@@ -187,20 +189,23 @@ impl IntegratedFrameProcessor {
     /// Create a new integrated frame processor
     pub fn new(
         config: IntegratedFrameConfig,
-        event_sender: mpsc::UnboundedSender<FrameProcessingEvent>
+        event_sender: mpsc::UnboundedSender<FrameProcessingEvent>,
     ) -> Self {
-        let frame_handler = Arc::new(Mutex::new(
-            FrameHandler::new(config.max_frame_size, config.reassembly_timeout)
-        ));
+        let frame_handler = Arc::new(Mutex::new(FrameHandler::new(
+            config.max_frame_size,
+            config.reassembly_timeout,
+        )));
         #[cfg(feature = "plugin")]
         let plugin_processor = {
             // Minimal registry; in integration, this should be shared from outer context
             let registry = PluginRegistry::new();
             // Minimal dispatcher instance; in production wire actual dispatcher
-            let dispatcher = crate::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(tokio::sync::Mutex::new(registry.clone())));
+            let dispatcher = crate::plugin_dispatch::PluginDispatcher::new(std::sync::Arc::new(
+                tokio::sync::Mutex::new(registry.clone()),
+            ));
             Arc::new(Mutex::new(PluginFrameProcessor::new(registry, dispatcher)))
         };
-        
+
         let initial_stats = IntegratedStats {
             total_frames_processed: 0,
             total_frames_reassembled: 0,
@@ -245,9 +250,9 @@ impl IntegratedFrameProcessor {
             stats: Arc::new(RwLock::new(initial_stats)),
             event_sender,
             processing_tasks: Arc::new(Mutex::new(HashMap::new())),
-            global_flow_controller: Arc::new(Mutex::new(
-                FlowController::new(config.default_stream_window)
-            )),
+            global_flow_controller: Arc::new(Mutex::new(FlowController::new(
+                config.default_stream_window,
+            ))),
             shutdown_signal: Arc::new(Mutex::new(false)),
             #[cfg(feature = "plugin")]
             plugin_processor,
@@ -257,20 +262,23 @@ impl IntegratedFrameProcessor {
     /// Start the integrated frame processor
     pub async fn start(&self) -> Result<(), IntegratedFrameError> {
         info!("Starting integrated frame processor");
-        
+
         // Start background tasks
         self.start_flow_control_updater().await;
         self.start_stream_cleanup_task().await;
         self.start_statistics_updater().await;
-        
+
         info!("Integrated frame processor started successfully");
         Ok(())
     }
 
     /// Process an incoming frame with integrated flow control
-    pub async fn process_frame(&self, frame_data: &[u8]) -> Result<Vec<ReassembledData>, IntegratedFrameError> {
+    pub async fn process_frame(
+        &self,
+        frame_data: &[u8],
+    ) -> Result<Vec<ReassembledData>, IntegratedFrameError> {
         let start_time = Instant::now();
-        
+
         // First try plugin frame range parsing when feature is enabled
         #[cfg(feature = "plugin")]
         {
@@ -280,34 +288,39 @@ impl IntegratedFrameProcessor {
                 match proc.parse_plugin_frame(frame_data) {
                     Ok(parsed) => {
                         match proc.process_plugin_frame(parsed).await {
-                            Ok(PluginFrameResult::Dispatched { .. }) |
-                            Ok(PluginFrameResult::Ignored { .. }) => {
+                            Ok(PluginFrameResult::Dispatched { .. })
+                            | Ok(PluginFrameResult::Ignored { .. }) => {
                                 // Plugin frames do not yield stream data; accounted and return empty
-                                self.update_processing_stats(start_time, frame_data.len(), 0).await;
+                                self.update_processing_stats(start_time, frame_data.len(), 0)
+                                    .await;
                                 return Ok(Vec::new());
                             }
                             Ok(PluginFrameResult::RequireClose { plugin_id, reason }) => {
                                 error!("Required plugin {} unsupported: {}", plugin_id, reason);
-                                return Err(IntegratedFrameError::FrameParsing(
-                                    format!("Required plugin {} unsupported: {}", plugin_id, reason)
-                                ));
+                                return Err(IntegratedFrameError::FrameParsing(format!(
+                                    "Required plugin {} unsupported: {}",
+                                    plugin_id, reason
+                                )));
                             }
                             Ok(PluginFrameResult::Error { error }) => {
-                                return Err(IntegratedFrameError::FrameParsing(
-                                    format!("Plugin frame processing error: {}", error)
-                                ));
+                                return Err(IntegratedFrameError::FrameParsing(format!(
+                                    "Plugin frame processing error: {}",
+                                    error
+                                )));
                             }
                             Err(err) => {
-                                return Err(IntegratedFrameError::FrameParsing(
-                                    format!("Plugin frame processing error: {}", err)
-                                ));
+                                return Err(IntegratedFrameError::FrameParsing(format!(
+                                    "Plugin frame processing error: {}",
+                                    err
+                                )));
                             }
                         }
                     }
                     Err(e) => {
-                        return Err(IntegratedFrameError::FrameParsing(
-                            format!("Plugin frame parse error: {}", e)
-                        ));
+                        return Err(IntegratedFrameError::FrameParsing(format!(
+                            "Plugin frame parse error: {}",
+                            e
+                        )));
                     }
                 }
             }
@@ -323,18 +336,24 @@ impl IntegratedFrameProcessor {
         };
 
         let stream_id = frame.stream_id;
-        trace!("Processing frame for stream {}, offset {}, length {}", 
-               stream_id, frame.offset, frame.data.len());
+        trace!(
+            "Processing frame for stream {}, offset {}, length {}",
+            stream_id,
+            frame.offset,
+            frame.data.len()
+        );
 
         // Get or create stream context
         let stream_context = self.get_or_create_stream(stream_id).await?;
-        
+
         // Check if stream can accept more frames
         {
             let ctx = stream_context.lock().await;
             if !ctx.can_accept_frame() {
-                warn!("Stream {} cannot accept frame - state: {:?}, backlog: {}", 
-                      stream_id, ctx.state, ctx.backlog_size);
+                warn!(
+                    "Stream {} cannot accept frame - state: {:?}, backlog: {}",
+                    stream_id, ctx.state, ctx.backlog_size
+                );
                 return Err(IntegratedFrameError::FlowControlBlocked { stream_id });
             }
         }
@@ -345,7 +364,10 @@ impl IntegratedFrameProcessor {
         // Process frame through simple frame handler (async)
         let reassembled_data = {
             let mut handler = self.frame_handler.lock().await;
-            match handler.process_frame_async(stream_id as u64, frame.data.to_vec()).await {
+            match handler
+                .process_frame_async(stream_id as u64, frame.data.to_vec())
+                .await
+            {
                 Ok(Some(buf)) => vec![ReassembledData {
                     stream_id,
                     data: buf,
@@ -365,7 +387,7 @@ impl IntegratedFrameProcessor {
             let mut ctx = stream_context.lock().await;
             ctx.update_activity();
             ctx.backlog_size += frame.data.len();
-            
+
             // Add reassembled data to processing queue
             for data in &reassembled_data {
                 ctx.processing_queue.push_back(data.clone());
@@ -373,15 +395,18 @@ impl IntegratedFrameProcessor {
         }
 
         // Update statistics
-        self.update_processing_stats(start_time, frame.data.len(), reassembled_data.len()).await;
+        self.update_processing_stats(start_time, frame.data.len(), reassembled_data.len())
+            .await;
 
         // Emit events
         if !reassembled_data.is_empty() {
             for data in &reassembled_data {
-                let _ = self.event_sender.send(FrameProcessingEvent::FrameReassembled {
-                    stream_id: data.stream_id,
-                    data_size: data.data.len(),
-                });
+                let _ = self
+                    .event_sender
+                    .send(FrameProcessingEvent::FrameReassembled {
+                        stream_id: data.stream_id,
+                        data_size: data.data.len(),
+                    });
             }
         }
 
@@ -389,7 +414,11 @@ impl IntegratedFrameProcessor {
     }
 
     /// Apply flow control to incoming frame
-    async fn apply_flow_control(&self, stream_id: u32, frame_size: usize) -> Result<(), IntegratedFrameError> {
+    async fn apply_flow_control(
+        &self,
+        stream_id: u32,
+        frame_size: usize,
+    ) -> Result<(), IntegratedFrameError> {
         // Global flow control check
         {
             let mut global_fc = self.global_flow_controller.lock().await;
@@ -405,9 +434,11 @@ impl IntegratedFrameProcessor {
             let mut ctx = stream_context.lock().await;
             if let Err(e) = ctx.flow_controller.on_data_received(frame_size as u32) {
                 ctx.state = StreamState::FlowControlBlocked;
-                
-                let _ = self.event_sender.send(FrameProcessingEvent::FlowControlBlocked { stream_id });
-                
+
+                let _ = self
+                    .event_sender
+                    .send(FrameProcessingEvent::FlowControlBlocked { stream_id });
+
                 warn!("Stream {} flow control blocked: {}", stream_id, e);
                 return Err(IntegratedFrameError::FlowControl(e));
             }
@@ -417,18 +448,21 @@ impl IntegratedFrameProcessor {
     }
 
     /// Get or create stream context
-    async fn get_or_create_stream(&self, stream_id: u32) -> Result<Arc<Mutex<StreamContext>>, IntegratedFrameError> {
+    async fn get_or_create_stream(
+        &self,
+        stream_id: u32,
+    ) -> Result<Arc<Mutex<StreamContext>>, IntegratedFrameError> {
         let streams = self.streams.read().await;
-        
+
         if let Some(stream_context) = streams.get(&stream_id) {
             return Ok(Arc::clone(stream_context));
         }
-        
+
         drop(streams);
 
         // Create new stream
         let mut streams = self.streams.write().await;
-        
+
         // Double-check pattern
         if let Some(stream_context) = streams.get(&stream_id) {
             return Ok(Arc::clone(stream_context));
@@ -448,10 +482,12 @@ impl IntegratedFrameProcessor {
         )));
 
         streams.insert(stream_id, Arc::clone(&stream_context));
-        
+
         // Emit stream created event
-        let _ = self.event_sender.send(FrameProcessingEvent::StreamCreated { stream_id });
-        
+        let _ = self
+            .event_sender
+            .send(FrameProcessingEvent::StreamCreated { stream_id });
+
         info!("Created new stream context for stream {}", stream_id);
         Ok(stream_context)
     }
@@ -465,10 +501,10 @@ impl IntegratedFrameProcessor {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(update_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Check shutdown signal
                 {
                     let shutdown = shutdown_signal.lock().await;
@@ -481,27 +517,28 @@ impl IntegratedFrameProcessor {
                 let streams_guard = streams.read().await;
                 for (stream_id, stream_context) in streams_guard.iter() {
                     let mut ctx = stream_context.lock().await;
-                    
+
                     // Update flow control windows
                     let stats = ctx.flow_controller.get_stats();
                     // Check for flow control unblocking
                     if ctx.state == StreamState::FlowControlBlocked && stats.flow_window_size > 0 {
                         ctx.state = StreamState::Active;
-                        let _ = event_sender.send(FrameProcessingEvent::FlowControlUnblocked { 
-                            stream_id: *stream_id 
+                        let _ = event_sender.send(FrameProcessingEvent::FlowControlUnblocked {
+                            stream_id: *stream_id,
                         });
                     }
-                    
+
                     // Check for congestion
                     if stats.congestion_window < stats.flow_window_size / 2 {
                         let _ = event_sender.send(FrameProcessingEvent::CongestionDetected {
                             stream_id: *stream_id,
-                            severity: 1.0 - (stats.congestion_window as f64 / stats.flow_window_size as f64),
+                            severity: 1.0
+                                - (stats.congestion_window as f64 / stats.flow_window_size as f64),
                         });
                     }
                 }
             }
-            
+
             debug!("Flow control updater task shutdown");
         });
     }
@@ -516,10 +553,10 @@ impl IntegratedFrameProcessor {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Check shutdown signal
                 {
                     let shutdown = shutdown_signal.lock().await;
@@ -529,19 +566,19 @@ impl IntegratedFrameProcessor {
                 }
 
                 let mut streams_to_remove = Vec::new();
-                
+
                 // Check for inactive streams
                 {
                     let streams_guard = streams.read().await;
                     for (stream_id, stream_context) in streams_guard.iter() {
                         let ctx = stream_context.lock().await;
-                        
+
                         if ctx.last_activity.elapsed() > reassembly_timeout {
                             streams_to_remove.push(*stream_id);
                         }
                     }
                 }
-                
+
                 // Remove inactive streams
                 if !streams_to_remove.is_empty() {
                     let mut streams_guard = streams.write().await;
@@ -555,7 +592,7 @@ impl IntegratedFrameProcessor {
                     }
                 }
             }
-            
+
             debug!("Stream cleanup task shutdown");
         });
     }
@@ -569,10 +606,10 @@ impl IntegratedFrameProcessor {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Check shutdown signal
                 {
                     let shutdown = shutdown_signal.lock().await;
@@ -584,9 +621,10 @@ impl IntegratedFrameProcessor {
                 // Update statistics
                 let mut stats_guard = stats.write().await;
                 let streams_guard = streams.read().await;
-                
+
                 stats_guard.active_streams = streams_guard.len();
-                stats_guard.blocked_streams = streams_guard.values()
+                stats_guard.blocked_streams = streams_guard
+                    .values()
                     .filter(|ctx| {
                         if let Ok(ctx) = ctx.try_lock() {
                             ctx.is_blocked()
@@ -602,22 +640,28 @@ impl IntegratedFrameProcessor {
                     stats_guard.flow_control_stats = fc_stats;
                 }
             }
-            
+
             debug!("Statistics updater task shutdown");
         });
     }
 
     /// Update processing statistics
-    async fn update_processing_stats(&self, start_time: Instant, frame_size: usize, reassembled_count: usize) {
+    async fn update_processing_stats(
+        &self,
+        start_time: Instant,
+        frame_size: usize,
+        reassembled_count: usize,
+    ) {
         let processing_latency = start_time.elapsed().as_secs_f64() * 1000.0;
-        
+
         let mut stats = self.stats.write().await;
         stats.total_frames_processed += 1;
         stats.total_frames_reassembled += reassembled_count as u64;
         stats.total_bytes_processed += frame_size as u64;
-        
+
         // Update average processing latency (exponential moving average)
-        stats.avg_processing_latency_ms = stats.avg_processing_latency_ms * 0.9 + processing_latency * 0.1;
+        stats.avg_processing_latency_ms =
+            stats.avg_processing_latency_ms * 0.9 + processing_latency * 0.1;
     }
 
     /// Get current statistics
@@ -628,7 +672,7 @@ impl IntegratedFrameProcessor {
     /// Shutdown the integrated frame processor
     pub async fn shutdown(&self) -> Result<(), IntegratedFrameError> {
         info!("Shutting down integrated frame processor");
-        
+
         // Set shutdown signal
         {
             let mut shutdown = self.shutdown_signal.lock().await;
@@ -652,10 +696,16 @@ impl IntegratedFrameProcessor {
     }
 
     /// Force close a specific stream
-    pub async fn close_stream(&self, stream_id: u32, reason: String) -> Result<(), IntegratedFrameError> {
+    pub async fn close_stream(
+        &self,
+        stream_id: u32,
+        reason: String,
+    ) -> Result<(), IntegratedFrameError> {
         let mut streams = self.streams.write().await;
         if streams.remove(&stream_id).is_some() {
-            let _ = self.event_sender.send(FrameProcessingEvent::StreamClosed { stream_id, reason });
+            let _ = self
+                .event_sender
+                .send(FrameProcessingEvent::StreamClosed { stream_id, reason });
             info!("Closed stream {}", stream_id);
         }
         Ok(())
@@ -674,7 +724,11 @@ impl IntegratedFrameProcessor {
     }
 
     /// Update stream priority
-    pub async fn set_stream_priority(&self, stream_id: u32, priority: u8) -> Result<(), IntegratedFrameError> {
+    pub async fn set_stream_priority(
+        &self,
+        stream_id: u32,
+        priority: u8,
+    ) -> Result<(), IntegratedFrameError> {
         let streams = self.streams.read().await;
         if let Some(stream_context) = streams.get(&stream_id) {
             let mut ctx = stream_context.lock().await;
@@ -699,7 +753,7 @@ mod tests {
     async fn test_integrated_frame_processor_creation() {
         let config = IntegratedFrameConfig::default();
         let (event_sender, _event_receiver) = mpsc::unbounded_channel();
-        
+
         let processor = IntegratedFrameProcessor::new(config, event_sender);
         assert!(processor.start().await.is_ok());
         assert!(processor.shutdown().await.is_ok());
@@ -709,20 +763,23 @@ mod tests {
     async fn test_stream_creation_and_processing() {
         let config = IntegratedFrameConfig::default();
         let (event_sender, mut event_receiver) = mpsc::unbounded_channel();
-        
+
         let processor = IntegratedFrameProcessor::new(config, event_sender);
         assert!(processor.start().await.is_ok());
 
         // Create a test frame
         let test_frame_data = create_test_frame_data(1, 0, b"test data");
-        
+
         // Process frame
         let result = processor.process_frame(&test_frame_data).await;
         assert!(result.is_ok());
 
         // Check for stream creation event
         let event = event_receiver.try_recv();
-        assert!(matches!(event, Ok(FrameProcessingEvent::StreamCreated { stream_id: 1 })));
+        assert!(matches!(
+            event,
+            Ok(FrameProcessingEvent::StreamCreated { stream_id: 1 })
+        ));
 
         assert!(processor.shutdown().await.is_ok());
     }

@@ -35,10 +35,10 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
-use std::time::Duration;
 use crate::{Candidate, WeightedPathBuilder};
 use nyx_core::NodeId;
+use std::collections::HashMap;
+use std::time::Duration;
 
 /// Exponential moving-average smoothing factor for RTT and bandwidth.
 const RTT_ALPHA: f64 = 0.2; // lower → smoother
@@ -49,8 +49,8 @@ const MAX_BW: f64 = 1000.0; // 1 Gbps
 
 #[derive(Debug, Clone, Copy)]
 struct NodeStats {
-    rtt_ms: f64,        // Smoothed RTT in milliseconds.
-    bw_mbps: f64,       // Smoothed upstream bandwidth in Mbps.
+    rtt_ms: f64,  // Smoothed RTT in milliseconds.
+    bw_mbps: f64, // Smoothed upstream bandwidth in Mbps.
 }
 
 impl NodeStats {
@@ -71,7 +71,11 @@ impl NodeStats {
     }
 
     fn candidate(&self, id: NodeId) -> Candidate {
-        Candidate { id, latency_ms: self.rtt_ms.max(1.0), bandwidth_mbps: self.bw_mbps.min(MAX_BW) }
+        Candidate {
+            id,
+            latency_ms: self.rtt_ms.max(1.0),
+            bandwidth_mbps: self.bw_mbps.min(MAX_BW),
+        }
     }
 }
 
@@ -84,17 +88,27 @@ pub struct Prober {
 impl Prober {
     /// Create a new empty prober.
     #[must_use]
-    pub fn new() -> Self { Self { stats: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            stats: HashMap::new(),
+        }
+    }
 
     /// Record a new RTT sample (milliseconds) for `node`.
     pub fn record_rtt(&mut self, node: NodeId, rtt_ms: f64) {
-        let s = self.stats.entry(node).or_insert(NodeStats { rtt_ms: 0.0, bw_mbps: 0.0 });
+        let s = self.stats.entry(node).or_insert(NodeStats {
+            rtt_ms: 0.0,
+            bw_mbps: 0.0,
+        });
         s.update_rtt(rtt_ms);
     }
 
     /// Record a throughput sample (megabits per second) for `node`.
     pub fn record_throughput(&mut self, node: NodeId, mbps: f64) {
-        let s = self.stats.entry(node).or_insert(NodeStats { rtt_ms: 0.0, bw_mbps: 0.0 });
+        let s = self.stats.entry(node).or_insert(NodeStats {
+            rtt_ms: 0.0,
+            bw_mbps: 0.0,
+        });
         s.update_bw(mbps);
     }
 
@@ -120,14 +134,19 @@ impl<'a> LARMixPlanner<'a> {
     /// `alpha` Controls bias toward latency (1.0 = latency-only, 0 = bandwidth-only).
     #[must_use]
     pub fn new(prober: &'a Prober, alpha: f64) -> Self {
-        Self { prober, alpha: alpha.clamp(0.0, 1.0) }
+        Self {
+            prober,
+            alpha: alpha.clamp(0.0, 1.0),
+        }
     }
 
     /// Build a mix path of length `hops` using weighted sampling.
     #[must_use]
     pub fn build_path(&self, hops: usize) -> Vec<NodeId> {
         let cands = self.prober.candidates();
-        if cands.is_empty() { return Vec::new(); }
+        if cands.is_empty() {
+            return Vec::new();
+        }
         let builder = WeightedPathBuilder::new(&cands, self.alpha);
         builder.build_path(hops)
     }
@@ -193,8 +212,15 @@ mod tests {
         let mut slow_cnt = 0;
         for _ in 0..200 {
             let path = planner.build_path(1);
-            if path[0] == fast { fast_cnt += 1; } else { slow_cnt += 1; }
+            if path[0] == fast {
+                fast_cnt += 1;
+            } else {
+                slow_cnt += 1;
+            }
         }
-        assert!(fast_cnt > slow_cnt, "fast_cnt={fast_cnt}, slow_cnt={slow_cnt}");
+        assert!(
+            fast_cnt > slow_cnt,
+            "fast_cnt={fast_cnt}, slow_cnt={slow_cnt}"
+        );
     }
-} 
+}

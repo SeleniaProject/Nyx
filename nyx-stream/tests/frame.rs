@@ -9,4 +9,4 @@ fn parse_basic_header() {
     assert_eq!(hdr.frame_type, 2);
     assert_eq!(hdr.flags, 0x15);
     assert_eq!(hdr.length, 0x20);
-} 
+}

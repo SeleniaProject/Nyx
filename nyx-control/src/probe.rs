@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use nyx_core::NodeId;
 use nyx_stream::management::{PingFrame, PongFrame};
-use rand::{rngs::ThreadRng, Rng, thread_rng};
+use rand::{rngs::ThreadRng, thread_rng, Rng};
 
 /// Smoothing factors (exponential moving average) for RTT / bandwidth.
 const RTT_ALPHA: f64 = 0.2;
@@ -95,7 +95,13 @@ impl RttBwProber {
                 break n;
             }
         };
-        self.outstanding.insert(nonce, PendingPing { node, sent: Instant::now() });
+        self.outstanding.insert(
+            nonce,
+            PendingPing {
+                node,
+                sent: Instant::now(),
+            },
+        );
         PingFrame { nonce }
     }
 
@@ -104,10 +110,10 @@ impl RttBwProber {
     pub fn on_pong(&mut self, frame: &PongFrame) {
         if let Some(ping) = self.outstanding.remove(&frame.nonce) {
             let rtt_ms = ping.sent.elapsed().as_secs_f64() * 1_000.0;
-            let entry = self
-                .metrics
-                .entry(ping.node)
-                .or_insert(NodeMetrics { rtt_ms: 0.0, bw_mbps: 0.0 });
+            let entry = self.metrics.entry(ping.node).or_insert(NodeMetrics {
+                rtt_ms: 0.0,
+                bw_mbps: 0.0,
+            });
             entry.update_rtt(rtt_ms);
         }
     }
@@ -117,16 +123,18 @@ impl RttBwProber {
     /// Throughput is converted to **Mbps** and fed into a smoothed estimator.
     pub fn record_bytes(&mut self, node: NodeId, bytes: usize, elapsed: Duration) {
         let mbps = (bytes as f64 * 8.0) / (elapsed.as_secs_f64() * 1_000_000.0);
-        let entry = self
-            .metrics
-            .entry(node)
-            .or_insert(NodeMetrics { rtt_ms: 0.0, bw_mbps: 0.0 });
+        let entry = self.metrics.entry(node).or_insert(NodeMetrics {
+            rtt_ms: 0.0,
+            bw_mbps: 0.0,
+        });
         entry.update_bw(mbps);
     }
 
     /// Get current metrics for `node`, if any.
     #[must_use]
-    pub fn metrics(&self, node: &NodeId) -> Option<NodeMetrics> { self.metrics.get(node).copied() }
+    pub fn metrics(&self, node: &NodeId) -> Option<NodeMetrics> {
+        self.metrics.get(node).copied()
+    }
 
     /// Export all known metrics as `(NodeId, NodeMetrics)` vector.
     #[must_use]
@@ -170,4 +178,4 @@ mod tests {
         assert!(second < first);
         assert!(second > 10.0); // smoothed
     }
-} 
+}

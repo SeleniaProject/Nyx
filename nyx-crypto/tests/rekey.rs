@@ -1,4 +1,7 @@
-use nyx_crypto::{noise::{initiator_generate, responder_process, initiator_finalize, derive_session_key}, pcr_rekey};
+use nyx_crypto::{
+    noise::{derive_session_key, initiator_finalize, initiator_generate, responder_process},
+    pcr_rekey,
+};
 
 #[test]
 fn pcr_rekey_changes_key() {
@@ -13,4 +16,4 @@ fn pcr_rekey_changes_key() {
 
     let next_a = pcr_rekey(&mut key_a);
     assert_ne!(next_a.0, key_b.0);
-} 
+}

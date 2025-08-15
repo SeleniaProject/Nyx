@@ -1,5 +1,5 @@
-use nyx_transport::{Transport, hole_punch, PacketHandler};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use nyx_transport::{hole_punch, PacketHandler, Transport};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -23,4 +23,4 @@ async fn hole_punch_no_response() {
     // Wait briefly to ensure task completes without error
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     notify.notify_waiters();
-} 
+}

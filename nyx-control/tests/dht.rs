@@ -27,4 +27,4 @@ async fn dht_put_get_roundtrip() {
     // Attempt to fetch via node2; should retrieve the value.
     let fetched = node2.get(key).await;
     assert_eq!(fetched, Some(value));
-} 
+}

@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-use std::fmt;
 use bytes::Bytes;
-use tracing::{debug, warn, error};
+use std::collections::HashMap;
+use std::fmt;
+use std::time::{Duration, Instant};
+use tracing::{debug, error, warn};
 
 /// Stream error categories for classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -72,7 +72,10 @@ pub enum RecoveryStrategy {
     /// No recovery needed
     None,
     /// Retry the operation with exponential backoff
-    Retry { max_attempts: u32, base_delay: Duration },
+    Retry {
+        max_attempts: u32,
+        base_delay: Duration,
+    },
     /// Reset the stream state
     Reset,
     /// Gracefully close the stream
@@ -98,11 +101,7 @@ pub struct ErrorContext {
 }
 
 impl ErrorContext {
-    pub fn new(
-        category: ErrorCategory,
-        severity: ErrorSeverity,
-        message: String,
-    ) -> Self {
+    pub fn new(category: ErrorCategory, severity: ErrorSeverity, message: String) -> Self {
         Self {
             stream_id: None,
             timestamp: Instant::now(),
@@ -156,7 +155,7 @@ impl ErrorContext {
     }
 
     pub fn should_terminate_connection(&self) -> bool {
-        matches!(self.recovery_strategy, RecoveryStrategy::Terminate) 
+        matches!(self.recovery_strategy, RecoveryStrategy::Terminate)
             || self.severity == ErrorSeverity::Fatal
     }
 }
@@ -168,14 +167,15 @@ impl fmt::Display for ErrorContext {
             "[{}] {} {}: {}",
             self.severity,
             self.category,
-            self.stream_id.map_or("GLOBAL".to_string(), |id| format!("STREAM-{}", id)),
+            self.stream_id
+                .map_or("GLOBAL".to_string(), |id| format!("STREAM-{}", id)),
             self.message
         )?;
-        
+
         if let Some(ref cause) = self.cause {
             write!(f, " (caused by: {})", cause)?;
         }
-        
+
         Ok(())
     }
 }
@@ -213,16 +213,20 @@ impl RetryState {
     fn record_attempt(&mut self, error: ErrorContext) {
         self.attempts += 1;
         self.last_error = Some(error);
-        
+
         // Exponential backoff with jitter
         let delay_multiplier = 2_u32.pow(self.attempts.min(10));
         let delay = self.base_delay * delay_multiplier;
         let jitter = Duration::from_millis(fastrand::u64(0..=delay.as_millis() as u64 / 4));
-        
+
         self.next_retry = Instant::now() + delay + jitter;
-        
-        debug!("Retry attempt {} of {}, next retry in {:?}", 
-               self.attempts, self.max_attempts, delay + jitter);
+
+        debug!(
+            "Retry attempt {} of {}, next retry in {:?}",
+            self.attempts,
+            self.max_attempts,
+            delay + jitter
+        );
     }
 
     fn reset(&mut self) {
@@ -238,15 +242,15 @@ pub struct StreamErrorHandler {
     error_history: Vec<ErrorContext>,
     retry_states: HashMap<ErrorCategory, RetryState>,
     max_history_size: usize,
-    
+
     // Error classification rules
     classification_rules: HashMap<String, (ErrorCategory, ErrorSeverity, RecoveryStrategy)>,
-    
+
     // Statistics
     error_counts: HashMap<ErrorCategory, u32>,
     recovery_successes: u32,
     recovery_failures: u32,
-    
+
     // Configuration
     enable_auto_recovery: bool,
     max_consecutive_errors: u32,
@@ -268,7 +272,7 @@ impl StreamErrorHandler {
             max_consecutive_errors: 10,
             consecutive_errors: 0,
         };
-        
+
         handler.setup_default_rules();
         handler
     }
@@ -279,16 +283,19 @@ impl StreamErrorHandler {
             "connection_timeout".to_string(),
             ErrorCategory::Network,
             ErrorSeverity::Error,
-            RecoveryStrategy::Retry { max_attempts: 3, base_delay: Duration::from_millis(100) },
+            RecoveryStrategy::Retry {
+                max_attempts: 3,
+                base_delay: Duration::from_millis(100),
+            },
         );
-        
+
         self.add_classification_rule(
             "connection_reset".to_string(),
             ErrorCategory::Network,
             ErrorSeverity::Critical,
             RecoveryStrategy::Reset,
         );
-        
+
         // Protocol errors
         self.add_classification_rule(
             "invalid_frame".to_string(),
@@ -296,22 +303,28 @@ impl StreamErrorHandler {
             ErrorSeverity::Error,
             RecoveryStrategy::None,
         );
-        
+
         self.add_classification_rule(
             "sequence_error".to_string(),
             ErrorCategory::Protocol,
             ErrorSeverity::Warning,
-            RecoveryStrategy::Retry { max_attempts: 1, base_delay: Duration::from_millis(10) },
+            RecoveryStrategy::Retry {
+                max_attempts: 1,
+                base_delay: Duration::from_millis(10),
+            },
         );
-        
+
         // Flow control errors
         self.add_classification_rule(
             "flow_control_violation".to_string(),
             ErrorCategory::FlowControl,
             ErrorSeverity::Warning,
-            RecoveryStrategy::Retry { max_attempts: 2, base_delay: Duration::from_millis(50) },
+            RecoveryStrategy::Retry {
+                max_attempts: 2,
+                base_delay: Duration::from_millis(50),
+            },
         );
-        
+
         // Resource errors
         self.add_classification_rule(
             "buffer_overflow".to_string(),
@@ -319,14 +332,14 @@ impl StreamErrorHandler {
             ErrorSeverity::Error,
             RecoveryStrategy::Reset,
         );
-        
+
         self.add_classification_rule(
             "memory_exhausted".to_string(),
             ErrorCategory::Resource,
             ErrorSeverity::Critical,
             RecoveryStrategy::Close,
         );
-        
+
         // Crypto errors
         self.add_classification_rule(
             "decryption_failed".to_string(),
@@ -343,23 +356,28 @@ impl StreamErrorHandler {
         severity: ErrorSeverity,
         recovery: RecoveryStrategy,
     ) {
-        self.classification_rules.insert(error_pattern, (category, severity, recovery));
+        self.classification_rules
+            .insert(error_pattern, (category, severity, recovery));
     }
 
     /// Handle an error with automatic classification and recovery
-    pub fn handle_error(&mut self, error_message: &str, cause: Option<String>) -> Result<RecoveryAction, ErrorContext> {
+    pub fn handle_error(
+        &mut self,
+        error_message: &str,
+        cause: Option<String>,
+    ) -> Result<RecoveryAction, ErrorContext> {
         let (category, severity, recovery_strategy) = self.classify_error(error_message);
-        
+
         let mut context = ErrorContext::new(category, severity, error_message.to_string())
             .with_stream_id(self.stream_id)
             .with_recovery(recovery_strategy.clone());
-        
+
         if let Some(cause) = cause {
             context = context.with_cause(cause);
         }
-        
+
         self.record_error(context.clone());
-        
+
         if self.enable_auto_recovery {
             self.attempt_recovery(context)
         } else {
@@ -368,13 +386,16 @@ impl StreamErrorHandler {
     }
 
     /// Handle an error with explicit context
-    pub fn handle_error_with_context(&mut self, mut context: ErrorContext) -> Result<RecoveryAction, ErrorContext> {
+    pub fn handle_error_with_context(
+        &mut self,
+        mut context: ErrorContext,
+    ) -> Result<RecoveryAction, ErrorContext> {
         if context.stream_id.is_none() {
             context.stream_id = Some(self.stream_id);
         }
-        
+
         self.record_error(context.clone());
-        
+
         if self.enable_auto_recovery {
             self.attempt_recovery(context)
         } else {
@@ -382,31 +403,38 @@ impl StreamErrorHandler {
         }
     }
 
-    fn classify_error(&self, error_message: &str) -> (ErrorCategory, ErrorSeverity, RecoveryStrategy) {
+    fn classify_error(
+        &self,
+        error_message: &str,
+    ) -> (ErrorCategory, ErrorSeverity, RecoveryStrategy) {
         // Try to match against classification rules
         for (pattern, (category, severity, recovery)) in &self.classification_rules {
             if error_message.contains(pattern) {
                 return (*category, *severity, recovery.clone());
             }
         }
-        
+
         // Default classification
-        (ErrorCategory::Internal, ErrorSeverity::Error, RecoveryStrategy::None)
+        (
+            ErrorCategory::Internal,
+            ErrorSeverity::Error,
+            RecoveryStrategy::None,
+        )
     }
 
     fn record_error(&mut self, context: ErrorContext) {
         let category = context.category;
-        
+
         // Update statistics
         *self.error_counts.entry(category).or_insert(0) += 1;
         self.consecutive_errors += 1;
-        
+
         // Add to history
         self.error_history.push(context.clone());
         if self.error_history.len() > self.max_history_size {
             self.error_history.remove(0);
         }
-        
+
         // Log the error
         match context.severity {
             ErrorSeverity::Info => debug!("{}", context),
@@ -420,28 +448,36 @@ impl StreamErrorHandler {
     fn attempt_recovery(&mut self, context: ErrorContext) -> Result<RecoveryAction, ErrorContext> {
         // Check if we've exceeded consecutive error limit
         if self.consecutive_errors > self.max_consecutive_errors {
-            warn!("Exceeded maximum consecutive errors ({}), terminating stream", 
-                  self.max_consecutive_errors);
+            warn!(
+                "Exceeded maximum consecutive errors ({}), terminating stream",
+                self.max_consecutive_errors
+            );
             return Ok(RecoveryAction::TerminateStream);
         }
-        
+
         match &context.recovery_strategy {
             RecoveryStrategy::None => Err(context),
-            
-            RecoveryStrategy::Retry { max_attempts, base_delay } => {
-                let retry_state = self.retry_states
+
+            RecoveryStrategy::Retry {
+                max_attempts,
+                base_delay,
+            } => {
+                let retry_state = self
+                    .retry_states
                     .entry(context.category)
                     .or_insert_with(|| RetryState::new(*max_attempts, *base_delay));
-                
+
                 #[cfg(test)]
                 let can_retry = retry_state.can_retry_ignore_delay();
                 #[cfg(not(test))]
                 let can_retry = retry_state.can_retry();
-                
+
                 if can_retry {
                     retry_state.record_attempt(context.clone());
-                    debug!("Attempting recovery for {} error (attempt {}/{})", 
-                           context.category, retry_state.attempts, retry_state.max_attempts);
+                    debug!(
+                        "Attempting recovery for {} error (attempt {}/{})",
+                        context.category, retry_state.attempts, retry_state.max_attempts
+                    );
                     Ok(RecoveryAction::Retry)
                 } else {
                     warn!("Retry limit exceeded for {} errors", context.category);
@@ -449,23 +485,23 @@ impl StreamErrorHandler {
                     Err(context)
                 }
             }
-            
+
             RecoveryStrategy::Reset => {
                 debug!("Resetting stream state for recovery");
                 self.reset_retry_states();
                 Ok(RecoveryAction::ResetStream)
             }
-            
+
             RecoveryStrategy::Close => {
                 debug!("Closing stream for recovery");
                 Ok(RecoveryAction::CloseStream)
             }
-            
+
             RecoveryStrategy::Terminate => {
                 debug!("Terminating connection for recovery");
                 Ok(RecoveryAction::TerminateConnection)
             }
-            
+
             RecoveryStrategy::Custom(action) => {
                 debug!("Executing custom recovery: {}", action);
                 Ok(RecoveryAction::Custom(action.clone()))
@@ -478,10 +514,10 @@ impl StreamErrorHandler {
         if let Some(retry_state) = self.retry_states.get_mut(&category) {
             retry_state.reset();
         }
-        
+
         self.recovery_successes += 1;
         self.consecutive_errors = 0;
-        
+
         debug!("Recovery successful for {} errors", category);
     }
 
@@ -501,12 +537,7 @@ impl StreamErrorHandler {
             recovery_successes: self.recovery_successes,
             recovery_failures: self.recovery_failures,
             consecutive_errors: self.consecutive_errors,
-            recent_errors: self.error_history
-                .iter()
-                .rev()
-                .take(5)
-                .cloned()
-                .collect(),
+            recent_errors: self.error_history.iter().rev().take(5).cloned().collect(),
         }
     }
 
@@ -583,8 +614,11 @@ mod tests {
         )
         .with_stream_id(42)
         .with_cause("Network unreachable".to_string())
-        .with_recovery(RecoveryStrategy::Retry { max_attempts: 3, base_delay: Duration::from_millis(100) });
-        
+        .with_recovery(RecoveryStrategy::Retry {
+            max_attempts: 3,
+            base_delay: Duration::from_millis(100),
+        });
+
         assert_eq!(context.stream_id, Some(42));
         assert_eq!(context.category, ErrorCategory::Network);
         assert_eq!(context.severity, ErrorSeverity::Error);
@@ -595,12 +629,12 @@ mod tests {
     #[test]
     fn test_error_classification() {
         let handler = StreamErrorHandler::new(1);
-        
+
         // Test default classification rules
         let (category, severity, _) = handler.classify_error("connection_timeout occurred");
         assert_eq!(category, ErrorCategory::Network);
         assert_eq!(severity, ErrorSeverity::Error);
-        
+
         let (category, severity, _) = handler.classify_error("buffer_overflow detected");
         assert_eq!(category, ErrorCategory::Resource);
         assert_eq!(severity, ErrorSeverity::Error);
@@ -609,19 +643,19 @@ mod tests {
     #[test]
     fn test_retry_recovery() {
         let mut handler = StreamErrorHandler::new(1);
-        
+
         // First error should allow retry
         let result = handler.handle_error("connection_timeout", None);
         assert!(matches!(result, Ok(RecoveryAction::Retry)));
-        
+
         // Should be able to retry multiple times
         let result = handler.handle_error("connection_timeout", None);
         assert!(matches!(result, Ok(RecoveryAction::Retry)));
-        
+
         // After max attempts, should fail
         let result = handler.handle_error("connection_timeout", None);
         assert!(matches!(result, Ok(RecoveryAction::Retry)));
-        
+
         let result = handler.handle_error("connection_timeout", None);
         assert!(result.is_err());
     }
@@ -629,11 +663,11 @@ mod tests {
     #[test]
     fn test_recovery_success() {
         let mut handler = StreamErrorHandler::new(1);
-        
+
         // Generate some errors
         let _ = handler.handle_error("connection_timeout", None);
         assert_eq!(handler.consecutive_errors, 1);
-        
+
         // Mark recovery success
         handler.mark_recovery_success(ErrorCategory::Network);
         assert_eq!(handler.consecutive_errors, 0);
@@ -644,12 +678,12 @@ mod tests {
     fn test_consecutive_error_limit() {
         let mut handler = StreamErrorHandler::new(1);
         handler.set_max_consecutive_errors(3);
-        
+
         // Generate errors up to limit
         for _ in 0..3 {
             let _ = handler.handle_error("unknown_error", None);
         }
-        
+
         // Next error should trigger termination
         let result = handler.handle_error("unknown_error", None);
         assert!(matches!(result, Ok(RecoveryAction::TerminateStream)));
@@ -658,12 +692,12 @@ mod tests {
     #[test]
     fn test_error_statistics() {
         let mut handler = StreamErrorHandler::new(1);
-        
+
         // Generate various errors
         let _ = handler.handle_error("connection_timeout", None);
         let _ = handler.handle_error("buffer_overflow", None);
         let _ = handler.handle_error("invalid_frame", None);
-        
+
         let stats = handler.get_stats();
         assert_eq!(stats.total_errors, 3);
         assert!(stats.error_counts.contains_key(&ErrorCategory::Network));
@@ -674,16 +708,17 @@ mod tests {
     #[test]
     fn test_partial_data_recovery() {
         let mut handler = StreamErrorHandler::new(1);
-        
+
         let partial_data = Bytes::from("partial data");
         let context = ErrorContext::new(
             ErrorCategory::Network,
             ErrorSeverity::Error,
             "Connection lost".to_string(),
-        ).with_partial_data(partial_data.clone());
-        
+        )
+        .with_partial_data(partial_data.clone());
+
         let _ = handler.handle_error_with_context(context);
-        
+
         let recovered_data = handler.get_partial_data();
         assert_eq!(recovered_data, Some(partial_data));
     }

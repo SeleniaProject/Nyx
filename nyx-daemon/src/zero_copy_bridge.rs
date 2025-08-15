@@ -22,13 +22,11 @@ pub fn start_zero_copy_metrics_task_with_interval(manager: Arc<ZeroCopyManager>,
             // Export as counters/gauges; counters use absolute to avoid double-add.
             metrics::counter!("nyx_zero_copy_combined_allocations")
                 .absolute(aggregated.combined_allocations);
-            metrics::counter!("nyx_zero_copy_combined_bytes")
-                .absolute(aggregated.combined_bytes);
+            metrics::counter!("nyx_zero_copy_combined_bytes").absolute(aggregated.combined_bytes);
             metrics::counter!("nyx_zero_copy_allocation_overhead_ns")
                 .absolute(aggregated.total_allocation_overhead_ns as u64);
 
-            metrics::gauge!("nyx_zero_copy_total_paths")
-                .set(aggregated.total_paths as f64);
+            metrics::gauge!("nyx_zero_copy_total_paths").set(aggregated.total_paths as f64);
             metrics::gauge!("nyx_zero_copy_average_zero_copy_ratio")
                 .set(aggregated.average_zero_copy_ratio);
             metrics::gauge!("nyx_zero_copy_average_reduction_ratio")
@@ -36,5 +34,3 @@ pub fn start_zero_copy_metrics_task_with_interval(manager: Arc<ZeroCopyManager>,
         }
     });
 }
-
-

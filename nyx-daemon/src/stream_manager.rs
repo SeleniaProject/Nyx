@@ -9,16 +9,17 @@
 //! - Error handling and recovery
 //! - Session management with Connection IDs (CID)
 
-use crate::proto::{self, StreamStats, Event, PeerInfo};
+use crate::path_builder::PathBuilder;
+use crate::proto::{self, Event, PeerInfo, StreamStats};
 use anyhow::Result;
 use dashmap::DashMap;
 use nyx_core::types::*;
-use nyx_stream::StreamState;
 use nyx_mix::{cmix::CmixController, larmix::LARMixPlanner};
-use nyx_transport::{Transport};
 use nyx_stream::egress_zero_copy::spawn_zero_copy_egress;
-use crate::path_builder::PathBuilder;
+use nyx_stream::StreamState;
+use nyx_transport::Transport;
 
+use redb::{Database, TableDefinition};
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{
@@ -26,10 +27,9 @@ use std::sync::{
     Arc,
 };
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
-use redb::{Database, TableDefinition};
 
 /// Stream-related errors
 #[derive(Debug, thiserror::Error)]
@@ -128,7 +128,7 @@ impl PathStatistics {
             bandwidth_samples: Vec::new(),
         }
     }
-    
+
     pub fn success_rate(&self) -> f64 {
         let success = self.packet_count.load(Ordering::Relaxed) as f64;
         let total = success + self.failure_count.load(Ordering::Relaxed) as f64;
@@ -200,13 +200,13 @@ pub enum PathStatus {
 pub struct StreamManager {
     // Core storage
     streams: Arc<DashMap<u32, StreamSession>>,
-    
+
     // Transport layer
     transport: Arc<Transport>,
-    
+
     // Mix network integration
     cmix_controller: Arc<CmixController>,
-    
+
     // Path building and probing
     path_builder: Arc<PathBuilder>,
     prober: Arc<RwLock<nyx_mix::larmix::Prober>>,
@@ -218,19 +218,19 @@ pub struct StreamManager {
     egress_tasks: Arc<DashMap<u32, tokio::task::JoinHandle<()>>>,
     // Inbound data buffers per stream (FIFO of chunks)
     incoming_buffers: Arc<DashMap<u32, VecDeque<Vec<u8>>>>,
-    
+
     // Metrics collection
     metrics: Arc<crate::metrics::MetricsCollector>,
-    
+
     // Stream ID counter
     next_stream_id: std::sync::atomic::AtomicU32,
-    
+
     // Event broadcasting
     event_tx: broadcast::Sender<Event>,
-    
+
     // Configuration
     config: Arc<StreamManagerConfig>,
-    
+
     // Background tasks
     _cleanup_task: Option<tokio::task::JoinHandle<()>>,
     _monitoring_task: Option<tokio::task::JoinHandle<()>>,
@@ -264,10 +264,10 @@ impl StreamManager {
         config: StreamManagerConfig,
     ) -> Result<Self> {
         let (event_tx, _) = broadcast::channel(1000);
-        
+
         let bootstrap_peers = Self::get_bootstrap_peers(); // Real bootstrap peers from config/env
         let path_builder_config = crate::path_builder::PathBuilderConfig::default();
-        
+
         Ok(Self {
             streams: Arc::new(DashMap::new()),
             transport,
@@ -293,9 +293,7 @@ impl StreamManager {
     pub async fn enqueue_incoming(&self, stream_id: u32, data: Vec<u8>) -> Result<(), StreamError> {
         // Update per-stream session stats
         if let Some(mut entry) = self.streams.get_mut(&stream_id) {
-            entry.bytes_received = entry
-                .bytes_received
-                .saturating_add(data.len() as u64);
+            entry.bytes_received = entry.bytes_received.saturating_add(data.len() as u64);
             entry.packets_received = entry.packets_received.saturating_add(1);
             entry.last_activity = SystemTime::now();
         } else {
@@ -333,7 +331,11 @@ impl StreamManager {
     }
 
     /// Read up to `max_bytes` from inbound buffer for a stream.
-    pub async fn read_incoming(&self, stream_id: u32, max_bytes: usize) -> Result<(Vec<u8>, bool), StreamError> {
+    pub async fn read_incoming(
+        &self,
+        stream_id: u32,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, bool), StreamError> {
         let mut out = Vec::with_capacity(max_bytes);
         let mut more = false;
 
@@ -353,7 +355,7 @@ impl StreamManager {
             Ok((Vec::new(), false))
         }
     }
-    
+
     /// Get bootstrap peers from persistent store, environment or configuration
     fn get_bootstrap_peers() -> Vec<String> {
         // 1) Try persistent store (redb) first
@@ -364,20 +366,22 @@ impl StreamManager {
         }
         // Check environment variable first
         if let Ok(peers_str) = std::env::var("NYX_BOOTSTRAP_PEERS") {
-            return peers_str.split(',')
+            return peers_str
+                .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
         }
-        
+
         // Check configuration file or use defaults
         if let Ok(config_peers) = std::env::var("NYX_CONFIG_BOOTSTRAP_PEERS") {
-            return config_peers.split(',')
+            return config_peers
+                .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
         }
-        
+
         // Fallback to known Nyx network peers (converted from multiaddr format)
         let defaults = vec![
             "validator1.nymtech.net:1789".to_string(),
@@ -392,10 +396,20 @@ impl StreamManager {
     /// Load bootstrap peers from redb store
     fn load_bootstrap_peers_from_store() -> Option<Vec<String>> {
         static TABLE: TableDefinition<&str, &str> = TableDefinition::new("bootstrap");
-        let db_path = std::env::var("NYX_BOOTSTRAP_DB").unwrap_or_else(|_| "nyx_bootstrap.redb".to_string());
-        let db = match Database::open(db_path) { Ok(db) => db, Err(_) => return None };
-        let rtx = match db.begin_read() { Ok(tx) => tx, Err(_) => return None };
-        let table = match rtx.open_table(TABLE) { Ok(t) => t, Err(_) => return None };
+        let db_path =
+            std::env::var("NYX_BOOTSTRAP_DB").unwrap_or_else(|_| "nyx_bootstrap.redb".to_string());
+        let db = match Database::open(db_path) {
+            Ok(db) => db,
+            Err(_) => return None,
+        };
+        let rtx = match db.begin_read() {
+            Ok(tx) => tx,
+            Err(_) => return None,
+        };
+        let table = match rtx.open_table(TABLE) {
+            Ok(t) => t,
+            Err(_) => return None,
+        };
         if let Ok(Some(val)) = table.get("list") {
             if let Ok(json) = serde_json::from_str::<Vec<String>>(val.value()) {
                 return Some(json);
@@ -407,7 +421,8 @@ impl StreamManager {
     /// Save bootstrap peers to redb store
     fn save_bootstrap_peers_to_store(peers: &[String]) -> Option<()> {
         static TABLE: TableDefinition<&str, &str> = TableDefinition::new("bootstrap");
-        let db_path = std::env::var("NYX_BOOTSTRAP_DB").unwrap_or_else(|_| "nyx_bootstrap.redb".to_string());
+        let db_path =
+            std::env::var("NYX_BOOTSTRAP_DB").unwrap_or_else(|_| "nyx_bootstrap.redb".to_string());
         let db = Database::create(db_path).ok()?;
         let wtx = db.begin_write().ok()?;
         {
@@ -422,7 +437,7 @@ impl StreamManager {
         let _ = wtx.commit().ok()?;
         Some(())
     }
-    
+
     /// Start the stream manager
     pub async fn start(self: Arc<Self>) {
         info!("Starting stream manager");
@@ -476,7 +491,10 @@ impl StreamManager {
             let _ = self.enqueue_incoming(stream_id, data.to_vec()).await?;
         } else {
             // No stream matched this source; drop silently but log at debug level
-            debug!("dropping inbound datagram from {} (no matching stream)", src);
+            debug!(
+                "dropping inbound datagram from {} (no matching stream)",
+                src
+            );
         }
         Ok(())
     }
@@ -495,9 +513,11 @@ impl StreamManager {
             .iter()
             .find(|p| p.status == PathStatus::Active && p.socket_addr.is_some())
             .and_then(|p| p.socket_addr)
-            .ok_or_else(|| anyhow::anyhow!(StreamError::Configuration(
-                "No active path with a valid address".to_string(),
-            )))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(StreamError::Configuration(
+                    "No active path with a valid address".to_string(),
+                ))
+            })?;
 
         // Send via transport
         self.transport
@@ -529,15 +549,18 @@ impl StreamManager {
 
         Ok(data.len() as u64)
     }
-    
+
     /// Open a new stream with complete implementation
     pub async fn open_stream(&self, request: proto::OpenRequest) -> Result<proto::StreamResponse> {
         info!("Opening new stream to target: {}", request.target_address);
-        
+
         // Check if we've reached the maximum number of concurrent streams
         let max_streams: usize = self.config.max_concurrent_streams as usize;
         if self.streams.len() >= max_streams {
-            error!("Maximum concurrent streams reached: {}", self.config.max_concurrent_streams);
+            error!(
+                "Maximum concurrent streams reached: {}",
+                self.config.max_concurrent_streams
+            );
             return Ok(proto::StreamResponse {
                 stream_id: "0".to_string(),
                 status: "error".to_string(),
@@ -547,10 +570,12 @@ impl StreamManager {
                 message: "Maximum concurrent streams reached".to_string(),
             });
         }
-        
-        let stream_id = self.next_stream_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let stream_id = self
+            .next_stream_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let now = SystemTime::now();
-        
+
         // Parse and validate target address
         let target_addr = match request.target_address.parse::<SocketAddr>() {
             Ok(addr) => addr,
@@ -566,11 +591,11 @@ impl StreamManager {
                 });
             }
         };
-        
+
         // Generate session ID (CID)
         let mut session_id = [0u8; 12];
         rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut session_id);
-        
+
         // Create stream options from request
         let options = if let Some(opts) = request.options {
             StreamOptions {
@@ -578,7 +603,12 @@ impl StreamManager {
                 // opts.timeout_ms is u64 from proto; clamp then cast to u32 for internal options
                 timeout_ms: (opts.timeout_ms.max(1000).min(300000)) as u32, // 1s to 5min
                 multipath: opts.multipath && self.config.enable_multipath,
-                max_paths: opts.max_paths.min(self.config.max_paths_per_stream.try_into().unwrap_or(u32::MAX)),
+                max_paths: opts.max_paths.min(
+                    self.config
+                        .max_paths_per_stream
+                        .try_into()
+                        .unwrap_or(u32::MAX),
+                ),
                 path_strategy: opts.path_strategy,
                 auto_reconnect: opts.auto_reconnect,
                 max_retry_attempts: opts.max_retry_attempts.min(10),
@@ -598,20 +628,26 @@ impl StreamManager {
                 cipher_suite: "ChaCha20Poly1305".to_string(),
             }
         };
-        
+
         // Build network paths for the stream
         let paths = if options.multipath {
-            match self.build_multipath_routes(&request.target_address, options.max_paths).await {
+            match self
+                .build_multipath_routes(&request.target_address, options.max_paths)
+                .await
+            {
                 Ok(paths) => paths,
                 Err(e) => {
-                    warn!("Failed to build multipath routes, falling back to single path: {}", e);
+                    warn!(
+                        "Failed to build multipath routes, falling back to single path: {}",
+                        e
+                    );
                     vec![self.build_single_path(&target_addr).await?]
                 }
             }
         } else {
             vec![self.build_single_path(&target_addr).await?]
         };
-        
+
         // Create stream session
         let session = StreamSession {
             stream_id,
@@ -631,13 +667,13 @@ impl StreamManager {
             options: options.clone(),
             target_address: request.target_address.clone(),
         };
-        
+
         // Store the session
         self.streams.insert(stream_id, session.clone());
-        
+
         // Update metrics
         self.metrics.increment_active_streams();
-        
+
         // Emit stream opened event
         let event = proto::Event {
             r#type: "stream".to_string(),
@@ -648,28 +684,35 @@ impl StreamManager {
                 ("stream_id".to_string(), stream_id.to_string()),
                 ("target_address".to_string(), request.target_address.clone()),
                 ("session_id".to_string(), hex::encode(session_id)),
-            ].into_iter().collect(),
+            ]
+            .into_iter()
+            .collect(),
             event_type: "stream_opened".to_string(),
             data: HashMap::new(),
-            event_data: Some(proto::event::EventData::StreamEvent(proto::event::StreamEvent {
-                stream_id: stream_id.to_string(),
-                event_type: "stream_opened".to_string(),
-                action: "opened".to_string(),
-                target_address: request.target_address.clone(),
-                stats: Some(self.build_stream_stats(&session).await),
-                timestamp: Some(crate::system_time_to_proto_timestamp(now)),
-                data: HashMap::new(),
-                details: "Stream opened".to_string(),
-            })),
+            event_data: Some(proto::event::EventData::StreamEvent(
+                proto::event::StreamEvent {
+                    stream_id: stream_id.to_string(),
+                    event_type: "stream_opened".to_string(),
+                    action: "opened".to_string(),
+                    target_address: request.target_address.clone(),
+                    stats: Some(self.build_stream_stats(&session).await),
+                    timestamp: Some(crate::system_time_to_proto_timestamp(now)),
+                    data: HashMap::new(),
+                    details: "Stream opened".to_string(),
+                },
+            )),
         };
-        
+
         let _ = self.event_tx.send(event);
-        
+
         // Create initial stats
         let initial_stats = self.build_stream_stats(&session).await;
-        
-        info!("Stream {} opened successfully to {}", stream_id, request.target_address);
-        
+
+        info!(
+            "Stream {} opened successfully to {}",
+            stream_id, request.target_address
+        );
+
         Ok(proto::StreamResponse {
             stream_id: stream_id.to_string(),
             status: "opened".to_string(),
@@ -679,25 +722,25 @@ impl StreamManager {
             message: "Stream opened successfully".to_string(),
         })
     }
-    
+
     /// Close a stream with complete cleanup
     pub async fn close_stream(&self, stream_id: u32) -> Result<()> {
         info!("Closing stream {}", stream_id);
-        
+
         // Remove the stream from active streams
         if let Some((_, mut session)) = self.streams.remove(&stream_id) {
             // Update stream state to closed
             session.state = nyx_stream::StreamState::Closed;
             session.last_activity = SystemTime::now();
-            
+
             // Clean up all paths associated with this stream
             for path in &session.paths {
                 self.active_paths.remove(&path.path_id);
             }
-            
+
             // Update metrics
             self.metrics.decrement_active_streams();
-            
+
             // Emit stream closed event
             let event = proto::Event {
                 r#type: "stream".to_string(),
@@ -708,34 +751,43 @@ impl StreamManager {
                     ("stream_id".to_string(), stream_id.to_string()),
                     ("session_id".to_string(), hex::encode(session.session_id)),
                     ("bytes_sent".to_string(), session.bytes_sent.to_string()),
-                    ("bytes_received".to_string(), session.bytes_received.to_string()),
-                ].into_iter().collect(),
+                    (
+                        "bytes_received".to_string(),
+                        session.bytes_received.to_string(),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
                 event_type: "stream_closed".to_string(),
                 data: HashMap::new(),
-                event_data: Some(proto::event::EventData::StreamEvent(proto::event::StreamEvent {
-                    stream_id: stream_id.to_string(),
-                    action: "closed".to_string(),
-                    target_address: "".to_string(),
-                    stats: Some(self.build_stream_stats(&session).await),
-                    event_type: "stream_closed".to_string(),
-                    timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
-                    data: HashMap::new(),
-                    details: "Stream closed".to_string(),
-                })),
+                event_data: Some(proto::event::EventData::StreamEvent(
+                    proto::event::StreamEvent {
+                        stream_id: stream_id.to_string(),
+                        action: "closed".to_string(),
+                        target_address: "".to_string(),
+                        stats: Some(self.build_stream_stats(&session).await),
+                        event_type: "stream_closed".to_string(),
+                        timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
+                        data: HashMap::new(),
+                        details: "Stream closed".to_string(),
+                    },
+                )),
             };
-            
+
             let _ = self.event_tx.send(event);
-            
-            info!("Stream {} closed successfully (sent: {} bytes, received: {} bytes)", 
-                  stream_id, session.bytes_sent, session.bytes_received);
+
+            info!(
+                "Stream {} closed successfully (sent: {} bytes, received: {} bytes)",
+                stream_id, session.bytes_sent, session.bytes_received
+            );
         } else {
             warn!("Attempted to close non-existent stream {}", stream_id);
             return Err(anyhow::anyhow!("Stream {} not found", stream_id));
         }
-        
+
         Ok(())
     }
-    
+
     /// Get stream statistics
     pub async fn get_stream_stats(&self, stream_id: u32) -> Result<proto::StreamStats> {
         if let Some(session) = self.streams.get(&stream_id) {
@@ -744,57 +796,84 @@ impl StreamManager {
             Err(anyhow::anyhow!("Stream {} not found", stream_id))
         }
     }
-    
+
     /// List all active streams
     pub async fn list_streams(&self) -> Vec<StreamStats> {
         let mut stats = Vec::new();
-        
+
         for entry in self.streams.iter() {
             let session = entry.value();
             stats.push(self.build_stream_stats(session).await);
         }
-        
+
         stats
     }
-    
+
     /// Subscribe to stream events
     pub fn subscribe_events(&self) -> broadcast::Receiver<Event> {
         self.event_tx.subscribe()
     }
-    
+
     /// Build network paths for multipath routing
-    async fn build_multipath_routes(&self, target: &str, max_paths: u32) -> Result<Vec<StreamPath>, StreamError> {
+    async fn build_multipath_routes(
+        &self,
+        target: &str,
+        max_paths: u32,
+    ) -> Result<Vec<StreamPath>, StreamError> {
         let mut paths = Vec::new();
         let prober = self.prober.write().await;
         let planner = LARMixPlanner::new(&*prober, self.config.latency_bias);
-        
-        for path_id in 0..std::cmp::min(max_paths, self.config.max_paths_per_stream.try_into().unwrap_or(u32::MAX)) {
-            match self.build_single_path_with_planner(&planner, target, path_id as u8).await {
+
+        for path_id in 0..std::cmp::min(
+            max_paths,
+            self.config
+                .max_paths_per_stream
+                .try_into()
+                .unwrap_or(u32::MAX),
+        ) {
+            match self
+                .build_single_path_with_planner(&planner, target, path_id as u8)
+                .await
+            {
                 Ok(path) => paths.push(path),
                 Err(e) => {
                     error!("Failed to build path {}: {}", path_id, e);
-                    return Err(StreamError::PathBuildingFailed(format!("Path building failed: {}", e)));
+                    return Err(StreamError::PathBuildingFailed(format!(
+                        "Path building failed: {}",
+                        e
+                    )));
                 }
             }
         }
-        
+
         if paths.is_empty() {
-            return Err(StreamError::PathBuildingFailed("No valid paths could be constructed".to_string()));
+            return Err(StreamError::PathBuildingFailed(
+                "No valid paths could be constructed".to_string(),
+            ));
         }
-        
-        info!("Built {} paths for multipath stream to {}", paths.len(), target);
+
+        info!(
+            "Built {} paths for multipath stream to {}",
+            paths.len(),
+            target
+        );
         Ok(paths)
     }
-    
+
     /// Build a single network path
     async fn build_single_path(&self, target_addr: &SocketAddr) -> Result<StreamPath, StreamError> {
         let path_id = rand::random::<u32>();
-        
+
         // Create zero-copy egress channel and task for this path
         let (tx, rx) = mpsc::channel::<Vec<u8>>(1024);
         // Bind to ephemeral local address; in production this should honor config
-        let bind = if target_addr.is_ipv4() { "0.0.0.0:0".parse().unwrap() } else { "[::]:0".parse().unwrap() };
-        let handle = spawn_zero_copy_egress(bind, *target_addr, format!("path-{}", path_id), rx).await
+        let bind = if target_addr.is_ipv4() {
+            "0.0.0.0:0".parse().unwrap()
+        } else {
+            "[::]:0".parse().unwrap()
+        };
+        let handle = spawn_zero_copy_egress(bind, *target_addr, format!("path-{}", path_id), rx)
+            .await
             .map_err(|e| StreamError::Configuration(format!("egress spawn failed: {}", e)))?;
         self.egress_senders.insert(path_id, tx);
         self.egress_tasks.insert(path_id, handle);
@@ -809,16 +888,17 @@ impl StreamManager {
             created_at: SystemTime::now(),
         })
     }
-    
+
     /// Build a single network path route
     async fn build_single_path_route(&self, target: &str) -> Result<Vec<StreamPath>, StreamError> {
-        let target_addr: SocketAddr = target.parse()
-            .map_err(|e| StreamError::InvalidAddress(format!("Invalid address {}: {}", target, e)))?;
-        
+        let target_addr: SocketAddr = target.parse().map_err(|e| {
+            StreamError::InvalidAddress(format!("Invalid address {}: {}", target, e))
+        })?;
+
         let path = self.build_single_path(&target_addr).await?;
         Ok(vec![path])
     }
-    
+
     /// Build a single path with planner
     async fn build_single_path_with_planner(
         &self,
@@ -827,9 +907,10 @@ impl StreamManager {
         path_id: u8,
     ) -> Result<StreamPath, StreamError> {
         // Parse target address
-        let socket_addr: SocketAddr = target.parse()
-            .map_err(|e| StreamError::InvalidAddress(format!("Invalid address {}: {}", target, e)))?;
-        
+        let socket_addr: SocketAddr = target.parse().map_err(|e| {
+            StreamError::InvalidAddress(format!("Invalid address {}: {}", target, e))
+        })?;
+
         Ok(StreamPath {
             path_id: path_id.try_into().unwrap_or(0),
             status: PathStatus::Validating,
@@ -840,22 +921,28 @@ impl StreamManager {
             created_at: SystemTime::now(),
         })
     }
-    
+
     /// Parse target address string to SocketAddr
     fn parse_target_address(&self, address: &str) -> Result<SocketAddr, StreamError> {
-        address.parse().map_err(|_| StreamError::InvalidAddress(
-            format!("Invalid address format: {}", address)
-        ))
+        address.parse().map_err(|_| {
+            StreamError::InvalidAddress(format!("Invalid address format: {}", address))
+        })
     }
-    
+
     /// Parse stream options
     fn parse_stream_options(&self, options: StreamOptions) -> Result<StreamOptions, StreamError> {
         // Validate max paths
-        if options.max_paths > self.config.max_paths_per_stream.try_into().unwrap_or(u32::MAX) {
-            return Err(StreamError::InvalidAddress(
-                format!("Max paths {} exceeds limit {}", 
-                    options.max_paths, self.config.max_paths_per_stream)
-            ));
+        if options.max_paths
+            > self
+                .config
+                .max_paths_per_stream
+                .try_into()
+                .unwrap_or(u32::MAX)
+        {
+            return Err(StreamError::InvalidAddress(format!(
+                "Max paths {} exceeds limit {}",
+                options.max_paths, self.config.max_paths_per_stream
+            )));
         }
 
         // Validate timeout
@@ -868,7 +955,7 @@ impl StreamManager {
 
         Ok(options)
     }
-    
+
     /// Parse path strategy string
     fn parse_path_strategy(&self, strategy: &str) -> Result<PathStrategy, StreamError> {
         match strategy {
@@ -876,39 +963,48 @@ impl StreamManager {
             "random" => Ok(PathStrategy::Random),
             "lowest_latency" => Ok(PathStrategy::LowestLatency),
             "load_balance" => Ok(PathStrategy::LoadBalance),
-            _ => Err(StreamError::Configuration("Unsupported path selection strategy".to_string())),
+            _ => Err(StreamError::Configuration(
+                "Unsupported path selection strategy".to_string(),
+            )),
         }
     }
-    
+
     /// Generate a new 96-bit Connection ID
     fn generate_cid(&self) -> [u8; 12] {
         let mut cid = [0u8; 12];
         rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut cid);
         cid
     }
-    
+
     /// Initialize stream connection (perform handshake, path validation, etc.)
-    async fn initialize_stream_connection(&self, stream_id: u32) -> Result<StreamStats, StreamError> {
-        let session = self.streams.get(&stream_id)
+    async fn initialize_stream_connection(
+        &self,
+        stream_id: u32,
+    ) -> Result<StreamStats, StreamError> {
+        let session = self
+            .streams
+            .get(&stream_id)
             .ok_or(StreamError::StreamNotFound { stream_id })?;
-        
+
         // Validate all paths
         for path in &session.paths {
             if let Err(e) = self.validate_path(stream_id, path.path_id).await {
-                warn!("Path {} validation failed for stream {}: {}", 
-                      path.path_id, stream_id, e);
+                warn!(
+                    "Path {} validation failed for stream {}: {}",
+                    path.path_id, stream_id, e
+                );
             }
         }
-        
+
         // Update stream state to open
         let mut session = session.clone();
         session.state = StreamState::Open;
         session.last_activity = SystemTime::now();
         self.streams.insert(stream_id, session.clone());
-        
+
         Ok(self.build_stream_stats(&session).await)
     }
-    
+
     /// Validate a network path
     async fn validate_path(&self, stream_id: u32, path_id: u32) -> Result<(), StreamError> {
         // Path validation logic would go here
@@ -923,7 +1019,7 @@ impl StreamManager {
         }
         Err(StreamError::StreamNotFound { stream_id })
     }
-    
+
     /// Build StreamStats from session
     async fn build_stream_stats(&self, session: &StreamSession) -> StreamStats {
         // Generate path statistics
@@ -932,38 +1028,55 @@ impl StreamManager {
             let path_stat = proto::StreamPathStats {
                 path_id: path.path_id.to_string(),
                 status: format!("{:?}", path.status).to_lowercase(),
-                rtt_ms: path.last_rtt.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
+                rtt_ms: path
+                    .last_rtt
+                    .map(|d| d.as_secs_f64() * 1000.0)
+                    .unwrap_or(0.0),
                 bandwidth_mbps: path.estimated_bandwidth,
                 bytes_sent: path.statistics.bytes_sent.load(Ordering::Relaxed),
                 bytes_received: path.statistics.bytes_received.load(Ordering::Relaxed),
-                packet_count: path.statistics.packet_count.load(Ordering::Relaxed).try_into().unwrap_or(0),
+                packet_count: path
+                    .statistics
+                    .packet_count
+                    .load(Ordering::Relaxed)
+                    .try_into()
+                    .unwrap_or(0),
                 success_rate: path.statistics.success_rate(),
-                latency_ms: path.last_rtt.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
+                latency_ms: path
+                    .last_rtt
+                    .map(|d| d.as_secs_f64() * 1000.0)
+                    .unwrap_or(0.0),
                 bandwidth_bps: (path.estimated_bandwidth * 1_000_000.0) as f64,
                 packet_loss_rate: 1.0 - path.statistics.success_rate(),
                 reliability_score: path.statistics.success_rate(),
             };
             path_stats.push(path_stat);
         }
-        
+
         // Build path statistics summary
         let _total_paths = session.paths.len();
-        let _active_paths = session.paths.iter().filter(|p| p.status == PathStatus::Active).count();
-        
+        let _active_paths = session
+            .paths
+            .iter()
+            .filter(|p| p.status == PathStatus::Active)
+            .count();
+
         // Calculate average RTT from path statistics
         let avg_rtt_ms = if !session.statistics.rtt_samples.is_empty() {
-            session.statistics.rtt_samples.iter().sum::<f64>() / session.statistics.rtt_samples.len() as f64
+            session.statistics.rtt_samples.iter().sum::<f64>()
+                / session.statistics.rtt_samples.len() as f64
         } else {
             0.0
         };
-        
-        // Calculate average bandwidth from path statistics  
+
+        // Calculate average bandwidth from path statistics
         let bandwidth_mbps = if !session.statistics.bandwidth_samples.is_empty() {
-            session.statistics.bandwidth_samples.iter().sum::<f64>() / session.statistics.bandwidth_samples.len() as f64
+            session.statistics.bandwidth_samples.iter().sum::<f64>()
+                / session.statistics.bandwidth_samples.len() as f64
         } else {
             0.0
         };
-        
+
         let stream_info = proto::StreamInfo {
             stream_id: session.stream_id.to_string(),
             target_address: session.target_address.clone(),
@@ -973,7 +1086,7 @@ impl StreamManager {
             created_at: Some(crate::system_time_to_proto_timestamp(session.created_at)),
             last_activity: Some(crate::system_time_to_proto_timestamp(session.last_activity)),
         };
-        
+
         proto::StreamStats {
             stream_id: session.stream_id.to_string(),
             bytes_sent: session.bytes_sent,
@@ -984,7 +1097,17 @@ impl StreamManager {
             rtt_ms: avg_rtt_ms,
             bandwidth_bps: (bandwidth_mbps * 1_000_000.0) as f64,
             bandwidth_mbps,
-            paths: path_stats.iter().map(|p| proto::PathStat { path_id: p.path_id.clone(), rtt_ms: p.rtt_ms, bandwidth_mbps: p.bandwidth_mbps, status: p.status.clone(), packet_count: p.packet_count, success_rate: p.success_rate }).collect(),
+            paths: path_stats
+                .iter()
+                .map(|p| proto::PathStat {
+                    path_id: p.path_id.clone(),
+                    rtt_ms: p.rtt_ms,
+                    bandwidth_mbps: p.bandwidth_mbps,
+                    status: p.status.clone(),
+                    packet_count: p.packet_count,
+                    success_rate: p.success_rate,
+                })
+                .collect(),
             target_address: session.target_address.clone(),
             state: format!("{:?}", session.state),
             created_at: Some(crate::system_time_to_proto_timestamp(session.created_at)),
@@ -996,76 +1119,86 @@ impl StreamManager {
             connection_errors: session.error_count as u64,
             timeout_errors: 0,
             last_error: session.last_error.clone().unwrap_or_default(),
-            last_error_at: session.last_error_at.map(|t| crate::system_time_to_proto_timestamp(t)),
+            last_error_at: session
+                .last_error_at
+                .map(|t| crate::system_time_to_proto_timestamp(t)),
             stream_info: Some(stream_info),
             path_stats,
             timestamp: Some(crate::system_time_to_proto_timestamp(SystemTime::now())),
         }
     }
-    
+
     /// Cleanup stream resources
     async fn cleanup_stream_resources(&self, stream_id: u32) {
         // This would clean up any allocated resources for the stream
         debug!("Cleaning up resources for stream {}", stream_id);
     }
-    
+
     /// Background cleanup loop
     async fn cleanup_loop(&self) {
         let mut interval = interval(Duration::from_secs(self.config.cleanup_interval_secs));
-        
+
         loop {
             interval.tick().await;
-            
+
             let now = SystemTime::now();
             let mut expired_streams = Vec::new();
-            
+
             // Find expired streams
             for entry in self.streams.iter() {
                 let session = entry.value();
                 let timeout = Duration::from_millis(session.options.timeout_ms as u64);
-                
-                if now.duration_since(session.last_activity).unwrap_or_default() > timeout {
+
+                if now
+                    .duration_since(session.last_activity)
+                    .unwrap_or_default()
+                    > timeout
+                {
                     expired_streams.push(session.stream_id);
                 }
             }
-            
+
             // Clean up expired streams
             for stream_id in expired_streams {
                 if let Err(e) = self.close_stream(stream_id).await {
                     warn!("Failed to cleanup expired stream {}: {}", stream_id, e);
                 }
             }
-            
-            debug!("Cleanup cycle completed, {} active streams", self.streams.len());
+
+            debug!(
+                "Cleanup cycle completed, {} active streams",
+                self.streams.len()
+            );
         }
     }
-    
+
     /// Background monitoring loop
     async fn monitoring_loop(&self) {
         let mut interval = interval(Duration::from_secs(self.config.monitoring_interval_secs));
-        
+
         loop {
             interval.tick().await;
-            
+
             // Update metrics
-            self.metrics.set_active_streams(self.streams.len().try_into().unwrap_or(0));
-            
+            self.metrics
+                .set_active_streams(self.streams.len().try_into().unwrap_or(0));
+
             // Monitor stream health
             for entry in self.streams.iter() {
                 let session = entry.value();
                 // Perform health checks, update statistics, etc.
                 self.update_stream_health(session).await;
             }
-            
+
             debug!("Monitoring cycle completed");
         }
     }
-    
+
     /// Update health metrics for a stream
     async fn update_stream_health(&self, session: &StreamSession) {
         // This would perform various health checks and update metrics
         // For now, we'll just update the last activity time if the stream is active
-        
+
         if matches!(session.state, StreamState::Open) {
             // Update bandwidth utilization, latency measurements, etc.
             // Example: push a small heartbeat frame via zero-copy egress for path[0] if available
@@ -1088,4 +1221,4 @@ enum PathStrategy {
     Random,
     LowestLatency,
     LoadBalance,
-} 
+}

@@ -9,36 +9,43 @@
 //! - Plugin initialization and IPC channel setup
 //! - Security permission validation
 
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs;
+use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
-use std::fs;
-use std::env;
-use once_cell::sync::Lazy;
-use std::sync::RwLock;
-use tracing::{debug, warn, error, trace, info};
 use tokio::time::timeout;
-use serde::{Serialize, Deserialize};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::plugin_settings::{
-    PluginSettingsManager, PluginRequirement, PluginCapability, PluginSettingsError
+    PluginCapability, PluginRequirement, PluginSettingsError, PluginSettingsManager,
 };
 
 #[cfg(feature = "telemetry")]
-use nyx_telemetry::{register_counter, increment_counter};
+use nyx_telemetry::{increment_counter, register_counter};
 
 /// プラグイン初期化抽象化 Trait
 pub trait PluginInitializer: Send + Sync {
     fn name(&self) -> &str;
     fn load(&self, plugin_id: u32) -> Result<(), String>;
-    fn establish_ipc(&self, plugin_id: u32) -> Result<(), String> { let _ = plugin_id; Ok(()) }
+    fn establish_ipc(&self, plugin_id: u32) -> Result<(), String> {
+        let _ = plugin_id;
+        Ok(())
+    }
 }
 
 /// デフォルトのインプロセス初期化 (スタブ実装)
 pub struct InProcessPluginInitializer;
 impl PluginInitializer for InProcessPluginInitializer {
-    fn name(&self) -> &str { "in_process_stub" }
-    fn load(&self, _plugin_id: u32) -> Result<(), String> { Ok(()) }
+    fn name(&self) -> &str {
+        "in_process_stub"
+    }
+    fn load(&self, _plugin_id: u32) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Maximum time allowed for plugin handshake completion
@@ -71,8 +78,8 @@ pub enum HandshakeState {
 // ---- Plugin Manifest-backed registry (hot-reload capable) ----
 #[derive(Clone)]
 struct RegistryEntry {
-    min_version: (u16,u16),
-    max_version: (u16,u16),
+    min_version: (u16, u16),
+    max_version: (u16, u16),
     pubkey: ed25519_dalek::VerifyingKey,
     signature: ed25519_dalek::Signature,
     caps: Vec<String>,
@@ -97,18 +104,30 @@ fn builtin_demo_registry() -> std::collections::HashMap<u32, RegistryEntry> {
         let sig_bytes = STANDARD.decode(sig_b64).expect("sig b64");
         let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().expect("32")).expect("vk");
         let signature = Signature::from_bytes(&sig_bytes.try_into().expect("64"));
-        m.insert(pid, RegistryEntry { min_version:min_v, max_version:max_v, pubkey, signature, caps: caps.iter().map(|s| s.to_string()).collect() });
+        m.insert(
+            pid,
+            RegistryEntry {
+                min_version: min_v,
+                max_version: max_v,
+                pubkey,
+                signature,
+                caps: caps.iter().map(|s| s.to_string()).collect(),
+            },
+        );
     }
     m
 }
 
 fn load_registry_from_env_internal() -> Option<std::collections::HashMap<u32, RegistryEntry>> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
     let path = env::var("NYX_PLUGIN_MANIFEST").ok()?;
     let items = match crate::plugin_manifest::read_and_parse_file(&path) {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("invalid plugin manifest: {}", e); return None; }
+        Err(e) => {
+            tracing::warn!("invalid plugin manifest: {}", e);
+            return None;
+        }
     };
     let mut m = std::collections::HashMap::new();
     for it in items.into_iter() {
@@ -121,29 +140,65 @@ fn load_registry_from_env_internal() -> Option<std::collections::HashMap<u32, Re
             tracing::warn!("skip manifest entry due to bad signature: {}", it.id);
             continue;
         }
-        m.insert(it.id, RegistryEntry { min_version: it.min_version, max_version: it.max_version, pubkey, signature, caps: it.caps });
+        m.insert(
+            it.id,
+            RegistryEntry {
+                min_version: it.min_version,
+                max_version: it.max_version,
+                pubkey,
+                signature,
+                caps: it.caps,
+            },
+        );
     }
-    if m.is_empty() { None } else { Some(m) }
+    if m.is_empty() {
+        None
+    } else {
+        Some(m)
+    }
 }
 
 /// Reload plugin registry from a manifest file path. Returns number of entries loaded.
 #[cfg(feature = "plugin")]
 pub fn reload_plugin_manifest_from_path(path: &str) -> Result<usize, String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
     let items = crate::plugin_manifest::read_and_parse_file(path)
         .map_err(|e| format!("manifest parse error: {}", e))?;
-    let mut new_map: std::collections::HashMap<u32, RegistryEntry> = std::collections::HashMap::new();
+    let mut new_map: std::collections::HashMap<u32, RegistryEntry> =
+        std::collections::HashMap::new();
     for it in items.into_iter() {
-        let pk_bytes = STANDARD.decode(it.pubkey_b64.as_bytes()).map_err(|e| format!("pubkey b64 decode: {}", e))?;
-        let sig_bytes = STANDARD.decode(it.signature_b64.as_bytes()).map_err(|e| format!("sig b64 decode: {}", e))?;
-        let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().map_err(|_| "pubkey length".to_string())?)
-            .map_err(|e| format!("pubkey invalid: {}", e))?;
-        let signature = Signature::from_bytes(&sig_bytes.try_into().map_err(|_| "signature length".to_string())?);
+        let pk_bytes = STANDARD
+            .decode(it.pubkey_b64.as_bytes())
+            .map_err(|e| format!("pubkey b64 decode: {}", e))?;
+        let sig_bytes = STANDARD
+            .decode(it.signature_b64.as_bytes())
+            .map_err(|e| format!("sig b64 decode: {}", e))?;
+        let pubkey = VerifyingKey::from_bytes(
+            &pk_bytes
+                .try_into()
+                .map_err(|_| "pubkey length".to_string())?,
+        )
+        .map_err(|e| format!("pubkey invalid: {}", e))?;
+        let signature = Signature::from_bytes(
+            &sig_bytes
+                .try_into()
+                .map_err(|_| "signature length".to_string())?,
+        );
         let msg = format!("plugin:{}:v1", it.id);
-        pubkey.verify(msg.as_bytes(), &signature)
+        pubkey
+            .verify(msg.as_bytes(), &signature)
             .map_err(|_| format!("signature verification failed for {}", it.id))?;
-        new_map.insert(it.id, RegistryEntry { min_version: it.min_version, max_version: it.max_version, pubkey, signature, caps: it.caps });
+        new_map.insert(
+            it.id,
+            RegistryEntry {
+                min_version: it.min_version,
+                max_version: it.max_version,
+                pubkey,
+                signature,
+                caps: it.caps,
+            },
+        );
     }
     {
         let mut guard = REGISTRY.write().expect("registry write lock");
@@ -156,20 +211,43 @@ pub fn reload_plugin_manifest_from_path(path: &str) -> Result<usize, String> {
 #[cfg(feature = "plugin")]
 pub fn reload_plugin_manifest_from_json(json: &str) -> Result<usize, String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
     let items = crate::plugin_manifest::validate_and_parse(json)
         .map_err(|e| format!("manifest parse error: {}", e))?;
-    let mut new_map: std::collections::HashMap<u32, RegistryEntry> = std::collections::HashMap::new();
+    let mut new_map: std::collections::HashMap<u32, RegistryEntry> =
+        std::collections::HashMap::new();
     for it in items.into_iter() {
-        let pk_bytes = STANDARD.decode(it.pubkey_b64.as_bytes()).map_err(|e| format!("pubkey b64 decode: {}", e))?;
-        let sig_bytes = STANDARD.decode(it.signature_b64.as_bytes()).map_err(|e| format!("sig b64 decode: {}", e))?;
-        let pubkey = VerifyingKey::from_bytes(&pk_bytes.try_into().map_err(|_| "pubkey length".to_string())?)
-            .map_err(|e| format!("pubkey invalid: {}", e))?;
-        let signature = Signature::from_bytes(&sig_bytes.try_into().map_err(|_| "signature length".to_string())?);
+        let pk_bytes = STANDARD
+            .decode(it.pubkey_b64.as_bytes())
+            .map_err(|e| format!("pubkey b64 decode: {}", e))?;
+        let sig_bytes = STANDARD
+            .decode(it.signature_b64.as_bytes())
+            .map_err(|e| format!("sig b64 decode: {}", e))?;
+        let pubkey = VerifyingKey::from_bytes(
+            &pk_bytes
+                .try_into()
+                .map_err(|_| "pubkey length".to_string())?,
+        )
+        .map_err(|e| format!("pubkey invalid: {}", e))?;
+        let signature = Signature::from_bytes(
+            &sig_bytes
+                .try_into()
+                .map_err(|_| "signature length".to_string())?,
+        );
         let msg = format!("plugin:{}:v1", it.id);
-        pubkey.verify(msg.as_bytes(), &signature)
+        pubkey
+            .verify(msg.as_bytes(), &signature)
             .map_err(|_| format!("signature verification failed for {}", it.id))?;
-        new_map.insert(it.id, RegistryEntry { min_version: it.min_version, max_version: it.max_version, pubkey, signature, caps: it.caps });
+        new_map.insert(
+            it.id,
+            RegistryEntry {
+                min_version: it.min_version,
+                max_version: it.max_version,
+                pubkey,
+                signature,
+                caps: it.caps,
+            },
+        );
     }
     {
         let mut guard = REGISTRY.write().expect("registry write lock");
@@ -181,7 +259,8 @@ pub fn reload_plugin_manifest_from_json(json: &str) -> Result<usize, String> {
 /// Reload plugin manifest from NYX_PLUGIN_MANIFEST environment variable.
 #[cfg(feature = "plugin")]
 pub fn reload_plugin_manifest() -> Result<usize, String> {
-    let path = std::env::var("NYX_PLUGIN_MANIFEST").map_err(|_| "NYX_PLUGIN_MANIFEST not set".to_string())?;
+    let path = std::env::var("NYX_PLUGIN_MANIFEST")
+        .map_err(|_| "NYX_PLUGIN_MANIFEST not set".to_string())?;
     reload_plugin_manifest_from_path(&path)
 }
 
@@ -190,8 +269,8 @@ pub fn reload_plugin_manifest() -> Result<usize, String> {
 #[derive(Debug, Clone, Serialize)]
 pub struct RegistrySnapshotItem {
     pub id: u32,
-    pub min_version: (u16,u16),
-    pub max_version: (u16,u16),
+    pub min_version: (u16, u16),
+    pub max_version: (u16, u16),
     pub caps: Vec<String>,
     pub pubkey_fingerprint_b64: String,
 }
@@ -260,7 +339,10 @@ pub enum PluginHandshakeError {
     PluginInitializationFailed { plugin_id: u32, reason: String },
 
     #[error("Invalid handshake state transition from {from:?} to {to:?}")]
-    InvalidStateTransition { from: HandshakeState, to: HandshakeState },
+    InvalidStateTransition {
+        from: HandshakeState,
+        to: HandshakeState,
+    },
 
     #[error("Handshake already in progress")]
     HandshakeInProgress,
@@ -313,7 +395,8 @@ impl PluginHandshakeCoordinator {
 
     /// カスタム初期化戦略を差し替え
     pub fn with_initializer(mut self, init: std::sync::Arc<dyn PluginInitializer>) -> Self {
-        self.initializer = init; self
+        self.initializer = init;
+        self
     }
 
     /// Initiate plugin handshake process
@@ -330,17 +413,22 @@ impl PluginHandshakeCoordinator {
         }
 
         self.handshake_start_time = Some(SystemTime::now());
-        
+
         if self.is_initiator {
             // Initiator sends plugin requirements first
             self.transition_state(HandshakeState::SendingCapabilities)?;
-            
-            let settings_data = self.local_settings.generate_settings_frame_data()
+
+            let settings_data = self
+                .local_settings
+                .generate_settings_frame_data()
                 .map_err(PluginHandshakeError::SettingsError)?;
-            
-            debug!("Initiated plugin handshake as initiator, sending {} bytes of settings", settings_data.len());
+
+            debug!(
+                "Initiated plugin handshake as initiator, sending {} bytes of settings",
+                settings_data.len()
+            );
             self.transition_state(HandshakeState::WaitingForPeerSettings)?;
-            
+
             Ok(Some(settings_data))
         } else {
             // Responder waits for peer's requirements first
@@ -358,7 +446,10 @@ impl PluginHandshakeCoordinator {
     /// # Returns
     /// * `Ok(Option<Vec<u8>>)` - Optional response SETTINGS frame data
     /// * `Err(PluginHandshakeError)` - Processing failed
-    pub async fn process_peer_settings(&mut self, peer_settings_data: &[u8]) -> Result<Option<Vec<u8>>, PluginHandshakeError> {
+    pub async fn process_peer_settings(
+        &mut self,
+        peer_settings_data: &[u8],
+    ) -> Result<Option<Vec<u8>>, PluginHandshakeError> {
         if self.state != HandshakeState::WaitingForPeerSettings {
             return Err(PluginHandshakeError::InvalidStateTransition {
                 from: self.state,
@@ -371,30 +462,41 @@ impl PluginHandshakeCoordinator {
             .local_settings
             .parse_peer_settings_data(peer_settings_data)
             .map_err(PluginHandshakeError::SettingsError)?;
-        
-        debug!("Received {} plugin requirements from peer", peer_requirements.len());
-        
+
+        debug!(
+            "Received {} plugin requirements from peer",
+            peer_requirements.len()
+        );
+
         // Validate that we can satisfy peer's requirements
         self.transition_state(HandshakeState::ValidatingRequirements)?;
-        
+
         // Store peer requirements regardless of validation outcome so that completion can
         // produce a deterministic result (e.g., incompatible) consistent with tests/spec.
         self.peer_requirements = Some(peer_requirements.clone());
 
-        if let Err(e) = self.local_settings.validate_peer_requirements(&peer_requirements) {
+        if let Err(e) = self
+            .local_settings
+            .validate_peer_requirements(&peer_requirements)
+        {
             // Instead of permanently failing here, move to InitializingPlugins so that
             // completion can return an "incompatible" result with proper summary.
             warn!("Cannot satisfy peer plugin requirements: {}", e);
             self.transition_state(HandshakeState::InitializingPlugins)?;
             return Ok(None);
         }
-        
+
         // If we're the responder, send our requirements back
         let response_data = if !self.is_initiator {
             self.transition_state(HandshakeState::SendingCapabilities)?;
-            let settings_data = self.local_settings.generate_settings_frame_data()
+            let settings_data = self
+                .local_settings
+                .generate_settings_frame_data()
                 .map_err(PluginHandshakeError::SettingsError)?;
-            debug!("Sending {} bytes of settings as responder", settings_data.len());
+            debug!(
+                "Sending {} bytes of settings as responder",
+                settings_data.len()
+            );
             Some(settings_data)
         } else {
             None
@@ -402,7 +504,7 @@ impl PluginHandshakeCoordinator {
 
         // Proceed to plugin initialization
         self.transition_state(HandshakeState::InitializingPlugins)?;
-        
+
         Ok(response_data)
     }
 
@@ -414,7 +516,9 @@ impl PluginHandshakeCoordinator {
     /// # Returns
     /// * `Ok(HandshakeResult)` - Handshake completion result
     /// * `Err(PluginHandshakeError)` - Initialization failed
-    pub async fn complete_plugin_initialization(&mut self) -> Result<HandshakeResult, PluginHandshakeError> {
+    pub async fn complete_plugin_initialization(
+        &mut self,
+    ) -> Result<HandshakeResult, PluginHandshakeError> {
         if self.state != HandshakeState::InitializingPlugins {
             return Err(PluginHandshakeError::InvalidStateTransition {
                 from: self.state,
@@ -423,25 +527,29 @@ impl PluginHandshakeCoordinator {
         }
 
         // Apply handshake timeout
-        let initialization_result = timeout(
-            PLUGIN_HANDSHAKE_TIMEOUT,
-            self.initialize_plugins_internal()
-        ).await;
+        let initialization_result =
+            timeout(PLUGIN_HANDSHAKE_TIMEOUT, self.initialize_plugins_internal()).await;
 
         match initialization_result {
             Ok(Ok(active_plugins)) => {
                 self.active_plugins = active_plugins.clone();
                 self.transition_state(HandshakeState::Completed)?;
-                
-                let handshake_duration = self.handshake_start_time
+
+                let handshake_duration = self
+                    .handshake_start_time
                     .map(|start| start.elapsed().unwrap_or(Duration::ZERO))
                     .unwrap_or(Duration::ZERO);
-                
-                info!("Plugin handshake completed successfully: {} active plugins, duration: {:?}", 
-                      active_plugins.len(), handshake_duration);
-                #[cfg(all(feature="telemetry", feature="prometheus"))]
-                { nyx_telemetry::observe_plugin_init_duration(handshake_duration.as_secs_f64()); }
-                
+
+                info!(
+                    "Plugin handshake completed successfully: {} active plugins, duration: {:?}",
+                    active_plugins.len(),
+                    handshake_duration
+                );
+                #[cfg(all(feature = "telemetry", feature = "prometheus"))]
+                {
+                    nyx_telemetry::observe_plugin_init_duration(handshake_duration.as_secs_f64());
+                }
+
                 Ok(HandshakeResult::Success {
                     active_plugins,
                     handshake_duration,
@@ -450,7 +558,7 @@ impl PluginHandshakeCoordinator {
             Ok(Err(e)) => {
                 self.transition_state(HandshakeState::Failed)?;
                 error!("Plugin initialization failed: {}", e);
-                
+
                 match e {
                     PluginHandshakeError::UnsupportedRequiredPlugin { plugin_id } => {
                         Ok(HandshakeResult::IncompatibleRequirements {
@@ -466,20 +574,19 @@ impl PluginHandshakeCoordinator {
                     }
                     other => Ok(HandshakeResult::ProtocolError {
                         error: other.to_string(),
-                    })
+                    }),
                 }
             }
             Err(_) => {
                 self.transition_state(HandshakeState::Aborted)?;
-                let attempted_duration = self.handshake_start_time
+                let attempted_duration = self
+                    .handshake_start_time
                     .map(|start| start.elapsed().unwrap_or(PLUGIN_HANDSHAKE_TIMEOUT))
                     .unwrap_or(PLUGIN_HANDSHAKE_TIMEOUT);
-                
+
                 warn!("Plugin handshake timed out after {:?}", attempted_duration);
-                
-                Ok(HandshakeResult::Timeout {
-                    attempted_duration,
-                })
+
+                Ok(HandshakeResult::Timeout { attempted_duration })
             }
         }
     }
@@ -490,19 +597,26 @@ impl PluginHandshakeCoordinator {
 
         // Get list of plugins that need to be initialized
         let mut plugins_to_initialize = HashSet::new();
-        
+
         // Add our required plugins
         for plugin_id in self.local_settings.get_required_plugins() {
             plugins_to_initialize.insert(*plugin_id);
         }
-        
+
         // Add peer's required plugins that we support
         if let Some(ref peer_requirements) = self.peer_requirements {
             for requirement in peer_requirements {
                 if requirement.capability == PluginCapability::Required {
                     // Verify we support this plugin (should have been validated earlier)
-                    if self.local_settings.get_required_plugins().contains(&requirement.plugin_id) ||
-                       self.local_settings.get_optional_plugins().contains(&requirement.plugin_id) {
+                    if self
+                        .local_settings
+                        .get_required_plugins()
+                        .contains(&requirement.plugin_id)
+                        || self
+                            .local_settings
+                            .get_optional_plugins()
+                            .contains(&requirement.plugin_id)
+                    {
                         plugins_to_initialize.insert(requirement.plugin_id);
                     } else {
                         return Err(PluginHandshakeError::UnsupportedRequiredPlugin {
@@ -517,15 +631,16 @@ impl PluginHandshakeCoordinator {
         for plugin_id in plugins_to_initialize {
             trace!("Initializing plugin: {}", plugin_id);
             // Per-plugin start time for duration telemetry
-            #[cfg(feature = "telemetry")] let per_plugin_start = SystemTime::now();
-            
+            #[cfg(feature = "telemetry")]
+            let per_plugin_start = SystemTime::now();
+
             // Perform security validation
             if let Err(reason) = self.validate_plugin_security(plugin_id).await {
-                #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_security_fail(); }
-                return Err(PluginHandshakeError::SecurityValidationFailed {
-                    plugin_id,
-                    reason,
-                });
+                #[cfg(feature = "telemetry")]
+                {
+                    nyx_telemetry::inc_plugin_security_fail();
+                }
+                return Err(PluginHandshakeError::SecurityValidationFailed { plugin_id, reason });
             }
 
             // Initialize plugin (this would integrate with the actual plugin system)
@@ -534,14 +649,23 @@ impl PluginHandshakeCoordinator {
                 Ok(()) => {
                     active_plugins.insert(plugin_id);
                     debug!("Successfully initialized plugin: {}", plugin_id);
-                    #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_init_success(); }
+                    #[cfg(feature = "telemetry")]
+                    {
+                        nyx_telemetry::inc_plugin_init_success();
+                    }
                     // Record per-plugin initialization (incl. security validation) duration
-                    #[cfg(feature = "telemetry")] {
-                        if let Ok(elapsed) = per_plugin_start.elapsed() { nyx_telemetry::observe_plugin_init_duration(elapsed.as_secs_f64()); }
+                    #[cfg(feature = "telemetry")]
+                    {
+                        if let Ok(elapsed) = per_plugin_start.elapsed() {
+                            nyx_telemetry::observe_plugin_init_duration(elapsed.as_secs_f64());
+                        }
                     }
                 }
                 Err(reason) => {
-                    #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_init_failure(); }
+                    #[cfg(feature = "telemetry")]
+                    {
+                        nyx_telemetry::inc_plugin_init_failure();
+                    }
                     return Err(PluginHandshakeError::PluginInitializationFailed {
                         plugin_id,
                         reason,
@@ -550,15 +674,22 @@ impl PluginHandshakeCoordinator {
             }
         }
 
-        info!("Plugin initialization completed: {} plugins active", active_plugins.len());
+        info!(
+            "Plugin initialization completed: {} plugins active",
+            active_plugins.len()
+        );
         Ok(active_plugins)
     }
 
     /// Validate security permissions for a plugin
     async fn validate_plugin_security(&self, plugin_id: u32) -> Result<(), String> {
         use ed25519_dalek::Verifier;
-        if plugin_id == 0 { return Err("Plugin ID 0 is reserved".into()); }
-        if plugin_id >= 0xFFFF0000 { return Err("Plugin ID is in reserved system range".into()); }
+        if plugin_id == 0 {
+            return Err("Plugin ID 0 is reserved".into());
+        }
+        if plugin_id >= 0xFFFF0000 {
+            return Err("Plugin ID is in reserved system range".into());
+        }
 
         // Resolve entry from current registry; if empty, fallback to built-in demo registry
         let maybe_entry = {
@@ -574,42 +705,70 @@ impl PluginHandshakeCoordinator {
                 *w = env_map;
             } else {
                 let mut w = REGISTRY.write().expect("registry write lock");
-                if w.is_empty() { *w = builtin_demo_registry(); }
+                if w.is_empty() {
+                    *w = builtin_demo_registry();
+                }
             }
             let guard = REGISTRY.read().expect("registry read lock");
-            guard.get(&plugin_id).cloned().ok_or_else(|| "Plugin not found in registry".to_string())?
+            guard
+                .get(&plugin_id)
+                .cloned()
+                .ok_or_else(|| "Plugin not found in registry".to_string())?
         };
 
         if let Some(requested) = self.local_settings.get_version_requirement(plugin_id) {
             if requested < entry.min_version || requested > entry.max_version {
-                return Err(format!("Version {:?} outside allowed range {:?}-{:?}", requested, entry.min_version, entry.max_version));
+                return Err(format!(
+                    "Version {:?} outside allowed range {:?}-{:?}",
+                    requested, entry.min_version, entry.max_version
+                ));
             }
         }
 
         // Verify signature over canonical context string.
         let message = format!("plugin:{}:v1", plugin_id);
-        if entry.pubkey.verify(message.as_bytes(), &entry.signature).is_err() {
+        if entry
+            .pubkey
+            .verify(message.as_bytes(), &entry.signature)
+            .is_err()
+        {
             return Err("Signature verification failed".into());
         }
 
         if let Some(req_caps) = self.local_settings.get_required_capabilities(plugin_id) {
-            for cap in req_caps { if !entry.caps.contains(&cap) { return Err(format!("Capability '{}' missing", cap)); } }
+            for cap in req_caps {
+                if !entry.caps.contains(&cap) {
+                    return Err(format!("Capability '{}' missing", cap));
+                }
+            }
         }
-        trace!("Security validation passed (ed25519) for plugin: {}", plugin_id);
-        #[cfg(feature = "telemetry")] { nyx_telemetry::inc_plugin_security_pass(); }
+        trace!(
+            "Security validation passed (ed25519) for plugin: {}",
+            plugin_id
+        );
+        #[cfg(feature = "telemetry")]
+        {
+            nyx_telemetry::inc_plugin_security_pass();
+        }
         Ok(())
     }
 
     /// Initialize a single plugin
     async fn initialize_single_plugin(&self, plugin_id: u32) -> Result<(), String> {
-    // シミュレーション遅延
-    tokio::time::sleep(Duration::from_millis(10)).await;
-    if plugin_id == 0xDEADBEEF { return Err("Simulated initialization failure".into()); }
-    // 実際のロード/IPC は initializer へ委譲
-    self.initializer.load(plugin_id)?;
-    self.initializer.establish_ipc(plugin_id)?;
-    trace!("Plugin {} initialized via {}", plugin_id, self.initializer.name());
-    Ok(())
+        // シミュレーション遅延
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        if plugin_id == 0xDEADBEEF {
+            return Err("Simulated initialization failure".into());
+        }
+        // 実際のロード/IPC は initializer へ委譲
+        self.initializer.load(plugin_id)?;
+        self.initializer.establish_ipc(plugin_id)?;
+        trace!(
+            "Plugin {} initialized via {}",
+            plugin_id,
+            self.initializer.name()
+        );
+        Ok(())
     }
 
     /// Transition to a new handshake state with validation
@@ -618,7 +777,9 @@ impl PluginHandshakeCoordinator {
             (HandshakeState::Initial, HandshakeState::SendingCapabilities) => true,
             (HandshakeState::Initial, HandshakeState::WaitingForPeerSettings) => true,
             (HandshakeState::SendingCapabilities, HandshakeState::WaitingForPeerSettings) => true,
-            (HandshakeState::WaitingForPeerSettings, HandshakeState::ValidatingRequirements) => true,
+            (HandshakeState::WaitingForPeerSettings, HandshakeState::ValidatingRequirements) => {
+                true
+            }
             (HandshakeState::ValidatingRequirements, HandshakeState::SendingCapabilities) => true,
             (HandshakeState::ValidatingRequirements, HandshakeState::InitializingPlugins) => true,
             (HandshakeState::SendingCapabilities, HandshakeState::InitializingPlugins) => true,
@@ -635,7 +796,11 @@ impl PluginHandshakeCoordinator {
             });
         }
 
-        trace!("Plugin handshake state transition: {:?} -> {:?}", self.state, new_state);
+        trace!(
+            "Plugin handshake state transition: {:?} -> {:?}",
+            self.state,
+            new_state
+        );
         self.state = new_state;
         Ok(())
     }
@@ -669,9 +834,10 @@ impl PluginHandshakeCoordinator {
     /// Reset handshake state for retry
     pub fn reset_for_retry(&mut self) -> Result<(), PluginHandshakeError> {
         if self.retry_count >= MAX_HANDSHAKE_RETRIES {
-            return Err(PluginHandshakeError::ProtocolError(
-                format!("Maximum handshake retries ({}) exceeded", MAX_HANDSHAKE_RETRIES)
-            ));
+            return Err(PluginHandshakeError::ProtocolError(format!(
+                "Maximum handshake retries ({}) exceeded",
+                MAX_HANDSHAKE_RETRIES
+            )));
         }
 
         self.retry_count += 1;
@@ -680,7 +846,10 @@ impl PluginHandshakeCoordinator {
         self.peer_requirements = None;
         self.active_plugins.clear();
 
-        debug!("Reset plugin handshake for retry attempt {}", self.retry_count);
+        debug!(
+            "Reset plugin handshake for retry attempt {}",
+            self.retry_count
+        );
         Ok(())
     }
 }
@@ -691,27 +860,44 @@ mod tests {
 
     fn create_test_coordinator(is_initiator: bool) -> PluginHandshakeCoordinator {
         let mut settings = PluginSettingsManager::new();
-        settings.add_required_plugin(1001, (1, 0), vec![]).expect("Add test plugin");
+        settings
+            .add_required_plugin(1001, (1, 0), vec![])
+            .expect("Add test plugin");
         PluginHandshakeCoordinator::new(settings, is_initiator)
     }
 
     #[tokio::test]
     async fn test_initiator_handshake_success() {
         let mut coordinator = create_test_coordinator(true);
-        
+
         // Start handshake as initiator
-        let settings_data = coordinator.initiate_handshake().await.expect("Initiate handshake");
+        let settings_data = coordinator
+            .initiate_handshake()
+            .await
+            .expect("Initiate handshake");
         assert!(settings_data.is_some());
-        assert_eq!(coordinator.current_state(), HandshakeState::WaitingForPeerSettings);
-        
+        assert_eq!(
+            coordinator.current_state(),
+            HandshakeState::WaitingForPeerSettings
+        );
+
         // Process peer response (empty for test)
         let peer_settings = vec![0x00, 0x00]; // No requirements
-        let response = coordinator.process_peer_settings(&peer_settings).await.expect("Process peer settings");
+        let response = coordinator
+            .process_peer_settings(&peer_settings)
+            .await
+            .expect("Process peer settings");
         assert!(response.is_none()); // Initiator doesn't send second response
-        assert_eq!(coordinator.current_state(), HandshakeState::InitializingPlugins);
-        
+        assert_eq!(
+            coordinator.current_state(),
+            HandshakeState::InitializingPlugins
+        );
+
         // Complete initialization
-        let result = coordinator.complete_plugin_initialization().await.expect("Complete initialization");
+        let result = coordinator
+            .complete_plugin_initialization()
+            .await
+            .expect("Complete initialization");
         assert!(matches!(result, HandshakeResult::Success { .. }));
         assert!(coordinator.is_complete());
     }
@@ -719,20 +905,35 @@ mod tests {
     #[tokio::test]
     async fn test_responder_handshake_success() {
         let mut coordinator = create_test_coordinator(false);
-        
+
         // Start handshake as responder
-        let settings_data = coordinator.initiate_handshake().await.expect("Initiate handshake");
+        let settings_data = coordinator
+            .initiate_handshake()
+            .await
+            .expect("Initiate handshake");
         assert!(settings_data.is_none());
-        assert_eq!(coordinator.current_state(), HandshakeState::WaitingForPeerSettings);
-        
+        assert_eq!(
+            coordinator.current_state(),
+            HandshakeState::WaitingForPeerSettings
+        );
+
         // Process peer settings
         let peer_settings = vec![0x00, 0x00]; // No requirements
-        let response = coordinator.process_peer_settings(&peer_settings).await.expect("Process peer settings");
+        let response = coordinator
+            .process_peer_settings(&peer_settings)
+            .await
+            .expect("Process peer settings");
         assert!(response.is_some()); // Responder sends its requirements
-        assert_eq!(coordinator.current_state(), HandshakeState::InitializingPlugins);
-        
+        assert_eq!(
+            coordinator.current_state(),
+            HandshakeState::InitializingPlugins
+        );
+
         // Complete initialization
-        let result = coordinator.complete_plugin_initialization().await.expect("Complete initialization");
+        let result = coordinator
+            .complete_plugin_initialization()
+            .await
+            .expect("Complete initialization");
         assert!(matches!(result, HandshakeResult::Success { .. }));
         assert!(coordinator.is_complete());
     }
@@ -740,31 +941,47 @@ mod tests {
     #[tokio::test]
     async fn test_handshake_state_transitions() {
         let mut coordinator = create_test_coordinator(true);
-        
+
         // Test invalid state transition
         let result = coordinator.transition_state(HandshakeState::Completed);
-        assert!(matches!(result, Err(PluginHandshakeError::InvalidStateTransition { .. })));
-        
+        assert!(matches!(
+            result,
+            Err(PluginHandshakeError::InvalidStateTransition { .. })
+        ));
+
         // Test valid state transitions
-        assert!(coordinator.transition_state(HandshakeState::SendingCapabilities).is_ok());
-        assert!(coordinator.transition_state(HandshakeState::WaitingForPeerSettings).is_ok());
-        assert!(coordinator.transition_state(HandshakeState::ValidatingRequirements).is_ok());
-        assert!(coordinator.transition_state(HandshakeState::InitializingPlugins).is_ok());
-        assert!(coordinator.transition_state(HandshakeState::Completed).is_ok());
+        assert!(coordinator
+            .transition_state(HandshakeState::SendingCapabilities)
+            .is_ok());
+        assert!(coordinator
+            .transition_state(HandshakeState::WaitingForPeerSettings)
+            .is_ok());
+        assert!(coordinator
+            .transition_state(HandshakeState::ValidatingRequirements)
+            .is_ok());
+        assert!(coordinator
+            .transition_state(HandshakeState::InitializingPlugins)
+            .is_ok());
+        assert!(coordinator
+            .transition_state(HandshakeState::Completed)
+            .is_ok());
     }
 
     #[tokio::test]
     async fn test_handshake_retry_limit() {
         let mut coordinator = create_test_coordinator(true);
-        
+
         // Exhaust retry attempts
         for _ in 0..MAX_HANDSHAKE_RETRIES {
             coordinator.reset_for_retry().expect("Reset for retry");
         }
-        
+
         // Next retry should fail
         let result = coordinator.reset_for_retry();
-        assert!(matches!(result, Err(PluginHandshakeError::ProtocolError(_))));
+        assert!(matches!(
+            result,
+            Err(PluginHandshakeError::ProtocolError(_))
+        ));
     }
 
     #[tokio::test]
@@ -773,11 +990,11 @@ mod tests {
         // Test valid plugin ID (one that exists in the embedded registry: 1001)
         let result = coordinator.validate_plugin_security(1001).await;
         assert!(result.is_ok(), "expected registry plugin 1001 to validate");
-        
+
         // Test reserved plugin ID
         let result = coordinator.validate_plugin_security(0xFFFF0001).await;
         assert!(result.is_err());
-        
+
         // Test zero plugin ID
         let result = coordinator.validate_plugin_security(0).await;
         assert!(result.is_err());
@@ -794,24 +1011,42 @@ mod tests {
 
         // Start as initiator
         let _settings = coordinator.initiate_handshake().await.expect("initiate");
-        assert_eq!(coordinator.current_state(), HandshakeState::WaitingForPeerSettings);
+        assert_eq!(
+            coordinator.current_state(),
+            HandshakeState::WaitingForPeerSettings
+        );
 
         // Construct peer settings requiring unsupported plugin 424242
         let mut remote = PluginSettingsManager::new();
-        remote.add_required_plugin(424242, (1,0), vec![]).expect("add remote required");
+        remote
+            .add_required_plugin(424242, (1, 0), vec![])
+            .expect("add remote required");
         let peer_frame = remote.generate_settings_frame_data().expect("gen frame");
 
-        let err = coordinator.process_peer_settings(&peer_frame).await.expect_err("should fail");
-    assert!(matches!(err, PluginHandshakeError::SettingsError(_)), "expected SettingsError for unsupported required plugin");
-        assert!(coordinator.has_failed(), "handshake should be marked failed");
+        let err = coordinator
+            .process_peer_settings(&peer_frame)
+            .await
+            .expect_err("should fail");
+        assert!(
+            matches!(err, PluginHandshakeError::SettingsError(_)),
+            "expected SettingsError for unsupported required plugin"
+        );
+        assert!(
+            coordinator.has_failed(),
+            "handshake should be marked failed"
+        );
     }
 
     #[tokio::test]
     async fn test_plugin_initialization_failure_maps_to_incompatible_requirements() {
         // Create coordinator with one good plugin (1001) and one that will simulate failure (0xDEADBEEF)
         let mut settings = PluginSettingsManager::new();
-        settings.add_required_plugin(1001, (1,0), vec![]).expect("add good plugin");
-        settings.add_required_plugin(0xDEADBEEF, (1,0), vec![]).expect("add failing plugin");
+        settings
+            .add_required_plugin(1001, (1, 0), vec![])
+            .expect("add good plugin");
+        settings
+            .add_required_plugin(0xDEADBEEF, (1, 0), vec![])
+            .expect("add failing plugin");
         let mut coordinator = PluginHandshakeCoordinator::new(settings, true);
 
         // Initiate handshake
@@ -819,25 +1054,34 @@ mod tests {
 
         // Peer returns empty requirements (count=0)
         let peer_settings = vec![0x00, 0x00];
-        coordinator.process_peer_settings(&peer_settings).await.expect("process peer");
+        coordinator
+            .process_peer_settings(&peer_settings)
+            .await
+            .expect("process peer");
 
         // Complete initialization -> expect IncompatibleRequirements with failing plugin id
-        let result = coordinator.complete_plugin_initialization().await.expect("complete");
+        let result = coordinator
+            .complete_plugin_initialization()
+            .await
+            .expect("complete");
         match result {
-            HandshakeResult::IncompatibleRequirements { conflicting_plugin_id, .. } => {
+            HandshakeResult::IncompatibleRequirements {
+                conflicting_plugin_id,
+                ..
+            } => {
                 assert_eq!(conflicting_plugin_id, 0xDEADBEEF);
             }
-            other => panic!("expected IncompatibleRequirements, got {:?}", other)
+            other => panic!("expected IncompatibleRequirements, got {:?}", other),
         }
     }
 
     #[cfg(feature = "plugin")]
     #[tokio::test]
     async fn test_manifest_reload_and_snapshot() {
-        use tempfile::NamedTempFile;
-        use std::io::Write;
-        use ed25519_dalek::{SigningKey, Signer};
         use base64::{engine::general_purpose::STANDARD, Engine};
+        use ed25519_dalek::{Signer, SigningKey};
+        use std::io::Write;
+        use tempfile::NamedTempFile;
 
         // Generate a signing key and corresponding verifying key
         let mut rng = rand::rngs::OsRng;
@@ -858,7 +1102,8 @@ mod tests {
 
         // Write to temp file
         let mut tf = NamedTempFile::new().expect("tmp file");
-        tf.write_all(manifest_json.as_bytes()).expect("write manifest");
+        tf.write_all(manifest_json.as_bytes())
+            .expect("write manifest");
         let path_str = tf.path().to_string_lossy().to_string();
 
         // Reload registry from this manifest
@@ -867,6 +1112,8 @@ mod tests {
 
         // Snapshot should contain our plugin and fingerprint should match pubkey
         let snap = get_plugin_registry_snapshot();
-        assert!(snap.iter().any(|e| e.id == pid && e.pubkey_fingerprint_b64 == pubkey_b64));
+        assert!(snap
+            .iter()
+            .any(|e| e.id == pid && e.pubkey_fingerprint_b64 == pubkey_b64));
     }
 }

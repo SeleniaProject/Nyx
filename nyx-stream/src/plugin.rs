@@ -9,18 +9,17 @@
 //! - Plugin handshake mechanisms
 //! - Plugin IPC transport integration
 
-use serde::{Serialize, Deserialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{debug, warn, trace};
+use tracing::{debug, trace, warn};
 
 use crate::frame::{
-    FRAME_TYPE_PLUGIN_HANDSHAKE, FRAME_TYPE_PLUGIN_DATA,
-    FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR,
-    is_plugin_frame
+    is_plugin_frame, FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_DATA, FRAME_TYPE_PLUGIN_ERROR,
+    FRAME_TYPE_PLUGIN_HANDSHAKE,
 };
 
 /// Plugin identifier type
@@ -61,14 +60,16 @@ impl PluginHeader {
     /// Encode plugin header to CBOR format
     pub fn encode(&self) -> Result<Vec<u8>, PluginError> {
         let mut buffer = Vec::new();
-        ciborium::ser::into_writer(self, &mut buffer).map_err(|e| PluginError::SerializationError(e.to_string()))?;
+        ciborium::ser::into_writer(self, &mut buffer)
+            .map_err(|e| PluginError::SerializationError(e.to_string()))?;
         Ok(buffer)
     }
 
     /// Decode plugin header from CBOR format
     pub fn decode(bytes: &[u8]) -> Result<Self, PluginError> {
         let mut cursor = std::io::Cursor::new(bytes);
-        ciborium::de::from_reader(&mut cursor).map_err(|e| PluginError::SerializationError(e.to_string()))
+        ciborium::de::from_reader(&mut cursor)
+            .map_err(|e| PluginError::SerializationError(e.to_string()))
     }
 
     /// Validate plugin header structure and constraints
@@ -84,8 +85,9 @@ impl PluginHeader {
         }
 
         // Validate flag combinations
-        if (self.flags & plugin_flags::FLAG_PLUGIN_REQUIRED) != 0 &&
-           (self.flags & plugin_flags::FLAG_PLUGIN_OPTIONAL) != 0 {
+        if (self.flags & plugin_flags::FLAG_PLUGIN_REQUIRED) != 0
+            && (self.flags & plugin_flags::FLAG_PLUGIN_OPTIONAL) != 0
+        {
             return Err(PluginError::InvalidFlags(self.flags));
         }
 
@@ -158,11 +160,22 @@ pub enum PluginFrame {
     /// Plugin handshake frame (0x50)
     Handshake(PluginHandshake),
     /// Plugin data frame (0x51)
-    Data { plugin_id: PluginId, payload: Vec<u8> },
+    Data {
+        plugin_id: PluginId,
+        payload: Vec<u8>,
+    },
     /// Plugin control frame (0x52)
-    Control { plugin_id: PluginId, command: String, params: HashMap<String, String> },
+    Control {
+        plugin_id: PluginId,
+        command: String,
+        params: HashMap<String, String>,
+    },
     /// Plugin error frame (0x53)
-    Error { plugin_id: PluginId, error_code: u16, message: String },
+    Error {
+        plugin_id: PluginId,
+        error_code: u16,
+        message: String,
+    },
 }
 
 impl PluginFrame {
@@ -187,9 +200,10 @@ impl PluginFrame {
     /// Decode plugin frame from bytes  
     pub fn decode(frame_type: u8, payload: &[u8]) -> Result<Self, PluginError> {
         if !is_plugin_frame(frame_type) {
-            return Err(PluginError::FrameProcessingError(
-                format!("Invalid plugin frame type: 0x{:02x}", frame_type)
-            ));
+            return Err(PluginError::FrameProcessingError(format!(
+                "Invalid plugin frame type: 0x{:02x}",
+                frame_type
+            )));
         }
 
         let mut cursor = std::io::Cursor::new(payload);
@@ -198,10 +212,11 @@ impl PluginFrame {
 
         // Verify frame type matches the decoded content
         if frame.frame_type() != frame_type {
-            return Err(PluginError::FrameProcessingError(
-                format!("Frame type mismatch: expected 0x{:02x}, got 0x{:02x}", 
-                        frame_type, frame.frame_type())
-            ));
+            return Err(PluginError::FrameProcessingError(format!(
+                "Frame type mismatch: expected 0x{:02x}, got 0x{:02x}",
+                frame_type,
+                frame.frame_type()
+            )));
         }
 
         Ok(frame)
@@ -225,22 +240,32 @@ pub struct PluginRegistry {
 #[derive(Debug, Clone)]
 pub enum PluginEvent {
     /// Plugin registered successfully
-    PluginRegistered { plugin_id: PluginId, capability: PluginCapability },
+    PluginRegistered {
+        plugin_id: PluginId,
+        capability: PluginCapability,
+    },
     /// Plugin unregistered
     PluginUnregistered { plugin_id: PluginId },
     /// Plugin handshake completed
     HandshakeCompleted { plugin_id: PluginId, success: bool },
     /// Plugin frame received
-    FrameReceived { plugin_id: PluginId, frame_type: u8, size: usize },
+    FrameReceived {
+        plugin_id: PluginId,
+        frame_type: u8,
+        size: usize,
+    },
     /// Plugin error occurred
-    PluginError { plugin_id: PluginId, error: PluginError },
+    PluginError {
+        plugin_id: PluginId,
+        error: PluginError,
+    },
 }
 
 impl PluginRegistry {
     /// Create new plugin registry
     pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        
+
         Self {
             plugins: Arc::new(RwLock::new(HashMap::new())),
             required_plugins: Arc::new(RwLock::new(Vec::new())),
@@ -252,7 +277,7 @@ impl PluginRegistry {
     /// Register a plugin with the registry
     pub fn register_plugin(&self, capability: PluginCapability) -> Result<(), PluginError> {
         let mut plugins = self.plugins.write().unwrap();
-        
+
         if plugins.contains_key(&capability.id) {
             return Err(PluginError::PluginAlreadyRegistered(capability.id));
         }
@@ -280,7 +305,7 @@ impl PluginRegistry {
     /// Unregister a plugin
     pub fn unregister_plugin(&self, plugin_id: PluginId) -> Result<(), PluginError> {
         let mut plugins = self.plugins.write().unwrap();
-        
+
         if !plugins.contains_key(&plugin_id) {
             return Err(PluginError::PluginNotFound(plugin_id));
         }
@@ -292,7 +317,9 @@ impl PluginRegistry {
         required.retain(|&id| id != plugin_id);
 
         // Send unregistration event
-        let _ = self.event_tx.send(PluginEvent::PluginUnregistered { plugin_id });
+        let _ = self
+            .event_tx
+            .send(PluginEvent::PluginUnregistered { plugin_id });
 
         debug!(plugin_id = plugin_id, "Plugin unregistered successfully");
         Ok(())
@@ -392,25 +419,31 @@ impl PluginDispatcher {
     /// Process incoming plugin frame
     pub async fn process_frame(&self, frame_type: u8, payload: &[u8]) -> Result<(), PluginError> {
         if !is_plugin_frame(frame_type) {
-            return Err(PluginError::FrameProcessingError(
-                format!("Invalid plugin frame type: 0x{:02x}", frame_type)
-            ));
+            return Err(PluginError::FrameProcessingError(format!(
+                "Invalid plugin frame type: 0x{:02x}",
+                frame_type
+            )));
         }
 
         let plugin_frame = PluginFrame::decode(frame_type, payload)?;
 
         match plugin_frame {
-            PluginFrame::Handshake(handshake) => {
-                self.process_handshake(handshake).await
-            }
+            PluginFrame::Handshake(handshake) => self.process_handshake(handshake).await,
             PluginFrame::Data { plugin_id, payload } => {
                 self.process_data_frame(plugin_id, payload).await
             }
-            PluginFrame::Control { plugin_id, command, params } => {
-                self.process_control_frame(plugin_id, command, params).await
-            }
-            PluginFrame::Error { plugin_id, error_code, message } => {
-                self.process_error_frame(plugin_id, error_code, message).await
+            PluginFrame::Control {
+                plugin_id,
+                command,
+                params,
+            } => self.process_control_frame(plugin_id, command, params).await,
+            PluginFrame::Error {
+                plugin_id,
+                error_code,
+                message,
+            } => {
+                self.process_error_frame(plugin_id, error_code, message)
+                    .await
             }
         }
     }
@@ -418,9 +451,10 @@ impl PluginDispatcher {
     /// Process plugin handshake
     async fn process_handshake(&self, handshake: PluginHandshake) -> Result<(), PluginError> {
         let plugin_id = handshake.capability.id;
-        
+
         // Register plugin capability
-        self.registry.register_plugin(handshake.capability.clone())?;
+        self.registry
+            .register_plugin(handshake.capability.clone())?;
 
         // Create plugin connection
         let (frame_tx, frame_rx) = mpsc::unbounded_channel();
@@ -437,17 +471,27 @@ impl PluginDispatcher {
         }
 
         // Send handshake completion event
-        let _ = self.registry.event_tx.send(PluginEvent::HandshakeCompleted {
-            plugin_id,
-            success: true,
-        });
+        let _ = self
+            .registry
+            .event_tx
+            .send(PluginEvent::HandshakeCompleted {
+                plugin_id,
+                success: true,
+            });
 
-        debug!(plugin_id = plugin_id, "Plugin handshake completed successfully");
+        debug!(
+            plugin_id = plugin_id,
+            "Plugin handshake completed successfully"
+        );
         Ok(())
     }
 
     /// Process plugin data frame
-    async fn process_data_frame(&self, plugin_id: PluginId, payload: Vec<u8>) -> Result<(), PluginError> {
+    async fn process_data_frame(
+        &self,
+        plugin_id: PluginId,
+        payload: Vec<u8>,
+    ) -> Result<(), PluginError> {
         // Verify plugin is registered
         if self.registry.get_plugin(plugin_id).is_none() {
             return Err(PluginError::PluginNotFound(plugin_id));
@@ -460,7 +504,11 @@ impl PluginDispatcher {
             size: payload.len(),
         });
 
-        trace!(plugin_id = plugin_id, size = payload.len(), "Processed plugin data frame");
+        trace!(
+            plugin_id = plugin_id,
+            size = payload.len(),
+            "Processed plugin data frame"
+        );
         Ok(())
     }
 
@@ -469,7 +517,7 @@ impl PluginDispatcher {
         &self,
         plugin_id: PluginId,
         command: String,
-        mut params: HashMap<String, String>
+        mut params: HashMap<String, String>,
     ) -> Result<(), PluginError> {
         // Verify plugin is registered
         if self.registry.get_plugin(plugin_id).is_none() {
@@ -489,7 +537,8 @@ impl PluginDispatcher {
         match command.as_str() {
             "ping" => {
                 // Respond with pong
-                self.send_control_frame(plugin_id, "pong".to_string(), HashMap::new()).await?;
+                self.send_control_frame(plugin_id, "pong".to_string(), HashMap::new())
+                    .await?;
             }
             "shutdown" => {
                 // Gracefully shutdown plugin connection
@@ -509,11 +558,12 @@ impl PluginDispatcher {
         &self,
         plugin_id: PluginId,
         error_code: u16,
-        message: String
+        message: String,
     ) -> Result<(), PluginError> {
-        let error = PluginError::FrameProcessingError(
-            format!("Plugin {} error {}: {}", plugin_id, error_code, message)
-        );
+        let error = PluginError::FrameProcessingError(format!(
+            "Plugin {} error {}: {}",
+            plugin_id, error_code, message
+        ));
 
         // Send plugin error event
         let _ = self.registry.event_tx.send(PluginEvent::PluginError {
@@ -536,16 +586,22 @@ impl PluginDispatcher {
         &self,
         plugin_id: PluginId,
         command: String,
-        params: HashMap<String, String>
+        params: HashMap<String, String>,
     ) -> Result<(), PluginError> {
         let connections = self.connections.read().unwrap();
-        
+
         if let Some(connection) = connections.get(&plugin_id) {
-            let control_frame = PluginFrame::Control { plugin_id, command, params };
-            
-            connection.frame_tx.send(control_frame)
+            let control_frame = PluginFrame::Control {
+                plugin_id,
+                command,
+                params,
+            };
+
+            connection
+                .frame_tx
+                .send(control_frame)
                 .map_err(|e| PluginError::IpcTransportError(e.to_string()))?;
-                
+
             Ok(())
         } else {
             Err(PluginError::PluginNotFound(plugin_id))
@@ -555,13 +611,13 @@ impl PluginDispatcher {
     /// Close plugin connection
     pub async fn close_connection(&self, plugin_id: PluginId) -> Result<(), PluginError> {
         let mut connections = self.connections.write().unwrap();
-        
+
         if let Some(mut connection) = connections.remove(&plugin_id) {
             connection.state = PluginConnectionState::Closed;
-            
+
             // Unregister plugin
             self.registry.unregister_plugin(plugin_id)?;
-            
+
             debug!(plugin_id = plugin_id, "Plugin connection closed");
             Ok(())
         } else {
@@ -684,4 +740,3 @@ mod tests {
         assert!(!is_plugin_frame(0x60));
     }
 }
-

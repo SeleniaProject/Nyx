@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use nyx_mix::cmix::{CmixController, verify_batch};
+use nyx_mix::cmix::{verify_batch, CmixController};
 use tokio::time::Duration;
 
 /// @spec 4. cMix Integration
@@ -41,4 +41,4 @@ async fn cmix_verify_rejects_invalid_witness() {
         *b ^= 0x55;
     }
     assert!(!verify_batch(&batch, controller.params(), None));
-} 
+}

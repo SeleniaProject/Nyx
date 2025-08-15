@@ -5,39 +5,39 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::metrics::{
-    Alert, AlertSeverity, AlertThreshold, ThresholdComparison, AlertRoute, AlertHandler,
-    SuppressionRule, AlertHistoryEntry, AlertAction, LayerType, MetricsSnapshot,
+    Alert, AlertAction, AlertHandler, AlertHistoryEntry, AlertRoute, AlertSeverity, AlertThreshold,
+    LayerType, MetricsSnapshot, SuppressionRule, ThresholdComparison,
 };
 
 /// Enhanced alert system with comprehensive threshold monitoring, routing, suppression, and analysis
 pub struct EnhancedAlertSystem {
     /// Alert threshold configurations with full AlertThreshold objects
     thresholds: Arc<RwLock<HashMap<String, AlertThreshold>>>,
-    
+
     /// Currently active alerts
     active_alerts: Arc<RwLock<HashMap<String, Alert>>>,
-    
+
     /// Alert history for analysis and reporting
     alert_history: Arc<RwLock<Vec<AlertHistoryEntry>>>,
-    
+
     /// Alert routing configurations
     routes: Arc<RwLock<Vec<AlertRoute>>>,
-    
+
     /// Suppression rules for duplicate alert prevention
     suppression_rules: Arc<RwLock<Vec<SuppressionRule>>>,
-    
+
     /// Alert broadcast channel
     alert_sender: broadcast::Sender<Alert>,
-    
+
     /// Maximum history size to prevent memory growth
     max_history_size: usize,
-    
+
     /// Alert statistics tracking
     alert_stats: Arc<RwLock<AlertStatistics>>,
-    
+
     /// Performance threshold monitoring
     performance_thresholds: Arc<RwLock<PerformanceThresholds>>,
-    
+
     /// Alert priority system
     priority_system: Arc<RwLock<AlertPrioritySystem>>,
 }
@@ -125,7 +125,7 @@ impl EnhancedAlertSystem {
     /// Create a new enhanced alert system
     pub fn new() -> Self {
         let (alert_sender, _) = broadcast::channel(1000);
-        
+
         let mut system = Self {
             thresholds: Arc::new(RwLock::new(HashMap::new())),
             active_alerts: Arc::new(RwLock::new(HashMap::new())),
@@ -141,149 +141,184 @@ impl EnhancedAlertSystem {
                 escalation_rules: Vec::new(),
             })),
         };
-        
+
         // Set up default thresholds and routes
         system.setup_default_configuration();
-        
+
         system
     }
-    
+
     /// Set up default alert thresholds and routes
     fn setup_default_configuration(&self) {
         self.setup_performance_thresholds();
         self.setup_default_routes();
         self.setup_priority_rules();
     }
-    
+
     /// Set up performance threshold monitoring
     fn setup_performance_thresholds(&self) {
         let mut thresholds = self.thresholds.write().unwrap();
-        
+
         // CPU usage thresholds
-        thresholds.insert("cpu_usage_warning".to_string(), AlertThreshold {
-            metric: "cpu_usage".to_string(),
-            threshold: 70.0,
-            severity: AlertSeverity::Warning,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: None,
-            enabled: true,
-            // Keep cooldown short to allow suppression logic to be exercised in tests
-            cooldown_duration: Duration::from_millis(50),
-            last_triggered: None,
-        });
-        
-        thresholds.insert("cpu_usage_critical".to_string(), AlertThreshold {
-            metric: "cpu_usage".to_string(),
-            threshold: 90.0,
-            severity: AlertSeverity::Critical,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: None,
-            enabled: true,
-            // Keep cooldown short to allow suppression logic to be exercised in tests
-            cooldown_duration: Duration::from_millis(50),
-            last_triggered: None,
-        });
-        
+        thresholds.insert(
+            "cpu_usage_warning".to_string(),
+            AlertThreshold {
+                metric: "cpu_usage".to_string(),
+                threshold: 70.0,
+                severity: AlertSeverity::Warning,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: None,
+                enabled: true,
+                // Keep cooldown short to allow suppression logic to be exercised in tests
+                cooldown_duration: Duration::from_millis(50),
+                last_triggered: None,
+            },
+        );
+
+        thresholds.insert(
+            "cpu_usage_critical".to_string(),
+            AlertThreshold {
+                metric: "cpu_usage".to_string(),
+                threshold: 90.0,
+                severity: AlertSeverity::Critical,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: None,
+                enabled: true,
+                // Keep cooldown short to allow suppression logic to be exercised in tests
+                cooldown_duration: Duration::from_millis(50),
+                last_triggered: None,
+            },
+        );
+
         // Memory usage thresholds
-        thresholds.insert("memory_usage_warning".to_string(), AlertThreshold {
-            metric: "memory_usage".to_string(),
-            threshold: 80.0,
-            severity: AlertSeverity::Warning,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: None,
-            enabled: true,
-            cooldown_duration: Duration::from_secs(300),
-            last_triggered: None,
-        });
-        
-        thresholds.insert("memory_usage_critical".to_string(), AlertThreshold {
-            metric: "memory_usage".to_string(),
-            threshold: 95.0,
-            severity: AlertSeverity::Critical,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: None,
-            enabled: true,
-            cooldown_duration: Duration::from_secs(60),
-            last_triggered: None,
-        });
-        
+        thresholds.insert(
+            "memory_usage_warning".to_string(),
+            AlertThreshold {
+                metric: "memory_usage".to_string(),
+                threshold: 80.0,
+                severity: AlertSeverity::Warning,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: None,
+                enabled: true,
+                cooldown_duration: Duration::from_secs(300),
+                last_triggered: None,
+            },
+        );
+
+        thresholds.insert(
+            "memory_usage_critical".to_string(),
+            AlertThreshold {
+                metric: "memory_usage".to_string(),
+                threshold: 95.0,
+                severity: AlertSeverity::Critical,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: None,
+                enabled: true,
+                cooldown_duration: Duration::from_secs(60),
+                last_triggered: None,
+            },
+        );
+
         // Latency thresholds
-        thresholds.insert("latency_warning".to_string(), AlertThreshold {
-            metric: "avg_latency_ms".to_string(),
-            threshold: 1000.0,
-            severity: AlertSeverity::Warning,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: Some(LayerType::Transport),
-            enabled: true,
-            cooldown_duration: Duration::from_secs(120),
-            last_triggered: None,
-        });
-        
-        thresholds.insert("latency_critical".to_string(), AlertThreshold {
-            metric: "avg_latency_ms".to_string(),
-            threshold: 5000.0,
-            severity: AlertSeverity::Critical,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: Some(LayerType::Transport),
-            enabled: true,
-            cooldown_duration: Duration::from_secs(60),
-            last_triggered: None,
-        });
-        
+        thresholds.insert(
+            "latency_warning".to_string(),
+            AlertThreshold {
+                metric: "avg_latency_ms".to_string(),
+                threshold: 1000.0,
+                severity: AlertSeverity::Warning,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: Some(LayerType::Transport),
+                enabled: true,
+                cooldown_duration: Duration::from_secs(120),
+                last_triggered: None,
+            },
+        );
+
+        thresholds.insert(
+            "latency_critical".to_string(),
+            AlertThreshold {
+                metric: "avg_latency_ms".to_string(),
+                threshold: 5000.0,
+                severity: AlertSeverity::Critical,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: Some(LayerType::Transport),
+                enabled: true,
+                cooldown_duration: Duration::from_secs(60),
+                last_triggered: None,
+            },
+        );
+
         // Error rate thresholds
-        thresholds.insert("error_rate_warning".to_string(), AlertThreshold {
-            metric: "error_rate".to_string(),
-            threshold: 5.0,
-            severity: AlertSeverity::Warning,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: None,
-            enabled: true,
-            cooldown_duration: Duration::from_secs(180),
-            last_triggered: None,
-        });
-        
-        thresholds.insert("error_rate_critical".to_string(), AlertThreshold {
-            metric: "error_rate".to_string(),
-            threshold: 15.0,
-            severity: AlertSeverity::Critical,
-            comparison: ThresholdComparison::GreaterThan,
-            layer: None,
-            enabled: true,
-            cooldown_duration: Duration::from_secs(60),
-            last_triggered: None,
-        });
-        
+        thresholds.insert(
+            "error_rate_warning".to_string(),
+            AlertThreshold {
+                metric: "error_rate".to_string(),
+                threshold: 5.0,
+                severity: AlertSeverity::Warning,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: None,
+                enabled: true,
+                cooldown_duration: Duration::from_secs(180),
+                last_triggered: None,
+            },
+        );
+
+        thresholds.insert(
+            "error_rate_critical".to_string(),
+            AlertThreshold {
+                metric: "error_rate".to_string(),
+                threshold: 15.0,
+                severity: AlertSeverity::Critical,
+                comparison: ThresholdComparison::GreaterThan,
+                layer: None,
+                enabled: true,
+                cooldown_duration: Duration::from_secs(60),
+                last_triggered: None,
+            },
+        );
+
         // Throughput thresholds
-        thresholds.insert("throughput_warning".to_string(), AlertThreshold {
-            metric: "throughput".to_string(),
-            threshold: 100.0,
-            severity: AlertSeverity::Warning,
-            comparison: ThresholdComparison::LessThan,
-            layer: None,
-            enabled: true,
-            cooldown_duration: Duration::from_secs(300),
-            last_triggered: None,
-        });
+        thresholds.insert(
+            "throughput_warning".to_string(),
+            AlertThreshold {
+                metric: "throughput".to_string(),
+                threshold: 100.0,
+                severity: AlertSeverity::Warning,
+                comparison: ThresholdComparison::LessThan,
+                layer: None,
+                enabled: true,
+                cooldown_duration: Duration::from_secs(300),
+                last_triggered: None,
+            },
+        );
     }
-    
+
     /// Set up default alert routes
     fn setup_default_routes(&self) {
         let mut routes = self.routes.write().unwrap();
-        
+
         // Console logging for all alerts
         routes.push(AlertRoute {
-            severity_filter: vec![AlertSeverity::Info, AlertSeverity::Warning, AlertSeverity::Critical],
+            severity_filter: vec![
+                AlertSeverity::Info,
+                AlertSeverity::Warning,
+                AlertSeverity::Critical,
+            ],
             layer_filter: vec![], // All layers
             handler: AlertHandler::Console,
         });
-        
+
         // Log file for all alerts
         routes.push(AlertRoute {
-            severity_filter: vec![AlertSeverity::Info, AlertSeverity::Warning, AlertSeverity::Critical],
+            severity_filter: vec![
+                AlertSeverity::Info,
+                AlertSeverity::Warning,
+                AlertSeverity::Critical,
+            ],
             layer_filter: vec![], // All layers
             handler: AlertHandler::Log,
         });
-        
+
         // Critical alerts to webhook (if configured)
         routes.push(AlertRoute {
             severity_filter: vec![AlertSeverity::Critical],
@@ -291,11 +326,11 @@ impl EnhancedAlertSystem {
             handler: AlertHandler::Webhook("http://localhost:8080/alerts".to_string()),
         });
     }
-    
+
     /// Set up priority rules for alert handling
     fn setup_priority_rules(&self) {
         let mut priority_system = self.priority_system.write().unwrap();
-        
+
         // High priority rules
         priority_system.priority_rules.push(PriorityRule {
             metric_pattern: "cpu_usage".to_string(),
@@ -304,7 +339,7 @@ impl EnhancedAlertSystem {
             auto_escalate: true,
             escalation_delay: Duration::from_secs(300),
         });
-        
+
         priority_system.priority_rules.push(PriorityRule {
             metric_pattern: "memory_usage".to_string(),
             severity: AlertSeverity::Critical,
@@ -312,7 +347,7 @@ impl EnhancedAlertSystem {
             auto_escalate: true,
             escalation_delay: Duration::from_secs(300),
         });
-        
+
         // Medium priority rules
         priority_system.priority_rules.push(PriorityRule {
             metric_pattern: "error_rate".to_string(),
@@ -321,7 +356,7 @@ impl EnhancedAlertSystem {
             auto_escalate: false,
             escalation_delay: Duration::from_secs(600),
         });
-        
+
         // Escalation rules
         priority_system.escalation_rules.push(EscalationRule {
             trigger_conditions: vec![
@@ -332,34 +367,41 @@ impl EnhancedAlertSystem {
             escalation_delay: Duration::from_secs(300),
         });
     }
-    
+
     /// Check metrics against thresholds and generate alerts
     pub async fn check_thresholds(&self, snapshot: &MetricsSnapshot) -> Vec<Alert> {
         let mut new_alerts = Vec::new();
         let mut thresholds = self.thresholds.write().unwrap();
-        
+
         for (threshold_id, threshold) in thresholds.iter_mut() {
             if !threshold.enabled {
                 continue;
             }
-            
+
             // Check cooldown period
             if let Some(last_triggered) = threshold.last_triggered {
-                if SystemTime::now().duration_since(last_triggered).unwrap_or_default() < threshold.cooldown_duration {
+                if SystemTime::now()
+                    .duration_since(last_triggered)
+                    .unwrap_or_default()
+                    < threshold.cooldown_duration
+                {
                     continue;
                 }
             }
-            
+
             // Extract metric value based on threshold configuration
-            let metric_value = self.extract_metric_value(snapshot, &threshold.metric, &threshold.layer);
-            
+            let metric_value =
+                self.extract_metric_value(snapshot, &threshold.metric, &threshold.layer);
+
             if let Some(value) = metric_value {
                 let threshold_exceeded = match threshold.comparison {
                     ThresholdComparison::GreaterThan => value > threshold.threshold,
                     ThresholdComparison::LessThan => value < threshold.threshold,
-                    ThresholdComparison::Equal => (value - threshold.threshold).abs() < f64::EPSILON,
+                    ThresholdComparison::Equal => {
+                        (value - threshold.threshold).abs() < f64::EPSILON
+                    }
                 };
-                
+
                 if threshold_exceeded {
                     // Generate alert first, then decide suppression for bookkeeping
                     let alert = self.create_alert(threshold, value).await;
@@ -375,26 +417,35 @@ impl EnhancedAlertSystem {
                 }
             }
         }
-        
+
         // Process new alerts
         for alert in &new_alerts {
             self.process_alert(alert.clone()).await;
         }
-        
+
         new_alerts
     }
-    
+
     /// Extract metric value from snapshot
-    fn extract_metric_value(&self, snapshot: &MetricsSnapshot, metric: &str, layer: &Option<LayerType>) -> Option<f64> {
+    fn extract_metric_value(
+        &self,
+        snapshot: &MetricsSnapshot,
+        metric: &str,
+        layer: &Option<LayerType>,
+    ) -> Option<f64> {
         match metric {
             "cpu_usage" => Some(snapshot.system_metrics.cpu_usage_percent),
             "memory_usage" => {
                 if snapshot.system_metrics.memory_total_bytes > 0 {
-                    Some((snapshot.system_metrics.memory_usage_bytes as f64 / snapshot.system_metrics.memory_total_bytes as f64) * 100.0)
+                    Some(
+                        (snapshot.system_metrics.memory_usage_bytes as f64
+                            / snapshot.system_metrics.memory_total_bytes as f64)
+                            * 100.0,
+                    )
                 } else {
                     None
                 }
-            },
+            }
             "error_rate" => Some(snapshot.error_metrics.error_rate),
             "avg_latency_ms" => Some(snapshot.performance_metrics.avg_latency_ms),
             "packet_loss_rate" => Some(snapshot.performance_metrics.packet_loss_rate * 100.0),
@@ -407,12 +458,11 @@ impl EnhancedAlertSystem {
                     }
                 } else {
                     // Calculate overall throughput
-                    let total_throughput: f64 = snapshot.layer_metrics.values()
-                        .map(|m| m.throughput)
-                        .sum();
+                    let total_throughput: f64 =
+                        snapshot.layer_metrics.values().map(|m| m.throughput).sum();
                     Some(total_throughput)
                 }
-            },
+            }
             _ => {
                 // Check layer-specific metrics
                 if let Some(layer_type) = layer {
@@ -432,12 +482,12 @@ impl EnhancedAlertSystem {
             }
         }
     }
-    
+
     /// Create a new alert from threshold violation
     async fn create_alert(&self, threshold: &AlertThreshold, current_value: f64) -> Alert {
         let alert_id = Uuid::new_v4().to_string();
         let timestamp = SystemTime::now();
-        
+
         let title = format!("{} threshold exceeded", threshold.metric);
         let description = format!(
             "Metric '{}' has exceeded the {} threshold. Current value: {:.2}, Threshold: {:.2}",
@@ -450,17 +500,20 @@ impl EnhancedAlertSystem {
             current_value,
             threshold.threshold
         );
-        
+
         let mut context = HashMap::new();
-        context.insert("threshold_comparison".to_string(), format!("{:?}", threshold.comparison));
+        context.insert(
+            "threshold_comparison".to_string(),
+            format!("{:?}", threshold.comparison),
+        );
         if let Some(layer) = &threshold.layer {
             context.insert("layer".to_string(), format!("{:?}", layer));
         }
-        
+
         // Add priority information
         let priority_score = self.calculate_alert_priority(&threshold.metric, &threshold.severity);
         context.insert("priority_score".to_string(), priority_score.to_string());
-        
+
         Alert {
             id: alert_id,
             timestamp,
@@ -476,17 +529,17 @@ impl EnhancedAlertSystem {
             resolved_at: None,
         }
     }
-    
+
     /// Calculate alert priority score
     fn calculate_alert_priority(&self, metric: &str, severity: &AlertSeverity) -> u32 {
         let priority_system = self.priority_system.read().unwrap();
-        
+
         for rule in &priority_system.priority_rules {
             if metric.contains(&rule.metric_pattern) && rule.severity == *severity {
                 return rule.priority_score;
             }
         }
-        
+
         // Default priority based on severity
         match severity {
             AlertSeverity::Critical => 80,
@@ -494,12 +547,12 @@ impl EnhancedAlertSystem {
             AlertSeverity::Info => 20,
         }
     }
-    
+
     /// Check if an alert should be suppressed
     fn should_suppress_alert(&self, metric: &str, layer: &Option<LayerType>) -> bool {
         let suppression_rules = self.suppression_rules.read().unwrap();
         let now = SystemTime::now();
-        
+
         for rule in suppression_rules.iter() {
             // Check if rule applies to this metric
             if metric.contains(&rule.metric_pattern) {
@@ -507,25 +560,31 @@ impl EnhancedAlertSystem {
                 if rule.layer.is_some() && rule.layer != *layer {
                     continue;
                 }
-                
+
                 // Check if rule is still active
                 if now.duration_since(rule.created_at).unwrap_or_default() < rule.duration {
                     // Suppress when there are at least `max_alerts` active alerts after rule creation.
                     let active_alerts = self.active_alerts.read().unwrap();
-                    let matching_alerts = active_alerts.values()
-                        .filter(|alert| alert.metric.contains(&rule.metric_pattern) && alert.timestamp >= rule.created_at)
+                    let matching_alerts = active_alerts
+                        .values()
+                        .filter(|alert| {
+                            alert.metric.contains(&rule.metric_pattern)
+                                && alert.timestamp >= rule.created_at
+                        })
                         .count();
                     if matching_alerts >= rule.max_alerts as usize {
-                        if let Ok(mut stats) = self.alert_stats.write() { stats.suppression_count += 1; }
+                        if let Ok(mut stats) = self.alert_stats.write() {
+                            stats.suppression_count += 1;
+                        }
                         return true;
                     }
                 }
             }
         }
-        
+
         false
     }
-    
+
     /// Process a new alert through the routing system
     async fn process_alert(&self, alert: Alert) {
         // Add to active alerts
@@ -533,33 +592,34 @@ impl EnhancedAlertSystem {
             let mut active_alerts = self.active_alerts.write().unwrap();
             active_alerts.insert(alert.id.clone(), alert.clone());
         }
-        
+
         // Add to history
         self.add_to_history(alert.clone(), AlertAction::Created);
-        
+
         // Update statistics
         self.update_alert_statistics(&alert, AlertAction::Created);
-        
+
         // Route alert through configured handlers
         self.route_alert(&alert).await;
-        
+
         // Check for escalation
         self.check_escalation(&alert).await;
-        
+
         // Broadcast alert
         let _ = self.alert_sender.send(alert);
     }
-    
+
     /// Route alert through configured handlers
     async fn route_alert(&self, alert: &Alert) {
         let routes = self.routes.read().unwrap();
-        
+
         for route in routes.iter() {
             // Check severity filter
-            if !route.severity_filter.is_empty() && !route.severity_filter.contains(&alert.severity) {
+            if !route.severity_filter.is_empty() && !route.severity_filter.contains(&alert.severity)
+            {
                 continue;
             }
-            
+
             // Check layer filter
             if !route.layer_filter.is_empty() {
                 if let Some(alert_layer) = &alert.layer {
@@ -570,12 +630,12 @@ impl EnhancedAlertSystem {
                     continue;
                 }
             }
-            
+
             // Handle alert based on handler type
             self.handle_alert(alert, &route.handler).await;
         }
     }
-    
+
     /// Handle alert based on handler type
     async fn handle_alert(&self, alert: &Alert, handler: &AlertHandler) {
         match handler {
@@ -590,29 +650,44 @@ impl EnhancedAlertSystem {
                     threshold = alert.threshold,
                     "ALERT"
                 );
-            },
+            }
             AlertHandler::Log => {
-                log::warn!("Alert: {} - {} - Current: {:.2}, Threshold: {:.2}", 
-                    alert.title, alert.description, alert.current_value, alert.threshold);
-            },
+                log::warn!(
+                    "Alert: {} - {} - Current: {:.2}, Threshold: {:.2}",
+                    alert.title,
+                    alert.description,
+                    alert.current_value,
+                    alert.threshold
+                );
+            }
             AlertHandler::Email(email) => {
                 // In a real implementation, this would send an actual email
-                log::info!("Would send email alert to {}: {} (Priority: {})", 
-                    email, alert.title, 
-                    alert.context.get("priority_score").unwrap_or(&"0".to_string()));
-            },
+                log::info!(
+                    "Would send email alert to {}: {} (Priority: {})",
+                    email,
+                    alert.title,
+                    alert
+                        .context
+                        .get("priority_score")
+                        .unwrap_or(&"0".to_string())
+                );
+            }
             AlertHandler::Webhook(url) => {
                 // In a real implementation, this would make an HTTP request
-                log::info!("Would send webhook to {}: {} (Severity: {:?})", 
-                    url, alert.title, alert.severity);
-            },
+                log::info!(
+                    "Would send webhook to {}: {} (Severity: {:?})",
+                    url,
+                    alert.title,
+                    alert.severity
+                );
+            }
         }
     }
-    
+
     /// Check if alert needs escalation
     async fn check_escalation(&self, alert: &Alert) {
         let priority_system = self.priority_system.read().unwrap();
-        
+
         for rule in &priority_system.escalation_rules {
             let should_escalate = rule.trigger_conditions.iter().any(|condition| {
                 match condition {
@@ -622,11 +697,15 @@ impl EnhancedAlertSystem {
                     EscalationCondition::FrequencyThreshold(_, _) => false, // Checked later
                 }
             });
-            
+
             if should_escalate {
                 // Schedule escalation (in a real implementation, this would use a timer)
-                log::info!("Alert {} scheduled for escalation in {:?}", alert.id, rule.escalation_delay);
-                
+                log::info!(
+                    "Alert {} scheduled for escalation in {:?}",
+                    alert.id,
+                    rule.escalation_delay
+                );
+
                 // Update statistics
                 if let Ok(mut stats) = self.alert_stats.write() {
                     stats.escalation_count += 1;
@@ -634,88 +713,103 @@ impl EnhancedAlertSystem {
             }
         }
     }
-    
+
     /// Add alert to history
     fn add_to_history(&self, alert: Alert, action: AlertAction) {
         let mut history = self.alert_history.write().unwrap();
-        
+
         history.push(AlertHistoryEntry {
             alert,
             action,
             timestamp: SystemTime::now(),
         });
-        
+
         // Trim history if it exceeds maximum size
         if history.len() > self.max_history_size {
             history.remove(0);
         }
     }
-    
+
     /// Update alert statistics
     fn update_alert_statistics(&self, alert: &Alert, action: AlertAction) {
         if let Ok(mut stats) = self.alert_stats.write() {
             match action {
                 AlertAction::Created => {
                     stats.total_active += 1;
-                    *stats.active_by_severity.entry(alert.severity.clone()).or_insert(0) += 1;
-                    *stats.most_frequent_metrics.entry(alert.metric.clone()).or_insert(0) += 1;
-                    
+                    *stats
+                        .active_by_severity
+                        .entry(alert.severity.clone())
+                        .or_insert(0) += 1;
+                    *stats
+                        .most_frequent_metrics
+                        .entry(alert.metric.clone())
+                        .or_insert(0) += 1;
+
                     // Check if created today
-                    let today = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() / 86400;
-                    let alert_day = alert.timestamp.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() / 86400;
+                    let today = SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        / 86400;
+                    let alert_day = alert
+                        .timestamp
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        / 86400;
                     if alert_day == today {
                         stats.total_created_today += 1;
                     }
-                },
+                }
                 AlertAction::Resolved => {
                     if stats.total_active > 0 {
                         stats.total_active -= 1;
                     }
                     stats.total_resolved += 1;
-                    
+
                     if let Some(count) = stats.active_by_severity.get_mut(&alert.severity) {
                         if *count > 0 {
                             *count -= 1;
                         }
                     }
-                },
+                }
                 _ => {}
             }
         }
     }
-    
+
     /// Resolve an active alert
     pub async fn resolve_alert(&self, alert_id: &str) -> Result<(), String> {
         let mut active_alerts = self.active_alerts.write().unwrap();
-        
+
         if let Some(mut alert) = active_alerts.remove(alert_id) {
             alert.resolved = true;
             alert.resolved_at = Some(SystemTime::now());
-            
+
             // Update statistics
             self.update_alert_statistics(&alert, AlertAction::Resolved);
-            
+
             // Add to history
             self.add_to_history(alert, AlertAction::Resolved);
-            
+
             Ok(())
         } else {
             Err(format!("Alert with ID {} not found", alert_id))
         }
     }
-    
+
     /// Add a new alert threshold
     pub fn add_threshold(&self, threshold_id: String, threshold: AlertThreshold) {
         let mut thresholds = self.thresholds.write().unwrap();
         thresholds.insert(threshold_id, threshold);
     }
-    
+
     /// Remove an alert threshold
     pub fn remove_threshold(&self, threshold_id: &str) -> bool {
         let mut thresholds = self.thresholds.write().unwrap();
         thresholds.remove(threshold_id).is_some()
     }
-    
+
     /// Add a suppression rule
     pub fn add_suppression_rule(&self, rule: SuppressionRule) {
         let mut rules = self.suppression_rules.write().unwrap();
@@ -731,18 +825,18 @@ impl EnhancedAlertSystem {
             }
         }
     }
-    
+
     /// Add an alert route
     pub fn add_route(&self, route: AlertRoute) {
         let mut routes = self.routes.write().unwrap();
         routes.push(route);
     }
-    
+
     /// Get active alerts
     pub fn get_active_alerts(&self) -> HashMap<String, Alert> {
         self.active_alerts.read().unwrap().clone()
     }
-    
+
     /// Get alert history with optional limit
     pub fn get_alert_history(&self, limit: Option<usize>) -> Vec<AlertHistoryEntry> {
         let history = self.alert_history.read().unwrap();
@@ -752,49 +846,56 @@ impl EnhancedAlertSystem {
             history.clone()
         }
     }
-    
+
     /// Get alert statistics
     pub fn get_alert_statistics(&self) -> AlertStatistics {
         self.alert_stats.read().unwrap().clone()
     }
-    
+
     /// Generate alert analysis report
     pub fn generate_analysis_report(&self) -> AlertAnalysisReport {
         let stats = self.get_alert_statistics();
         let history = self.get_alert_history(Some(100)); // Last 100 alerts
         let active_alerts = self.get_active_alerts();
-        
+
         // Analyze patterns
         let mut metric_frequency = HashMap::new();
         let mut severity_distribution = HashMap::new();
         let mut hourly_distribution = vec![0u32; 24];
-        
+
         for entry in &history {
-            *metric_frequency.entry(entry.alert.metric.clone()).or_insert(0) += 1;
-            *severity_distribution.entry(entry.alert.severity.clone()).or_insert(0) += 1;
-            
+            *metric_frequency
+                .entry(entry.alert.metric.clone())
+                .or_insert(0) += 1;
+            *severity_distribution
+                .entry(entry.alert.severity.clone())
+                .or_insert(0) += 1;
+
             // Calculate hour of day
             if let Ok(duration) = entry.alert.timestamp.duration_since(std::time::UNIX_EPOCH) {
                 let hour = (duration.as_secs() / 3600) % 24;
                 hourly_distribution[hour as usize] += 1;
             }
         }
-        
+
         // Calculate trends
         let mut recommendations = Vec::new();
-        
+
         if stats.total_active > 10 {
-            recommendations.push("High number of active alerts - consider reviewing thresholds".to_string());
+            recommendations
+                .push("High number of active alerts - consider reviewing thresholds".to_string());
         }
-        
+
         if stats.escalation_count > stats.total_resolved / 4 {
-            recommendations.push("High escalation rate - review alert handling procedures".to_string());
+            recommendations
+                .push("High escalation rate - review alert handling procedures".to_string());
         }
-        
+
         if stats.suppression_count > stats.total_created_today / 2 {
-            recommendations.push("High suppression rate - consider adjusting suppression rules".to_string());
+            recommendations
+                .push("High suppression rate - consider adjusting suppression rules".to_string());
         }
-        
+
         AlertAnalysisReport {
             summary: stats,
             metric_frequency,
@@ -802,12 +903,13 @@ impl EnhancedAlertSystem {
             hourly_distribution,
             recommendations,
             active_alert_count: active_alerts.len(),
-            oldest_unresolved: active_alerts.values()
+            oldest_unresolved: active_alerts
+                .values()
                 .min_by_key(|alert| alert.timestamp)
                 .map(|alert| alert.timestamp),
         }
     }
-    
+
     /// Subscribe to alert notifications
     pub fn subscribe(&self) -> broadcast::Receiver<Alert> {
         self.alert_sender.subscribe()

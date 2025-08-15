@@ -13,12 +13,19 @@ fn rs_fec_reconstruct_all_data_loss() {
 
     // simulate loss of all data shards
     let mut present: Vec<bool> = vec![false; DATA_SHARDS + PARITY_SHARDS];
-    for i in DATA_SHARDS..DATA_SHARDS+PARITY_SHARDS { present[i] = true; }
+    for i in DATA_SHARDS..DATA_SHARDS + PARITY_SHARDS {
+        present[i] = true;
+    }
 
     // zero out data shards
-    for i in 0..DATA_SHARDS { mut_refs[i].fill(0); }
+    for i in 0..DATA_SHARDS {
+        mut_refs[i].fill(0);
+    }
 
     // Attempt reconstruct: impossible (only 3 parity shards < required 10 total shards for RS MDS recovery)
     let res = codec.reconstruct(&mut mut_refs, &mut present);
-    assert!(res.is_err(), "Reconstruction should fail when ALL data shards are lost with insufficient parity shards");
-} 
+    assert!(
+        res.is_err(),
+        "Reconstruction should fail when ALL data shards are lost with insufficient parity shards"
+    );
+}

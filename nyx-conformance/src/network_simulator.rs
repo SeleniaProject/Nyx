@@ -7,13 +7,13 @@
 //! - Network topology management
 //! - Network partitioning scenarios
 
+use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use rand::{Rng, thread_rng};
-use serde::{Deserialize, Serialize};
 
 /// Unique identifier for network nodes
 pub type NodeId = u32;
@@ -42,7 +42,10 @@ impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
             packet_loss_rate: 0.01, // 1% loss
-            latency_distribution: LatencyDistribution::Normal { mean: 50.0, std_dev: 10.0 },
+            latency_distribution: LatencyDistribution::Normal {
+                mean: 50.0,
+                std_dev: 10.0,
+            },
             bandwidth_limit_mbps: 100.0,
             max_nodes: 1000,
             duration: Duration::from_secs(300), // 5 minutes
@@ -242,7 +245,7 @@ impl NetworkSimulator {
     pub async fn add_node(&self, node_id: NodeId, position: Option<(f64, f64)>) {
         let mut topology = self.topology.write().await;
         topology.adjacency.entry(node_id).or_insert_with(Vec::new);
-        
+
         if let Some(pos) = position {
             topology.node_positions.insert(node_id, pos);
         }
@@ -251,11 +254,13 @@ impl NetworkSimulator {
     /// Add a link between two nodes
     pub async fn add_link(&self, node_a: NodeId, node_b: NodeId, quality: LinkQuality) {
         let mut topology = self.topology.write().await;
-        
+
         topology.adjacency.entry(node_a).or_default().push(node_b);
         topology.adjacency.entry(node_b).or_default().push(node_a);
-        
-        topology.link_qualities.insert((node_a, node_b), quality.clone());
+
+        topology
+            .link_qualities
+            .insert((node_a, node_b), quality.clone());
         topology.link_qualities.insert((node_b, node_a), quality);
     }
 
@@ -275,7 +280,7 @@ impl NetworkSimulator {
     pub async fn simulate_bandwidth_limit(&self, limit_mbps: f64) {
         let mut conditions = self.conditions.write().await;
         conditions.bandwidth_limit_mbps = limit_mbps.max(0.1); // Minimum 0.1 Mbps
-        
+
         let mut scheduler = self.packet_scheduler.lock().unwrap();
         scheduler.bandwidth_tracker.limit_mbps = limit_mbps;
     }
@@ -285,7 +290,7 @@ impl NetworkSimulator {
         if nodes.len() < 2 {
             return;
         }
-        
+
         let mid = nodes.len() / 2;
         let partition = NetworkPartition {
             partition_a: nodes[..mid].to_vec(),
@@ -293,7 +298,7 @@ impl NetworkSimulator {
             duration: Duration::from_secs(30), // Default 30 seconds
             complete_partition: true,
         };
-        
+
         let mut partitions = self.active_partitions.write().await;
         partitions.push(partition);
     }
@@ -317,8 +322,10 @@ impl NetworkSimulator {
         }
 
         // Calculate latency
-        let latency = self.calculate_latency(packet.source, packet.destination).await;
-        
+        let latency = self
+            .calculate_latency(packet.source, packet.destination)
+            .await;
+
         // Schedule packet delivery
         {
             let mut scheduler = self.packet_scheduler.lock().unwrap();
@@ -330,18 +337,21 @@ impl NetworkSimulator {
             let mut res = self.results.lock().unwrap();
             res.packets_sent += 1;
             // Update per-node stats for source
-            let node_stats = res.node_stats.entry(packet.source).or_insert_with(|| NodeStatistics {
-                packets_sent: 0,
-                packets_received: 0,
-                bytes_sent: 0,
-                bytes_received: 0,
-                avg_latency_ms: 0.0,
-                packet_loss_rate: 0.0,
-            });
+            let node_stats =
+                res.node_stats
+                    .entry(packet.source)
+                    .or_insert_with(|| NodeStatistics {
+                        packets_sent: 0,
+                        packets_received: 0,
+                        bytes_sent: 0,
+                        bytes_received: 0,
+                        avg_latency_ms: 0.0,
+                        packet_loss_rate: 0.0,
+                    });
             node_stats.packets_sent += 1;
             node_stats.bytes_sent += packet.size_bytes as u64;
         }
-        
+
         Ok(())
     }
 
@@ -352,12 +362,12 @@ impl NetworkSimulator {
             return Err(SimulationError::AlreadyRunning);
         }
         *running = true;
-        
+
         // Start packet processing loop
         let scheduler = Arc::clone(&self.packet_scheduler);
         let results = Arc::clone(&self.results);
         let running_flag = Arc::clone(&self.running);
-        
+
         tokio::spawn(async move {
             while *running_flag.read().await {
                 // Drain as many packets as available in this tick to avoid artificial throttling
@@ -373,14 +383,17 @@ impl NetworkSimulator {
                             let mut res = results.lock().unwrap();
                             res.packets_received += 1;
                             // Update destination node stats
-                            let node_stats = res.node_stats.entry(packet.destination).or_insert_with(|| NodeStatistics {
-                                packets_sent: 0,
-                                packets_received: 0,
-                                bytes_sent: 0,
-                                bytes_received: 0,
-                                avg_latency_ms: 0.0,
-                                packet_loss_rate: 0.0,
-                            });
+                            let node_stats = res
+                                .node_stats
+                                .entry(packet.destination)
+                                .or_insert_with(|| NodeStatistics {
+                                    packets_sent: 0,
+                                    packets_received: 0,
+                                    bytes_sent: 0,
+                                    bytes_received: 0,
+                                    avg_latency_ms: 0.0,
+                                    packet_loss_rate: 0.0,
+                                });
                             node_stats.packets_received += 1;
                             node_stats.bytes_received += packet.size_bytes as u64;
 
@@ -398,7 +411,7 @@ impl NetworkSimulator {
                 sleep(Duration::from_millis(0)).await;
             }
         });
-        
+
         Ok(())
     }
 
@@ -417,7 +430,7 @@ impl NetworkSimulator {
     /// Reset simulation state
     pub async fn reset(&self) {
         self.stop().await;
-        
+
         let mut results = self.results.lock().unwrap();
         *results = SimulationResults {
             packets_sent: 0,
@@ -431,16 +444,16 @@ impl NetworkSimulator {
             node_stats: HashMap::new(),
             duration: Duration::from_secs(0),
         };
-        
+
         let mut counter = self.packet_counter.lock().unwrap();
         *counter = 0;
-        
+
         let mut partitions = self.active_partitions.write().await;
         partitions.clear();
     }
 
     // Private helper methods
-    
+
     async fn should_drop_packet(&self) -> bool {
         let conditions = self.conditions.read().await;
         let mut rng = thread_rng();
@@ -449,64 +462,67 @@ impl NetworkSimulator {
 
     async fn is_partitioned(&self, source: NodeId, destination: NodeId) -> bool {
         let partitions = self.active_partitions.read().await;
-        
+
         for partition in partitions.iter() {
             let source_in_a = partition.partition_a.contains(&source);
             let source_in_b = partition.partition_b.contains(&source);
             let dest_in_a = partition.partition_a.contains(&destination);
             let dest_in_b = partition.partition_b.contains(&destination);
-            
+
             if partition.complete_partition {
                 if (source_in_a && dest_in_b) || (source_in_b && dest_in_a) {
                     return true;
                 }
             }
         }
-        
+
         false
     }
 
     async fn calculate_latency(&self, _source: NodeId, _destination: NodeId) -> Duration {
         let conditions = self.conditions.read().await;
         let mut rng = thread_rng();
-        
+
         let latency_ms = match &conditions.latency_distribution {
             LatencyDistribution::Fixed { latency_ms } => *latency_ms,
             LatencyDistribution::Normal { mean, std_dev } => {
-                use rand_distr::{Normal, Distribution};
-                let normal = Normal::new(*mean, *std_dev).unwrap_or_else(|_| Normal::new(50.0, 10.0).unwrap());
+                use rand_distr::{Distribution, Normal};
+                let normal = Normal::new(*mean, *std_dev)
+                    .unwrap_or_else(|_| Normal::new(50.0, 10.0).unwrap());
                 normal.sample(&mut rng).max(0.0)
-            },
+            }
             LatencyDistribution::Exponential { lambda } => {
-                use rand_distr::{Exp, Distribution};
+                use rand_distr::{Distribution, Exp};
                 let exp = Exp::new(*lambda).unwrap_or_else(|_| Exp::new(0.02).unwrap());
                 exp.sample(&mut rng)
-            },
-            LatencyDistribution::Uniform { min, max } => {
-                rng.gen_range(*min..*max)
-            },
+            }
+            LatencyDistribution::Uniform { min, max } => rng.gen_range(*min..*max),
         };
-        
+
         Duration::from_millis(latency_ms as u64)
     }
 
     async fn record_packet_loss(&self, packet: &SimulatedPacket) {
         let mut results = self.results.lock().unwrap();
         results.packets_lost += 1;
-        
+
         let packets_lost = results.packets_lost;
         let packets_sent = results.packets_sent;
-        
+
         // Update node statistics
-        let node_stats = results.node_stats.entry(packet.source).or_insert_with(|| NodeStatistics {
-            packets_sent: 0,
-            packets_received: 0,
-            bytes_sent: 0,
-            bytes_received: 0,
-            avg_latency_ms: 0.0,
-            packet_loss_rate: 0.0,
-        });
-        
+        let node_stats =
+            results
+                .node_stats
+                .entry(packet.source)
+                .or_insert_with(|| NodeStatistics {
+                    packets_sent: 0,
+                    packets_received: 0,
+                    bytes_sent: 0,
+                    bytes_received: 0,
+                    avg_latency_ms: 0.0,
+                    packet_loss_rate: 0.0,
+                });
+
         node_stats.packets_sent += 1;
         node_stats.bytes_sent += packet.size_bytes as u64;
         node_stats.packet_loss_rate = packets_lost as f64 / (packets_sent + packets_lost) as f64;
@@ -516,14 +532,16 @@ impl NetworkSimulator {
         if results.duration.as_secs() == 0 {
             return 0.0;
         }
-        
-        let total_bytes = results.node_stats.values()
+
+        let total_bytes = results
+            .node_stats
+            .values()
             .map(|stats| stats.bytes_received)
             .sum::<u64>();
-            
+
         let bits = total_bytes * 8;
         let seconds = results.duration.as_secs_f64();
-        
+
         (bits as f64) / (seconds * 1_000_000.0) // Convert to Mbps
     }
 }
@@ -535,7 +553,7 @@ impl PacketScheduler {
         queues.insert(PacketPriority::High, VecDeque::new());
         queues.insert(PacketPriority::Normal, VecDeque::new());
         queues.insert(PacketPriority::Low, VecDeque::new());
-        
+
         Self {
             queues,
             bandwidth_tracker: BandwidthTracker {
@@ -548,12 +566,16 @@ impl PacketScheduler {
         }
     }
 
-    fn schedule_packet(&mut self, packet: SimulatedPacket, latency: Duration) -> Result<(), SimulationError> {
+    fn schedule_packet(
+        &mut self,
+        packet: SimulatedPacket,
+        latency: Duration,
+    ) -> Result<(), SimulationError> {
         // Check bandwidth constraints
         if !self.bandwidth_tracker.can_send(packet.size_bytes) {
             return Err(SimulationError::BandwidthExceeded);
         }
-        
+
         // Add to appropriate priority queue with a simple latency-based pacing:
         // we simulate delay by tracking last_send_time and deferring if needed.
         let now = Instant::now();
@@ -575,7 +597,7 @@ impl PacketScheduler {
             PacketPriority::Normal,
             PacketPriority::Low,
         ];
-        
+
         for priority in &priorities {
             if let Some(queue) = self.queues.get_mut(priority) {
                 if let Some(packet) = queue.pop_front() {
@@ -584,7 +606,7 @@ impl PacketScheduler {
                 }
             }
         }
-        
+
         None
     }
 }
@@ -592,10 +614,10 @@ impl PacketScheduler {
 impl BandwidthTracker {
     fn can_send(&mut self, bytes: usize) -> bool {
         self.update_window();
-        
+
         let bits = bytes * 8;
         let mbits = bits as f64 / 1_000_000.0;
-        
+
         self.current_usage + mbits <= self.limit_mbps
     }
 
@@ -619,16 +641,16 @@ impl BandwidthTracker {
 pub enum SimulationError {
     #[error("Simulation is not running")]
     NotRunning,
-    
+
     #[error("Simulation is already running")]
     AlreadyRunning,
-    
+
     #[error("Bandwidth limit exceeded")]
     BandwidthExceeded,
-    
+
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
-    
+
     #[error("Network error: {0}")]
     NetworkError(String),
 }
@@ -642,20 +664,20 @@ mod tests {
     async fn test_network_simulator_creation() {
         let config = SimulationConfig::default();
         let simulator = NetworkSimulator::new(config);
-        
+
         // Test basic functionality
         simulator.add_node(1, Some((0.0, 0.0))).await;
         simulator.add_node(2, Some((1.0, 1.0))).await;
-        
+
         let quality = LinkQuality {
             latency_ms: 10.0,
             bandwidth_mbps: 100.0,
             loss_rate: 0.01,
             jitter_ms: 2.0,
         };
-        
+
         simulator.add_link(1, 2, quality).await;
-        
+
         assert!(simulator.start().await.is_ok());
         simulator.stop().await;
     }
@@ -664,10 +686,10 @@ mod tests {
     async fn test_packet_loss_simulation() {
         let mut config = SimulationConfig::default();
         config.packet_loss_rate = 0.5; // 50% loss rate
-        
+
         let simulator = NetworkSimulator::new(config);
         simulator.simulate_packet_loss(0.8).await; // Change to 80%
-        
+
         // Verify the loss rate was updated
         let conditions = simulator.conditions.read().await;
         assert_eq!(conditions.packet_loss_rate, 0.8);
@@ -676,12 +698,24 @@ mod tests {
     #[test]
     async fn test_latency_distributions() {
         let simulator = NetworkSimulator::new(SimulationConfig::default());
-        
+
         // Test different latency distributions
-        simulator.simulate_latency(LatencyDistribution::Fixed { latency_ms: 100.0 }).await;
-        simulator.simulate_latency(LatencyDistribution::Normal { mean: 50.0, std_dev: 10.0 }).await;
-        simulator.simulate_latency(LatencyDistribution::Uniform { min: 10.0, max: 100.0 }).await;
-        
+        simulator
+            .simulate_latency(LatencyDistribution::Fixed { latency_ms: 100.0 })
+            .await;
+        simulator
+            .simulate_latency(LatencyDistribution::Normal {
+                mean: 50.0,
+                std_dev: 10.0,
+            })
+            .await;
+        simulator
+            .simulate_latency(LatencyDistribution::Uniform {
+                min: 10.0,
+                max: 100.0,
+            })
+            .await;
+
         // All should succeed without panicking
     }
 }

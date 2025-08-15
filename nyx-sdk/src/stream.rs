@@ -8,23 +8,23 @@
 
 use crate::error::{NyxError, NyxResult};
 // use crate::proto::nyx_control_client::NyxControlClient; // Removed: C/C++ dependency
+use crate::config::RetryConfig;
 use crate::daemon::ConnectionInfo;
 use crate::retry::{RetryExecutor, RetryStrategy};
-use crate::config::RetryConfig;
 
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 // use tonic::transport::Channel; // Removed: C/C++ dependency
-use tracing::{debug, warn};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use bytes::BytesMut;
+use chrono::{DateTime, Utc};
 use futures_util::ready;
+use serde::{Deserialize, Serialize};
 use std::future::Future;
+use tracing::{debug, warn};
 // use pin_project_lite::pin_project;
 
 #[cfg(feature = "reconnect")]
@@ -222,21 +222,24 @@ impl NyxStream {
     /// Gracefully close the stream
     pub async fn close(&mut self) -> NyxResult<()> {
         debug!("Closing stream {}", self.stream_id);
-        
+
         // Update state
         *self.state.write().await = StreamState::Closed;
-        
+
         // Flush any pending writes
         self.flush_internal().await?;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().await;
             stats.last_activity = Utc::now();
-            stats.connection_time = stats.last_activity.signed_duration_since(stats.created_at)
-                .to_std().unwrap_or(Duration::ZERO);
+            stats.connection_time = stats
+                .last_activity
+                .signed_duration_since(stats.created_at)
+                .to_std()
+                .unwrap_or(Duration::ZERO);
         }
-        
+
         debug!("Stream {} closed successfully", self.stream_id);
         Ok(())
     }
@@ -246,21 +249,21 @@ impl NyxStream {
     pub async fn reconnect(&mut self) -> NyxResult<()> {
         if let Some(reconnect_manager) = &self.reconnect_manager {
             debug!("Reconnecting stream {}", self.stream_id);
-            
+
             *self.state.write().await = StreamState::Reconnecting;
-            
+
             match reconnect_manager.reconnect(&self.client).await {
                 Ok(new_stream_id) => {
                     self.stream_id = new_stream_id;
                     *self.state.write().await = StreamState::Open;
-                    
+
                     // Update statistics
                     {
                         let mut stats = self.stats.write().await;
                         stats.reconnections += 1;
                         stats.last_activity = Utc::now();
                     }
-                    
+
                     debug!("Stream reconnected with new ID {}", new_stream_id);
                     Ok(())
                 }
@@ -271,7 +274,10 @@ impl NyxStream {
                 }
             }
         } else {
-            Err(NyxError::stream_error_str("Reconnection not enabled", Some(self.stream_id.clone())))
+            Err(NyxError::stream_error_str(
+                "Reconnection not enabled",
+                Some(self.stream_id.clone()),
+            ))
         }
     }
 
@@ -285,30 +291,33 @@ impl NyxStream {
         // Send data to daemon via gRPC
         let data = write_buffer.split().freeze();
         let bytes_to_send = data.len();
-        
-        // Use retry logic for sending data
-        let result = self.retry_executor.execute(|| async {
-            // Use pure Rust stream implementation without tonic
-            let request_data = crate::proto::DataRequest {
-                stream_id: self.stream_id.to_string(),
-                data: data.to_vec(),
-            };
 
-            // Pure Rust stream send implementation
-            match self.send_data_internal(request_data).await {
-                Ok(data_response) => {
-                    if !data_response.success {
-                        Err(NyxError::stream_error_str(
-                            format!("Failed to send data: {}", data_response.error),
-                            Some(self.stream_id.clone())
-                        ))
-                    } else {
-                        Ok(data_response)
+        // Use retry logic for sending data
+        let result = self
+            .retry_executor
+            .execute(|| async {
+                // Use pure Rust stream implementation without tonic
+                let request_data = crate::proto::DataRequest {
+                    stream_id: self.stream_id.to_string(),
+                    data: data.to_vec(),
+                };
+
+                // Pure Rust stream send implementation
+                match self.send_data_internal(request_data).await {
+                    Ok(data_response) => {
+                        if !data_response.success {
+                            Err(NyxError::stream_error_str(
+                                format!("Failed to send data: {}", data_response.error),
+                                Some(self.stream_id.clone()),
+                            ))
+                        } else {
+                            Ok(data_response)
+                        }
                     }
+                    Err(e) => Err(NyxError::from(e)),
                 }
-                Err(e) => Err(NyxError::from(e))
-            }
-        }).await;
+            })
+            .await;
 
         match result {
             Ok(_) => {
@@ -319,8 +328,11 @@ impl NyxStream {
                     stats.write_ops += 1;
                     stats.last_activity = Utc::now();
                 }
-                
-                debug!("Successfully sent {} bytes on stream {}", bytes_to_send, self.stream_id);
+
+                debug!(
+                    "Successfully sent {} bytes on stream {}",
+                    bytes_to_send, self.stream_id
+                );
                 Ok(())
             }
             Err(e) => {
@@ -328,7 +340,7 @@ impl NyxStream {
                 let mut new_buffer = BytesMut::from(data.as_ref());
                 new_buffer.extend_from_slice(&write_buffer);
                 *write_buffer = new_buffer;
-                
+
                 Err(e)
             }
         }
@@ -337,25 +349,29 @@ impl NyxStream {
     /// Internal read implementation with actual data streaming
     async fn read_internal(&mut self, buf: &mut ReadBuf<'_>) -> NyxResult<()> {
         let mut read_buffer = self.read_buffer.lock().await;
-        
+
         // If buffer is empty, try to receive data from daemon
         if read_buffer.is_empty() {
             // Use a dedicated receive data call instead of stats
             let request_data = crate::proto::StreamId {
                 id: self.stream_id.to_string(),
             };
-            
+
             // Try to receive data with timeout
             let timeout = self.options.operation_timeout;
             match tokio::time::timeout(timeout, self.receive_data_internal(request_data)).await {
                 Ok(Ok(receive_response)) => {
                     if receive_response.success && !receive_response.data.is_empty() {
                         read_buffer.extend_from_slice(&receive_response.data);
-                        debug!("Received {} bytes on stream {}", receive_response.data.len(), self.stream_id);
+                        debug!(
+                            "Received {} bytes on stream {}",
+                            receive_response.data.len(),
+                            self.stream_id
+                        );
                     } else if !receive_response.success {
                         return Err(NyxError::stream_error_str(
                             format!("Failed to receive data: {}", receive_response.error),
-                            Some(self.stream_id.clone())
+                            Some(self.stream_id.clone()),
                         ));
                     }
                 }
@@ -363,7 +379,10 @@ impl NyxStream {
                     // Convert tonic::Status to NyxError and check if retryable
                     let nyx_error = NyxError::from(e);
                     if nyx_error.is_retryable() {
-                        debug!("Retryable error receiving data on stream {}: {}", self.stream_id, nyx_error);
+                        debug!(
+                            "Retryable error receiving data on stream {}: {}",
+                            self.stream_id, nyx_error
+                        );
                         // Return without error to allow retry
                         return Ok(());
                     } else {
@@ -372,7 +391,10 @@ impl NyxStream {
                 }
                 Err(_) => {
                     // Timeout - this is normal for non-blocking reads
-                    debug!("Read timeout on stream {} (no data available)", self.stream_id);
+                    debug!(
+                        "Read timeout on stream {} (no data available)",
+                        self.stream_id
+                    );
                 }
             }
         }
@@ -380,7 +402,7 @@ impl NyxStream {
         let to_copy = std::cmp::min(buf.remaining(), read_buffer.len());
         if to_copy > 0 {
             buf.put_slice(&read_buffer.split_to(to_copy));
-            
+
             // Update statistics
             if self.options.collect_stats {
                 let mut stats = self.stats.write().await;
@@ -396,14 +418,14 @@ impl NyxStream {
     /// Handle stream errors with potential reconnection
     async fn handle_error(&mut self, error: NyxError) -> NyxResult<()> {
         warn!("Stream {} encountered error: {}", self.stream_id, error);
-        
+
         *self.state.write().await = StreamState::Error;
-        
+
         #[cfg(feature = "reconnect")]
         if self.options.auto_reconnect && error.is_retryable() {
             return self.reconnect().await;
         }
-        
+
         Err(error)
     }
 }
@@ -420,7 +442,7 @@ impl AsyncRead for NyxStream {
             let mut pin = std::pin::pin!(fut);
             ready!(pin.as_mut().poll(cx)).clone()
         };
-        
+
         match state {
             StreamState::Open => {
                 // Perform async read
@@ -433,7 +455,7 @@ impl AsyncRead for NyxStream {
                         cx.waker().wake_by_ref();
                         Poll::Ready(Err(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            e.to_string()
+                            e.to_string(),
                         )))
                     }
                 }
@@ -441,7 +463,7 @@ impl AsyncRead for NyxStream {
             StreamState::Closed => Poll::Ready(Ok(())), // EOF
             StreamState::Error => Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
-                "Stream is in error state"
+                "Stream is in error state",
             ))),
             #[cfg(feature = "reconnect")]
             StreamState::Reconnecting => {
@@ -450,7 +472,7 @@ impl AsyncRead for NyxStream {
             }
             _ => Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::NotConnected,
-                "Stream is not ready for reading"
+                "Stream is not ready for reading",
             ))),
         }
     }
@@ -468,7 +490,7 @@ impl AsyncWrite for NyxStream {
             let pinned = std::pin::pin!(future);
             ready!(pinned.poll(cx)).clone()
         };
-        
+
         match state {
             StreamState::Open => {
                 // Write to buffer
@@ -476,7 +498,8 @@ impl AsyncWrite for NyxStream {
                 let pinned = std::pin::pin!(future);
                 match ready!(pinned.poll(cx)) {
                     mut write_buffer => {
-                        let to_write = std::cmp::min(buf.len(), write_buffer.capacity() - write_buffer.len());
+                        let to_write =
+                            std::cmp::min(buf.len(), write_buffer.capacity() - write_buffer.len());
                         if to_write > 0 {
                             write_buffer.extend_from_slice(&buf[..to_write]);
                             Poll::Ready(Ok(to_write))
@@ -523,7 +546,7 @@ impl AsyncWrite for NyxStream {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         // Flush first
         ready!(self.as_mut().poll_flush(cx))?;
-        
+
         // Then close
         let future = self.close();
         let pinned = std::pin::pin!(future);
@@ -539,7 +562,10 @@ impl AsyncWrite for NyxStream {
 
 impl NyxStream {
     // Pure Rust implementation methods to replace tonic calls
-    async fn send_data_internal(&self, request: crate::proto::DataRequest) -> Result<crate::proto::DataResponse, NyxError> {
+    async fn send_data_internal(
+        &self,
+        request: crate::proto::DataRequest,
+    ) -> Result<crate::proto::DataResponse, NyxError> {
         // Implementation for pure Rust data sending
         // This would connect directly to the daemon via internal channels or TCP
         Ok(crate::proto::DataResponse {
@@ -549,7 +575,10 @@ impl NyxStream {
         })
     }
 
-    async fn receive_data_internal(&self, request: crate::proto::StreamId) -> Result<crate::proto::ReceiveResponse, NyxError> {
+    async fn receive_data_internal(
+        &self,
+        request: crate::proto::StreamId,
+    ) -> Result<crate::proto::ReceiveResponse, NyxError> {
         // Implementation for pure Rust data receiving
         // This would connect directly to the daemon via internal channels or TCP
         Ok(crate::proto::ReceiveResponse {
@@ -564,4 +593,4 @@ impl NyxStream {
 
 // NyxStream is automatically Send + Sync because all its fields are Send + Sync
 // Arc<RwLock<_>>, Arc<Mutex<_>>, and other contained types already implement Send + Sync
-// No unsafe implementation needed - the compiler will automatically derive these traits 
+// No unsafe implementation needed - the compiler will automatically derive these traits

@@ -9,15 +9,15 @@
 //! - Graceful degradation under stress
 
 use nyx_conformance::network_simulator::{
-    NetworkSimulator, SimulationConfig, SimulatedPacket, PacketPriority, NodeId,
-    LatencyDistribution, LinkQuality, SimulationError,
+    LatencyDistribution, LinkQuality, NetworkSimulator, NodeId, PacketPriority, SimulatedPacket,
+    SimulationConfig, SimulationError,
 };
+use proptest::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use proptest::prelude::*;
 
 /// Failure types that can be simulated
 #[derive(Debug, Clone, PartialEq)]
@@ -44,9 +44,15 @@ pub enum RecoveryMechanism {
     /// Redundant path activation
     RedundantPathActivation,
     /// Exponential backoff retry
-    ExponentialBackoff { initial_delay: Duration, max_delay: Duration },
+    ExponentialBackoff {
+        initial_delay: Duration,
+        max_delay: Duration,
+    },
     /// Circuit breaker pattern
-    CircuitBreaker { failure_threshold: u32, recovery_timeout: Duration },
+    CircuitBreaker {
+        failure_threshold: u32,
+        recovery_timeout: Duration,
+    },
     /// Load shedding under stress
     LoadShedding { threshold: f64 },
 }
@@ -146,8 +152,8 @@ struct CircuitBreaker {
 
 #[derive(Debug, Clone, PartialEq)]
 enum CircuitBreakerState {
-    Closed,  // Normal operation
-    Open,    // Failing fast
+    Closed,   // Normal operation
+    Open,     // Failing fast
     HalfOpen, // Testing recovery
 }
 
@@ -193,7 +199,7 @@ impl FailureSimulator {
     /// Simulate a specific failure scenario
     pub async fn simulate_failure(&self, scenario: FailureScenario) -> RecoveryTestResults {
         let failure_start = Instant::now();
-        
+
         // Record failure start
         {
             let mut history = self.failure_history.lock().unwrap();
@@ -246,29 +252,31 @@ impl FailureSimulator {
             FailureType::NodeFailure(node_id) => {
                 // Simulate node failure by setting very high loss rate for that node
                 self.simulate_node_failure(*node_id).await;
-            },
+            }
             FailureType::LinkFailure(node_a, node_b) => {
                 // Simulate link failure by partitioning the two nodes
-                self.network_sim.simulate_network_partition(vec![*node_a, *node_b]).await;
-            },
+                self.network_sim
+                    .simulate_network_partition(vec![*node_a, *node_b])
+                    .await;
+            }
             FailureType::NetworkPartition(partition_a, partition_b) => {
                 let mut all_nodes = partition_a.clone();
                 all_nodes.extend(partition_b.iter());
                 self.network_sim.simulate_network_partition(all_nodes).await;
-            },
+            }
             FailureType::CascadingFailure(start_node) => {
                 self.simulate_cascading_failure(*start_node).await;
-            },
+            }
             FailureType::IntermittentFailure(node_id, _duration) => {
                 self.simulate_intermittent_failure(*node_id).await;
-            },
+            }
             FailureType::CongestionFailure(latency_multiplier) => {
-                let new_latency = LatencyDistribution::Normal { 
-                    mean: 50.0 * latency_multiplier, 
-                    std_dev: 10.0 * latency_multiplier 
+                let new_latency = LatencyDistribution::Normal {
+                    mean: 50.0 * latency_multiplier,
+                    std_dev: 10.0 * latency_multiplier,
                 };
                 self.network_sim.simulate_latency(new_latency).await;
-            },
+            }
         }
     }
 
@@ -280,12 +288,13 @@ impl FailureSimulator {
     async fn simulate_cascading_failure(&self, start_node: NodeId) {
         // Start with the initial node
         self.simulate_node_failure(start_node).await;
-        
+
         // Simulate cascade by gradually affecting neighboring nodes
         // This is a simplified implementation
         for i in 1u32..=3u32 {
             sleep(Duration::from_millis(100 * i as u64)).await;
-            if start_node + i <= 10 { // Assume max 10 nodes
+            if start_node + i <= 10 {
+                // Assume max 10 nodes
                 self.simulate_node_failure(start_node + i).await;
             }
         }
@@ -310,7 +319,7 @@ impl FailureSimulator {
             // Check if network has recovered by testing connectivity
             if self.test_connectivity().await {
                 let recovery_time = Instant::now();
-                
+
                 // Record recovery
                 {
                     let mut history = self.failure_history.lock().unwrap();
@@ -321,10 +330,10 @@ impl FailureSimulator {
                         affected_nodes: self.get_affected_nodes(&scenario.failure_type),
                     });
                 }
-                
+
                 return Some(recovery_time);
             }
-            
+
             sleep(Duration::from_millis(100)).await;
         }
 
@@ -361,7 +370,7 @@ impl FailureSimulator {
     /// Measure performance impact of failure and recovery
     async fn measure_performance_impact(&self, _scenario: &FailureScenario) -> PerformanceImpact {
         let results = self.network_sim.get_results().await;
-        
+
         // This is a simplified implementation
         // In a real scenario, we would track metrics before, during, and after failure
         PerformanceImpact {
@@ -379,21 +388,17 @@ impl FailureSimulator {
 
         for mechanism in &scenario.recovery_mechanisms {
             let score = match mechanism {
-                RecoveryMechanism::AutomaticRerouting => {
-                    self.test_automatic_rerouting().await
-                },
+                RecoveryMechanism::AutomaticRerouting => self.test_automatic_rerouting().await,
                 RecoveryMechanism::RedundantPathActivation => {
                     self.test_redundant_path_activation().await
-                },
+                }
                 RecoveryMechanism::ExponentialBackoff { .. } => {
                     self.test_exponential_backoff(mechanism).await
-                },
+                }
                 RecoveryMechanism::CircuitBreaker { .. } => {
                     self.test_circuit_breaker(mechanism).await
-                },
-                RecoveryMechanism::LoadShedding { .. } => {
-                    self.test_load_shedding(mechanism).await
-                },
+                }
+                RecoveryMechanism::LoadShedding { .. } => self.test_load_shedding(mechanism).await,
             };
 
             effectiveness.insert(format!("{:?}", mechanism), score);
@@ -433,14 +438,18 @@ impl FailureSimulator {
     }
 
     async fn test_exponential_backoff(&self, mechanism: &RecoveryMechanism) -> f64 {
-        if let RecoveryMechanism::ExponentialBackoff { initial_delay, max_delay } = mechanism {
+        if let RecoveryMechanism::ExponentialBackoff {
+            initial_delay,
+            max_delay,
+        } = mechanism
+        {
             let mut backoff = ExponentialBackoff::new(*initial_delay, *max_delay);
             let mut success_count = 0;
             let total_attempts = 5;
 
             for _ in 0..total_attempts {
                 sleep(backoff.next_delay()).await;
-                
+
                 // Simulate retry attempt
                 if self.test_connectivity().await {
                     success_count += 1;
@@ -454,7 +463,11 @@ impl FailureSimulator {
     }
 
     async fn test_circuit_breaker(&self, mechanism: &RecoveryMechanism) -> f64 {
-        if let RecoveryMechanism::CircuitBreaker { failure_threshold, recovery_timeout } = mechanism {
+        if let RecoveryMechanism::CircuitBreaker {
+            failure_threshold,
+            recovery_timeout,
+        } = mechanism
+        {
             let mut breaker = CircuitBreaker::new(*failure_threshold, *recovery_timeout);
             let mut protected_calls = 0;
             let total_calls = 20;
@@ -494,15 +507,15 @@ impl FailureSimulator {
         match failure_type {
             FailureType::NodeFailure(node_id) => {
                 nodes.insert(*node_id);
-            },
+            }
             FailureType::LinkFailure(node_a, node_b) => {
                 nodes.insert(*node_a);
                 nodes.insert(*node_b);
-            },
+            }
             FailureType::NetworkPartition(partition_a, partition_b) => {
                 nodes.extend(partition_a.iter());
                 nodes.extend(partition_b.iter());
-            },
+            }
             FailureType::CascadingFailure(start_node) => {
                 nodes.insert(*start_node);
                 // Add potentially affected neighbors
@@ -511,16 +524,16 @@ impl FailureSimulator {
                         nodes.insert(start_node + i);
                     }
                 }
-            },
+            }
             FailureType::IntermittentFailure(node_id, _) => {
                 nodes.insert(*node_id);
-            },
+            }
             FailureType::CongestionFailure(_) => {
                 // Affects all nodes
                 for i in 1..=10 {
                     nodes.insert(i);
                 }
-            },
+            }
         }
         nodes
     }
@@ -551,7 +564,7 @@ impl CircuitBreaker {
                 } else {
                     false
                 }
-            },
+            }
             CircuitBreakerState::HalfOpen => true,
         }
     }
@@ -565,7 +578,7 @@ impl CircuitBreaker {
         } else {
             self.failure_count += 1;
             self.last_failure_time = Some(Instant::now());
-            
+
             if self.failure_count >= self.failure_threshold {
                 self.state = CircuitBreakerState::Open;
             }
@@ -586,13 +599,10 @@ impl ExponentialBackoff {
     fn next_delay(&mut self) -> Duration {
         let delay = self.current_delay;
         self.attempt_count += 1;
-        
+
         // Double the delay for next time, up to max
-        self.current_delay = std::cmp::min(
-            self.current_delay * 2,
-            self.max_delay
-        );
-        
+        self.current_delay = std::cmp::min(self.current_delay * 2, self.max_delay);
+
         delay
     }
 
@@ -640,10 +650,19 @@ async fn test_node_failure_recovery() {
     };
 
     let results = failure_sim.simulate_failure(scenario).await;
-    
-    assert!(results.recovery_successful, "Node failure recovery should succeed");
-    assert!(results.mechanism_effectiveness.get("AutomaticRerouting").unwrap_or(&0.0) > &0.5,
-        "Automatic rerouting should be effective");
+
+    assert!(
+        results.recovery_successful,
+        "Node failure recovery should succeed"
+    );
+    assert!(
+        results
+            .mechanism_effectiveness
+            .get("AutomaticRerouting")
+            .unwrap_or(&0.0)
+            > &0.5,
+        "Automatic rerouting should be effective"
+    );
 
     failure_sim.stop().await;
 }
@@ -685,11 +704,17 @@ async fn test_network_partition_recovery() {
     };
 
     let results = failure_sim.simulate_failure(scenario).await;
-    
+
     // Network partition recovery might not always succeed immediately
     // but the mechanism should show some effectiveness
-    assert!(results.mechanism_effectiveness.get("RedundantPathActivation").unwrap_or(&0.0) > &0.3,
-        "Redundant path activation should show some effectiveness");
+    assert!(
+        results
+            .mechanism_effectiveness
+            .get("RedundantPathActivation")
+            .unwrap_or(&0.0)
+            > &0.3,
+        "Redundant path activation should show some effectiveness"
+    );
 
     failure_sim.stop().await;
 }
@@ -732,10 +757,17 @@ async fn test_exponential_backoff_recovery() {
     };
 
     let results = failure_sim.simulate_failure(scenario).await;
-    
+
     // Exponential backoff should help with intermittent failures
-    let effectiveness = results.mechanism_effectiveness.get("ExponentialBackoff { initial_delay: 100ms, max_delay: 5s }").unwrap_or(&0.0);
-    assert!(effectiveness > &0.4, "Exponential backoff should be reasonably effective: {}", effectiveness);
+    let effectiveness = results
+        .mechanism_effectiveness
+        .get("ExponentialBackoff { initial_delay: 100ms, max_delay: 5s }")
+        .unwrap_or(&0.0);
+    assert!(
+        effectiveness > &0.4,
+        "Exponential backoff should be reasonably effective: {}",
+        effectiveness
+    );
 
     failure_sim.stop().await;
 }
@@ -778,10 +810,17 @@ async fn test_circuit_breaker_protection() {
     };
 
     let results = failure_sim.simulate_failure(scenario).await;
-    
+
     // Circuit breaker should provide some protection
-    let effectiveness = results.mechanism_effectiveness.get("CircuitBreaker { failure_threshold: 3, recovery_timeout: 2s }").unwrap_or(&0.0);
-    assert!(effectiveness > &0.3, "Circuit breaker should provide protection: {}", effectiveness);
+    let effectiveness = results
+        .mechanism_effectiveness
+        .get("CircuitBreaker { failure_threshold: 3, recovery_timeout: 2s }")
+        .unwrap_or(&0.0);
+    assert!(
+        effectiveness > &0.3,
+        "Circuit breaker should provide protection: {}",
+        effectiveness
+    );
 
     failure_sim.stop().await;
 }
@@ -790,7 +829,10 @@ async fn test_circuit_breaker_protection() {
 async fn test_congestion_failure_recovery() {
     let config = SimulationConfig {
         packet_loss_rate: 0.02,
-        latency_distribution: LatencyDistribution::Normal { mean: 30.0, std_dev: 5.0 },
+        latency_distribution: LatencyDistribution::Normal {
+            mean: 30.0,
+            std_dev: 5.0,
+        },
         bandwidth_limit_mbps: 50.0, // Lower bandwidth to test congestion
         max_nodes: 5,
         duration: Duration::from_secs(30),
@@ -831,10 +873,17 @@ async fn test_congestion_failure_recovery() {
     };
 
     let results = failure_sim.simulate_failure(scenario).await;
-    
+
     // Load shedding should help with congestion
-    let effectiveness = results.mechanism_effectiveness.get("LoadShedding { threshold: 0.6 }").unwrap_or(&0.0);
-    assert!(effectiveness > &0.5, "Load shedding should be effective for congestion: {}", effectiveness);
+    let effectiveness = results
+        .mechanism_effectiveness
+        .get("LoadShedding { threshold: 0.6 }")
+        .unwrap_or(&0.0);
+    assert!(
+        effectiveness > &0.5,
+        "Load shedding should be effective for congestion: {}",
+        effectiveness
+    );
 
     failure_sim.stop().await;
 }
@@ -843,11 +892,7 @@ async fn test_congestion_failure_recovery() {
 
 #[tokio::test]
 async fn test_failure_recovery_properties() {
-    let test_cases = vec![
-        (3, 5, 3),
-        (5, 8, 5),
-        (2, 10, 2),
-    ];
+    let test_cases = vec![(3, 5, 3), (5, 8, 5), (2, 10, 2)];
 
     for (failure_duration_secs, recovery_timeout_secs, failure_threshold) in test_cases {
         let config = SimulationConfig::default();
@@ -885,21 +930,27 @@ async fn test_failure_recovery_properties() {
         };
 
         let results = failure_sim.simulate_failure(scenario).await;
-        
+
         // Properties to verify:
         // 1. Recovery mechanism should have some effectiveness
-        assert!(results.mechanism_effectiveness.values().any(|&v| v > 0.0),
-            "At least one recovery mechanism should show some effectiveness");
-        
+        assert!(
+            results.mechanism_effectiveness.values().any(|&v| v > 0.0),
+            "At least one recovery mechanism should show some effectiveness"
+        );
+
         // 2. Performance impact should be measurable
-        assert!(results.performance_impact.latency_after_ms >= 0.0,
-            "Latency measurements should be non-negative");
-        
+        assert!(
+            results.performance_impact.latency_after_ms >= 0.0,
+            "Latency measurements should be non-negative"
+        );
+
         // 3. If recovery is successful, recovery time should be reasonable
         if let Some(recovery_time) = results.recovery_time {
             let recovery_duration = recovery_time.duration_since(results.failure_start);
-            assert!(recovery_duration <= Duration::from_secs(recovery_timeout_secs * 2),
-                "Recovery time should be within reasonable bounds");
+            assert!(
+                recovery_duration <= Duration::from_secs(recovery_timeout_secs * 2),
+                "Recovery time should be within reasonable bounds"
+            );
         }
 
         failure_sim.stop().await;

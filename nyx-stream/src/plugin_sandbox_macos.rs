@@ -9,11 +9,11 @@
 //! - Endpoint Security framework monitoring (when available)
 //! - Resource limits and permission restrictions
 
+use std::fs::{self, File};
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::fs::{self, File};
-use std::io::Write;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, error, warn};
@@ -70,27 +70,39 @@ const NYX_PLUGIN_SANDBOX_PROFILE: &str = r#"
 pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Child> {
     let exe = plugin_path.as_ref();
     if !exe.exists() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, "plugin binary not found"));
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "plugin binary not found",
+        ));
     }
 
     // Enforce allowlist: plugin must be under ./plugins (canonicalized absolute)
     let exe_abs: PathBuf = exe.canonicalize()?;
-    let allowed_dir = std::env::current_dir()?.join("plugins").canonicalize().unwrap_or_else(|_| PathBuf::from("plugins"));
+    let allowed_dir = std::env::current_dir()?
+        .join("plugins")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("plugins"));
     if !exe_abs.starts_with(&allowed_dir) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "plugin path not in allowlisted directory"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "plugin path not in allowlisted directory",
+        ));
     }
 
     // Create temporary sandbox profile
     let profile_path = create_sandbox_profile(exe)?;
-    
+
     // Attempt to use sandbox-exec for enhanced security
     let child = match spawn_with_sandbox_exec(&exe_abs, &profile_path) {
         Ok(child) => {
             debug!("Plugin spawned with sandbox-exec: {}", exe.display());
             child
-        },
+        }
         Err(e) => {
-            warn!("Failed to spawn with sandbox-exec, falling back to basic spawn: {}", e);
+            warn!(
+                "Failed to spawn with sandbox-exec, falling back to basic spawn: {}",
+                e
+            );
             spawn_basic_sandboxed(&exe_abs)?
         }
     };
@@ -105,28 +117,27 @@ pub fn spawn_sandboxed_plugin<P: AsRef<Path>>(plugin_path: P) -> io::Result<Chil
 fn create_sandbox_profile(plugin_path: &Path) -> io::Result<std::path::PathBuf> {
     let profile_dir = std::env::temp_dir().join("nyx-sandbox");
     fs::create_dir_all(&profile_dir)?;
-    
+
     let profile_path = profile_dir.join(format!(
-        "plugin-{}.sb", 
-        plugin_path.file_name()
+        "plugin-{}.sb",
+        plugin_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
     ));
 
     let mut profile_content = NYX_PLUGIN_SANDBOX_PROFILE.to_string();
-    
+
     // Replace parameters
     profile_content = profile_content.replace(
-        "(param \"PLUGIN_PATH\")", 
-        &format!("\"{}\"", plugin_path.display())
+        "(param \"PLUGIN_PATH\")",
+        &format!("\"{}\"", plugin_path.display()),
     );
-    
+
     // Create IPC socket path
     let ipc_socket = format!("/tmp/nyx-plugin-{}.sock", std::process::id());
-    profile_content = profile_content.replace(
-        "(param \"IPC_SOCKET\")",
-        &format!("\"{}\"", ipc_socket)
-    );
+    profile_content =
+        profile_content.replace("(param \"IPC_SOCKET\")", &format!("\"{}\"", ipc_socket));
 
     let mut file = File::create(&profile_path)?;
     file.write_all(profile_content.as_bytes())?;
@@ -138,8 +149,7 @@ fn create_sandbox_profile(plugin_path: &Path) -> io::Result<std::path::PathBuf> 
 /// Spawn plugin using macOS sandbox-exec command.
 fn spawn_with_sandbox_exec(plugin_path: &Path, profile_path: &Path) -> io::Result<Child> {
     let mut cmd = Command::new("sandbox-exec");
-    cmd
-        .arg("-f")
+    cmd.arg("-f")
         .arg(profile_path)
         .arg(plugin_path)
         .stdin(Stdio::null())
@@ -147,12 +157,17 @@ fn spawn_with_sandbox_exec(plugin_path: &Path, profile_path: &Path) -> io::Resul
         .stderr(Stdio::null());
     // Sanitize environment
     cmd.env_clear();
-    if let Some(dir) = plugin_path.parent() { cmd.env("PATH", dir.as_os_str()); }
+    if let Some(dir) = plugin_path.parent() {
+        cmd.env("PATH", dir.as_os_str());
+    }
     let child = cmd.spawn()?;
 
-    debug!("Plugin {} spawned with PID {} under sandbox-exec", 
-           plugin_path.display(), child.id());
-    
+    debug!(
+        "Plugin {} spawned with PID {} under sandbox-exec",
+        plugin_path.display(),
+        child.id()
+    );
+
     Ok(child)
 }
 
@@ -163,19 +178,24 @@ fn spawn_basic_sandboxed(plugin_path: &Path) -> io::Result<Child> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     cmd.env_clear();
-    if let Some(dir) = plugin_path.parent() { cmd.env("PATH", dir.as_os_str()); }
+    if let Some(dir) = plugin_path.parent() {
+        cmd.env("PATH", dir.as_os_str());
+    }
     let child = cmd.spawn()?;
 
-    debug!("Plugin {} spawned with basic sandboxing, PID: {}", 
-           plugin_path.display(), child.id());
-    
+    debug!(
+        "Plugin {} spawned with basic sandboxing, PID: {}",
+        plugin_path.display(),
+        child.id()
+    );
+
     Ok(child)
 }
 
 /// Enhanced termination with timeout and cleanup.
 pub async fn terminate(child: &mut Child) -> io::Result<()> {
     let pid = child.id();
-    
+
     // Try graceful termination first
     if let Err(e) = child.kill() {
         error!("Failed to send SIGTERM to plugin PID {}: {}", pid, e);
@@ -187,16 +207,22 @@ pub async fn terminate(child: &mut Child) -> io::Result<()> {
         Ok(Ok(status)) => {
             debug!("Plugin PID {} terminated with status: {}", pid, status);
             Ok(())
-        },
+        }
         Ok(Err(e)) => {
             error!("Error waiting for plugin PID {} termination: {}", pid, e);
             Err(e)
-        },
+        }
         Err(_) => {
-            warn!("Plugin PID {} did not terminate within timeout, forcing kill", pid);
+            warn!(
+                "Plugin PID {} did not terminate within timeout, forcing kill",
+                pid
+            );
             // Force kill if graceful termination failed
             let _ = child.kill();
-            Err(io::Error::new(io::ErrorKind::TimedOut, "Plugin termination timeout"))
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Plugin termination timeout",
+            ))
         }
     }
 }
@@ -219,7 +245,7 @@ pub fn get_sandbox_status(pid: u32) -> io::Result<bool> {
         Ok(output) if output.status.success() => {
             let status = String::from_utf8_lossy(&output.stdout);
             Ok(status.trim() == "1")
-        },
+        }
         _ => {
             // Fallback: assume sandboxed if we can't determine
             Ok(true)
@@ -253,4 +279,4 @@ mod tests {
         let _has_entitlements = check_sandbox_entitlements();
         // Just ensure the function doesn't panic
     }
-} 
+}

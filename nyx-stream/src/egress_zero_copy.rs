@@ -6,11 +6,11 @@
 //! `mpsc::Receiver<Vec<u8>>` and transmits them using
 //! `ZeroCopyTxAdapter` with minimal copying.
 
+use anyhow::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use anyhow::Result;
 use tokio::sync::mpsc;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error};
 
 use crate::zero_copy_tx::ZeroCopyTxAdapter;
 
@@ -26,7 +26,9 @@ pub async fn spawn_zero_copy_egress(
     path_id: String,
     mut rx: mpsc::Receiver<Vec<u8>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let adapter = Arc::new(tokio::sync::Mutex::new(ZeroCopyTxAdapter::new(bind_addr, path_id).await?));
+    let adapter = Arc::new(tokio::sync::Mutex::new(
+        ZeroCopyTxAdapter::new(bind_addr, path_id).await?,
+    ));
     adapter.lock().await.set_target(target).await;
 
     let handle = tokio::spawn(async move {
@@ -48,5 +50,3 @@ pub async fn spawn_zero_copy_egress(
 
     Ok(handle)
 }
-
-

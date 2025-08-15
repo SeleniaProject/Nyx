@@ -1,21 +1,21 @@
 #![forbid(unsafe_code)]
 
+use bytes::{Bytes, BytesMut};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
-use bytes::{Bytes, BytesMut};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, Mutex};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tracing::{debug, error, warn, info};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
 
-use crate::stream_frame::{StreamFrame, build_stream_frame};
-use crate::resource_manager::{ResourceManager, ResourceInfo, ResourceType, ResourceError};
+use crate::resource_manager::{ResourceError, ResourceInfo, ResourceManager, ResourceType};
+use crate::stream_frame::{build_stream_frame, StreamFrame};
 // use crate::frame_handler::{FrameHandler, FrameHandlerError, ReassembledData}; // Temporarily disabled
 use crate::simple_frame_handler::FrameHandler;
 
@@ -136,11 +136,17 @@ impl FrameBuffer {
 
         let mut data = BytesMut::new();
         let mut current_offset = self.expected_offset;
-        debug!("Getting contiguous data, expected_offset: {}, frames: {}", 
-               current_offset, self.frames.len());
+        debug!(
+            "Getting contiguous data, expected_offset: {}, frames: {}",
+            current_offset,
+            self.frames.len()
+        );
 
         while let Some(frame) = self.frames.front() {
-            debug!("Checking frame: offset={}, expected={}", frame.offset, current_offset);
+            debug!(
+                "Checking frame: offset={}, expected={}",
+                frame.offset, current_offset
+            );
             if frame.offset != current_offset {
                 break;
             }
@@ -221,45 +227,45 @@ struct PendingOperation {
 pub struct NyxAsyncStream {
     stream_id: u32,
     state: StreamState,
-    
+
     // Read side
     read_buffer: Arc<Mutex<FrameBuffer>>,
     read_data: BytesMut,
     read_waker: Option<std::task::Waker>,
-    
+
     // Write side
     write_buffer: BytesMut,
     write_offset: u32,
     write_closed: bool,
-    
+
     // Frame transmission
     frame_sender: mpsc::UnboundedSender<Vec<u8>>,
     frame_receiver: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>,
-    
+
     // Frame and flow control
     frame_handler: Arc<Mutex<FrameHandler>>,
     flow_controller: Arc<Mutex<FlowController>>,
-    
+
     // Configuration
     max_frame_size: usize,
     max_buffer_size: usize,
-    
+
     // Resource management
     resource_manager: Arc<ResourceManager>,
     cleanup_config: CleanupConfig,
-    
+
     // Operation tracking
     pending_operations: Arc<Mutex<Vec<PendingOperation>>>,
     next_operation_id: Arc<std::sync::atomic::AtomicU64>,
-    
+
     // Cleanup state
     is_cleaning_up: Arc<std::sync::atomic::AtomicBool>,
     cleanup_completed: Arc<tokio::sync::Notify>,
-    
+
     // Background tasks
     cleanup_task: Option<JoinHandle<()>>,
     monitoring_task: Option<JoinHandle<()>>,
-    
+
     // Statistics
     created_at: Instant,
     last_activity: Arc<Mutex<Instant>>,
@@ -278,7 +284,12 @@ impl NyxAsyncStream {
         max_frame_size: usize,
         max_buffer_size: usize,
     ) -> (Self, mpsc::UnboundedReceiver<Vec<u8>>) {
-        Self::new_with_config(stream_id, max_frame_size, max_buffer_size, CleanupConfig::default())
+        Self::new_with_config(
+            stream_id,
+            max_frame_size,
+            max_buffer_size,
+            CleanupConfig::default(),
+        )
     }
 
     pub fn new_with_config(
@@ -289,20 +300,20 @@ impl NyxAsyncStream {
     ) -> (Self, mpsc::UnboundedReceiver<Vec<u8>>) {
         let (frame_sender, frame_receiver) = mpsc::unbounded_channel();
         let frame_receiver = Arc::new(Mutex::new(frame_receiver));
-        
+
         let resource_manager = Arc::new(ResourceManager::new(stream_id));
         let now = Instant::now();
-        
+
         // Initialize frame handler and flow controller
         let frame_handler = Arc::new(Mutex::new(FrameHandler::new(
             max_buffer_size,
             Duration::from_secs(30), // reassembly timeout
         )));
-        
+
         let flow_controller = Arc::new(Mutex::new(FlowController::new(
-            65536,    // initial_window (64KB)
+            65536, // initial_window (64KB)
         )));
-        
+
         let stream = Self {
             stream_id,
             state: StreamState::Open,
@@ -335,10 +346,10 @@ impl NyxAsyncStream {
             reassembly_temp: Vec::new(),
             saw_fin: false,
         };
-        
+
         // Return a separate receiver for external frame handling
         let (_external_sender, external_receiver) = mpsc::unbounded_channel();
-        
+
         (stream, external_receiver)
     }
 
@@ -346,26 +357,32 @@ impl NyxAsyncStream {
     pub async fn handle_incoming_frame(&mut self, frame_data: &[u8]) -> Result<(), StreamError> {
         // Register operation for tracking
         let operation_id = self.register_operation("handle_incoming_frame").await?;
-        
+
         let result = async {
             // Register frame data as a resource for monitoring
             let frame_resource = ResourceInfo::new(
                 format!("frame_{}_{}", self.stream_id, frame_data.len()),
                 ResourceType::Buffer,
                 frame_data.len(),
-            ).with_metadata("frame_type".to_string(), "incoming".to_string());
-            
-            self.resource_manager.register_resource(frame_resource).await?;
+            )
+            .with_metadata("frame_type".to_string(), "incoming".to_string());
+
+            self.resource_manager
+                .register_resource(frame_resource)
+                .await?;
 
             // Step 1: Apply flow control before processing
             let need_window_update = {
                 let mut flow_controller = self.flow_controller.lock().await;
                 let frame_size = frame_data.len() as u32;
                 if let Err(e) = flow_controller.consume_receive_window(frame_size) {
-                    warn!("Flow control violation for frame size {}: {:?}", frame_size, e);
+                    warn!(
+                        "Flow control violation for frame size {}: {:?}",
+                        frame_size, e
+                    );
                     return Err(StreamError::FlowControlViolation);
                 }
-                
+
                 // Check if window update is needed
                 if flow_controller.should_send_window_update() {
                     Some(flow_controller.generate_window_update())
@@ -373,20 +390,23 @@ impl NyxAsyncStream {
                     None
                 }
             };
-            
+
             // Send window update if necessary
             if let Some(window_update) = need_window_update {
                 self.send_window_update_frame(window_update).await?;
             }
 
             // Step 2: Parse raw bytes into a StreamFrame then pass only payload
-            let (maybe_offset, fin_flag, payload) = match crate::stream_frame::parse_stream_frame(frame_data) {
-                Ok((_rem, frame)) => (Some(frame.offset), frame.fin, frame.data.to_vec()),
-                Err(_e) => (None, false, frame_data.to_vec()),
-            };
+            let (maybe_offset, fin_flag, payload) =
+                match crate::stream_frame::parse_stream_frame(frame_data) {
+                    Ok((_rem, frame)) => (Some(frame.offset), frame.fin, frame.data.to_vec()),
+                    Err(_e) => (None, false, frame_data.to_vec()),
+                };
             let processed = {
                 let mut frame_handler = self.frame_handler.lock().await;
-                frame_handler.process_frame_async(self.stream_id as u64, payload).await
+                frame_handler
+                    .process_frame_async(self.stream_id as u64, payload)
+                    .await
                     .map_err(|e| StreamError::InvalidFrame(format!("{:?}", e)))?
             };
 
@@ -396,11 +416,15 @@ impl NyxAsyncStream {
                 self.reassembly_temp.sort_by_key(|(o, _)| *o);
                 // Rebuild read_data from scratch (small test sizes, acceptable)
                 self.read_data.clear();
-                for (_o, part) in &self.reassembly_temp { self.read_data.extend_from_slice(part); }
-                if fin_flag { self.saw_fin = true; }
+                for (_o, part) in &self.reassembly_temp {
+                    self.read_data.extend_from_slice(part);
+                }
+                if fin_flag {
+                    self.saw_fin = true;
+                }
                 if self.saw_fin {
                     // We mark remote half closed once FIN seen and we have offset 0 present
-                    if self.reassembly_temp.first().map(|(o,_)| *o)==Some(0) {
+                    if self.reassembly_temp.first().map(|(o, _)| *o) == Some(0) {
                         match self.state {
                             StreamState::Open => self.state = StreamState::HalfClosedRemote,
                             StreamState::HalfClosedLocal => self.state = StreamState::Closed,
@@ -416,30 +440,41 @@ impl NyxAsyncStream {
                 // If we already reassembled via offset logic, skip legacy append to avoid duplication
                 if maybe_offset.is_some() {
                     // Wake reader if waiting since new ordered data arrived
-                    if let Some(waker) = self.read_waker.take() { waker.wake(); }
+                    if let Some(waker) = self.read_waker.take() {
+                        waker.wake();
+                    }
                 } else {
-                let reassembled = ReassembledData { stream_id: self.stream_id, data, is_complete: true, has_fin: false };
-                debug!("Received reassembled data: {} bytes, complete: {}", 
-                       reassembled.data.len(), reassembled.is_complete);
-                
-                let data_len = reassembled.data.len() as u64;
-                let is_complete = reassembled.is_complete;
-                
-                // Add data to read buffer with proper ordering
-                self.add_reassembled_data_to_buffer(reassembled).await?;
-                
-                // Update bytes read counter
-                self.bytes_read.fetch_add(data_len, std::sync::atomic::Ordering::Relaxed);
-                
-                // Wake up any pending read operations
-                if let Some(waker) = self.read_waker.take() {
-                    waker.wake();
-                }
+                    let reassembled = ReassembledData {
+                        stream_id: self.stream_id,
+                        data,
+                        is_complete: true,
+                        has_fin: false,
+                    };
+                    debug!(
+                        "Received reassembled data: {} bytes, complete: {}",
+                        reassembled.data.len(),
+                        reassembled.is_complete
+                    );
 
-                // Update stream state if complete
-                if is_complete {
-                    self.handle_stream_completion().await?;
-                }
+                    let data_len = reassembled.data.len() as u64;
+                    let is_complete = reassembled.is_complete;
+
+                    // Add data to read buffer with proper ordering
+                    self.add_reassembled_data_to_buffer(reassembled).await?;
+
+                    // Update bytes read counter
+                    self.bytes_read
+                        .fetch_add(data_len, std::sync::atomic::Ordering::Relaxed);
+
+                    // Wake up any pending read operations
+                    if let Some(waker) = self.read_waker.take() {
+                        waker.wake();
+                    }
+
+                    // Update stream state if complete
+                    if is_complete {
+                        self.handle_stream_completion().await?;
+                    }
                 }
             }
 
@@ -453,23 +488,28 @@ impl NyxAsyncStream {
             self.update_activity().await;
 
             Ok(())
-        }.await;
-        
+        }
+        .await;
+
         // Complete operation tracking
         if let Err(e) = self.complete_operation(operation_id).await {
             warn!("Failed to complete operation {}: {}", operation_id, e);
         }
-        
+
         result
     }
 
     /// Add reassembled data to read buffer with proper flow control integration
-    async fn add_reassembled_data_to_buffer(&mut self, reassembled: ReassembledData) -> Result<(), StreamError> {
+    async fn add_reassembled_data_to_buffer(
+        &mut self,
+        reassembled: ReassembledData,
+    ) -> Result<(), StreamError> {
         // Verify stream ID matches
         if reassembled.stream_id != self.stream_id {
-            return Err(StreamError::InvalidFrame(
-                format!("Stream ID mismatch: expected {}, got {}", self.stream_id, reassembled.stream_id)
-            ));
+            return Err(StreamError::InvalidFrame(format!(
+                "Stream ID mismatch: expected {}, got {}",
+                self.stream_id, reassembled.stream_id
+            )));
         }
 
         // Check buffer capacity before adding
@@ -493,16 +533,19 @@ impl NyxAsyncStream {
             }
         }
 
-        debug!("Added {} bytes to read buffer, total buffered: {}", 
-               reassembled.data.len(), self.read_data.len());
-        
+        debug!(
+            "Added {} bytes to read buffer, total buffered: {}",
+            reassembled.data.len(),
+            self.read_data.len()
+        );
+
         Ok(())
     }
 
     /// Handle stream completion with flow control cleanup
     async fn handle_stream_completion(&mut self) -> Result<(), StreamError> {
         debug!("Stream {} completing", self.stream_id);
-        
+
         // Update stream state to closed
         match self.state {
             StreamState::Open => self.state = StreamState::HalfClosedRemote,
@@ -514,8 +557,10 @@ impl NyxAsyncStream {
         {
             let flow_controller = self.flow_controller.lock().await;
             let stats = flow_controller.get_stats();
-            debug!("Final flow control stats: bytes_sent={}, bytes_acked={}, throughput={:.2}", 
-                   stats.bytes_sent, stats.bytes_acked, stats.throughput);
+            debug!(
+                "Final flow control stats: bytes_sent={}, bytes_acked={}, throughput={:.2}",
+                stats.bytes_sent, stats.bytes_acked, stats.throughput
+            );
         }
 
         Ok(())
@@ -525,7 +570,7 @@ impl NyxAsyncStream {
     async fn send_window_update_frame(&mut self, window_size: u32) -> Result<(), StreamError> {
         debug!("Sending window update: {} bytes", window_size);
         // For simplified handler, just log. Real implementation would serialize a control frame.
-        
+
         Ok(())
     }
 
@@ -556,21 +601,25 @@ impl NyxAsyncStream {
             let stream_id = self.stream_id;
             let cleanup_interval = self.cleanup_config.cleanup_interval;
             let resource_manager = Arc::clone(&self.resource_manager);
-            
+
             let monitoring_task = tokio::spawn(async move {
                 let mut interval = tokio::time::interval(cleanup_interval);
-                
+
                 loop {
                     interval.tick().await;
-                    
+
                     // Perform periodic resource checks
                     let stats = resource_manager.get_stats().await;
-                    if stats.total_resources > 100 { // Arbitrary threshold
-                        debug!("Stream {} has {} resources active", stream_id, stats.total_resources);
+                    if stats.total_resources > 100 {
+                        // Arbitrary threshold
+                        debug!(
+                            "Stream {} has {} resources active",
+                            stream_id, stats.total_resources
+                        );
                     }
                 }
             });
-            
+
             self.monitoring_task = Some(monitoring_task);
             info!("Started resource monitoring for stream {}", self.stream_id);
         }
@@ -582,16 +631,18 @@ impl NyxAsyncStream {
         if let Some(task) = self.monitoring_task.take() {
             task.abort();
         }
-        
+
         debug!("Stopped resource monitoring for stream {}", self.stream_id);
     }
 
     /// Register a new pending operation
     pub async fn register_operation(&self, operation_type: &str) -> Result<u64, StreamError> {
-        let operation_id = self.next_operation_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        let operation_id = self
+            .next_operation_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let mut pending_ops = self.pending_operations.lock().await;
-        
+
         // Check limits
         if pending_ops.len() >= self.cleanup_config.max_pending_operations {
             return Err(StreamError::Resource(ResourceError::LimitExceeded {
@@ -600,26 +651,29 @@ impl NyxAsyncStream {
                 current: pending_ops.len(),
             }));
         }
-        
+
         let operation = PendingOperation {
             id: operation_id,
             operation_type: operation_type.to_string(),
             started_at: Instant::now(),
             cancel_handle: Some(CancellationToken::new()),
         };
-        
+
         pending_ops.push(operation);
-        
+
         // Register with resource manager
         let resource_info = ResourceInfo::new(
             format!("operation_{}", operation_id),
             ResourceType::Custom("pending_operation"),
             std::mem::size_of::<PendingOperation>(),
-        ).with_metadata("operation_type".to_string(), operation_type.to_string())
-         .with_metadata("stream_id".to_string(), self.stream_id.to_string());
-        
-        self.resource_manager.register_resource(resource_info).await?;
-        
+        )
+        .with_metadata("operation_type".to_string(), operation_type.to_string())
+        .with_metadata("stream_id".to_string(), self.stream_id.to_string());
+
+        self.resource_manager
+            .register_resource(resource_info)
+            .await?;
+
         debug!("Registered operation {} ({})", operation_id, operation_type);
         Ok(operation_id)
     }
@@ -627,39 +681,51 @@ impl NyxAsyncStream {
     /// Complete a pending operation
     pub async fn complete_operation(&self, operation_id: u64) -> Result<(), StreamError> {
         let mut pending_ops = self.pending_operations.lock().await;
-        
+
         if let Some(pos) = pending_ops.iter().position(|op| op.id == operation_id) {
             let operation = pending_ops.remove(pos);
-            
+
             // Clean up from resource manager
-            self.resource_manager.cleanup_resource(&format!("operation_{}", operation_id)).await?;
-            
-            self.operations_completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            debug!("Completed operation {} ({})", operation_id, operation.operation_type);
+            self.resource_manager
+                .cleanup_resource(&format!("operation_{}", operation_id))
+                .await?;
+
+            self.operations_completed
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            debug!(
+                "Completed operation {} ({})",
+                operation_id, operation.operation_type
+            );
         }
-        
+
         Ok(())
     }
 
     /// Cancel a pending operation
     pub async fn cancel_operation(&self, operation_id: u64) -> Result<(), StreamError> {
         let mut pending_ops = self.pending_operations.lock().await;
-        
+
         if let Some(pos) = pending_ops.iter().position(|op| op.id == operation_id) {
             let operation = pending_ops.remove(pos);
-            
+
             // Cancel the operation if possible
             if let Some(cancel_handle) = operation.cancel_handle {
                 cancel_handle.cancel();
             }
-            
+
             // Clean up from resource manager
-            self.resource_manager.cleanup_resource(&format!("operation_{}", operation_id)).await?;
-            
-            self.operations_cancelled.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            debug!("Cancelled operation {} ({})", operation_id, operation.operation_type);
+            self.resource_manager
+                .cleanup_resource(&format!("operation_{}", operation_id))
+                .await?;
+
+            self.operations_cancelled
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            debug!(
+                "Cancelled operation {} ({})",
+                operation_id, operation.operation_type
+            );
         }
-        
+
         Ok(())
     }
 
@@ -667,43 +733,55 @@ impl NyxAsyncStream {
     async fn cancel_all_operations(&self) -> Result<(), StreamError> {
         let mut pending_ops = self.pending_operations.lock().await;
         let operation_ids: Vec<u64> = pending_ops.iter().map(|op| op.id).collect();
-        
+
         for operation in pending_ops.drain(..) {
             if let Some(cancel_handle) = operation.cancel_handle {
                 cancel_handle.cancel();
             }
-            
+
             // Clean up from resource manager
-            if let Err(e) = self.resource_manager.cleanup_resource(&format!("operation_{}", operation.id)).await {
+            if let Err(e) = self
+                .resource_manager
+                .cleanup_resource(&format!("operation_{}", operation.id))
+                .await
+            {
                 warn!("Failed to cleanup operation {}: {}", operation.id, e);
             }
-            
-            self.operations_cancelled.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+            self.operations_cancelled
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
-        
-        info!("Cancelled {} pending operations for stream {}", operation_ids.len(), self.stream_id);
+
+        info!(
+            "Cancelled {} pending operations for stream {}",
+            operation_ids.len(),
+            self.stream_id
+        );
         Ok(())
     }
 
     /// Perform complete resource cleanup
     pub async fn cleanup_resources(&self) -> Result<(), StreamError> {
-        if self.is_cleaning_up.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .is_cleaning_up
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
             // Already cleaning up, wait for completion
             self.cleanup_completed.notified().await;
             return Ok(());
         }
-        
+
         info!("Starting resource cleanup for stream {}", self.stream_id);
-        
+
         // Cancel all pending operations
         if let Err(e) = self.cancel_all_operations().await {
             error!("Failed to cancel operations during cleanup: {}", e);
         }
-        
+
         // Clean up frame buffer resources
         {
             let mut read_buffer = self.read_buffer.lock().await;
-            
+
             // Clean up any leaked frame data
             for frame in &read_buffer.frames {
                 // The frame data is leaked memory that needs to be reclaimed
@@ -714,21 +792,26 @@ impl NyxAsyncStream {
             read_buffer.frames.clear();
             read_buffer.total_received = 0;
         }
-        
+
         // Register buffer cleanup
         let buffer_resource = ResourceInfo::new(
             format!("read_buffer_{}", self.stream_id),
             ResourceType::Buffer,
             self.read_data.len() + self.write_buffer.len(),
-        ).with_cleanup_callback(Box::new(|| {
+        )
+        .with_cleanup_callback(Box::new(|| {
             debug!("Cleaned up stream buffers");
             Ok(())
         }));
-        
-        if let Err(e) = self.resource_manager.register_resource(buffer_resource).await {
+
+        if let Err(e) = self
+            .resource_manager
+            .register_resource(buffer_resource)
+            .await
+        {
             warn!("Failed to register buffer resource: {}", e);
         }
-        
+
         // Clean up all resources through resource manager
         if let Err(errors) = self.resource_manager.cleanup_all().await {
             warn!("Some resources failed to clean up: {} errors", errors.len());
@@ -736,43 +819,46 @@ impl NyxAsyncStream {
                 error!("Resource cleanup error: {}", error);
             }
         }
-        
+
         // Update activity timestamp
         {
             let mut last_activity = self.last_activity.lock().await;
             *last_activity = Instant::now();
         }
-        
+
         info!("Completed resource cleanup for stream {}", self.stream_id);
-        
+
         // Reset cleanup state and notify any waiters
-        self.is_cleaning_up.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.is_cleaning_up
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         self.cleanup_completed.notify_waiters();
-        
+
         Ok(())
     }
 
     /// Force cleanup with timeout
     pub async fn force_cleanup(&self) -> Result<(), StreamError> {
         let cleanup_future = self.cleanup_resources();
-        
+
         match tokio::time::timeout(self.cleanup_config.cleanup_timeout, cleanup_future).await {
             Ok(result) => result,
             Err(_) => {
                 error!("Cleanup timeout for stream {}", self.stream_id);
-                
+
                 // Force cleanup by aborting all tasks
                 if let Err(e) = self.cancel_all_operations().await {
                     error!("Failed to force cancel operations: {}", e);
                 }
-                
+
                 Err(StreamError::CleanupTimeout)
             }
         }
     }
 
     /// Get resource usage statistics
-    pub async fn get_resource_stats(&self) -> Result<crate::resource_manager::ResourceStats, StreamError> {
+    pub async fn get_resource_stats(
+        &self,
+    ) -> Result<crate::resource_manager::ResourceStats, StreamError> {
         Ok(self.resource_manager.get_stats().await)
     }
 
@@ -780,7 +866,7 @@ impl NyxAsyncStream {
     pub async fn get_stream_stats(&self) -> StreamStats {
         let last_activity = *self.last_activity.lock().await;
         let pending_ops = self.pending_operations.lock().await.len();
-        
+
         StreamStats {
             stream_id: self.stream_id,
             state: self.state,
@@ -788,12 +874,18 @@ impl NyxAsyncStream {
             last_activity,
             bytes_read: self.bytes_read.load(std::sync::atomic::Ordering::SeqCst),
             bytes_written: self.bytes_written.load(std::sync::atomic::Ordering::SeqCst),
-            operations_completed: self.operations_completed.load(std::sync::atomic::Ordering::SeqCst),
-            operations_cancelled: self.operations_cancelled.load(std::sync::atomic::Ordering::SeqCst),
+            operations_completed: self
+                .operations_completed
+                .load(std::sync::atomic::Ordering::SeqCst),
+            operations_cancelled: self
+                .operations_cancelled
+                .load(std::sync::atomic::Ordering::SeqCst),
             pending_operations: pending_ops,
             read_buffer_size: self.read_data.len(),
             write_buffer_size: self.write_buffer.len(),
-            is_cleaning_up: self.is_cleaning_up.load(std::sync::atomic::Ordering::SeqCst),
+            is_cleaning_up: self
+                .is_cleaning_up
+                .load(std::sync::atomic::Ordering::SeqCst),
         }
     }
 
@@ -809,7 +901,7 @@ impl NyxAsyncStream {
 
         // Register operation for tracking
         let operation_id = self.register_operation("write_with_flow_control").await?;
-        
+
         let result = async {
             let mut total_written = 0;
             let mut remaining_data = buf;
@@ -823,8 +915,11 @@ impl NyxAsyncStream {
 
                 if available_window == 0 {
                     // Wait for window update or apply backpressure
-                    debug!("Send window exhausted, applying backpressure for stream {}", self.stream_id);
-                    
+                    debug!(
+                        "Send window exhausted, applying backpressure for stream {}",
+                        self.stream_id
+                    );
+
                     // In a real implementation, we would wait for a window update
                     // For now, we'll return partial write
                     break;
@@ -833,7 +928,7 @@ impl NyxAsyncStream {
                 // Step 2: Determine how much data we can send
                 let chunk_size = std::cmp::min(
                     std::cmp::min(remaining_data.len(), self.max_frame_size),
-                    available_window as usize
+                    available_window as usize,
                 );
 
                 let chunk = &remaining_data[..chunk_size];
@@ -844,11 +939,12 @@ impl NyxAsyncStream {
                 // Step 4: Update flow control before sending
                 {
                     let mut flow_controller = self.flow_controller.lock().await;
-                    
+
                     // Reserve send window space
-                    flow_controller.consume_send_window(chunk_size as u32)
+                    flow_controller
+                        .consume_send_window(chunk_size as u32)
                         .map_err(|_| StreamError::FlowControlViolation)?;
-                    
+
                     // Update congestion control metrics
                     let _ = flow_controller.on_data_sent(chunk_size as u32);
                 }
@@ -865,24 +961,29 @@ impl NyxAsyncStream {
                 self.write_offset += chunk_size as u32;
                 total_written += chunk_size;
                 remaining_data = &remaining_data[chunk_size..];
-                
+
                 // Update bytes written counter
-                self.bytes_written.fetch_add(chunk_size as u64, std::sync::atomic::Ordering::Relaxed);
+                self.bytes_written
+                    .fetch_add(chunk_size as u64, std::sync::atomic::Ordering::Relaxed);
 
                 // Update activity
                 self.update_activity().await;
 
                 // If we couldn't send all data due to flow control, break
                 if chunk_size < remaining_data.len() {
-                    debug!("Partial write due to flow control: sent {}/{} bytes", 
-                           total_written, buf.len());
+                    debug!(
+                        "Partial write due to flow control: sent {}/{} bytes",
+                        total_written,
+                        buf.len()
+                    );
                     break;
                 }
             }
 
             debug!("Wrote {} bytes to stream {}", total_written, self.stream_id);
             Ok(total_written)
-        }.await;
+        }
+        .await;
 
         // Complete operation tracking
         if let Err(e) = self.complete_operation(operation_id).await {
@@ -893,21 +994,28 @@ impl NyxAsyncStream {
     }
 
     /// Handle acknowledgment of sent data to update flow control
-    pub async fn handle_data_ack(&mut self, acked_bytes: u32, rtt_sample: Option<Duration>) -> Result<(), StreamError> {
-        debug!("Handling data ACK: {} bytes, RTT: {:?}", acked_bytes, rtt_sample);
-        
+    pub async fn handle_data_ack(
+        &mut self,
+        acked_bytes: u32,
+        rtt_sample: Option<Duration>,
+    ) -> Result<(), StreamError> {
+        debug!(
+            "Handling data ACK: {} bytes, RTT: {:?}",
+            acked_bytes, rtt_sample
+        );
+
         // Update flow control state
         {
             let mut flow_controller = self.flow_controller.lock().await;
-            
+
             // Update RTT if provided
             if let Some(rtt) = rtt_sample {
                 flow_controller.update_rtt(rtt);
             }
-            
+
             // Process acknowledgment
             flow_controller.on_data_acked(acked_bytes);
-            
+
             // Update congestion window if RTT sample is provided
             if let Some(rtt) = rtt_sample {
                 flow_controller.on_ack_received(acked_bytes, rtt, false);
@@ -916,14 +1024,17 @@ impl NyxAsyncStream {
 
         // Update activity
         self.update_activity().await;
-        
+
         Ok(())
     }
 
     /// Handle data loss indication to trigger congestion control
     pub async fn handle_data_loss(&mut self, lost_bytes: u32) -> Result<(), StreamError> {
-        warn!("Handling data loss: {} bytes for stream {}", lost_bytes, self.stream_id);
-        
+        warn!(
+            "Handling data loss: {} bytes for stream {}",
+            lost_bytes, self.stream_id
+        );
+
         // Update flow control state
         {
             let mut flow_controller = self.flow_controller.lock().await;
@@ -932,7 +1043,7 @@ impl NyxAsyncStream {
 
         // Update activity
         self.update_activity().await;
-        
+
         Ok(())
     }
 
@@ -949,12 +1060,15 @@ impl NyxAsyncStream {
 
     /// Schedule automatic cleanup when appropriate
     async fn schedule_cleanup(&mut self) -> Result<(), StreamError> {
-        if self.is_cleaning_up.load(std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .is_cleaning_up
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             return Ok(()); // Already cleaning up
         }
 
         debug!("Scheduling cleanup for stream {}", self.stream_id);
-        
+
         let resource_manager = Arc::clone(&self.resource_manager);
         let pending_operations = Arc::clone(&self.pending_operations);
         let is_cleaning_up = Arc::clone(&self.is_cleaning_up);
@@ -965,9 +1079,9 @@ impl NyxAsyncStream {
         let cleanup_task = tokio::spawn(async move {
             // Wait a bit before cleanup to allow final operations
             tokio::time::sleep(Duration::from_millis(100)).await;
-            
+
             is_cleaning_up.store(true, std::sync::atomic::Ordering::SeqCst);
-            
+
             // Cancel all pending operations
             {
                 let mut pending_ops = pending_operations.lock().await;
@@ -977,15 +1091,19 @@ impl NyxAsyncStream {
                     }
                 }
             }
-            
+
             // Clean up resources
             if let Err(errors) = resource_manager.cleanup_all().await {
-                error!("Failed to cleanup resources for stream {}: {} errors", stream_id, errors.len());
+                error!(
+                    "Failed to cleanup resources for stream {}: {} errors",
+                    stream_id,
+                    errors.len()
+                );
                 for error in &errors {
                     error!("Cleanup error: {}", error);
                 }
             }
-            
+
             // Reset cleanup state and notify any waiters
             is_cleaning_up.store(false, std::sync::atomic::Ordering::SeqCst);
             cleanup_completed.notify_waiters();
@@ -1035,7 +1153,7 @@ impl NyxAsyncStream {
                 let mut flow_controller = self.flow_controller.lock().await;
                 flow_controller.get_sendable_data(1).is_empty()
             };
-            
+
             let frame = StreamFrame {
                 stream_id: self.stream_id,
                 offset: current_offset,
@@ -1044,7 +1162,7 @@ impl NyxAsyncStream {
             };
 
             let frame_bytes = build_stream_frame(&frame);
-            
+
             // Record data being sent in flow controller
             if !chunk.is_empty() {
                 let mut flow_controller = self.flow_controller.lock().await;
@@ -1053,7 +1171,7 @@ impl NyxAsyncStream {
                     return Err(StreamError::FlowControlViolation);
                 }
             }
-            
+
             if let Err(_) = self.frame_sender.send(frame_bytes) {
                 return Err(StreamError::StreamClosed);
             }
@@ -1078,7 +1196,11 @@ impl NyxAsyncStream {
     }
 
     /// Handle duplicate acknowledgment
-    pub async fn handle_duplicate_ack(&mut self, acked_bytes: u32, rtt: Duration) -> Result<(), StreamError> {
+    pub async fn handle_duplicate_ack(
+        &mut self,
+        acked_bytes: u32,
+        rtt: Duration,
+    ) -> Result<(), StreamError> {
         let mut flow_controller = self.flow_controller.lock().await;
         flow_controller.on_ack_received(acked_bytes, rtt, true);
         debug!("Processed duplicate ACK for {} bytes", acked_bytes);
@@ -1096,7 +1218,8 @@ impl NyxAsyncStream {
     /// Update flow control window
     pub async fn update_flow_window(&mut self, new_window: u32) -> Result<(), StreamError> {
         let mut flow_controller = self.flow_controller.lock().await;
-        flow_controller.update_flow_window(new_window)
+        flow_controller
+            .update_flow_window(new_window)
             .map_err(|_e| StreamError::FlowControlViolation)?;
         debug!("Updated flow window to {} bytes", new_window);
         Ok(())
@@ -1117,31 +1240,43 @@ impl Drop for NyxAsyncStream {
             let pending_operations = Arc::clone(&self.pending_operations);
             let stream_id = self.stream_id;
             let cleanup_timeout = self.cleanup_config.cleanup_timeout;
-            
+
             tokio::spawn(async move {
                 info!("Performing cleanup on drop for stream {}", stream_id);
-                
+
                 // Cancel all pending operations
                 let mut pending_ops = pending_operations.lock().await;
                 for operation in pending_ops.drain(..) {
                     if let Some(cancel_handle) = operation.cancel_handle {
                         cancel_handle.cancel();
                     }
-                    
-                    if let Err(e) = resource_manager.cleanup_resource(&format!("operation_{}", operation.id)).await {
-                        warn!("Failed to cleanup operation {} on drop: {}", operation.id, e);
+
+                    if let Err(e) = resource_manager
+                        .cleanup_resource(&format!("operation_{}", operation.id))
+                        .await
+                    {
+                        warn!(
+                            "Failed to cleanup operation {} on drop: {}",
+                            operation.id, e
+                        );
                     }
                 }
-                
+
                 // Clean up all resources with timeout
                 let cleanup_future = resource_manager.cleanup_all();
                 match tokio::time::timeout(cleanup_timeout, cleanup_future).await {
                     Ok(Ok(())) => {
-                        debug!("Successfully cleaned up resources on drop for stream {}", stream_id);
+                        debug!(
+                            "Successfully cleaned up resources on drop for stream {}",
+                            stream_id
+                        );
                     }
                     Ok(Err(errors)) => {
-                        warn!("Some resources failed to clean up on drop for stream {}: {} errors", 
-                              stream_id, errors.len());
+                        warn!(
+                            "Some resources failed to clean up on drop for stream {}: {} errors",
+                            stream_id,
+                            errors.len()
+                        );
                     }
                     Err(_) => {
                         error!("Cleanup timeout on drop for stream {}", stream_id);
@@ -1149,7 +1284,7 @@ impl Drop for NyxAsyncStream {
                 }
             });
         }
-        
+
         // Abort background tasks
         if let Some(task) = self.cleanup_task.take() {
             task.abort();
@@ -1157,7 +1292,7 @@ impl Drop for NyxAsyncStream {
         if let Some(task) = self.monitoring_task.take() {
             task.abort();
         }
-        
+
         warn!("NyxAsyncStream {} dropped", self.stream_id);
     }
 }
@@ -1169,10 +1304,13 @@ impl AsyncRead for NyxAsyncStream {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         // Check if we're cleaning up
-        if self.is_cleaning_up.load(std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .is_cleaning_up
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             return Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
-                "Stream is being cleaned up"
+                "Stream is being cleaned up",
             )));
         }
 
@@ -1192,20 +1330,21 @@ impl AsyncRead for NyxAsyncStream {
             let to_read = std::cmp::min(buf.remaining(), self.read_data.len());
             let data = self.read_data.split_to(to_read);
             buf.put_slice(&data);
-            
+
             // Update statistics
-            self.bytes_read.fetch_add(to_read as u64, std::sync::atomic::Ordering::SeqCst);
-            
+            self.bytes_read
+                .fetch_add(to_read as u64, std::sync::atomic::Ordering::SeqCst);
+
             // Update activity in background
             let last_activity = Arc::clone(&self.last_activity);
             tokio::spawn(async move {
                 let mut activity = last_activity.lock().await;
                 *activity = Instant::now();
             });
-            
+
             // Send window update if needed
             self.check_and_send_window_update();
-            
+
             return Poll::Ready(Ok(()));
         }
 
@@ -1222,18 +1361,26 @@ impl AsyncWrite for NyxAsyncStream {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         // Check if we're cleaning up
-        if self.is_cleaning_up.load(std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .is_cleaning_up
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             return Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
-                "Stream is being cleaned up"
+                "Stream is being cleaned up",
             )));
         }
 
         // Check if write side is closed
-        if self.write_closed || matches!(self.state, StreamState::Closed | StreamState::HalfClosedLocal) {
+        if self.write_closed
+            || matches!(
+                self.state,
+                StreamState::Closed | StreamState::HalfClosedLocal
+            )
+        {
             return Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
-                "Write side of stream is closed"
+                "Write side of stream is closed",
             )));
         }
 
@@ -1247,7 +1394,7 @@ impl AsyncWrite for NyxAsyncStream {
             let controller = flow_controller.lock().await;
             controller.get_available_send_window()
         };
-        
+
         let mut pinned_check = std::pin::pin!(check_window_future);
         let available_window = match pinned_check.as_mut().poll(cx) {
             Poll::Ready(window) => window,
@@ -1256,7 +1403,10 @@ impl AsyncWrite for NyxAsyncStream {
 
         if available_window == 0 {
             // No window available, wait for window update
-            debug!("No send window available for stream {}, waiting", self.stream_id);
+            debug!(
+                "No send window available for stream {}, waiting",
+                self.stream_id
+            );
             cx.waker().wake_by_ref(); // Wake up to check again later
             return Poll::Pending;
         }
@@ -1264,54 +1414,54 @@ impl AsyncWrite for NyxAsyncStream {
         // Determine how much we can write
         let can_write = std::cmp::min(
             std::cmp::min(buf.len(), self.max_frame_size),
-            available_window as usize
+            available_window as usize,
         );
 
         // Perform the actual write operation
         let write_future = self.write_with_flow_control(&buf[..can_write]);
         let mut pinned_write = std::pin::pin!(write_future);
-        
+
         match pinned_write.as_mut().poll(cx) {
             Poll::Ready(Ok(bytes_written)) => Poll::Ready(Ok(bytes_written)),
             Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("Write error: {}", e)
+                format!("Write error: {}", e),
             ))),
             Poll::Pending => Poll::Pending,
         }
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Check if we're cleaning up
-        if self.is_cleaning_up.load(std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .is_cleaning_up
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             return Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
-                "Stream is being cleaned up"
+                "Stream is being cleaned up",
             )));
         }
 
         // For Nyx streams, flush means ensuring all buffered data is sent
         // In this implementation, data is sent immediately, so flush is always ready
-        
+
         // Update activity
         let last_activity = Arc::clone(&self.last_activity);
         tokio::spawn(async move {
             let mut activity = last_activity.lock().await;
             *activity = Instant::now();
         });
-        
+
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Check if already shutting down
-        if self.is_cleaning_up.load(std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .is_cleaning_up
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             return Poll::Ready(Ok(()));
         }
 
@@ -1319,7 +1469,7 @@ impl AsyncWrite for NyxAsyncStream {
         if !self.write_closed {
             let mut pinned_self = self.as_mut();
             pinned_self.close_write();
-            
+
             // Send FIN frame directly through frame sender instead of async method
             let fin_frame_data = format!("FIN:{}", pinned_self.stream_id);
             if let Err(_) = pinned_self.frame_sender.send(fin_frame_data.into_bytes()) {
@@ -1334,7 +1484,7 @@ impl AsyncWrite for NyxAsyncStream {
         if self.state == StreamState::Closed {
             let cleanup_future = self.initiate_shutdown_cleanup();
             let mut pinned_cleanup = std::pin::pin!(cleanup_future);
-            
+
             match pinned_cleanup.as_mut().poll(cx) {
                 Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
                 Poll::Ready(Err(e)) => {
@@ -1355,22 +1505,25 @@ impl NyxAsyncStream {
         let flow_controller = self.flow_controller.clone();
         let frame_sender = self.frame_sender.clone();
         let stream_id = self.stream_id;
-        
+
         tokio::spawn(async move {
             let should_update = {
                 let controller = flow_controller.lock().await;
                 controller.should_send_window_update()
             };
-            
+
             if should_update {
                 let window_update = {
                     let controller = flow_controller.lock().await;
                     controller.generate_window_update()
                 };
-                
+
                 let window_frame_data = format!("WINDOW_UPDATE:{}:{}", stream_id, window_update);
                 if let Err(_) = frame_sender.send(window_frame_data.into_bytes()) {
-                    warn!("Failed to send window update frame for stream {}", stream_id);
+                    warn!(
+                        "Failed to send window update frame for stream {}",
+                        stream_id
+                    );
                 }
             }
         });
@@ -1379,9 +1532,9 @@ impl NyxAsyncStream {
     /// Send FIN frame to close the write side
     async fn send_fin_frame(&mut self) -> Result<(), StreamError> {
         debug!("Sending FIN frame for stream {}", self.stream_id);
-        
-    // Create FIN frame directly (empty payload signifies FIN in this simplified path)
-    let fin_frame_data: Vec<u8> = Vec::new();
+
+        // Create FIN frame directly (empty payload signifies FIN in this simplified path)
+        let fin_frame_data: Vec<u8> = Vec::new();
 
         // Send the FIN frame
         if let Err(_) = self.frame_sender.send(fin_frame_data) {
@@ -1394,13 +1547,14 @@ impl NyxAsyncStream {
     /// Initiate cleanup during shutdown
     async fn initiate_shutdown_cleanup(&mut self) -> Result<(), StreamError> {
         debug!("Initiating shutdown cleanup for stream {}", self.stream_id);
-        
+
         // Mark as cleaning up
-        self.is_cleaning_up.store(true, std::sync::atomic::Ordering::SeqCst);
-        
+        self.is_cleaning_up
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         // Schedule cleanup
         self.schedule_cleanup().await?;
-        
+
         Ok(())
     }
 }
@@ -1413,15 +1567,15 @@ mod tests {
     #[tokio::test]
     async fn test_basic_read_write() {
         let (mut stream, _receiver) = NyxAsyncStream::new(1, 1024, 4096);
-        
+
         // Start resource monitoring
         stream.start_resource_monitoring().await.unwrap();
-        
+
         // Test write
         let data = b"Hello, World!";
         stream.write_all(data).await.unwrap();
         stream.flush().await.unwrap();
-        
+
         // Simulate receiving the frame back
         let frame = StreamFrame {
             stream_id: 1,
@@ -1431,18 +1585,18 @@ mod tests {
         };
         let frame_bytes = build_stream_frame(&frame);
         stream.handle_incoming_frame(&frame_bytes).await.unwrap();
-        
+
         // Test read
         let mut buf = vec![0u8; data.len()];
         stream.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, data);
-        
+
         // Check statistics
         let stats = stream.get_stream_stats().await;
         assert_eq!(stats.stream_id, 1);
         assert!(stats.bytes_read > 0);
         assert!(stats.bytes_written > 0);
-        
+
         // Clean up
         stream.cleanup_resources().await.unwrap();
     }
@@ -1450,7 +1604,7 @@ mod tests {
     #[tokio::test]
     async fn test_frame_reassembly() {
         let (mut stream, _receiver) = NyxAsyncStream::new(1, 1024, 4096);
-        
+
         // Send frames out of order
         let frame2 = StreamFrame {
             stream_id: 1,
@@ -1464,20 +1618,20 @@ mod tests {
             fin: false,
             data: b"Hello",
         };
-        
+
         // Add second frame first
         let frame2_bytes = build_stream_frame(&frame2);
         stream.handle_incoming_frame(&frame2_bytes).await.unwrap();
-        
+
         // Add first frame
         let frame1_bytes = build_stream_frame(&frame1);
         stream.handle_incoming_frame(&frame1_bytes).await.unwrap();
-        
+
         // Read should get complete data
         let mut buf = vec![0u8; 11];
         stream.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"HelloWorld!");
-        
+
         // Clean up
         stream.cleanup_resources().await.unwrap();
     }
@@ -1485,7 +1639,7 @@ mod tests {
     #[tokio::test]
     async fn test_stream_close() {
         let (mut stream, _receiver) = NyxAsyncStream::new(1, 1024, 4096);
-        
+
         // Send FIN frame
         let frame = StreamFrame {
             stream_id: 1,
@@ -1495,20 +1649,20 @@ mod tests {
         };
         let frame_bytes = build_stream_frame(&frame);
         stream.handle_incoming_frame(&frame_bytes).await.unwrap();
-        
+
         // Read data
         let mut buf = vec![0u8; 20];
         let n = stream.read(&mut buf).await.unwrap();
         assert_eq!(n, 10);
         assert_eq!(&buf[..n], b"Final data");
-        
+
         // Next read should return EOF
         let mut buf2 = vec![0u8; 10];
         let n2 = stream.read(&mut buf2).await.unwrap();
         assert_eq!(n2, 0);
-        
+
         assert_eq!(stream.state(), StreamState::HalfClosedRemote);
-        
+
         // Clean up
         stream.cleanup_resources().await.unwrap();
     }
@@ -1516,25 +1670,25 @@ mod tests {
     #[tokio::test]
     async fn test_resource_cleanup() {
         let (mut stream, _receiver) = NyxAsyncStream::new(1, 1024, 4096);
-        
+
         // Start monitoring
         stream.start_resource_monitoring().await.unwrap();
-        
+
         // Perform some operations
         let data = b"Test data";
         stream.write_all(data).await.unwrap();
         stream.flush().await.unwrap();
-        
+
         // Check resource stats before cleanup
         let _stats_before = stream.get_resource_stats().await.unwrap();
-        
+
         // Perform cleanup
         stream.cleanup_resources().await.unwrap();
-        
+
         // Check resource stats after cleanup
         let stats_after = stream.get_resource_stats().await.unwrap();
         assert_eq!(stats_after.total_resources, 0);
-        
+
         // After cleanup completes, the stream should no longer be marked as cleaning up
         let stream_stats = stream.get_stream_stats().await;
         assert!(!stream_stats.is_cleaning_up);
@@ -1543,17 +1697,17 @@ mod tests {
     #[tokio::test]
     async fn test_operation_tracking() {
         let (stream, _receiver) = NyxAsyncStream::new(1, 1024, 4096);
-        
+
         // Register an operation
         let op_id = stream.register_operation("test_operation").await.unwrap();
-        
+
         // Check pending operations
         let stats = stream.get_stream_stats().await;
         assert_eq!(stats.pending_operations, 1);
-        
+
         // Complete the operation
         stream.complete_operation(op_id).await.unwrap();
-        
+
         // Check operations completed
         let stats_after = stream.get_stream_stats().await;
         assert_eq!(stats_after.pending_operations, 0);
@@ -1563,14 +1717,14 @@ mod tests {
     #[tokio::test]
     async fn test_force_cleanup() {
         let (stream, _receiver) = NyxAsyncStream::new(1, 1024, 4096);
-        
+
         // Register some operations
         let _op1 = stream.register_operation("op1").await.unwrap();
         let _op2 = stream.register_operation("op2").await.unwrap();
-        
+
         // Force cleanup
         stream.force_cleanup().await.unwrap();
-        
+
         // Check that operations were cancelled
         let stats = stream.get_stream_stats().await;
         assert_eq!(stats.pending_operations, 0);
@@ -1586,18 +1740,21 @@ mod tests {
             force_cleanup_on_drop: true,
             max_pending_operations: 10,
         };
-        
+
         let (stream, _receiver) = NyxAsyncStream::new_with_config(1, 1024, 4096, config);
-        
+
         // Test that we can't exceed max pending operations
         for i in 0..10 {
-            stream.register_operation(&format!("op_{}", i)).await.unwrap();
+            stream
+                .register_operation(&format!("op_{}", i))
+                .await
+                .unwrap();
         }
-        
+
         // This should fail due to limit
         let result = stream.register_operation("overflow_op").await;
         assert!(result.is_err());
-        
+
         // Clean up
         stream.cleanup_resources().await.unwrap();
     }

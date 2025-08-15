@@ -28,16 +28,16 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let mut layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Simulate a failed layer
         layer_manager.update_layer_status("crypto", LayerStatus::Failed).await;
-        
+
         // Test recovery
         let result = layer_manager.recover_layer("crypto").await;
         assert!(result.is_ok(), "Layer recovery should succeed");
-        
+
         // Verify layer is healthy after recovery
         let is_healthy = layer_manager.is_layer_healthy("crypto").await;
         assert!(is_healthy, "Layer should be healthy after recovery");
@@ -49,13 +49,13 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let mut layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Test sequential recovery for a layer with dependencies
         let result = layer_manager.sequential_recovery("stream").await;
         assert!(result.is_ok(), "Sequential recovery should succeed");
-        
+
         // Verify all layers in the dependency chain are healthy
         let layers = vec!["transport", "crypto", "fec", "stream"];
         for layer in layers {
@@ -70,14 +70,14 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Test dependency chain for mix layer (should include all layers)
         let chain = layer_manager.build_dependency_chain("mix");
         let expected = vec!["transport", "crypto", "fec", "stream", "mix"];
         assert_eq!(chain, expected, "Mix layer dependency chain should include all layers in order");
-        
+
         // Test dependency chain for crypto layer (should include transport and crypto)
         let chain = layer_manager.build_dependency_chain("crypto");
         let expected = vec!["transport", "crypto"];
@@ -90,16 +90,16 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let mut layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // All layers should be active initially
         let continuity = layer_manager.check_service_continuity().await.unwrap();
         assert!(continuity >= 0.8, "Service continuity should be high initially");
-        
+
         // Simulate a failed layer
         layer_manager.update_layer_status("mix", LayerStatus::Failed).await;
-        
+
         // Service continuity should decrease
         let continuity = layer_manager.check_service_continuity().await.unwrap();
         assert!(continuity < 1.0, "Service continuity should decrease with failed layer");
@@ -111,19 +111,19 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Test handling temporary degradation
         let affected_layers = vec!["stream".to_string(), "mix".to_string()];
         let result = layer_manager.handle_temporary_degradation(affected_layers).await;
         assert!(result.is_ok(), "Temporary degradation handling should succeed");
-        
+
         // Verify affected layers are marked as degraded
         let health_data = layer_manager.layer_health.read().await;
         let stream_layer = health_data.iter().find(|l| l.layer_name == "stream").unwrap();
         let mix_layer = health_data.iter().find(|l| l.layer_name == "mix").unwrap();
-        
+
         assert!(matches!(stream_layer.status, LayerStatus::Degraded), "Stream layer should be degraded");
         assert!(matches!(mix_layer.status, LayerStatus::Degraded), "Mix layer should be degraded");
     }
@@ -134,9 +134,9 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Test recovery with rollback for a layer
         let result = layer_manager.recovery_with_rollback("fec").await;
         assert!(result.is_ok(), "Recovery with rollback should succeed");
@@ -148,12 +148,12 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Test criticality levels
         use crate::layer_manager::LayerCriticality;
-        
+
         assert!(matches!(layer_manager.determine_layer_criticality("transport"), LayerCriticality::Critical));
         assert!(matches!(layer_manager.determine_layer_criticality("crypto"), LayerCriticality::Critical));
         assert!(matches!(layer_manager.determine_layer_criticality("stream"), LayerCriticality::Important));
@@ -167,13 +167,13 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Test enhanced escalation for different layer types
         let result = layer_manager.enhanced_escalation("mix", "Test failure").await;
         assert!(result.is_ok(), "Enhanced escalation for optional layer should succeed");
-        
+
         let result = layer_manager.enhanced_escalation("stream", "Test failure").await;
         assert!(result.is_ok(), "Enhanced escalation for important layer should succeed");
     }
@@ -184,13 +184,13 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let mut layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Initially all layers should be healthy
         let is_healthy = layer_manager.is_layer_healthy("crypto").await;
         assert!(is_healthy, "Crypto layer should be healthy initially");
-        
+
         // Simulate high error rate
         {
             let mut health_data = layer_manager.layer_health.write().await;
@@ -198,7 +198,7 @@ mod tests {
                 layer.performance_metrics.error_rate = 0.15; // 15% error rate (above threshold)
             }
         }
-        
+
         // Layer should now be considered unhealthy
         let is_healthy = layer_manager.is_layer_healthy("crypto").await;
         assert!(!is_healthy, "Crypto layer should be unhealthy with high error rate");
@@ -210,9 +210,9 @@ mod tests {
         let config = NyxConfig::default();
         let metrics = Arc::new(MetricsCollector::new());
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let mut layer_manager = LayerManager::new(config, metrics, event_tx).await.unwrap();
-        
+
         // Simulate a layer with many errors
         {
             let mut health_data = layer_manager.layer_health.write().await;
@@ -220,7 +220,7 @@ mod tests {
                 layer.error_count = 15; // Above threshold
             }
         }
-        
+
         // Check recovery needs should detect this
         let result = layer_manager.check_layer_recovery_needs().await;
         assert!(result.is_ok(), "Recovery needs check should succeed");
@@ -232,8 +232,8 @@ mod tests {
 #[cfg(test)]
 mod runtime_policy_tests {
     use super::*;
-    use nyx_daemon::layer_manager::{LayerManager, LayerStatus};
     use nyx_core::config::NyxConfig;
+    use nyx_daemon::layer_manager::{LayerManager, LayerStatus};
     use nyx_daemon::metrics::MetricsCollector;
     use std::sync::Arc;
     use tokio::sync::broadcast;

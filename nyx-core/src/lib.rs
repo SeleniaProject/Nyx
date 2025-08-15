@@ -1,44 +1,47 @@
 use std::io::Write;
 
+pub mod advanced_routing;
+pub mod capability;
+pub mod cmix;
+pub mod compliance;
 pub mod config;
 pub mod error;
-pub mod types;
-#[cfg(target_os = "linux")]
-pub mod sandbox;
-#[cfg(target_os = "windows")]
-pub mod windows;
-pub mod i18n;
-pub mod mobile;
-pub mod push;
-pub mod capability;
-pub mod compliance;
-pub mod cmix;
-pub mod low_power;
-pub mod push_gateway; // Push Notification Path / Gateway reconnection
 #[cfg(feature = "mobile_ffi")]
 mod ffi_detector; // internal module providing FfiScreenStateDetector
-pub mod advanced_routing;
+pub mod i18n;
+pub mod low_power;
+pub mod mobile;
+pub mod path_monitor;
 pub mod performance;
-pub mod zero_copy; // Zero-copy optimization for critical data paths
-pub mod path_monitor; // 新しい共有パス性能モニタ
-// New v1.0 Critical Priority modules
-#[cfg(feature = "plugin_framework")]
-pub mod plugin_framework;
-#[cfg(feature = "multipath_dp")]
-pub mod multipath_dataplane;
+pub mod push;
+pub mod push_gateway; // Push Notification Path / Gateway reconnection
+#[cfg(target_os = "linux")]
+pub mod sandbox;
+pub mod types;
+#[cfg(target_os = "windows")]
+pub mod windows;
+pub mod zero_copy; // Zero-copy optimization for critical data paths // 新しい共有パス性能モニタ
+                                                                     // New v1.0 Critical Priority modules
 #[cfg(feature = "cmix")]
 pub mod cmix_integration;
+#[cfg(feature = "multipath_dp")]
+pub mod multipath_dataplane;
+#[cfg(feature = "plugin_framework")]
+pub mod plugin_framework;
 
+pub use config::MultipathConfig;
 pub use config::NyxConfig;
 pub use config::PushProvider;
-pub use config::MultipathConfig;
 pub use error::NyxError;
 pub use error::NyxResult;
-pub use types::NodeId;
-pub use types::PathId;
-pub use path_monitor::{PathPerformanceMonitor, PathPerformanceMetrics, PerformanceTrend as PathPerformanceTrend, GlobalPathStats as CoreGlobalPathStats};
+pub use path_monitor::{
+    GlobalPathStats as CoreGlobalPathStats, PathPerformanceMetrics, PathPerformanceMonitor,
+    PerformanceTrend as PathPerformanceTrend,
+};
 #[cfg(target_os = "linux")]
 pub use sandbox::install_seccomp;
+pub use types::NodeId;
+pub use types::PathId;
 #[cfg(target_os = "windows")]
 pub use windows::apply_process_isolation;
 #[cfg(target_os = "openbsd")]
@@ -57,14 +60,14 @@ pub fn install_panic_abort() {
 }
 
 pub use capability::{Capability, FLAG_REQUIRED};
-pub use compliance::{ComplianceLevel};
+pub use compliance::ComplianceLevel;
 #[cfg(feature = "mobile_ffi")]
 pub use ffi_detector::FfiScreenStateDetector;
 
 // Export new v1.0 Critical Priority components
-#[cfg(feature = "plugin_framework")]
-pub use plugin_framework::{PluginFramework, PluginHeader, PluginCapabilities};
+#[cfg(feature = "cmix")]
+pub use cmix_integration::{BatchProcessor, CMixConfig, CMixIntegration};
 #[cfg(feature = "multipath_dp")]
 pub use multipath_dataplane::{MultipathDataPlane, PathId as MultipathPathId, PathMetrics};
-#[cfg(feature = "cmix")]
-pub use cmix_integration::{CMixIntegration, CMixConfig, BatchProcessor};
+#[cfg(feature = "plugin_framework")]
+pub use plugin_framework::{PluginCapabilities, PluginFramework, PluginHeader};

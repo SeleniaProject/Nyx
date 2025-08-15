@@ -9,13 +9,13 @@
 //! - Plugin capability negotiation
 //! - Sandboxed execution environments
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use serde::{Serialize, Deserialize};
 use thiserror::Error;
-use tracing::{debug, warn, info};
-use ed25519_dalek::{Signature, VerifyingKey, Verifier};
-use sha2::{Digest, Sha256};
+use tracing::{debug, info, warn};
 
 /// Plugin unique identifier
 pub type PluginId = u32;
@@ -91,7 +91,10 @@ pub enum RegistryError {
     InvalidId(PluginId),
 
     #[error("Permission denied for plugin {plugin_id}: {permission:?}")]
-    PermissionDenied { plugin_id: PluginId, permission: Permission },
+    PermissionDenied {
+        plugin_id: PluginId,
+        permission: Permission,
+    },
 
     #[error("Plugin validation failed: {0}")]
     ValidationFailed(String),
@@ -136,8 +139,10 @@ impl PluginRegistry {
         plugins.insert(info.id, info.clone());
         permissions.insert(info.id, info.permissions.clone());
 
-        info!("Plugin registered: {} (ID: {}, Version: {})", 
-              info.name, info.id, info.version);
+        info!(
+            "Plugin registered: {} (ID: {}, Version: {})",
+            info.name, info.id, info.version
+        );
         Ok(())
     }
 
@@ -146,11 +151,15 @@ impl PluginRegistry {
         let mut plugins = self.plugins.lock().unwrap();
         let mut permissions = self.permissions.lock().unwrap();
 
-        let plugin_info = plugins.remove(&plugin_id)
+        let plugin_info = plugins
+            .remove(&plugin_id)
             .ok_or(RegistryError::NotFound(plugin_id))?;
         permissions.remove(&plugin_id);
 
-        info!("Plugin unregistered: {} (ID: {})", plugin_info.name, plugin_id);
+        info!(
+            "Plugin unregistered: {} (ID: {})",
+            plugin_info.name, plugin_id
+        );
         Ok(())
     }
 
@@ -171,16 +180,22 @@ impl PluginRegistry {
 
     /// Check if plugin has specific permission
     pub fn has_permission(&self, plugin_id: PluginId, permission: Permission) -> bool {
-        self.permissions.lock().unwrap()
+        self.permissions
+            .lock()
+            .unwrap()
             .get(&plugin_id)
             .map(|perms| perms.contains(&permission))
             .unwrap_or(false)
     }
 
     /// Grant permission to plugin
-    pub fn grant_permission(&self, plugin_id: PluginId, permission: Permission) -> Result<(), RegistryError> {
+    pub fn grant_permission(
+        &self,
+        plugin_id: PluginId,
+        permission: Permission,
+    ) -> Result<(), RegistryError> {
         let mut permissions = self.permissions.lock().unwrap();
-        
+
         // Check if plugin exists
         if !self.plugins.lock().unwrap().contains_key(&plugin_id) {
             return Err(RegistryError::NotFound(plugin_id));
@@ -189,7 +204,10 @@ impl PluginRegistry {
         let plugin_perms = permissions.entry(plugin_id).or_insert_with(Vec::new);
         if !plugin_perms.contains(&permission) {
             plugin_perms.push(permission);
-            debug!("Permission granted to plugin {}: {:?}", plugin_id, permission);
+            debug!(
+                "Permission granted to plugin {}: {:?}",
+                plugin_id, permission
+            );
         }
         Ok(())
     }
@@ -197,10 +215,13 @@ impl PluginRegistry {
     /// Revoke permission from plugin
     pub fn revoke(&self, plugin_id: PluginId, permission: Permission) -> Result<(), RegistryError> {
         let mut permissions = self.permissions.lock().unwrap();
-        
+
         if let Some(plugin_perms) = permissions.get_mut(&plugin_id) {
             plugin_perms.retain(|p| *p != permission);
-            debug!("Permission revoked from plugin {}: {:?}", plugin_id, permission);
+            debug!(
+                "Permission revoked from plugin {}: {:?}",
+                plugin_id, permission
+            );
             Ok(())
         } else {
             Err(RegistryError::NotFound(plugin_id))
@@ -219,7 +240,9 @@ impl PluginRegistry {
 
     /// Get plugins requiring specific permission
     pub fn plugins_with_permission(&self, permission: Permission) -> Vec<PluginId> {
-        self.permissions.lock().unwrap()
+        self.permissions
+            .lock()
+            .unwrap()
             .iter()
             .filter_map(|(id, perms)| {
                 if perms.contains(&permission) {
@@ -239,21 +262,26 @@ impl PluginRegistry {
 
         // Plugin name must not be empty
         if info.name.is_empty() {
-            return Err(RegistryError::ValidationFailed("Plugin name cannot be empty".to_string()));
+            return Err(RegistryError::ValidationFailed(
+                "Plugin name cannot be empty".to_string(),
+            ));
         }
 
         // Version must be valid semantic version format
         if info.version.is_empty() {
-            return Err(RegistryError::ValidationFailed("Plugin version cannot be empty".to_string()));
+            return Err(RegistryError::ValidationFailed(
+                "Plugin version cannot be empty".to_string(),
+            ));
         }
 
         // Check for duplicate frame types
         let mut seen_frames = std::collections::HashSet::new();
         for &frame_type in &info.supported_frames {
             if !seen_frames.insert(frame_type) {
-                return Err(RegistryError::ValidationFailed(
-                    format!("Duplicate frame type: 0x{:02x}", frame_type)
-                ));
+                return Err(RegistryError::ValidationFailed(format!(
+                    "Duplicate frame type: 0x{:02x}",
+                    frame_type
+                )));
             }
         }
 
@@ -261,27 +289,56 @@ impl PluginRegistry {
     }
 
     /// Verify plugin metadata signature using Ed25519
-    fn verify_signature(&self, info: &PluginInfo, signature_b64: &str, pubkey_b64: &str) -> Result<(), RegistryError> {
+    fn verify_signature(
+        &self,
+        info: &PluginInfo,
+        signature_b64: &str,
+        pubkey_b64: &str,
+    ) -> Result<(), RegistryError> {
         use base64::{engine::general_purpose::STANDARD, Engine};
-        let sig_bytes = STANDARD.decode(signature_b64.as_bytes()).map_err(|e| RegistryError::ValidationFailed(format!("invalid signature b64: {}", e)))?;
-        let pk_bytes = STANDARD.decode(pubkey_b64.as_bytes()).map_err(|e| RegistryError::ValidationFailed(format!("invalid pubkey b64: {}", e)))?;
-        let signature = Signature::from_bytes(&sig_bytes.try_into().map_err(|_| RegistryError::ValidationFailed("invalid signature length".into()))?);
-        let vk = VerifyingKey::from_bytes(&pk_bytes.try_into().map_err(|_| RegistryError::ValidationFailed("invalid pubkey length".into()))?)
-            .map_err(|e| RegistryError::ValidationFailed(format!("invalid pubkey: {}", e)))?;
+        let sig_bytes = STANDARD.decode(signature_b64.as_bytes()).map_err(|e| {
+            RegistryError::ValidationFailed(format!("invalid signature b64: {}", e))
+        })?;
+        let pk_bytes = STANDARD
+            .decode(pubkey_b64.as_bytes())
+            .map_err(|e| RegistryError::ValidationFailed(format!("invalid pubkey b64: {}", e)))?;
+        let signature = Signature::from_bytes(
+            &sig_bytes
+                .try_into()
+                .map_err(|_| RegistryError::ValidationFailed("invalid signature length".into()))?,
+        );
+        let vk = VerifyingKey::from_bytes(
+            &pk_bytes
+                .try_into()
+                .map_err(|_| RegistryError::ValidationFailed("invalid pubkey length".into()))?,
+        )
+        .map_err(|e| RegistryError::ValidationFailed(format!("invalid pubkey: {}", e)))?;
 
         // Canonical digest over selected fields
         let mut ctx = Sha256::new();
         ctx.update(b"nyx-plugin-info-v1\n");
         ctx.update(info.id.to_be_bytes());
-        ctx.update(info.name.as_bytes()); ctx.update(b"\n");
-        ctx.update(info.version.as_bytes()); ctx.update(b"\n");
-        ctx.update(info.description.as_bytes()); ctx.update(b"\n");
-        for p in &info.permissions { ctx.update((*p as u32).to_be_bytes()); }
+        ctx.update(info.name.as_bytes());
+        ctx.update(b"\n");
+        ctx.update(info.version.as_bytes());
+        ctx.update(b"\n");
+        ctx.update(info.description.as_bytes());
+        ctx.update(b"\n");
+        for p in &info.permissions {
+            ctx.update((*p as u32).to_be_bytes());
+        }
         ctx.update(b"\n");
         let mut kv: Vec<_> = info.config_schema.iter().collect();
-        kv.sort_by(|a,b| a.0.cmp(b.0));
-        for (k,v) in kv { ctx.update(k.as_bytes()); ctx.update(b"="); ctx.update(v.as_bytes()); ctx.update(b";\n"); }
-        for f in &info.supported_frames { ctx.update(&[*f]); }
+        kv.sort_by(|a, b| a.0.cmp(b.0));
+        for (k, v) in kv {
+            ctx.update(k.as_bytes());
+            ctx.update(b"=");
+            ctx.update(v.as_bytes());
+            ctx.update(b";\n");
+        }
+        for f in &info.supported_frames {
+            ctx.update(&[*f]);
+        }
         ctx.update(&[info.required as u8]);
         let digest = ctx.finalize();
         vk.verify(digest.as_slice(), &signature)
@@ -327,13 +384,16 @@ mod tests {
     async fn test_register_plugin() {
         let registry = PluginRegistry::new();
         let info = test_plugin_info();
-        
+
         assert!(registry.register(info).await.is_ok());
         assert_eq!(registry.count(), 1);
-        
+
         // Duplicate registration should fail
         let dup = test_plugin_info();
-        assert!(matches!(registry.register(dup).await, Err(RegistryError::AlreadyExists(_))));
+        assert!(matches!(
+            registry.register(dup).await,
+            Err(RegistryError::AlreadyExists(_))
+        ));
     }
 
     #[tokio::test]
@@ -348,7 +408,9 @@ mod tests {
         assert!(!registry.has_permission(info.id, Permission::FileSystemAccess));
 
         // Grant new permission
-        registry.grant_permission(info.id, Permission::FileSystemAccess).unwrap();
+        registry
+            .grant_permission(info.id, Permission::FileSystemAccess)
+            .unwrap();
         assert!(registry.has_permission(info.id, Permission::FileSystemAccess));
 
         // Revoke permission
@@ -359,15 +421,21 @@ mod tests {
     #[tokio::test]
     async fn test_validation() {
         let registry = PluginRegistry::new();
-        
+
         // Invalid ID
         let mut info = test_plugin_info();
         info.id = 0;
-        assert!(matches!(registry.register(info.clone()).await, Err(RegistryError::InvalidId(_))));
+        assert!(matches!(
+            registry.register(info.clone()).await,
+            Err(RegistryError::InvalidId(_))
+        ));
 
         // Empty name
         info.id = 1002;
         info.name = "".to_string();
-        assert!(matches!(registry.register(info).await, Err(RegistryError::ValidationFailed(_))));
+        assert!(matches!(
+            registry.register(info).await,
+            Err(RegistryError::ValidationFailed(_))
+        ));
     }
 }

@@ -6,8 +6,8 @@
 //! Ed25519 signatures and version/capability constraints. It provides
 //! functions to export the JSON Schema and to validate/parse manifest files.
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// One entry in the plugin manifest
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -45,8 +45,8 @@ pub fn schema_json() -> serde_json::Value {
 
 /// Validate a manifest JSON string against the schema and parse into items
 pub fn validate_and_parse(json_str: &str) -> Result<Vec<ManifestItem>, ManifestError> {
-    let value: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| ManifestError::InvalidJson(e.to_string()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(json_str).map_err(|e| ManifestError::InvalidJson(e.to_string()))?;
 
     let compiled = jsonschema::JSONSchema::compile(&schema_json())
         .map_err(|e| ManifestError::SchemaValidation(e.to_string()))?;
@@ -54,7 +54,9 @@ pub fn validate_and_parse(json_str: &str) -> Result<Vec<ManifestItem>, ManifestE
     if let Err(errors) = compiled.validate(&value) {
         let mut buf = String::new();
         for (i, err) in errors.enumerate() {
-            if i > 0 { buf.push_str("; "); }
+            if i > 0 {
+                buf.push_str("; ");
+            }
             buf.push_str(&err.to_string());
         }
         return Err(ManifestError::SchemaValidation(buf));
@@ -65,9 +67,10 @@ pub fn validate_and_parse(json_str: &str) -> Result<Vec<ManifestItem>, ManifestE
 }
 
 /// Convenience: read and validate a manifest file path
-pub fn read_and_parse_file<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<ManifestItem>, ManifestError> {
-    let data = std::fs::read_to_string(path).map_err(|e| ManifestError::InvalidJson(e.to_string()))?;
+pub fn read_and_parse_file<P: AsRef<std::path::Path>>(
+    path: P,
+) -> Result<Vec<ManifestItem>, ManifestError> {
+    let data =
+        std::fs::read_to_string(path).map_err(|e| ManifestError::InvalidJson(e.to_string()))?;
     validate_and_parse(&data)
 }
-
-

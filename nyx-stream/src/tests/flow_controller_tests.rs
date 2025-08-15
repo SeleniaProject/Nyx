@@ -8,7 +8,7 @@ mod flow_controller_tests {
         assert_eq!(controller.get_stats().flow_window_size, 1000);
     }
 
-    #[test] 
+    #[test]
     fn test_congestion_controller_creation() {
         let controller = CongestionController::new(1000, 10_000);
         assert_eq!(controller.state(), CongestionState::SlowStart);

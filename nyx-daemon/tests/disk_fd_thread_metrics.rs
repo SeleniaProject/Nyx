@@ -19,13 +19,18 @@ fn system_metrics_basic_smoke() {
     collector.increment_retransmissions();
     collector.increment_bytes_sent(128);
     // 期待: Atomic カウンタが >=1
-    assert!(collector.total_requests.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+    assert!(
+        collector
+            .total_requests
+            .load(std::sync::atomic::Ordering::Relaxed)
+            >= 1
+    );
 }
 
 #[tokio::test]
 async fn zero_copy_bridge_exports_metrics() {
-    use nyx_daemon::zero_copy_bridge::start_zero_copy_metrics_task_with_interval;
     use nyx_core::zero_copy::manager::{ZeroCopyManager, ZeroCopyManagerConfig};
+    use nyx_daemon::zero_copy_bridge::start_zero_copy_metrics_task_with_interval;
     use std::sync::Arc;
     // Arrange a manager and kick off export at a short interval
     let manager = Arc::new(ZeroCopyManager::new(ZeroCopyManagerConfig::default()));

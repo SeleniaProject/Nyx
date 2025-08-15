@@ -36,11 +36,13 @@ impl WrrScheduler {
             total_weight: 0,
             last_selected: None,
             min_weight_threshold: 1,
-        fairness_entropy_floor: 0.7,
+            fairness_entropy_floor: 0.7,
         }
     }
     /// Set fairness entropy floor (normalized 0-1)
-    pub fn set_fairness_entropy_floor(&mut self, floor: f64) { self.fairness_entropy_floor = floor.clamp(0.0,1.0); }
+    pub fn set_fairness_entropy_floor(&mut self, floor: f64) {
+        self.fairness_entropy_floor = floor.clamp(0.0, 1.0);
+    }
 
     /// Update scheduler with current path statistics
     pub fn update_paths(&mut self, paths: &HashMap<PathId, PathStats>) {
@@ -56,7 +58,7 @@ impl WrrScheduler {
                 self.configured_weights.insert(*path_id, weight);
                 self.current_weights.insert(*path_id, 0); // Start at 0 for WRR
                 self.total_weight += weight;
-                
+
                 trace!(
                     path_id = *path_id,
                     weight = weight,
@@ -73,12 +75,17 @@ impl WrrScheduler {
         );
 
         // 公平性エントロピー (Shannon) を計算し telemetry へ (feature prometheus 時)
-        #[cfg(feature="prometheus")]
+        #[cfg(feature = "prometheus")]
         if self.total_weight > 0 && self.configured_weights.len() > 1 {
             let mut entropy = 0.0_f64;
-            for w in self.configured_weights.values() { let p = *w as f64 / self.total_weight as f64; if p>0.0 { entropy -= p * p.log2(); } }
+            for w in self.configured_weights.values() {
+                let p = *w as f64 / self.total_weight as f64;
+                if p > 0.0 {
+                    entropy -= p * p.log2();
+                }
+            }
             let h_max = (self.configured_weights.len() as f64).log2().max(1.0);
-            let norm = (entropy / h_max).clamp(0.0,1.0);
+            let norm = (entropy / h_max).clamp(0.0, 1.0);
             nyx_telemetry::record_mp_weight_entropy(norm);
         }
     }
@@ -88,7 +95,7 @@ impl WrrScheduler {
         self.configured_weights.insert(path_id, weight);
         self.current_weights.insert(path_id, 0);
         self.total_weight += weight;
-        
+
         debug!(
             path_id = path_id,
             weight = weight,
@@ -104,20 +111,31 @@ impl WrrScheduler {
         }
 
         // 低エントロピー (偏り) 検知で低重みパスへ平滑化ブースト
-        #[cfg(feature="prometheus")]
+        #[cfg(feature = "prometheus")]
         {
             let total: u32 = self.configured_weights.values().copied().sum();
             if self.configured_weights.len() > 1 && total > 0 {
-                let mut entropy = 0.0; for w in self.configured_weights.values(){ let p=*w as f64/ total as f64; if p>0.0 { entropy -= p * p.log2(); }}
+                let mut entropy = 0.0;
+                for w in self.configured_weights.values() {
+                    let p = *w as f64 / total as f64;
+                    if p > 0.0 {
+                        entropy -= p * p.log2();
+                    }
+                }
                 let h_max = (self.configured_weights.len() as f64).log2().max(1.0);
                 let norm = entropy / h_max;
                 if norm < self.fairness_entropy_floor {
                     // Add 5% of mean weight to paths below median weight
                     let mut weights: Vec<_> = self.configured_weights.values().copied().collect();
                     weights.sort_unstable();
-                    let median = weights[weights.len()/2];
-                    let add = (total as f64 / self.configured_weights.len() as f64 * 0.05).ceil() as u32;
-                    for (pid,w) in self.configured_weights.iter_mut(){ if *w < median { *w = (*w + add).min(50_000); } }
+                    let median = weights[weights.len() / 2];
+                    let add =
+                        (total as f64 / self.configured_weights.len() as f64 * 0.05).ceil() as u32;
+                    for (pid, w) in self.configured_weights.iter_mut() {
+                        if *w < median {
+                            *w = (*w + add).min(50_000);
+                        }
+                    }
                 }
             }
         }
@@ -188,7 +206,7 @@ impl WrrScheduler {
             self.total_weight = self.total_weight.saturating_sub(weight);
         }
         self.current_weights.remove(&path_id);
-        
+
         debug!(
             path_id = path_id,
             remaining_paths = self.configured_weights.len(),
@@ -201,12 +219,13 @@ impl WrrScheduler {
     pub fn update_weight(&mut self, path_id: PathId, weight: u32) {
         if let Some(old_weight) = self.configured_weights.get_mut(&path_id) {
             if *old_weight != weight {
-                self.total_weight = self.total_weight
+                self.total_weight = self
+                    .total_weight
                     .saturating_sub(*old_weight)
                     .saturating_add(weight);
                 *old_weight = weight;
             }
-            
+
             // Preserve current weight to maintain smooth WRR behavior.
             // Do not reset current weight here; frequent resets bias selection to the max-weight path.
             debug!(
@@ -278,7 +297,7 @@ impl ImprovedWrrScheduler {
         }
 
         self.last_update = Instant::now();
-        
+
         debug!(
             active_paths = self.original_weights.len(),
             total_weight = self.total_weight,
@@ -293,7 +312,8 @@ impl ImprovedWrrScheduler {
         }
 
         // Find path with maximum current weight
-        let selected_path = self.current_weights
+        let selected_path = self
+            .current_weights
             .iter()
             .max_by_key(|(_, &weight)| weight)
             .map(|(&path_id, _)| path_id);
@@ -311,11 +331,8 @@ impl ImprovedWrrScheduler {
                 }
             }
 
-            trace!(
-                selected_path = path_id,
-                "Selected path via improved WRR"
-            );
-            
+            trace!(selected_path = path_id, "Selected path via improved WRR");
+
             Some(path_id)
         } else {
             None
@@ -374,18 +391,41 @@ mod tests {
         let mut sel2 = 0;
         for _ in 0..200 {
             if let Some(pid) = scheduler.select_path() {
-                if pid == 1 { sel1 += 1; } else if pid == 2 { sel2 += 1; }
+                if pid == 1 {
+                    sel1 += 1;
+                } else if pid == 2 {
+                    sel2 += 1;
+                }
             }
         }
         // The path with the higher weight should receive >= selections (tolerance 15%).
         if w1 > w2 {
-            assert!(sel1 as f64 >= sel2 as f64 * 0.85, "weight1>{} weight2={} but sel1={} sel2={}", w1, w2, sel1, sel2);
+            assert!(
+                sel1 as f64 >= sel2 as f64 * 0.85,
+                "weight1>{} weight2={} but sel1={} sel2={}",
+                w1,
+                w2,
+                sel1,
+                sel2
+            );
         } else if w2 > w1 {
-            assert!(sel2 as f64 >= sel1 as f64 * 0.85, "weight2>{} weight1={} but sel1={} sel2={}", w2, w1, sel1, sel2);
+            assert!(
+                sel2 as f64 >= sel1 as f64 * 0.85,
+                "weight2>{} weight1={} but sel1={} sel2={}",
+                w2,
+                w1,
+                sel1,
+                sel2
+            );
         } else {
             // equal weights → roughly balanced
             let ratio = sel1.max(sel2) as f64 / sel1.min(sel2).max(1) as f64;
-            assert!(ratio < 1.5, "expected near-even distribution; sel1={} sel2={}", sel1, sel2);
+            assert!(
+                ratio < 1.5,
+                "expected near-even distribution; sel1={} sel2={}",
+                sel1,
+                sel2
+            );
         }
     }
 
@@ -398,14 +438,14 @@ mod tests {
     #[test]
     fn test_wrr_scheduler_add_remove_paths() {
         let mut scheduler = WrrScheduler::new();
-        
+
         // Add paths
         scheduler.add_path(1, 100);
         scheduler.add_path(2, 200);
-        
+
         assert_eq!(scheduler.get_weights().len(), 2);
         assert_eq!(scheduler.stats().total_weight, 300);
-        
+
         // Remove path
         scheduler.remove_path(1);
         assert_eq!(scheduler.get_weights().len(), 1);
@@ -415,10 +455,10 @@ mod tests {
     #[test]
     fn test_wrr_scheduler_weight_updates() {
         let mut scheduler = WrrScheduler::new();
-        
+
         scheduler.add_path(1, 100);
         assert_eq!(scheduler.stats().total_weight, 100);
-        
+
         // Update weight
         scheduler.update_weight(1, 200);
         assert_eq!(scheduler.stats().total_weight, 200);
@@ -428,14 +468,14 @@ mod tests {
     #[test]
     fn test_wrr_scheduler_fairness() {
         let mut scheduler = WrrScheduler::new();
-        
+
         // Add two paths with equal weights
         scheduler.add_path(1, 100);
         scheduler.add_path(2, 100);
-        
+
         let mut path1_count = 0;
         let mut path2_count = 0;
-        
+
         // Select paths multiple times
         for _ in 0..200 {
             if let Some(path_id) = scheduler.select_path() {
@@ -446,29 +486,32 @@ mod tests {
                 }
             }
         }
-        
+
         // Should be roughly equal (within 10% tolerance)
         let total = path1_count + path2_count;
         let path1_ratio = path1_count as f64 / total as f64;
-        assert!(path1_ratio > 0.4 && path1_ratio < 0.6, 
-               "Path 1 ratio: {}, should be around 0.5", path1_ratio);
+        assert!(
+            path1_ratio > 0.4 && path1_ratio < 0.6,
+            "Path 1 ratio: {}, should be around 0.5",
+            path1_ratio
+        );
     }
 
     #[test]
     fn test_wrr_scheduler_reset() {
         let mut scheduler = WrrScheduler::new();
-        
+
         scheduler.add_path(1, 100);
         scheduler.add_path(2, 200);
-        
+
         // Select some paths to modify internal state
         for _ in 0..10 {
             scheduler.select_path();
         }
-        
+
         // Reset should clear current weights
         scheduler.reset();
-        
+
         // All current weights should be 0
         let stats = scheduler.stats();
         for &weight in stats.weights.values() {

@@ -23,4 +23,4 @@ async fn ice_lite_handshake_success() {
 
     let ok = ice_lite_handshake(&sock_a, addr_b).await;
     assert!(ok, "ICE handshake should succeed with valid response");
-} 
+}

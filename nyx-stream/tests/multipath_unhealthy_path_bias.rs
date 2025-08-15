@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use nyx_stream::multipath::{MultipathManager, MultipathConfig};
+use nyx_stream::multipath::{MultipathConfig, MultipathManager};
 use std::collections::HashMap;
 use std::time::Duration;
 

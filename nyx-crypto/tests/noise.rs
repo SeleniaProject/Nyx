@@ -1,4 +1,6 @@
-use nyx_crypto::noise::{initiator_generate, responder_process, initiator_finalize, derive_session_key};
+use nyx_crypto::noise::{
+    derive_session_key, initiator_finalize, initiator_generate, responder_process,
+};
 
 #[test]
 fn handshake_shared_secret_matches() {
@@ -18,4 +20,4 @@ fn handshake_shared_secret_matches() {
     let key_i = derive_session_key(&shared_initiator);
     let key_r = derive_session_key(&shared_responder);
     assert_eq!(key_i.0, key_r.0);
-} 
+}

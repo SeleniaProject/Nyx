@@ -21,28 +21,28 @@ pub enum PqAlgorithm {
 pub enum HybridError {
     #[error("X25519 key generation failed")]
     X25519KeyGenFailed,
-    
+
     #[error("X25519 shared secret computation failed")]
     X25519SharedSecretFailed,
-    
+
     #[error("Kyber1024 key generation failed")]
     Kyber1024KeyGenFailed,
-    
+
     #[error("Kyber1024 encapsulation failed")]
     Kyber1024EncapsFailed,
-    
+
     #[error("Kyber1024 decapsulation failed")]
     Kyber1024DecapsFailed,
-    
+
     #[error("BIKE operation not yet implemented")]
     BikeNotImplemented,
-    
+
     #[error("Key derivation failed: {0}")]
     KeyDerivationFailed(String),
-    
+
     #[error("Invalid hybrid key material length")]
     InvalidKeyLength,
-    
+
     #[error("Unsupported algorithm variant: {0:?}")]
     UnsupportedAlgorithm(PqAlgorithm),
 }
@@ -77,9 +77,15 @@ impl std::fmt::Debug for HybridSecretKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HybridSecretKey")
             .field("x25519_sk", &"[REDACTED]")
-            .field("x25519_pk_public", &format!("[{} bytes]", self.x25519_pk_public.len()))
+            .field(
+                "x25519_pk_public",
+                &format!("[{} bytes]", self.x25519_pk_public.len()),
+            )
             .field("pq_sk", &format!("[REDACTED {} bytes]", self.pq_sk.len()))
-            .field("pq_pk_public", &format!("[{} bytes]", self.pq_pk_public.len()))
+            .field(
+                "pq_pk_public",
+                &format!("[{} bytes]", self.pq_pk_public.len()),
+            )
             .field("algorithm", &self.algorithm)
             .finish()
     }
@@ -99,8 +105,12 @@ impl HybridPublicKey {
     #[cfg(feature = "kyber")]
     pub fn kyber_public_bytes(&self) -> Option<&[u8; pqc_kyber::KYBER_PUBLICKEYBYTES]> {
         use pqc_kyber::*;
-        if self.algorithm != PqAlgorithm::Kyber1024 { return None; }
-        if self.pq_pk.len() != KYBER_PUBLICKEYBYTES { return None; }
+        if self.algorithm != PqAlgorithm::Kyber1024 {
+            return None;
+        }
+        if self.pq_pk.len() != KYBER_PUBLICKEYBYTES {
+            return None;
+        }
         Some(self.pq_pk.as_slice().try_into().ok()?)
     }
 }
@@ -110,8 +120,12 @@ impl HybridSecretKey {
     #[cfg(feature = "kyber")]
     pub fn kyber_secret_bytes(&self) -> Option<&[u8; pqc_kyber::KYBER_SECRETKEYBYTES]> {
         use pqc_kyber::*;
-        if self.algorithm != PqAlgorithm::Kyber1024 { return None; }
-        if self.pq_sk.len() != KYBER_SECRETKEYBYTES { return None; }
+        if self.algorithm != PqAlgorithm::Kyber1024 {
+            return None;
+        }
+        if self.pq_sk.len() != KYBER_SECRETKEYBYTES {
+            return None;
+        }
         Some(self.pq_sk.as_slice().try_into().ok()?)
     }
 
@@ -145,21 +159,23 @@ pub struct HybridCiphertext {
 /// # Returns
 /// * `Ok((HybridPublicKey, HybridSecretKey))` - The generated keypair
 /// * `Err(HybridError)` - If key generation fails
-pub fn generate_keypair(algorithm: PqAlgorithm) -> Result<(HybridPublicKey, HybridSecretKey), HybridError> {
+pub fn generate_keypair(
+    algorithm: PqAlgorithm,
+) -> Result<(HybridPublicKey, HybridSecretKey), HybridError> {
     use rand_core_06::OsRng;
 
     // X25519 static secret (real) when classic feature有効。pq_only 等で classic 無効の場合はゼロ化プレースホルダを設定し
     // 以後の処理は PQ 成分のみを実利用（X25519 は使われない）。
     #[cfg(feature = "classic")]
     let (x25519_sk_bytes, x25519_pk_bytes) = {
-        use x25519_dalek::{StaticSecret, PublicKey};
+        use x25519_dalek::{PublicKey, StaticSecret};
         let secret = StaticSecret::random_from_rng(OsRng);
         let public = PublicKey::from(&secret);
         (secret.to_bytes(), *public.as_bytes())
     };
     #[cfg(not(feature = "classic"))]
     let (x25519_sk_bytes, x25519_pk_bytes) = {
-        ([0u8;32], [0u8;32]) // pq_only build: classical成分未使用
+        ([0u8; 32], [0u8; 32]) // pq_only build: classical成分未使用
     };
 
     // Generate post-quantum keypair based on algorithm
@@ -177,12 +193,22 @@ pub fn generate_keypair(algorithm: PqAlgorithm) -> Result<(HybridPublicKey, Hybr
                 return Err(HybridError::UnsupportedAlgorithm(algorithm));
             }
         }
-    PqAlgorithm::Bike => return Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)),
+        PqAlgorithm::Bike => return Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)),
     };
 
-    let hybrid_pk = HybridPublicKey { x25519_pk: x25519_pk_bytes, pq_pk: pq_pk.clone(), algorithm };
+    let hybrid_pk = HybridPublicKey {
+        x25519_pk: x25519_pk_bytes,
+        pq_pk: pq_pk.clone(),
+        algorithm,
+    };
 
-    let hybrid_sk = HybridSecretKey { x25519_sk: x25519_sk_bytes, x25519_pk_public: x25519_pk_bytes, pq_sk: pq_sk.clone(), pq_pk_public: pq_pk, algorithm };
+    let hybrid_sk = HybridSecretKey {
+        x25519_sk: x25519_sk_bytes,
+        x25519_pk_public: x25519_pk_bytes,
+        pq_sk: pq_sk.clone(),
+        pq_pk_public: pq_pk,
+        algorithm,
+    };
 
     Ok((hybrid_pk, hybrid_sk))
 }
@@ -195,11 +221,13 @@ pub fn generate_keypair(algorithm: PqAlgorithm) -> Result<(HybridPublicKey, Hybr
 /// # Returns
 /// * `Ok((shared_secret, ciphertext))` - The 64-byte shared secret and ciphertext
 /// * `Err(HybridError)` - If encapsulation fails
-pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiphertext), HybridError> {
-    use rand_core_06::OsRng;
-    use x25519_dalek::{EphemeralSecret, PublicKey};
+pub fn encapsulate(
+    public_key: &HybridPublicKey,
+) -> Result<([u8; 64], HybridCiphertext), HybridError> {
     use hkdf::Hkdf;
+    use rand_core_06::OsRng;
     use sha2::Sha512;
+    use x25519_dalek::{EphemeralSecret, PublicKey};
 
     // X25519 ECDH: ephemeral (this side) × remote static public
     let x25519_ephemeral = EphemeralSecret::random_from_rng(OsRng);
@@ -214,7 +242,9 @@ pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiph
             {
                 use pqc_kyber::*;
                 let mut rng = OsRng;
-                let public_key_bytes: [u8; KYBER_PUBLICKEYBYTES] = public_key.pq_pk.as_slice()
+                let public_key_bytes: [u8; KYBER_PUBLICKEYBYTES] = public_key
+                    .pq_pk
+                    .as_slice()
                     .try_into()
                     .map_err(|_| HybridError::InvalidKeyLength)?;
                 let (ciphertext, shared_secret) = encapsulate(&public_key_bytes, &mut rng)
@@ -226,7 +256,7 @@ pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiph
                 return Err(HybridError::UnsupportedAlgorithm(public_key.algorithm));
             }
         }
-    PqAlgorithm::Bike => return Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)),
+        PqAlgorithm::Bike => return Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)),
     };
 
     // Combine shared secrets using HKDF-Extract with SHA-512
@@ -260,10 +290,13 @@ pub fn encapsulate(public_key: &HybridPublicKey) -> Result<([u8; 64], HybridCiph
 /// # Returns
 /// * `Ok(shared_secret)` - The 64-byte shared secret
 /// * `Err(HybridError)` - If decapsulation fails
-pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) -> Result<[u8; 64], HybridError> {
-    use x25519_dalek::{PublicKey, StaticSecret};
+pub fn decapsulate(
+    secret_key: &HybridSecretKey,
+    ciphertext: &HybridCiphertext,
+) -> Result<[u8; 64], HybridError> {
     use hkdf::Hkdf;
     use sha2::Sha512;
+    use x25519_dalek::{PublicKey, StaticSecret};
 
     // Verify algorithm consistency
     if secret_key.algorithm != ciphertext.algorithm {
@@ -281,10 +314,14 @@ pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) 
             #[cfg(feature = "kyber")]
             {
                 use pqc_kyber::*;
-                let secret_key_bytes: [u8; KYBER_SECRETKEYBYTES] = secret_key.pq_sk.as_slice()
+                let secret_key_bytes: [u8; KYBER_SECRETKEYBYTES] = secret_key
+                    .pq_sk
+                    .as_slice()
                     .try_into()
                     .map_err(|_| HybridError::InvalidKeyLength)?;
-                let ciphertext_bytes: [u8; KYBER_CIPHERTEXTBYTES] = ciphertext.pq_ciphertext.as_slice()
+                let ciphertext_bytes: [u8; KYBER_CIPHERTEXTBYTES] = ciphertext
+                    .pq_ciphertext
+                    .as_slice()
                     .try_into()
                     .map_err(|_| HybridError::InvalidKeyLength)?;
                 let shared_secret = decapsulate(&ciphertext_bytes, &secret_key_bytes)
@@ -296,7 +333,7 @@ pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) 
                 return Err(HybridError::UnsupportedAlgorithm(secret_key.algorithm));
             }
         }
-    PqAlgorithm::Bike => return Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)),
+        PqAlgorithm::Bike => return Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)),
     };
 
     // Combine shared secrets using HKDF-Extract with SHA-512
@@ -317,13 +354,17 @@ pub fn decapsulate(secret_key: &HybridSecretKey, ciphertext: &HybridCiphertext) 
 
 /// 公開: X25519 SharedSecret + PQ SessionKey を結合して最終32バイトセッション鍵へ圧縮
 #[cfg(feature = "hybrid")]
-pub fn combine_keys(classic: &x25519_dalek::SharedSecret, pq: &crate::noise::SessionKey) -> Option<crate::noise::SessionKey> {
+pub fn combine_keys(
+    classic: &x25519_dalek::SharedSecret,
+    pq: &crate::noise::SessionKey,
+) -> Option<crate::noise::SessionKey> {
     use zeroize::Zeroize;
     let mut concat = Vec::with_capacity(64);
     concat.extend_from_slice(classic.as_bytes());
     concat.extend_from_slice(&pq.0);
     let okm = crate::kdf::hkdf_expand(&concat, crate::kdf::KdfLabel::Session, 32);
-    let mut out = [0u8;32]; out.copy_from_slice(&okm);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&okm);
     concat.zeroize();
     Some(crate::noise::SessionKey(out))
 }
@@ -355,13 +396,16 @@ pub mod handshake_extensions {
         }
 
         /// Generate local ephemeral keypair for the handshake
-        pub fn generate_local_keypair(&mut self, algorithm: PqAlgorithm) -> Result<HybridPublicKey, NoiseError> {
-            let keypair = generate_keypair(algorithm)
-                .map_err(|e| NoiseError::HybridFailed(e.to_string()))?;
-            
+        pub fn generate_local_keypair(
+            &mut self,
+            algorithm: PqAlgorithm,
+        ) -> Result<HybridPublicKey, NoiseError> {
+            let keypair =
+                generate_keypair(algorithm).map_err(|e| NoiseError::HybridFailed(e.to_string()))?;
+
             let public_key = keypair.0.clone();
             self.local_keypair = Some(keypair);
-            
+
             Ok(public_key)
         }
 
@@ -372,16 +416,20 @@ pub mod handshake_extensions {
 
         /// Perform the hybrid key exchange and derive shared secret
         pub fn exchange(&mut self) -> Result<[u8; 64], NoiseError> {
-            let _local_sk = &self.local_keypair.as_ref()
+            let _local_sk = &self
+                .local_keypair
+                .as_ref()
                 .ok_or_else(|| NoiseError::HybridFailed("No local keypair".to_string()))?
                 .1;
-            
-            let remote_pk = self.remote_public_key.as_ref()
+
+            let remote_pk = self
+                .remote_public_key
+                .as_ref()
                 .ok_or_else(|| NoiseError::HybridFailed("No remote public key".to_string()))?;
 
             // Simulate encapsulation/decapsulation process for mutual exchange
-            let (shared_secret, _) = encapsulate(remote_pk)
-                .map_err(|e| NoiseError::HybridFailed(e.to_string()))?;
+            let (shared_secret, _) =
+                encapsulate(remote_pk).map_err(|e| NoiseError::HybridFailed(e.to_string()))?;
 
             self.shared_secret = Some(shared_secret);
             Ok(shared_secret)
@@ -427,16 +475,20 @@ pub mod handshake_extensions {
 
         /// Perform the hybrid key exchange between static and ephemeral keys
         pub fn exchange(&mut self) -> Result<[u8; 64], NoiseError> {
-            let _static_sk = &self.static_keypair.as_ref()
+            let _static_sk = &self
+                .static_keypair
+                .as_ref()
                 .ok_or_else(|| NoiseError::HybridFailed("No static keypair".to_string()))?
                 .1;
-            
-            let ephemeral_pk = self.ephemeral_public_key.as_ref()
+
+            let ephemeral_pk = self
+                .ephemeral_public_key
+                .as_ref()
                 .ok_or_else(|| NoiseError::HybridFailed("No ephemeral public key".to_string()))?;
 
             // Use static secret key to decapsulate with ephemeral public key
-            let (shared_secret, _) = encapsulate(ephemeral_pk)
-                .map_err(|e| NoiseError::HybridFailed(e.to_string()))?;
+            let (shared_secret, _) =
+                encapsulate(ephemeral_pk).map_err(|e| NoiseError::HybridFailed(e.to_string()))?;
 
             self.shared_secret = Some(shared_secret);
             Ok(shared_secret)
@@ -489,7 +541,7 @@ mod tests {
             Err(HybridError::UnsupportedAlgorithm(PqAlgorithm::Bike)) => {
                 println!("⏭️  BIKE unsupported as expected (placeholder disabled)");
             }
-            Err(e) => panic!("Unexpected error: {:?}", e)
+            Err(e) => panic!("Unexpected error: {:?}", e),
         }
     }
 
@@ -519,8 +571,10 @@ mod tests {
 
     #[test]
     fn test_hybrid_encap_decap_bike() {
-    if let Ok((pk,_)) = generate_keypair(PqAlgorithm::Bike) { panic!("BIKE path should not succeed: pk={:?}", pk.algorithm); }
-    println!("⏭️  BIKE encaps/decap skipped (unsupported)");
+        if let Ok((pk, _)) = generate_keypair(PqAlgorithm::Bike) {
+            panic!("BIKE path should not succeed: pk={:?}", pk.algorithm);
+        }
+        println!("⏭️  BIKE encaps/decap skipped (unsupported)");
     }
 
     #[test]
@@ -530,11 +584,17 @@ mod tests {
         // Use Kyber if available; otherwise skip test gracefully
         let alice_pk = match alice_ext.generate_local_keypair(PqAlgorithm::Kyber1024) {
             Ok(pk) => pk,
-            Err(_) => { println!("⏭️  Kyber not enabled, skipping EE extension test"); return; }
+            Err(_) => {
+                println!("⏭️  Kyber not enabled, skipping EE extension test");
+                return;
+            }
         };
         let bob_pk = match bob_ext.generate_local_keypair(PqAlgorithm::Kyber1024) {
             Ok(pk) => pk,
-            Err(_) => { println!("⏭️  Kyber not enabled, skipping EE extension test"); return; }
+            Err(_) => {
+                println!("⏭️  Kyber not enabled, skipping EE extension test");
+                return;
+            }
         };
 
         // Exchange public keys
@@ -553,15 +613,27 @@ mod tests {
     #[test]
     fn test_se_kyber_handshake_extension() {
         let mut alice_ext = SeKyberExtension::new();
-    // Generate static keypair for Alice and ephemeral for Bob using Kyber
-    let alice_static = match generate_keypair(PqAlgorithm::Kyber1024) { Ok(kp) => kp, Err(_) => { println!("⏭️  Kyber not enabled, skipping SE extension test"); return; } };
-    let bob_ephemeral = match generate_keypair(PqAlgorithm::Kyber1024) { Ok(kp) => kp, Err(_) => { println!("⏭️  Kyber not enabled, skipping SE extension test"); return; } };
-    alice_ext.set_static_keypair(alice_static);
-    alice_ext.set_ephemeral_public_key(bob_ephemeral.0);
+        // Generate static keypair for Alice and ephemeral for Bob using Kyber
+        let alice_static = match generate_keypair(PqAlgorithm::Kyber1024) {
+            Ok(kp) => kp,
+            Err(_) => {
+                println!("⏭️  Kyber not enabled, skipping SE extension test");
+                return;
+            }
+        };
+        let bob_ephemeral = match generate_keypair(PqAlgorithm::Kyber1024) {
+            Ok(kp) => kp,
+            Err(_) => {
+                println!("⏭️  Kyber not enabled, skipping SE extension test");
+                return;
+            }
+        };
+        alice_ext.set_static_keypair(alice_static);
+        alice_ext.set_ephemeral_public_key(bob_ephemeral.0);
 
         let shared_result = alice_ext.exchange();
         assert!(shared_result.is_ok());
-        
+
         let shared_secret = shared_result.unwrap();
         assert_eq!(shared_secret.len(), 64);
         println!("✅ SE Kyber handshake extension test passed");
@@ -593,7 +665,8 @@ mod tests {
     fn test_zeroization() {
         match generate_keypair(PqAlgorithm::Kyber1024) {
             Ok((_, mut sk)) => {
-                let has_nonzero = sk.x25519_sk.iter().any(|&b| b != 0) || sk.pq_sk.iter().any(|&b| b != 0);
+                let has_nonzero =
+                    sk.x25519_sk.iter().any(|&b| b != 0) || sk.pq_sk.iter().any(|&b| b != 0);
                 if has_nonzero {
                     sk.x25519_sk.zeroize();
                     sk.pq_sk.zeroize();

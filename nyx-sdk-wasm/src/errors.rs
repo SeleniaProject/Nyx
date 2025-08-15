@@ -1,7 +1,7 @@
 //! WASM-facing structured error mapping and validation helpers.
-use wasm_bindgen::prelude::*;
-use serde::{Serialize, Deserialize};
 use base64::engine::{general_purpose, Engine};
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NyxErrorKind {
@@ -46,7 +46,7 @@ pub fn nyx_map_close_code(code: u16) -> Result<JsValue, JsValue> {
     let err = match code {
         0x07 => unsupported_capability(
             "Required capability or plugin is not supported by peer",
-            serde_json::json!({"category":"unsupported_capability"})
+            serde_json::json!({"category":"unsupported_capability"}),
         ),
         _ => NyxErrorWasm {
             code: Some(code),
@@ -54,7 +54,7 @@ pub fn nyx_map_close_code(code: u16) -> Result<JsValue, JsValue> {
             severity: NyxSeverity::Medium,
             message: format!("Protocol close code 0x{:02X}", code),
             details: serde_json::json!({}),
-        }
+        },
     };
     serde_wasm_bindgen::to_value(&err).map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -62,7 +62,10 @@ pub fn nyx_map_close_code(code: u16) -> Result<JsValue, JsValue> {
 /// Validate that all required plugin IDs (CBOR base64url) are present in the given supported IDs (JSON array).
 /// Returns Ok(()) if satisfied; else returns a structured JS error.
 #[wasm_bindgen]
-pub fn nyx_check_required_plugins(required_cbor_b64: String, supported_ids_json: String) -> Result<(), JsValue> {
+pub fn nyx_check_required_plugins(
+    required_cbor_b64: String,
+    supported_ids_json: String,
+) -> Result<(), JsValue> {
     // Decode base64url CBOR
     let cbor_bytes = general_purpose::URL_SAFE_NO_PAD
         .decode(required_cbor_b64.as_bytes())
@@ -74,15 +77,16 @@ pub fn nyx_check_required_plugins(required_cbor_b64: String, supported_ids_json:
     let supported: Vec<u32> = serde_json::from_str(&supported_ids_json)
         .map_err(|e| JsValue::from_str(&format!("supported_ids_json parse error: {}", e)))?;
     let supported_set: std::collections::HashSet<u32> = supported.into_iter().collect();
-    let missing: Vec<u32> = required.into_iter().filter(|id| !supported_set.contains(id)).collect();
+    let missing: Vec<u32> = required
+        .into_iter()
+        .filter(|id| !supported_set.contains(id))
+        .collect();
     if missing.is_empty() {
         return Ok(());
     }
     let err = unsupported_capability(
         "Missing required plugins",
-        serde_json::json!({"missing": missing})
+        serde_json::json!({"missing": missing}),
     );
     Err(serde_wasm_bindgen::to_value(&err).map_err(|e| JsValue::from_str(&e.to_string()))?)
 }
-
-

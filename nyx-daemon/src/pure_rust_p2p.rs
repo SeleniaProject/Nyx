@@ -1,5 +1,5 @@
 //! Pure Rust P2P Network Implementation
-//! 
+//!
 //! This module provides a lightweight P2P networking solution without heavy dependencies
 //! that could cause compilation issues. It includes:
 //! - Secure TLS-based peer communication using rustls
@@ -7,28 +7,28 @@
 //! - Peer discovery and connection management
 //! - Message routing and protocols
 
-use std::{
-    collections::{HashMap, HashSet},
-    net::{SocketAddr, IpAddr},
-    sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    hash::{Hash, Hasher},
-};
-use tokio::{
-    net::{TcpListener, TcpStream},
-    sync::{RwLock, mpsc},
-    time::timeout,
-    io::{AsyncReadExt, AsyncWriteExt},
-};
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
 use blake3;
-use x25519_dalek::{PublicKey, StaticSecret};
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
-    ChaCha20Poly1305, Nonce, Key,
+    ChaCha20Poly1305, Key, Nonce,
 };
-use ed25519_dalek::{Signer, Verifier, Signature, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::{Hash, Hasher},
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::{mpsc, RwLock},
+    time::timeout,
+};
+use tracing::{debug, error, info, warn};
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Quality measurement data
 #[derive(Debug, Clone)]
@@ -281,7 +281,7 @@ impl Default for P2PConfig {
         let signing_key = SigningKey::generate(&mut RandOsRng);
         let verifying_key = signing_key.verifying_key();
         let node_id = blake3::hash(verifying_key.as_bytes()).as_bytes().to_vec();
-        
+
         Self {
             listen_address: "127.0.0.1:3100".parse().unwrap(),
             max_peers: 50,
@@ -329,11 +329,23 @@ impl Default for NetworkStats {
 /// P2P network events
 #[derive(Debug, Clone)]
 pub enum P2PNetworkEvent {
-    PeerConnected { peer_id: PeerId, address: SocketAddr },
-    PeerDisconnected { peer_id: PeerId },
-    PeerDiscovered { peer_info: PeerInfo },
-    MessageReceived { from: PeerId, message: P2PMessage },
-    NetworkError { error: String },
+    PeerConnected {
+        peer_id: PeerId,
+        address: SocketAddr,
+    },
+    PeerDisconnected {
+        peer_id: PeerId,
+    },
+    PeerDiscovered {
+        peer_info: PeerInfo,
+    },
+    MessageReceived {
+        from: PeerId,
+        message: P2PMessage,
+    },
+    NetworkError {
+        error: String,
+    },
 }
 
 /// P2P message types
@@ -386,7 +398,10 @@ impl PureRustP2P {
     pub async fn new(
         dht: Arc<PureRustDht>,
         config: P2PConfig,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<P2PNetworkEvent>), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<
+        (Self, mpsc::UnboundedReceiver<P2PNetworkEvent>),
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         // Generate local peer identity
         let secret = StaticSecret::random_from_rng(&mut rand::thread_rng());
         let public_key = PublicKey::from(&secret);
@@ -401,7 +416,10 @@ impl PureRustP2P {
             version: "1.0.0".to_string(),
         };
 
-        info!("Created Pure Rust P2P node with ID: {}", hex::encode(peer_id));
+        info!(
+            "Created Pure Rust P2P node with ID: {}",
+            hex::encode(peer_id)
+        );
 
         // Pure Rust encryption setup - no ring dependency
         let cipher = if config.enable_encryption {
@@ -464,26 +482,28 @@ impl PureRustP2P {
             // Generate and send challenge
             let mut challenge = [0u8; 32];
             RandOsRng.fill_bytes(&mut challenge);
-            
+
             let handshake = P2PMessage::Handshake {
                 peer_info: self.local_peer.clone(),
                 challenge,
             };
-            
+
             let serialized = bincode::serialize(&handshake)?;
-            stream.write_all(&(serialized.len() as u32).to_be_bytes()).await?;
+            stream
+                .write_all(&(serialized.len() as u32).to_be_bytes())
+                .await?;
             stream.write_all(&serialized).await?;
-            
+
             challenge.to_vec()
         } else {
             // Receive challenge
             let mut len_buf = [0u8; 4];
             stream.read_exact(&mut len_buf).await?;
             let len = u32::from_be_bytes(len_buf) as usize;
-            
+
             let mut msg_buf = vec![0u8; len];
             stream.read_exact(&mut msg_buf).await?;
-            
+
             let handshake: P2PMessage = bincode::deserialize(&msg_buf)?;
             match handshake {
                 P2PMessage::Handshake { challenge, .. } => challenge.to_vec(),
@@ -500,18 +520,23 @@ impl PureRustP2P {
         };
 
         let serialized = bincode::serialize(&response)?;
-        stream.write_all(&(serialized.len() as u32).to_be_bytes()).await?;
+        stream
+            .write_all(&(serialized.len() as u32).to_be_bytes())
+            .await?;
         stream.write_all(&serialized).await?;
 
         // Derive shared secret for session encryption
         let shared_secret = self.key_exchange_secret.diffie_hellman(&self.public_key);
-        
+
         Ok((self.public_key, shared_secret.as_bytes().to_vec()))
     }
 
     /// Start the P2P network
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Starting Pure Rust P2P network on {}", self.config.listen_address);
+        info!(
+            "Starting Pure Rust P2P network on {}",
+            self.config.listen_address
+        );
 
         // Start listening for incoming connections
         self.start_listener().await?;
@@ -561,7 +586,9 @@ impl PureRustP2P {
                         event_sender,
                         stats,
                         local_peer,
-                    ).await {
+                    )
+                    .await
+                    {
                         warn!("Error handling connection from {}: {}", addr, e);
                     }
                 });
@@ -619,8 +646,14 @@ impl PureRustP2P {
         };
 
         // Add to connected peers
-        connected_peers.write().await.insert(remote_peer_id, connected_peer);
-        known_peers.write().await.insert(remote_peer_id, peer_info.clone());
+        connected_peers
+            .write()
+            .await
+            .insert(remote_peer_id, connected_peer);
+        known_peers
+            .write()
+            .await
+            .insert(remote_peer_id, peer_info.clone());
 
         // Update statistics
         {
@@ -635,14 +668,21 @@ impl PureRustP2P {
             address: addr,
         });
 
-        info!("Peer connected: {} from {}", hex::encode(remote_peer_id), addr);
+        info!(
+            "Peer connected: {} from {}",
+            hex::encode(remote_peer_id),
+            addr
+        );
 
         // Handle messages from this peer with proper decoding
         while let Some(message) = rx.recv().await {
             // Process peer messages based on message type
             match Self::process_peer_message_static(&message, remote_peer_id).await {
                 Ok(_) => {
-                    debug!("Successfully processed message from peer {}", hex::encode(remote_peer_id));
+                    debug!(
+                        "Successfully processed message from peer {}",
+                        hex::encode(remote_peer_id)
+                    );
                     // Update peer activity timestamp
                     if let Some(peer) = connected_peers.write().await.get_mut(&remote_peer_id) {
                         peer.last_activity = Instant::now();
@@ -650,7 +690,11 @@ impl PureRustP2P {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to process message from peer {}: {}", hex::encode(remote_peer_id), e);
+                    warn!(
+                        "Failed to process message from peer {}: {}",
+                        hex::encode(remote_peer_id),
+                        e
+                    );
                 }
             }
         }
@@ -681,7 +725,9 @@ impl PureRustP2P {
             P2PMessage::HandshakeResponse { .. } => 256,
             P2PMessage::Heartbeat { .. } => 32,
             P2PMessage::DhtRequest { .. } => 256,
-            P2PMessage::DhtResponse { data, .. } => data.as_ref().map_or(64, |d| d.len() as u64 + 64),
+            P2PMessage::DhtResponse { data, .. } => {
+                data.as_ref().map_or(64, |d| d.len() as u64 + 64)
+            }
             P2PMessage::PeerDiscovery { known_peers } => known_peers.len() as u64 * 128 + 64,
             P2PMessage::DataMessage { payload, .. } => payload.len() as u64 + 64,
             P2PMessage::Ping { .. } => 72, // 8 bytes timestamp + 64 bytes node_id
@@ -695,11 +741,21 @@ impl PureRustP2P {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Basic message processing logic
         match message {
-            P2PMessage::Heartbeat { timestamp, peer_count } => {
-                debug!("Received heartbeat from peer {} at {} with {} peers", 
-                    hex::encode(peer_id), timestamp, peer_count);
+            P2PMessage::Heartbeat {
+                timestamp,
+                peer_count,
+            } => {
+                debug!(
+                    "Received heartbeat from peer {} at {} with {} peers",
+                    hex::encode(peer_id),
+                    timestamp,
+                    peer_count
+                );
             }
-            P2PMessage::DataMessage { payload, message_type } => {
+            P2PMessage::DataMessage {
+                payload,
+                message_type,
+            } => {
                 debug!(
                     "Received data message from peer {} type {}: {} bytes",
                     hex::encode(peer_id),
@@ -708,7 +764,11 @@ impl PureRustP2P {
                 );
             }
             P2PMessage::DhtRequest { key, .. } => {
-                debug!("Received DHT query from peer {} for key {}", hex::encode(peer_id), key);
+                debug!(
+                    "Received DHT query from peer {} for key {}",
+                    hex::encode(peer_id),
+                    key
+                );
             }
             P2PMessage::DhtResponse { key, data, .. } => {
                 debug!(
@@ -722,21 +782,35 @@ impl PureRustP2P {
                 debug!("Received handshake from peer {}", hex::encode(peer_id));
             }
             P2PMessage::HandshakeResponse { .. } => {
-                debug!("Received handshake response from peer {}", hex::encode(peer_id));
+                debug!(
+                    "Received handshake response from peer {}",
+                    hex::encode(peer_id)
+                );
             }
             P2PMessage::PeerDiscovery { known_peers } => {
-                debug!("Received peer discovery from peer {} with {} peers", 
-                    hex::encode(peer_id), known_peers.len());
+                debug!(
+                    "Received peer discovery from peer {} with {} peers",
+                    hex::encode(peer_id),
+                    known_peers.len()
+                );
             }
             P2PMessage::Ping { data } => {
-                debug!("Received ping from peer {} with {} bytes", hex::encode(peer_id), data.len());
+                debug!(
+                    "Received ping from peer {} with {} bytes",
+                    hex::encode(peer_id),
+                    data.len()
+                );
             }
         }
         Ok(())
     }
 
     /// Encrypt message using Pure Rust cryptography
-    fn encrypt_message(&self, data: &[u8], session_key: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    fn encrypt_message(
+        &self,
+        data: &[u8],
+        session_key: &[u8],
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         if let Some(ref cipher) = self.cipher {
             let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
             let session_cipher = {
@@ -744,10 +818,11 @@ impl PureRustP2P {
                 let key = Key::from_slice(&key_bytes.as_bytes()[..32]);
                 ChaCha20Poly1305::new(key)
             };
-            
-            let ciphertext = session_cipher.encrypt(&nonce, data)
+
+            let ciphertext = session_cipher
+                .encrypt(&nonce, data)
                 .map_err(|e| format!("Encryption failed: {:?}", e))?;
-            
+
             // Prepend nonce to ciphertext
             let mut encrypted = nonce.to_vec();
             encrypted.extend_from_slice(&ciphertext);
@@ -759,22 +834,27 @@ impl PureRustP2P {
     }
 
     /// Decrypt message using Pure Rust cryptography
-    fn decrypt_message(&self, data: &[u8], session_key: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    fn decrypt_message(
+        &self,
+        data: &[u8],
+        session_key: &[u8],
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         if let Some(ref _cipher) = self.cipher {
             if data.len() < 12 {
                 return Err("Encrypted data too short".into());
             }
-            
+
             let (nonce_bytes, ciphertext) = data.split_at(12);
             let nonce = Nonce::from_slice(nonce_bytes);
-            
+
             let session_cipher = {
                 let key_bytes = blake3::hash(session_key);
                 let key = Key::from_slice(&key_bytes.as_bytes()[..32]);
                 ChaCha20Poly1305::new(key)
             };
-            
-            let plaintext = session_cipher.decrypt(nonce, ciphertext)
+
+            let plaintext = session_cipher
+                .decrypt(nonce, ciphertext)
                 .map_err(|e| format!("Decryption failed: {:?}", e))?;
             Ok(plaintext)
         } else {
@@ -820,13 +900,13 @@ impl PureRustP2P {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(heartbeat_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let peers = connected_peers.read().await;
                 let peer_count = peers.len();
-                
+
                 for (peer_id, peer) in peers.iter() {
                     let heartbeat = P2PMessage::Heartbeat {
                         timestamp: SystemTime::now()
@@ -835,12 +915,12 @@ impl PureRustP2P {
                             .as_secs(),
                         peer_count: peer_count as u32,
                     };
-                    
+
                     if let Err(_) = peer.sender.send(heartbeat) {
                         debug!("Failed to send heartbeat to peer {}", hex::encode(peer_id));
                     }
                 }
-                
+
                 debug!("Sent heartbeat to {} peers", peer_count);
             }
         });
@@ -851,23 +931,26 @@ impl PureRustP2P {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(120));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let peers: Vec<PeerInfo> = known_peers.read().await.values().cloned().collect();
-                
+
                 if !peers.is_empty() {
                     let discovery_msg = P2PMessage::PeerDiscovery {
                         known_peers: peers.clone(),
                     };
-                    
+
                     // Broadcast peer discovery (simplified)
-                    debug!("Broadcasting peer discovery with {} known peers", peers.len());
+                    debug!(
+                        "Broadcasting peer discovery with {} known peers",
+                        peers.len()
+                    );
                 }
             }
         });
-        
+
         // Start connection pool maintenance
         self.start_connection_pool_maintenance().await;
     }
@@ -879,9 +962,10 @@ impl PureRustP2P {
         message: P2PMessage,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let peers = self.connected_peers.read().await;
-        
+
         if let Some(peer) = peers.get(&peer_id) {
-            peer.sender.send(message)
+            peer.sender
+                .send(message)
                 .map_err(|e| format!("Failed to send message to peer: {}", e))?;
             Ok(())
         } else {
@@ -893,13 +977,13 @@ impl PureRustP2P {
     pub async fn broadcast_message(&self, message: P2PMessage) -> usize {
         let peers = self.connected_peers.read().await;
         let mut sent_count = 0;
-        
+
         for peer in peers.values() {
             if peer.sender.send(message.clone()).is_ok() {
                 sent_count += 1;
             }
         }
-        
+
         debug!("Broadcasted message to {} peers", sent_count);
         sent_count
     }
@@ -922,7 +1006,7 @@ impl PureRustP2P {
     }
 
     /// DHT integration methods
-    
+
     /// Store data in DHT via P2P
     pub async fn dht_put(
         &self,
@@ -931,13 +1015,13 @@ impl PureRustP2P {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Store in local DHT
         self.dht.store(&key, value.clone()).await?;
-        
+
         // Broadcast to peers for replication
         let message = P2PMessage::DhtRequest {
             key,
             operation: DhtOperation::Put { value },
         };
-        
+
         self.broadcast_message(message).await;
         Ok(())
     }
@@ -951,15 +1035,15 @@ impl PureRustP2P {
         if let Ok(value) = self.dht.get(&key).await {
             return Ok(Some(value));
         }
-        
+
         // Query peers if not found locally
         let message = P2PMessage::DhtRequest {
             key,
             operation: DhtOperation::Get,
         };
-        
+
         self.broadcast_message(message).await;
-        
+
         // For now, return None. In a complete implementation,
         // this would wait for responses from peers
         Ok(None)
@@ -969,36 +1053,39 @@ impl PureRustP2P {
 /// Connection management implementation
 impl PureRustP2P {
     /// Connect to a specific peer with automatic retry
-    pub async fn connect_to_peer(&self, address: SocketAddr) -> Result<PeerId, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect_to_peer(
+        &self,
+        address: SocketAddr,
+    ) -> Result<PeerId, Box<dyn std::error::Error + Send + Sync>> {
         info!("Attempting to connect to peer at {}", address);
-        
+
         // Check if already connected
         let existing_peer = self.find_peer_by_address(address).await;
         if let Some(peer_id) = existing_peer {
             debug!("Already connected to peer at {}", address);
             return Ok(peer_id);
         }
-        
+
         // Check connection limit
         let current_connections = self.connected_peers.read().await.len();
         if current_connections >= self.config.max_peers {
             return Err("Maximum peer connections reached".into());
         }
-        
+
         // Attempt connection with timeout
         let connect_future = TcpStream::connect(address);
         let mut stream = timeout(self.pool_config.connection_timeout, connect_future)
             .await
             .map_err(|_| "Connection timeout")?
             .map_err(|e| format!("Connection failed: {}", e))?;
-        
+
         // Perform secure handshake
         let (peer_public_key, session_key) = self.secure_handshake(&mut stream, true).await?;
         let peer_id = Self::generate_peer_id_from_key(&peer_public_key);
-        
+
         // Create peer connection
         let (tx, rx) = mpsc::unbounded_channel::<P2PMessage>();
-        
+
         let peer_info = PeerInfo {
             peer_id,
             address,
@@ -1007,7 +1094,7 @@ impl PureRustP2P {
             capabilities: vec!["dht".to_string(), "routing".to_string()],
             version: "1.0.0".to_string(),
         };
-        
+
         let connected_peer = ConnectedPeer {
             info: peer_info.clone(),
             connection_time: Instant::now(),
@@ -1023,14 +1110,17 @@ impl PureRustP2P {
             retry_count: 0,
             last_error: None,
         };
-        
+
         // Add to connection pool
         self.add_to_connection_pool(peer_id, address).await?;
-        
+
         // Add to connected peers
-        self.connected_peers.write().await.insert(peer_id, connected_peer);
+        self.connected_peers
+            .write()
+            .await
+            .insert(peer_id, connected_peer);
         self.known_peers.write().await.insert(peer_id, peer_info);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().await;
@@ -1041,81 +1131,102 @@ impl PureRustP2P {
                 stats.handshakes_completed += 1;
             }
         }
-        
+
         // Send connection event
-        let _ = self.event_sender.send(P2PNetworkEvent::PeerConnected {
-            peer_id,
-            address,
-        });
-        
+        let _ = self
+            .event_sender
+            .send(P2PNetworkEvent::PeerConnected { peer_id, address });
+
         // Start connection monitoring
         self.start_connection_monitoring(peer_id, stream, rx).await;
-        
-        info!("Successfully connected to peer {} at {}", hex::encode(peer_id), address);
+
+        info!(
+            "Successfully connected to peer {} at {}",
+            hex::encode(peer_id),
+            address
+        );
         Ok(peer_id)
     }
-    
+
     /// Disconnect from a specific peer
-    pub async fn disconnect_peer(&self, peer_id: PeerId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn disconnect_peer(
+        &self,
+        peer_id: PeerId,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Disconnecting from peer {}", hex::encode(peer_id));
-        
+
         // Remove from connected peers
         let peer = self.connected_peers.write().await.remove(&peer_id);
-        
+
         if let Some(_peer) = peer {
             // Remove from connection pool
             self.remove_from_connection_pool(peer_id).await;
-            
+
             // Update statistics
             {
                 let mut stats = self.stats.write().await;
                 stats.peers_connected = self.connected_peers.read().await.len();
             }
-            
+
             // Send disconnection event
-            let _ = self.event_sender.send(P2PNetworkEvent::PeerDisconnected { peer_id });
-            
-            info!("Successfully disconnected from peer {}", hex::encode(peer_id));
+            let _ = self
+                .event_sender
+                .send(P2PNetworkEvent::PeerDisconnected { peer_id });
+
+            info!(
+                "Successfully disconnected from peer {}",
+                hex::encode(peer_id)
+            );
             Ok(())
         } else {
             Err("Peer not found".into())
         }
     }
-    
+
     /// Reconnect to a failed peer
-    pub async fn reconnect_peer(&self, peer_id: PeerId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn reconnect_peer(
+        &self,
+        peer_id: PeerId,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Attempting to reconnect to peer {}", hex::encode(peer_id));
-        
+
         // Get peer information
         let peer_info = self.known_peers.read().await.get(&peer_id).cloned();
-        
+
         if let Some(info) = peer_info {
             // Update retry count
             if let Some(mut peer) = self.connected_peers.write().await.get_mut(&peer_id) {
                 peer.retry_count += 1;
-                
+
                 if peer.retry_count > self.pool_config.reconnect_attempts {
-                    warn!("Maximum reconnection attempts exceeded for peer {}", hex::encode(peer_id));
+                    warn!(
+                        "Maximum reconnection attempts exceeded for peer {}",
+                        hex::encode(peer_id)
+                    );
                     return Err("Maximum reconnection attempts exceeded".into());
                 }
             }
-            
+
             // Remove old connection
             self.disconnect_peer(peer_id).await.ok();
-            
+
             // Wait before retry
             tokio::time::sleep(self.pool_config.reconnect_delay).await;
-            
+
             // Attempt new connection
             match self.connect_to_peer(info.address).await {
                 Ok(new_peer_id) => {
-                    info!("Successfully reconnected to peer {} (new ID: {})", 
-                          hex::encode(peer_id), hex::encode(new_peer_id));
+                    info!(
+                        "Successfully reconnected to peer {} (new ID: {})",
+                        hex::encode(peer_id),
+                        hex::encode(new_peer_id)
+                    );
                     Ok(())
                 }
                 Err(e) => {
                     // Add to retry queue
-                    self.add_to_retry_queue(peer_id, info.address, e.to_string()).await;
+                    self.add_to_retry_queue(peer_id, info.address, e.to_string())
+                        .await;
                     Err(e)
                 }
             }
@@ -1123,20 +1234,22 @@ impl PureRustP2P {
             Err("Peer information not found".into())
         }
     }
-    
+
     /// Get connection statistics
     pub async fn get_connection_stats(&self) -> PoolStatistics {
         let pool = self.connection_pool.read().await;
         pool.pool_stats.clone()
     }
-    
+
     /// Get peer connection quality
     pub async fn get_peer_quality(&self, peer_id: PeerId) -> Option<ConnectionQuality> {
-        self.connected_peers.read().await
+        self.connected_peers
+            .read()
+            .await
             .get(&peer_id)
             .map(|peer| peer.connection_quality.clone())
     }
-    
+
     /// Update peer connection quality
     pub async fn update_peer_quality(&self, peer_id: PeerId, measurement: QualityMeasurement) {
         if let Some(mut peer) = self.connected_peers.write().await.get_mut(&peer_id) {
@@ -1144,19 +1257,20 @@ impl PureRustP2P {
             peer.connection_quality.bandwidth_mbps = measurement.bandwidth_mbps;
             peer.connection_quality.packet_loss_rate = measurement.packet_loss;
             peer.connection_quality.last_measurement = measurement.timestamp;
-            
+
             // Update stability score based on measurements
             self.calculate_stability_score(&mut peer.connection_quality);
         }
-        
+
         // Add to quality tracker
         let mut pool = self.connection_pool.write().await;
-        pool.quality_tracker.measurements
+        pool.quality_tracker
+            .measurements
             .entry(peer_id)
             .or_insert_with(Vec::new)
             .push(measurement);
     }
-    
+
     /// Helper methods for connection pool management
     async fn find_peer_by_address(&self, address: SocketAddr) -> Option<PeerId> {
         for (peer_id, peer) in self.connected_peers.read().await.iter() {
@@ -1166,10 +1280,14 @@ impl PureRustP2P {
         }
         None
     }
-    
-    async fn add_to_connection_pool(&self, peer_id: PeerId, address: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn add_to_connection_pool(
+        &self,
+        peer_id: PeerId,
+        address: SocketAddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut pool = self.connection_pool.write().await;
-        
+
         let connection = PeerConnection {
             connection_id: pool.pool_stats.total_connections + 1,
             peer_id,
@@ -1181,36 +1299,37 @@ impl PureRustP2P {
             retry_count: 0,
             session_key: None,
         };
-        
+
         pool.peer_connections
             .entry(peer_id)
             .or_insert_with(Vec::new)
             .push(connection);
-        
+
         pool.pool_stats.total_connections += 1;
         pool.pool_stats.active_connections += 1;
-        
+
         if pool.pool_stats.active_connections > pool.pool_stats.peak_connections {
             pool.pool_stats.peak_connections = pool.pool_stats.active_connections;
         }
-        
+
         Ok(())
     }
-    
+
     async fn remove_from_connection_pool(&self, peer_id: PeerId) {
         let mut pool = self.connection_pool.write().await;
-        
+
         if let Some(connections) = pool.peer_connections.get_mut(&peer_id) {
             connections.clear();
-            pool.pool_stats.active_connections = pool.pool_stats.active_connections.saturating_sub(1);
+            pool.pool_stats.active_connections =
+                pool.pool_stats.active_connections.saturating_sub(1);
         }
-        
+
         pool.peer_connections.remove(&peer_id);
     }
-    
+
     async fn add_to_retry_queue(&self, peer_id: PeerId, address: SocketAddr, error: String) {
         let mut pool = self.connection_pool.write().await;
-        
+
         let retry_connection = RetryConnection {
             peer_id,
             address,
@@ -1218,20 +1337,25 @@ impl PureRustP2P {
             next_retry: SystemTime::now() + self.pool_config.reconnect_delay,
             last_error: error,
         };
-        
+
         pool.retry_queue.push(retry_connection);
     }
-    
-    async fn start_connection_monitoring(&self, peer_id: PeerId, _stream: TcpStream, mut _rx: mpsc::UnboundedReceiver<P2PMessage>) {
+
+    async fn start_connection_monitoring(
+        &self,
+        peer_id: PeerId,
+        _stream: TcpStream,
+        mut _rx: mpsc::UnboundedReceiver<P2PMessage>,
+    ) {
         let connected_peers = Arc::clone(&self.connected_peers);
         let heartbeat_interval = self.pool_config.heartbeat_interval;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(heartbeat_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Update last activity
                 if let Some(mut peer) = connected_peers.write().await.get_mut(&peer_id) {
                     peer.last_activity = Instant::now();
@@ -1239,45 +1363,49 @@ impl PureRustP2P {
                     // Peer disconnected, exit monitoring
                     break;
                 }
-                
+
                 // Send heartbeat (placeholder)
                 debug!("Heartbeat for peer {}", hex::encode(peer_id));
             }
         });
     }
-    
+
     fn calculate_stability_score(&self, quality: &mut ConnectionQuality) {
         // Simple stability calculation based on packet loss and latency consistency
         let loss_factor = 1.0 - quality.packet_loss_rate.min(1.0);
-        let latency_factor = if quality.latency_ms < 50.0 { 1.0 } 
-                             else if quality.latency_ms < 200.0 { 0.8 }
-                             else { 0.5 };
-        
+        let latency_factor = if quality.latency_ms < 50.0 {
+            1.0
+        } else if quality.latency_ms < 200.0 {
+            0.8
+        } else {
+            0.5
+        };
+
         quality.stability_score = (loss_factor * latency_factor).max(0.0).min(1.0);
     }
-    
+
     /// Background maintenance for connection pool
     pub async fn start_connection_pool_maintenance(&self) {
         let connection_pool = Arc::clone(&self.connection_pool);
         let connected_peers = Arc::clone(&self.connected_peers);
         let pool_config = self.pool_config.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Clean up stale connections
                 let mut pool = connection_pool.write().await;
                 let mut stale_peers = Vec::new();
-                
+
                 for (peer_id, connections) in pool.peer_connections.iter_mut() {
                     connections.retain(|conn| {
                         let age = SystemTime::now()
                             .duration_since(conn.last_activity)
                             .unwrap_or_default();
-                        
+
                         if age > pool_config.connection_timeout {
                             stale_peers.push(*peer_id);
                             false
@@ -1285,39 +1413,48 @@ impl PureRustP2P {
                             true
                         }
                     });
-                    
+
                     if connections.is_empty() {
                         stale_peers.push(*peer_id);
                     }
                 }
-                
+
                 // Remove stale connections
                 for peer_id in stale_peers {
                     pool.peer_connections.remove(&peer_id);
                     connected_peers.write().await.remove(&peer_id);
-                    pool.pool_stats.active_connections = pool.pool_stats.active_connections.saturating_sub(1);
+                    pool.pool_stats.active_connections =
+                        pool.pool_stats.active_connections.saturating_sub(1);
                 }
-                
+
                 // Process retry queue
                 let now = SystemTime::now();
                 let mut retry_queue = std::mem::take(&mut pool.retry_queue);
                 retry_queue.retain(|retry| {
                     if retry.next_retry <= now && retry.attempt <= pool_config.reconnect_attempts {
                         // Schedule reconnection (simplified)
-                        debug!("Scheduling reconnection for peer {}", hex::encode(retry.peer_id));
+                        debug!(
+                            "Scheduling reconnection for peer {}",
+                            hex::encode(retry.peer_id)
+                        );
                         false // Remove from queue
                     } else if retry.attempt > pool_config.reconnect_attempts {
-                        debug!("Giving up reconnection for peer {} after {} attempts", 
-                               hex::encode(retry.peer_id), retry.attempt);
+                        debug!(
+                            "Giving up reconnection for peer {} after {} attempts",
+                            hex::encode(retry.peer_id),
+                            retry.attempt
+                        );
                         false // Remove from queue
                     } else {
                         true // Keep in queue
                     }
                 });
                 pool.retry_queue = retry_queue;
-                
-                debug!("Connection pool maintenance completed. Active connections: {}", 
-                       pool.pool_stats.active_connections);
+
+                debug!(
+                    "Connection pool maintenance completed. Active connections: {}",
+                    pool.pool_stats.active_connections
+                );
             }
         });
     }
@@ -1329,7 +1466,7 @@ impl PureRustP2P {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hasher::write(&mut hasher, &handshake_data[..32]);
             let hash = std::hash::Hasher::finish(&hasher);
-            
+
             let mut peer_id = [0u8; 32];
             peer_id[..8].copy_from_slice(&hash.to_le_bytes());
             Some(peer_id)
@@ -1357,7 +1494,7 @@ impl PureRustP2P {
         }
 
         let message_type = u32::from_le_bytes([message[0], message[1], message[2], message[3]]);
-        
+
         match message_type {
             0x01 => {
                 // Ping message
@@ -1380,7 +1517,11 @@ impl PureRustP2P {
                 self.process_data_message(&message[4..], peer_id).await?;
             }
             _ => {
-                warn!("Unknown message type 0x{:02X} from peer {}", message_type, hex::encode(peer_id));
+                warn!(
+                    "Unknown message type 0x{:02X} from peer {}",
+                    message_type,
+                    hex::encode(peer_id)
+                );
             }
         }
 
@@ -1391,7 +1532,8 @@ impl PureRustP2P {
     async fn send_pong_response(&self, peer_id: PeerId) -> Result<(), P2PError> {
         let pong_data = vec![0x02u8, 0x00, 0x00, 0x00]; // Pong message type
         let pong_message = P2PMessage::Ping { data: pong_data };
-        self.send_to_peer(peer_id, pong_message).await
+        self.send_to_peer(peer_id, pong_message)
+            .await
             .map_err(|e| P2PError::NetworkError(e.to_string()))
     }
 
@@ -1406,14 +1548,22 @@ impl PureRustP2P {
     /// Process DHT query from peer
     async fn process_dht_query(&self, query_data: &[u8], peer_id: PeerId) -> Result<(), P2PError> {
         // Simplified DHT query processing
-        debug!("Processing DHT query of {} bytes from peer {}", query_data.len(), hex::encode(peer_id));
+        debug!(
+            "Processing DHT query of {} bytes from peer {}",
+            query_data.len(),
+            hex::encode(peer_id)
+        );
         Ok(())
     }
 
     /// Process data message from peer  
     async fn process_data_message(&self, data: &[u8], peer_id: PeerId) -> Result<(), P2PError> {
         // Simplified data message processing
-        debug!("Processing data message of {} bytes from peer {}", data.len(), hex::encode(peer_id));
+        debug!(
+            "Processing data message of {} bytes from peer {}",
+            data.len(),
+            hex::encode(peer_id)
+        );
         Ok(())
     }
 }

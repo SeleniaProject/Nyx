@@ -36,20 +36,21 @@ impl NyxError {
     #[must_use]
     pub fn code(&self) -> u16 {
         match self {
-            NyxError::UnsupportedCap(_) => 0x07, // ERR_UNSUPPORTED_CAP
+            NyxError::UnsupportedCap(_) => 0x07,       // ERR_UNSUPPORTED_CAP
             NyxError::PathValidationFailed(_) => 0x05, // PATH_VALIDATION_FAILED
-            _ => 0x06, // INTERNAL_ERROR by default
+            _ => 0x06,                                 // INTERNAL_ERROR by default
         }
     }
 
     /// Record this error via telemetry metrics (if telemetry is linked).
     pub fn record(&self) {
         // Avoid hard dependency when nyx-telemetry not present.
-        #[cfg(feature = "telemetry")] {
+        #[cfg(feature = "telemetry")]
+        {
             nyx_telemetry::record_error(self.code());
         }
     }
 }
 
 /// Convenient alias for results throughout Nyx crates.
-pub type NyxResult<T> = Result<T, NyxError>; 
+pub type NyxResult<T> = Result<T, NyxError>;

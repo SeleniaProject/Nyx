@@ -6,13 +6,13 @@
 //! circuit breaker patterns, and intelligent error classification for
 //! robust error handling and recovery.
 
-use crate::error::{NyxError, NyxResult, ErrorSeverity};
 use crate::config::RetryConfig as SdkRetryConfig;
-use std::time::{Duration, Instant};
-use std::future::Future;
-use tokio::time::sleep;
-use tracing::{debug, warn, error};
+use crate::error::{ErrorSeverity, NyxError, NyxResult};
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
+use tracing::{debug, error, warn};
 
 /// Retry strategy configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,11 @@ impl From<&SdkRetryConfig> for RetryStrategy {
             max_attempts: cfg.max_attempts,
             initial_delay: cfg.initial_delay,
             max_delay: cfg.max_delay,
-            backoff_multiplier: if cfg.backoff_multiplier > 1.0 { cfg.backoff_multiplier } else { 1.01 },
+            backoff_multiplier: if cfg.backoff_multiplier > 1.0 {
+                cfg.backoff_multiplier
+            } else {
+                1.01
+            },
             jitter: cfg.jitter,
             max_total_time: Some(cfg.max_delay * cfg.max_attempts),
         }
@@ -80,36 +84,36 @@ impl RetryContext {
             total_delay: Duration::ZERO,
         }
     }
-    
+
     /// Get elapsed time since retries started
     pub fn elapsed(&self) -> Duration {
         self.start_time.elapsed()
     }
-    
+
     /// Check if we should continue retrying
     pub fn should_continue(&self, strategy: &RetryStrategy) -> bool {
         // Check attempt limit
         if self.attempt >= strategy.max_attempts {
             return false;
         }
-        
+
         // Check total time limit
         if let Some(max_time) = strategy.max_total_time {
             if self.elapsed() >= max_time {
                 return false;
             }
         }
-        
+
         // Check if last error is retryable
         if let Some(ref error) = self.last_error {
             if !error.is_retryable() {
                 return false;
             }
         }
-        
+
         true
     }
-    
+
     /// Calculate next retry delay
     pub fn next_delay(&self, strategy: &RetryStrategy) -> Duration {
         let base_delay = if self.attempt == 0 {
@@ -119,7 +123,7 @@ impl RetryContext {
             let delay = strategy.initial_delay.mul_f64(multiplier);
             std::cmp::min(delay, strategy.max_delay)
         };
-        
+
         if strategy.jitter {
             // Add ±25% jitter
             let jitter_factor = 0.75 + (fastrand::f64() * 0.5); // 0.75 to 1.25
@@ -146,12 +150,12 @@ impl RetryExecutor {
     pub fn new(strategy: RetryStrategy) -> Self {
         Self { strategy }
     }
-    
+
     /// Create a retry executor with default strategy
     pub fn default() -> Self {
         Self::new(RetryStrategy::default())
     }
-    
+
     /// Execute an operation with retry logic
     pub async fn execute<F, Fut, T>(&self, mut operation: F) -> NyxResult<T>
     where
@@ -159,15 +163,15 @@ impl RetryExecutor {
         Fut: Future<Output = NyxResult<T>>,
     {
         let mut context = RetryContext::new();
-        
+
         loop {
             context.attempt += 1;
-            
+
             debug!(
                 "Executing operation (attempt {}/{})",
                 context.attempt, self.strategy.max_attempts
             );
-            
+
             match operation().await {
                 Ok(result) => {
                     if context.attempt > 1 {
@@ -181,7 +185,7 @@ impl RetryExecutor {
                 }
                 Err(error) => {
                     context.last_error = Some(error.clone());
-                    
+
                     if !context.should_continue(&self.strategy) {
                         error!(
                             "Operation failed after {} attempts in {:?}: {}",
@@ -189,32 +193,32 @@ impl RetryExecutor {
                             context.elapsed(),
                             error
                         );
-                        
+
                         // Add retry context to error if possible
                         return Err(self.enhance_error_with_context(error, &context));
                     }
-                    
+
                     let delay = context.next_delay(&self.strategy);
                     context.total_delay += delay;
-                    
+
                     warn!(
                         "Operation failed (attempt {}/{}), retrying in {:?}: {}",
                         context.attempt, self.strategy.max_attempts, delay, error
                     );
-                    
+
                     // Add troubleshooting info for high severity errors
                     if error.severity() >= ErrorSeverity::High {
                         if let Some(info) = error.troubleshooting_info() {
                             warn!("Troubleshooting: {}", info);
                         }
                     }
-                    
+
                     sleep(delay).await;
                 }
             }
         }
     }
-    
+
     /// Execute an operation with custom retry condition
     pub async fn execute_with_condition<F, Fut, T, C>(
         &self,
@@ -227,34 +231,36 @@ impl RetryExecutor {
         C: Fn(&NyxError, &RetryContext) -> bool,
     {
         let mut context = RetryContext::new();
-        
+
         loop {
             context.attempt += 1;
-            
+
             match operation().await {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     context.last_error = Some(error.clone());
-                    
+
                     if !should_retry(&error, &context) || !context.should_continue(&self.strategy) {
                         return Err(self.enhance_error_with_context(error, &context));
                     }
-                    
+
                     let delay = context.next_delay(&self.strategy);
                     context.total_delay += delay;
-                    
+
                     sleep(delay).await;
                 }
             }
         }
     }
-    
+
     /// Enhance error with retry context information
     fn enhance_error_with_context(&self, mut error: NyxError, context: &RetryContext) -> NyxError {
         // For now, we'll just return the original error
         // In the future, we could add retry context to the error message
         match error {
-            NyxError::DaemonConnection { ref mut message, .. } => {
+            NyxError::DaemonConnection {
+                ref mut message, ..
+            } => {
                 *message = format!(
                     "{} (failed after {} attempts in {:?})",
                     message,
@@ -262,7 +268,9 @@ impl RetryExecutor {
                     context.elapsed()
                 );
             }
-            NyxError::Network { ref mut message, .. } => {
+            NyxError::Network {
+                ref mut message, ..
+            } => {
                 *message = format!(
                     "{} (failed after {} attempts in {:?})",
                     message,
@@ -272,7 +280,7 @@ impl RetryExecutor {
             }
             _ => {}
         }
-        
+
         error
     }
 }
@@ -287,10 +295,7 @@ where
 }
 
 /// Convenience function to retry an operation with custom strategy
-pub async fn retry_with_strategy<F, Fut, T>(
-    strategy: RetryStrategy,
-    operation: F,
-) -> NyxResult<T>
+pub async fn retry_with_strategy<F, Fut, T>(strategy: RetryStrategy, operation: F) -> NyxResult<T>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = NyxResult<T>>,
@@ -359,12 +364,12 @@ impl CircuitBreaker {
             last_state_change: Instant::now(),
         }
     }
-    
+
     /// Create a circuit breaker with default configuration
     pub fn default() -> Self {
         Self::new(CircuitBreakerConfig::default())
     }
-    
+
     /// Check if a request can be made
     pub fn can_execute(&mut self) -> bool {
         match self.state {
@@ -380,7 +385,7 @@ impl CircuitBreaker {
             CircuitBreakerState::HalfOpen => true,
         }
     }
-    
+
     /// Record a successful operation
     pub fn record_success(&mut self) {
         match self.state {
@@ -398,7 +403,7 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Record a failed operation
     pub fn record_failure(&mut self) {
         match self.state {
@@ -416,12 +421,12 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Get current state
     pub fn state(&self) -> &CircuitBreakerState {
         &self.state
     }
-    
+
     /// Execute an operation with circuit breaker protection
     pub async fn execute<F, Fut, T>(&mut self, operation: F) -> NyxResult<T>
     where
@@ -434,7 +439,7 @@ impl CircuitBreaker {
                 None,
             ));
         }
-        
+
         match operation().await {
             Ok(result) => {
                 self.record_success();
@@ -446,7 +451,7 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Transition to closed state
     fn transition_to_closed(&mut self) {
         debug!("Circuit breaker transitioning to CLOSED");
@@ -455,7 +460,7 @@ impl CircuitBreaker {
         self.success_count = 0;
         self.last_state_change = Instant::now();
     }
-    
+
     /// Transition to open state
     fn transition_to_open(&mut self) {
         warn!("Circuit breaker transitioning to OPEN");
@@ -463,7 +468,7 @@ impl CircuitBreaker {
         self.success_count = 0;
         self.last_state_change = Instant::now();
     }
-    
+
     /// Transition to half-open state
     fn transition_to_half_open(&mut self) {
         debug!("Circuit breaker transitioning to HALF-OPEN");
@@ -477,12 +482,12 @@ impl CircuitBreaker {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
-    
+
     #[tokio::test]
     async fn test_retry_success() {
         let attempts = Arc::new(Mutex::new(0));
         let attempts_clone = attempts.clone();
-        
+
         let result = retry(move || {
             let attempts = attempts_clone.clone();
             async move {
@@ -494,18 +499,19 @@ mod tests {
                     Ok("success")
                 }
             }
-        }).await;
-        
+        })
+        .await;
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
         assert_eq!(*attempts.lock().unwrap(), 3);
     }
-    
+
     #[tokio::test]
     async fn test_retry_failure() {
         let attempts = Arc::new(Mutex::new(0));
         let attempts_clone = attempts.clone();
-        
+
         let result: Result<String, _> = retry(move || {
             let attempts = attempts_clone.clone();
             async move {
@@ -513,20 +519,21 @@ mod tests {
                 *count += 1;
                 Err(NyxError::network_error("persistent failure", None))
             }
-        }).await;
-        
+        })
+        .await;
+
         assert!(result.is_err());
         assert_eq!(*attempts.lock().unwrap(), 3); // Default max attempts
     }
-    
+
     #[tokio::test]
     async fn test_circuit_breaker() {
         let mut breaker = CircuitBreaker::default();
-        
+
         // Initially closed
         assert_eq!(breaker.state(), &CircuitBreakerState::Closed);
         assert!(breaker.can_execute());
-        
+
         // Record failures to open circuit
         for _ in 0..5 {
             breaker.record_failure();

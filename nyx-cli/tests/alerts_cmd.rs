@@ -15,10 +15,12 @@ fn cli_alerts_subcommand_parses() {
 
     // Running alerts stats without daemon should fail gracefully, but the process should not crash.
     let output = Command::new(env!("CARGO_BIN_EXE_nyx-cli"))
-        .arg("--endpoint").arg("http://127.0.0.1:59999")
+        .arg("--endpoint")
+        .arg("http://127.0.0.1:59999")
         .arg("alerts")
         .arg("stats")
-        .arg("--format").arg("json")
+        .arg("--format")
+        .arg("json")
         .output()
         .expect("failed to run nyx-cli alerts stats");
 
@@ -27,6 +29,3 @@ fn cli_alerts_subcommand_parses() {
     let stderr_str = String::from_utf8_lossy(&output.stderr);
     assert!(stdout_str.len() > 0 || stderr_str.len() > 0);
 }
-
-
-

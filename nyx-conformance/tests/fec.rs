@@ -12,4 +12,4 @@ fn rs_fec_encode_verify() {
     codec.encode(&mut mut_refs).unwrap();
     let verify_vec: Vec<&[u8]> = mut_refs.iter().map(|s| &**s).collect();
     assert!(codec.verify(&verify_vec).unwrap());
-} 
+}

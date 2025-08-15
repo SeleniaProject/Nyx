@@ -1,11 +1,11 @@
 //! Runtime SETTINGS values and watcher.
 #![forbid(unsafe_code)]
 
-use tokio::sync::{watch, watch::Receiver};
 #[cfg(feature = "plugin")]
 use std::collections::HashSet;
+use tokio::sync::{watch, watch::Receiver};
 
-use crate::management::{SettingsFrame, Setting};
+use crate::management::{Setting, SettingsFrame};
 #[cfg(feature = "plugin")]
 use crate::plugin::PluginId;
 
@@ -15,8 +15,10 @@ pub mod setting_ids {
     pub const MAX_DATA: u16 = 0x02;
     pub const IDLE_TIMEOUT: u16 = 0x03;
     pub const PQ_SUPPORTED: u16 = 0x04;
+    /// Low power preference (0=normal, 1=prefer low power)
+    pub const LOW_POWER_PREFERENCE: u16 = 0x06;
     #[cfg(feature = "plugin")]
-    pub const PLUGIN_REQUIRED: u16 = 0x05;  // New for v1.0 Plugin Framework
+    pub const PLUGIN_REQUIRED: u16 = 0x05; // New for v1.0 Plugin Framework
 }
 
 /// Mutable stream-layer configuration updated via SETTINGS frames.
@@ -26,6 +28,10 @@ pub struct StreamSettings {
     pub max_data: u32,
     pub idle_timeout: u16,
     pub pq_supported: bool,
+    /// When true, prefer low power network behavior (longer keepalive, reduced timers)
+    pub low_power_preference: bool,
+    /// v1.0 PQ mode (0=hybrid, 1=pq-only). Maintained alongside legacy pq_supported.
+    pub pq_mode: u16,
     /// Required plugins that must be supported for connection
     #[cfg(feature = "plugin")]
     pub required_plugins: HashSet<PluginId>,
@@ -33,11 +39,26 @@ pub struct StreamSettings {
 
 impl Default for StreamSettings {
     fn default() -> Self {
+        // Initialize from environment toggles to provide sensible runtime defaults.
+        // NYX_LOW_POWER=1 sets low_power_preference=true; NYX_PQ_MODE=0|1 sets pq_mode.
+        let env_lp = std::env::var("NYX_LOW_POWER")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let env_pq_mode = std::env::var("NYX_PQ_MODE")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .map(|m| m.min(1))
+            .unwrap_or(0);
+        // Inform nyx-crypto default at boot so early handshakes pick correct attribute.
+        nyx_crypto::noise::set_default_pq_mode(env_pq_mode);
         Self {
             max_streams: 256,
             max_data: 1_048_576,
             idle_timeout: 30,
             pq_supported: false,
+            low_power_preference: env_lp,
+            pq_mode: env_pq_mode,
             #[cfg(feature = "plugin")]
             required_plugins: HashSet::new(),
         }
@@ -53,6 +74,7 @@ impl StreamSettings {
                 setting_ids::MAX_DATA => self.max_data = s.value,
                 setting_ids::IDLE_TIMEOUT => self.idle_timeout = s.value as u16,
                 setting_ids::PQ_SUPPORTED => self.pq_supported = s.value != 0,
+                setting_ids::LOW_POWER_PREFERENCE => self.low_power_preference = s.value != 0,
                 #[cfg(feature = "plugin")]
                 setting_ids::PLUGIN_REQUIRED => {
                     // Plugin ID is encoded in the value field
@@ -60,7 +82,15 @@ impl StreamSettings {
                         self.required_plugins.insert(s.value);
                     }
                 }
-                _ => {}
+                _ => {
+                    // Accept management-layer PQ_MODE for v1.0
+                    if s.id == crate::management::setting_ids::PQ_MODE {
+                        self.pq_mode = (s.value as u16).min(1);
+                        // Do not toggle legacy boolean implicitly to preserve roundtrip equality semantics
+                        // Propagate negotiated PQ mode to nyx-crypto handshake span default
+                        nyx_crypto::noise::set_default_pq_mode(self.pq_mode);
+                    }
+                }
             }
         }
     }
@@ -68,17 +98,41 @@ impl StreamSettings {
     /// Build a SETTINGS frame representing current config.
     pub fn to_frame(&self) -> SettingsFrame {
         let mut settings = Vec::<Setting>::new();
-        settings.push(Setting { id: setting_ids::MAX_STREAMS, value: self.max_streams });
-        settings.push(Setting { id: setting_ids::MAX_DATA, value: self.max_data });
-        settings.push(Setting { id: setting_ids::IDLE_TIMEOUT, value: self.idle_timeout as u32 });
-        settings.push(Setting { id: setting_ids::PQ_SUPPORTED, value: if self.pq_supported { 1 } else { 0 } });
-        
+        settings.push(Setting {
+            id: setting_ids::MAX_STREAMS,
+            value: self.max_streams,
+        });
+        settings.push(Setting {
+            id: setting_ids::MAX_DATA,
+            value: self.max_data,
+        });
+        settings.push(Setting {
+            id: setting_ids::IDLE_TIMEOUT,
+            value: self.idle_timeout as u32,
+        });
+        settings.push(Setting {
+            id: setting_ids::PQ_SUPPORTED,
+            value: if self.pq_supported { 1 } else { 0 },
+        });
+        settings.push(Setting {
+            id: setting_ids::LOW_POWER_PREFERENCE,
+            value: if self.low_power_preference { 1 } else { 0 },
+        });
+        // Also include v1.0 PQ_MODE advertisement
+        settings.push(Setting {
+            id: crate::management::setting_ids::PQ_MODE,
+            value: self.pq_mode as u32,
+        });
+
         // Add required plugins as separate settings
         #[cfg(feature = "plugin")]
         for &plugin_id in &self.required_plugins {
-            settings.push(Setting { id: setting_ids::PLUGIN_REQUIRED, value: plugin_id });
+            settings.push(Setting {
+                id: setting_ids::PLUGIN_REQUIRED,
+                value: plugin_id,
+            });
         }
-        
+
         SettingsFrame { settings }
     }
 
@@ -110,4 +164,4 @@ impl StreamSettings {
 /// Create a watch channel seeded with default settings.
 pub fn settings_watch() -> (watch::Sender<StreamSettings>, Receiver<StreamSettings>) {
     watch::channel(StreamSettings::default())
-} 
+}

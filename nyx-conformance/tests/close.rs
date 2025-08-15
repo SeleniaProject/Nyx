@@ -8,4 +8,4 @@ fn close_frame_header_parse() {
     assert_eq!(hdr.frame_type, 3);
     assert_eq!(hdr.flags, 0x04);
     assert_eq!(hdr.length, 0);
-} 
+}

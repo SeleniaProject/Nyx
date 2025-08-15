@@ -19,7 +19,10 @@ pub struct AnonymityEvaluator {
 
 impl AnonymityEvaluator {
     pub fn new(window_sec: u64) -> Self {
-        Self { window: VecDeque::new(), window_len: Duration::from_secs(window_sec.max(1)) }
+        Self {
+            window: VecDeque::new(),
+            window_len: Duration::from_secs(window_sec.max(1)),
+        }
     }
 
     /// Record a new observed delay.
@@ -28,12 +31,16 @@ impl AnonymityEvaluator {
         // store duration with timestamp via tuple
         self.window.push_back(d);
         // keep size under ~200 samples to bound memory
-        if self.window.len() > 256 { self.window.pop_front(); }
+        if self.window.len() > 256 {
+            self.window.pop_front();
+        }
     }
 
     /// Compute anonymity score (0..1). Higher score = higher entropy.
     pub fn score(&self) -> f64 {
-        if self.window.is_empty() { return 0.0; }
+        if self.window.is_empty() {
+            return 0.0;
+        }
         // Bucketise delays (0-500ms) into 10 bins; delays >500ms fall into last bin
         let mut buckets = [0usize; 10];
         for d in &self.window {
@@ -45,7 +52,9 @@ impl AnonymityEvaluator {
         let n = self.window.len() as f64;
         let mut entropy = 0.0;
         for &count in &buckets {
-            if count == 0 { continue; }
+            if count == 0 {
+                continue;
+            }
             let p = count as f64 / n;
             entropy -= p * p.log2();
         }
@@ -61,11 +70,15 @@ mod tests {
     #[test]
     fn entropy_bounds() {
         let mut ev = AnonymityEvaluator::new(5);
-        for _ in 0..100 { ev.record_delay(Duration::from_millis(10)); }
+        for _ in 0..100 {
+            ev.record_delay(Duration::from_millis(10));
+        }
         assert!(ev.score() <= 0.5);
         // Mixed delays for higher entropy
         let mut ev2 = AnonymityEvaluator::new(5);
-        for i in 0..100 { ev2.record_delay(Duration::from_millis((i % 500) as u64)); }
+        for i in 0..100 {
+            ev2.record_delay(Duration::from_millis((i % 500) as u64));
+        }
         assert!(ev2.score() > ev.score());
     }
-} 
+}

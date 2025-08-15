@@ -8,12 +8,15 @@
 #[tokio::test]
 async fn construct_with_mobile_ffi() {
     use nyx_core::low_power::LowPowerManager; // crate path adjusted by workspace
-    // Build manager with no push service.
+                                              // Build manager with no push service.
     let mgr = LowPowerManager::with_mobile_ffi(None).expect("factory");
     // Start monitoring (should spawn tasks).
     mgr.start_monitoring().await.expect("monitoring start");
     // Basic invariant: initial state ScreenOn
-    assert_eq!(mgr.get_power_state(), nyx_core::low_power::PowerState::ScreenOn);
+    assert_eq!(
+        mgr.get_power_state(),
+        nyx_core::low_power::PowerState::ScreenOn
+    );
 }
 
 #[cfg(not(feature = "mobile_ffi"))]
@@ -24,6 +27,6 @@ fn mobile_ffi_test_skipped() {
     // Compile-time check: type path compiles.
     use nyx_core::low_power::PowerState;
     let _ = PowerState::ScreenOn; // symbol presence check
-    // Runtime no-op assertion to indicate intentional skip.
+                                  // Runtime no-op assertion to indicate intentional skip.
     assert_eq!(1, 1, "mobile_ffi disabled build should compile paths");
 }

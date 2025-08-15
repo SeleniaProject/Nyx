@@ -6,9 +6,9 @@
 //! first CRYPTO frame.  This module provides helpers to parse that CBOR blob
 //! and to verify that all *required* capabilities are supported locally.
 
+use crate::{NyxError, NyxResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use crate::{NyxError, NyxResult};
 
 /// Flag indicating the capability is *required* by the sender.
 pub const FLAG_REQUIRED: u8 = 0x01;
@@ -54,7 +54,13 @@ mod tests {
     #[test]
     fn negotiation_rejects_missing_required() {
         let local: HashSet<u32> = [1u32, 2].into_iter().collect();
-        let remote = vec![Capability { id: 2, flags: 0 }, Capability { id: 5, flags: FLAG_REQUIRED }];
+        let remote = vec![
+            Capability { id: 2, flags: 0 },
+            Capability {
+                id: 5,
+                flags: FLAG_REQUIRED,
+            },
+        ];
         let res = negotiate(&local, &remote);
         assert!(matches!(res, Err(NyxError::UnsupportedCap(5))));
     }
@@ -65,4 +71,4 @@ mod tests {
         let remote = vec![Capability { id: 42, flags: 0 }];
         assert!(negotiate(&local, &remote).is_ok());
     }
-} 
+}

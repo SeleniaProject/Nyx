@@ -1,5 +1,5 @@
 use nyx_control::settings::validate_settings;
-use nyx_stream::{StreamSettings, build_settings_frame, parse_settings_frame};
+use nyx_stream::{build_settings_frame, parse_settings_frame, StreamSettings};
 
 #[test]
 fn valid_settings_json() {
@@ -40,4 +40,4 @@ fn settings_custom() {
     let mut applied = StreamSettings::default();
     applied.apply(&dec);
     assert_eq!(applied, s);
-} 
+}

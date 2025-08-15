@@ -8,11 +8,11 @@
 //! interfaces to support zero-copy operations.
 
 use super::*;
-use crate::zero_copy::manager::{ZeroCopyManager, ZeroCopyError};
+use crate::zero_copy::manager::{ZeroCopyError, ZeroCopyManager};
 
 // AEAD は実装を必須とし、モックは廃止。暗号機能が無効なビルドでは本統合APIの一部を非公開化する。
 #[cfg(feature = "nyx-crypto")]
-pub use nyx_crypto::aead::{FrameCrypter, AeadError};
+pub use nyx_crypto::aead::{AeadError, FrameCrypter};
 use std::sync::Arc;
 
 /// Integration with AEAD encryption for zero-copy optimization
@@ -34,10 +34,14 @@ pub mod aead_integration {
     impl ZeroCopyAeadCrypter {
         /// Create new zero-copy AEAD crypter
         pub fn new(crypter: FrameCrypter, manager: Arc<ZeroCopyManager>, path_id: String) -> Self {
-            Self { crypter, manager, path_id }
+            Self {
+                crypter,
+                manager,
+                path_id,
+            }
         }
 
-            /// Encrypt with zero-copy optimization tracking
+        /// Encrypt with zero-copy optimization tracking
         pub async fn encrypt_zero_copy(
             &mut self,
             context_id: &str,
@@ -50,9 +54,14 @@ pub mod aead_integration {
                 Some(p) => p,
                 None => {
                     // Attempt to create the path on-demand
-                    let _ = self.manager.create_critical_path(self.path_id.clone()).await
+                    let _ = self
+                        .manager
+                        .create_critical_path(self.path_id.clone())
+                        .await
                         .map_err(|_| AeadError::InvalidTag)?;
-                    self.manager.get_critical_path(&self.path_id).await
+                    self.manager
+                        .get_critical_path(&self.path_id)
+                        .await
                         .ok_or_else(|| AeadError::InvalidTag)?
                 }
             };
@@ -64,7 +73,8 @@ pub mod aead_integration {
                 size: plaintext.len() + 16, // AEAD tag overhead
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             // Perform encryption
             let result = self.crypter.encrypt(dir, plaintext, aad)?;
@@ -76,7 +86,8 @@ pub mod aead_integration {
                 size: result.len(),
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             Ok(result)
         }
@@ -91,7 +102,10 @@ pub mod aead_integration {
             aad: &[u8],
         ) -> Result<Vec<u8>, AeadError> {
             // Get critical path for tracking
-            let path = self.manager.get_critical_path(&self.path_id).await
+            let path = self
+                .manager
+                .get_critical_path(&self.path_id)
+                .await
                 .ok_or_else(|| AeadError::InvalidTag)?;
 
             // Track allocation
@@ -101,7 +115,8 @@ pub mod aead_integration {
                 size: ciphertext.len(),
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             // Perform decryption
             let result = self.crypter.decrypt(dir, seq, ciphertext, aad)?;
@@ -113,7 +128,8 @@ pub mod aead_integration {
                 size: result.len(),
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             Ok(result)
         }
@@ -123,8 +139,8 @@ pub mod aead_integration {
 /// Integration with FEC for zero-copy optimization
 pub mod fec_integration {
     use super::*;
-    use std::sync::Arc;
     use std::error::Error;
+    use std::sync::Arc;
 
     /// Abstraction over FEC codec to avoid circular dependencies with `nyx-fec`.
     /// Implement this trait in `nyx-fec` (or other FEC crates) to integrate with `nyx-core`.
@@ -138,7 +154,9 @@ pub mod fec_integration {
         }
 
         /// Current redundancy ratio (0.0..=1.0) for telemetry purposes.
-        fn current_redundancy(&self) -> f32 { 0.0 }
+        fn current_redundancy(&self) -> f32 {
+            0.0
+        }
     }
 
     /// Zero-copy enhanced FEC codec wrapper that records allocation/copy metrics.
@@ -153,8 +171,16 @@ pub mod fec_integration {
 
     impl ZeroCopyFecCodec {
         /// Create new zero-copy FEC codec wrapper
-        pub fn new(codec: Arc<dyn FecCodec>, manager: Arc<ZeroCopyManager>, path_id: String) -> Self {
-            Self { codec, manager, path_id }
+        pub fn new(
+            codec: Arc<dyn FecCodec>,
+            manager: Arc<ZeroCopyManager>,
+            path_id: String,
+        ) -> Self {
+            Self {
+                codec,
+                manager,
+                path_id,
+            }
         }
 
         /// Encode with zero-copy optimization tracking
@@ -167,9 +193,13 @@ pub mod fec_integration {
             let path = match self.manager.get_critical_path(&self.path_id).await {
                 Some(p) => p,
                 None => {
-                    self.manager.create_critical_path(self.path_id.clone()).await
+                    self.manager
+                        .create_critical_path(self.path_id.clone())
+                        .await
                         .map_err(|_| "Critical path creation failed")?;
-                    self.manager.get_critical_path(&self.path_id).await
+                    self.manager
+                        .get_critical_path(&self.path_id)
+                        .await
                         .ok_or("Critical path not found")?
                 }
             };
@@ -195,7 +225,8 @@ pub mod fec_integration {
                     size: symbol.len(),
                     timestamp: Instant::now(),
                     context: Some(context_id.to_string()),
-                }).await;
+                })
+                .await;
             }
 
             Ok(encoded_symbols)
@@ -211,9 +242,13 @@ pub mod fec_integration {
             let path = match self.manager.get_critical_path(&self.path_id).await {
                 Some(p) => p,
                 None => {
-                    self.manager.create_critical_path(self.path_id.clone()).await
+                    self.manager
+                        .create_critical_path(self.path_id.clone())
+                        .await
                         .map_err(|_| "Critical path creation failed")?;
-                    self.manager.get_critical_path(&self.path_id).await
+                    self.manager
+                        .get_critical_path(&self.path_id)
+                        .await
                         .ok_or("Critical path not found")?
                 }
             };
@@ -226,7 +261,8 @@ pub mod fec_integration {
                 size: total_symbol_bytes,
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             // Perform decoding through codec
             let decoded_data = self.codec.decode(symbols)?;
@@ -238,7 +274,8 @@ pub mod fec_integration {
                 size: decoded_data.len(),
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             Ok(decoded_data)
         }
@@ -249,7 +286,7 @@ pub mod fec_integration {
 pub mod transmission_integration {
     use super::*;
     use std::net::SocketAddr;
-    
+
     use tokio::net::UdpSocket;
 
     /// Zero-copy enhanced transmission handler
@@ -277,7 +314,11 @@ pub mod transmission_integration {
                 // Best-effort; if creation fails due to race, subsequent get will succeed.
                 let _ = manager.create_critical_path(path_id.clone()).await;
             }
-            Ok(Self { socket, manager, path_id })
+            Ok(Self {
+                socket,
+                manager,
+                path_id,
+            })
         }
 
         /// Send data with zero-copy optimization tracking
@@ -292,15 +333,26 @@ pub mod transmission_integration {
                 Some(p) => p,
                 None => {
                     // Attempt creation then retry fetch
-                    if self.manager.create_critical_path(self.path_id.clone()).await.is_err() {
+                    if self
+                        .manager
+                        .create_critical_path(self.path_id.clone())
+                        .await
+                        .is_err()
+                    {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::NotFound,
-                            "Critical path not available"
+                            "Critical path not available",
                         ));
                     }
-                    self.manager.get_critical_path(&self.path_id).await.ok_or_else(||
-                        std::io::Error::new(std::io::ErrorKind::NotFound, "Critical path not found")
-                    )?
+                    self.manager
+                        .get_critical_path(&self.path_id)
+                        .await
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                "Critical path not found",
+                            )
+                        })?
                 }
             };
 
@@ -311,7 +363,8 @@ pub mod transmission_integration {
                 size: data.len(),
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             // Perform transmission
             let bytes_sent = self.socket.send_to(data, target).await?;
@@ -323,7 +376,8 @@ pub mod transmission_integration {
                 size: bytes_sent,
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             Ok(bytes_sent)
         }
@@ -338,15 +392,26 @@ pub mod transmission_integration {
             let path = match self.manager.get_critical_path(&self.path_id).await {
                 Some(p) => p,
                 None => {
-                    if self.manager.create_critical_path(self.path_id.clone()).await.is_err() {
+                    if self
+                        .manager
+                        .create_critical_path(self.path_id.clone())
+                        .await
+                        .is_err()
+                    {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::NotFound,
-                            "Critical path not available"
+                            "Critical path not available",
                         ));
                     }
-                    self.manager.get_critical_path(&self.path_id).await.ok_or_else(||
-                        std::io::Error::new(std::io::ErrorKind::NotFound, "Critical path not found")
-                    )?
+                    self.manager
+                        .get_critical_path(&self.path_id)
+                        .await
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                "Critical path not found",
+                            )
+                        })?
                 }
             };
 
@@ -357,7 +422,8 @@ pub mod transmission_integration {
                 size: buffer.len(),
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             // Perform reception
             let (bytes_received, sender_addr) = self.socket.recv_from(buffer).await?;
@@ -369,7 +435,8 @@ pub mod transmission_integration {
                 size: bytes_received,
                 timestamp: Instant::now(),
                 context: Some(context_id.to_string()),
-            }).await;
+            })
+            .await;
 
             Ok((bytes_received, sender_addr))
         }
@@ -433,7 +500,8 @@ impl ZeroCopyPipeline {
                 bind_addr,
                 Arc::clone(&self.manager),
                 self.path_id.clone(),
-            ).await?
+            )
+            .await?,
         );
         Ok(self)
     }
@@ -444,14 +512,21 @@ impl ZeroCopyPipeline {
         packet_data: &[u8],
         target_addr: std::net::SocketAddr,
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-        let context_id = format!("pipeline_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let context_id = format!(
+            "pipeline_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
 
         // Stage 1: AEAD Encryption
         let encrypted_data = {
             #[cfg(feature = "nyx-crypto")]
             {
                 if let Some(ref mut aead) = self.aead_crypter {
-                    aead.encrypt_zero_copy(&context_id, 0x00000000, packet_data, &[]).await?
+                    aead.encrypt_zero_copy(&context_id, 0x00000000, packet_data, &[])
+                        .await?
                 } else {
                     packet_data.to_vec()
                 }
@@ -474,7 +549,9 @@ impl ZeroCopyPipeline {
         let mut total_bytes_sent = 0;
         if let Some(ref transmission) = self.transmission_handler {
             for symbol in &fec_symbols {
-                let bytes_sent = transmission.send_zero_copy(&context_id, symbol, target_addr).await?;
+                let bytes_sent = transmission
+                    .send_zero_copy(&context_id, symbol, target_addr)
+                    .await?;
                 total_bytes_sent += bytes_sent;
             }
         }
@@ -484,7 +561,10 @@ impl ZeroCopyPipeline {
 
     /// Get pipeline metrics
     pub async fn get_metrics(&self) -> Result<crate::zero_copy::AllocationMetrics, ZeroCopyError> {
-        let path = self.manager.get_critical_path(&self.path_id).await
+        let path = self
+            .manager
+            .get_critical_path(&self.path_id)
+            .await
             .ok_or_else(|| ZeroCopyError::PathNotFound(self.path_id.clone()))?;
         Ok(path.get_metrics().await)
     }

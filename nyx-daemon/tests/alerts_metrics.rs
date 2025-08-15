@@ -45,6 +45,3 @@ async fn alerts_metrics_exposed_in_prometheus() {
     // Verify alerts metrics exposure
     assert!(body.contains("nyx_alerts_active"));
 }
-
-
-

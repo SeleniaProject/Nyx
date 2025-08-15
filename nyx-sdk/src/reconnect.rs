@@ -15,6 +15,14 @@ use crate::proto::OpenRequest;
 use crate::stream::StreamOptions;
 
 #[cfg(feature = "reconnect")]
+use crate::config::RetryConfig;
+#[cfg(feature = "reconnect")]
+use backoff::{backoff::Backoff, ExponentialBackoff};
+#[cfg(feature = "reconnect")]
+use chrono::{DateTime, Utc};
+#[cfg(feature = "reconnect")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "reconnect")]
 use std::sync::Arc;
 #[cfg(feature = "reconnect")]
 use std::time::{Duration, Instant};
@@ -24,14 +32,6 @@ use tokio::sync::{Mutex, RwLock};
 use tonic::transport::Channel;
 #[cfg(feature = "reconnect")]
 use tracing::{debug, info, warn};
-#[cfg(feature = "reconnect")]
-use backoff::{ExponentialBackoff, backoff::Backoff};
-#[cfg(feature = "reconnect")]
-use crate::config::RetryConfig;
-#[cfg(feature = "reconnect")]
-use chrono::{DateTime, Utc};
-#[cfg(feature = "reconnect")]
-use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "reconnect")]
 /// Reconnection manager that handles automatic stream reconnection
@@ -212,8 +212,8 @@ impl ReconnectionManager {
         {
             let mut breaker = self.circuit_breaker.write().await;
             if !breaker.can_attempt() {
-                return Err(NyxError::ReconnectionFailed { 
-                    attempts: self.stats.read().await.total_attempts 
+                return Err(NyxError::ReconnectionFailed {
+                    attempts: self.stats.read().await.total_attempts,
                 });
             }
         }
@@ -241,30 +241,33 @@ impl ReconnectionManager {
                 return Err(NyxError::ReconnectionFailed { attempts: attempt });
             }
 
-            debug!("Reconnection attempt {} for target {}", attempt, self.target);
+            debug!(
+                "Reconnection attempt {} for target {}",
+                attempt, self.target
+            );
 
             // Attempt to reconnect
             match self.attempt_reconnection(client).await {
                 Ok(new_stream_id) => {
                     let reconnection_time = start_time.elapsed();
                     self.record_success(reconnection_time).await;
-                    
+
                     // Reset state to idle
                     {
                         let mut state = self.state.write().await;
                         *state = ReconnectionState::Idle;
                     }
-                    
+
                     info!(
                         "Successfully reconnected to {} with stream ID {} after {} attempts in {:?}",
                         self.target, new_stream_id, attempt, reconnection_time
                     );
-                    
+
                     return Ok(new_stream_id);
                 }
                 Err(e) => {
                     warn!("Reconnection attempt {} failed: {}", attempt, e);
-                    
+
                     // Check if error is retryable
                     if !e.is_retryable() {
                         self.record_failure().await;
@@ -274,16 +277,16 @@ impl ReconnectionManager {
                         };
                         return Err(e);
                     }
-                    
+
                     // Wait before next attempt
                     if attempt < self.options.max_reconnect_attempts {
                         let delay = self.get_next_delay().await;
                         debug!("Waiting {:?} before next reconnection attempt", delay);
                         tokio::time::sleep(delay).await;
                     }
-                    
+
                     attempt += 1;
-                    
+
                     // Update state
                     {
                         let mut state = self.state.write().await;
@@ -303,32 +306,32 @@ impl ReconnectionManager {
         client: &Arc<Mutex<NyxControlClient<Channel>>>,
     ) -> NyxResult<u32> {
         let mut client_guard = client.lock().await;
-        
+
         let request = OpenRequest {
             stream_name: self.target.clone(),
             target_address: self.target.clone(),
             options: Some(self.options.clone().into()),
         };
-        
+
         let timeout = self.options.operation_timeout;
         let response = tokio::time::timeout(
-            timeout, 
-            client_guard.open_stream(tonic::Request::new(request))
+            timeout,
+            client_guard.open_stream(tonic::Request::new(request)),
         )
-            .await
-            .map_err(|_| NyxError::timeout(timeout))?
-            .map_err(NyxError::from)?;
-        
+        .await
+        .map_err(|_| NyxError::timeout(timeout))?
+        .map_err(NyxError::from)?;
+
         let stream_response = response.into_inner();
-        
+
         // Validate response
         if !stream_response.success {
-            return Err(NyxError::stream_error(format!(
-                "Failed to reconnect stream: {}", 
-                stream_response.message
-            ), None));
+            return Err(NyxError::stream_error(
+                format!("Failed to reconnect stream: {}", stream_response.message),
+                None,
+            ));
         }
-        
+
         Ok(stream_response.stream_id)
     }
 
@@ -345,7 +348,7 @@ impl ReconnectionManager {
             let mut breaker = self.circuit_breaker.write().await;
             breaker.record_success();
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().await;
@@ -353,12 +356,13 @@ impl ReconnectionManager {
             stats.consecutive_failures = 0;
             stats.last_success = Some(Utc::now());
             stats.total_reconnection_time += reconnection_time;
-            
+
             if stats.successful_reconnections > 0 {
-                stats.avg_reconnection_time = stats.total_reconnection_time / stats.successful_reconnections;
+                stats.avg_reconnection_time =
+                    stats.total_reconnection_time / stats.successful_reconnections;
             }
         }
-        
+
         // Reset backoff
         {
             let mut backoff = self.backoff.lock().await;
@@ -373,7 +377,7 @@ impl ReconnectionManager {
             let mut breaker = self.circuit_breaker.write().await;
             breaker.record_failure();
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write().await;
@@ -407,7 +411,10 @@ impl ReconnectionManager {
 
     /// Check if reconnection is currently in progress
     pub async fn is_reconnecting(&self) -> bool {
-        matches!(*self.state.read().await, ReconnectionState::Reconnecting { .. })
+        matches!(
+            *self.state.read().await,
+            ReconnectionState::Reconnecting { .. }
+        )
     }
 
     /// Reset the reconnection manager
@@ -416,12 +423,12 @@ impl ReconnectionManager {
             let mut state = self.state.write().await;
             *state = ReconnectionState::Idle;
         }
-        
+
         {
             let mut backoff = self.backoff.lock().await;
             backoff.reset();
         }
-        
+
         {
             let mut breaker = self.circuit_breaker.write().await;
             breaker.reset();
@@ -473,7 +480,7 @@ impl CircuitBreaker {
     /// Record a failed operation
     fn record_failure(&mut self) {
         self.last_failure = Some(Instant::now());
-        
+
         match self.state {
             CircuitBreakerState::Closed => {
                 self.failure_count += 1;
@@ -515,4 +522,4 @@ impl ReconnectionManager {
     pub fn new(_target: String, _options: crate::stream::StreamOptions) -> Self {
         Self
     }
-} 
+}

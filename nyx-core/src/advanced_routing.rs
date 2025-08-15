@@ -1,9 +1,9 @@
+use crate::types::NodeEndpoint;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{info, debug, trace};
-use crate::types::NodeEndpoint;
+use tracing::{debug, info, trace};
 
 /// Advanced routing algorithms for multi-path optimization
 pub mod advanced_routing {
@@ -31,10 +31,10 @@ pub mod advanced_routing {
     pub struct PathQuality {
         pub endpoint: NodeEndpoint,
         pub latency: Duration,
-        pub bandwidth: u64, // bytes per second
+        pub bandwidth: u64,   // bytes per second
         pub packet_loss: f32, // 0.0 to 1.0
         pub jitter: Duration,
-        pub congestion_level: f32, // 0.0 to 1.0
+        pub congestion_level: f32,  // 0.0 to 1.0
         pub reliability_score: f32, // 0.0 to 1.0
         pub last_updated: Instant,
         pub active_connections: u32,
@@ -46,7 +46,11 @@ pub mod advanced_routing {
     impl Default for PathQuality {
         fn default() -> Self {
             Self {
-                endpoint: NodeEndpoint::new("0.0.0.0:0".parse().unwrap_or_else(|_| "127.0.0.1:0".parse().expect("fallback parse"))),
+                endpoint: NodeEndpoint::new(
+                    "0.0.0.0:0"
+                        .parse()
+                        .unwrap_or_else(|_| "127.0.0.1:0".parse().expect("fallback parse")),
+                ),
                 latency: Duration::from_millis(100),
                 bandwidth: 1_000_000, // 1 Mbps default
                 packet_loss: 0.0,
@@ -116,38 +120,39 @@ pub mod advanced_routing {
         /// Add packet to reordering buffer
         fn add_packet(&mut self, seq_num: u32, data: Vec<u8>) -> Vec<Vec<u8>> {
             let mut ready_packets = Vec::new();
-            
+
             // Add to buffer
             self.buffer.insert(seq_num, (data, Instant::now()));
-            
+
             // Extract ready packets in order
             while let Some((packet_data, _)) = self.buffer.remove(&self.next_expected) {
                 ready_packets.push(packet_data);
                 self.next_expected += 1;
             }
-            
+
             // Clean up old packets
             self.cleanup_expired();
-            
+
             // Limit buffer size
             if self.buffer.len() > self.max_size {
                 self.force_drain(&mut ready_packets);
             }
-            
+
             ready_packets
         }
 
         /// Clean up expired packets
         fn cleanup_expired(&mut self) {
             let now = Instant::now();
-            self.buffer.retain(|_, (_, timestamp)| now.duration_since(*timestamp) < self.timeout);
+            self.buffer
+                .retain(|_, (_, timestamp)| now.duration_since(*timestamp) < self.timeout);
         }
 
         /// Force drain buffer when it's full
         fn force_drain(&mut self, ready_packets: &mut Vec<Vec<u8>>) {
             let mut seq_nums: Vec<u32> = self.buffer.keys().copied().collect();
             seq_nums.sort();
-            
+
             for seq_num in seq_nums.into_iter().take(self.max_size / 2) {
                 if let Some((data, _)) = self.buffer.remove(&seq_num) {
                     ready_packets.push(data);
@@ -166,8 +171,8 @@ pub mod advanced_routing {
         round_robin_index: Arc<RwLock<usize>>,
         reordering_buffers: Arc<RwLock<HashMap<NodeEndpoint, ReorderingBuffer>>>,
         sequence_number: Arc<RwLock<u32>>,
-    // For smooth weighted round-robin we maintain per-path current_weight
-    weighted_state: Arc<RwLock<HashMap<NodeEndpoint, f32>>>,
+        // For smooth weighted round-robin we maintain per-path current_weight
+        weighted_state: Arc<RwLock<HashMap<NodeEndpoint, f32>>>,
     }
 
     impl AdvancedRouter {
@@ -186,26 +191,26 @@ pub mod advanced_routing {
         pub async fn add_path(&self, endpoint: NodeEndpoint) -> Result<(), RoutingError> {
             let mut paths = self.paths.write().await;
             let mut weights = self.weighted_state.write().await;
-            
+
             if paths.len() >= self.config.max_paths {
                 return Err(RoutingError::MaxPathsExceeded);
             }
 
             let mut quality = PathQuality::default();
             quality.endpoint = endpoint.clone();
-            
+
             paths.insert(endpoint.clone(), quality);
             // Initialize current weight accumulator
             weights.insert(endpoint.clone(), 0.0);
-            
+
             // Initialize reordering buffer for this path
             let mut buffers = self.reordering_buffers.write().await;
             buffers.insert(
-                endpoint.clone(), 
+                endpoint.clone(),
                 ReorderingBuffer::new(
                     self.config.reordering_buffer_size,
-                    self.config.reordering_timeout
-                )
+                    self.config.reordering_timeout,
+                ),
             );
 
             info!("Added new path to routing table: {}", endpoint);
@@ -217,11 +222,11 @@ pub mod advanced_routing {
             let mut paths = self.paths.write().await;
             let mut buffers = self.reordering_buffers.write().await;
             let mut weights = self.weighted_state.write().await;
-            
+
             paths.remove(endpoint);
             buffers.remove(endpoint);
             weights.remove(endpoint);
-            
+
             info!("Removed path from routing table: {}", endpoint);
             Ok(())
         }
@@ -229,15 +234,19 @@ pub mod advanced_routing {
         /// Select the best path for sending data
         pub async fn select_path(&self) -> Result<NodeEndpoint, RoutingError> {
             let paths = self.paths.read().await;
-            
+
             if paths.is_empty() {
                 return Err(RoutingError::NoPaths);
             }
 
             match self.config.algorithm {
                 RoutingAlgorithm::RoundRobin => self.round_robin_selection(&paths).await,
-                RoutingAlgorithm::WeightedRoundRobin => self.weighted_round_robin_selection(&paths).await,
-                RoutingAlgorithm::LeastConnections => self.least_connections_selection(&paths).await,
+                RoutingAlgorithm::WeightedRoundRobin => {
+                    self.weighted_round_robin_selection(&paths).await
+                }
+                RoutingAlgorithm::LeastConnections => {
+                    self.least_connections_selection(&paths).await
+                }
                 RoutingAlgorithm::LatencyBased => self.latency_based_selection(&paths).await,
                 RoutingAlgorithm::BandwidthBased => self.bandwidth_based_selection(&paths).await,
                 RoutingAlgorithm::Adaptive => self.adaptive_selection(&paths).await,
@@ -245,31 +254,41 @@ pub mod advanced_routing {
         }
 
         /// Round-robin path selection
-        async fn round_robin_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
+        async fn round_robin_selection(
+            &self,
+            paths: &HashMap<NodeEndpoint, PathQuality>,
+        ) -> Result<NodeEndpoint, RoutingError> {
             let mut index = self.round_robin_index.write().await;
             let path_list: Vec<&NodeEndpoint> = paths.keys().collect();
-            
+
             if path_list.is_empty() {
                 return Err(RoutingError::NoPaths);
             }
 
             let selected = path_list[*index % path_list.len()].clone();
             *index = (*index + 1) % path_list.len();
-            
+
             debug!("Selected path via round-robin: {}", selected);
             Ok(selected)
         }
 
         /// Weighted round-robin based on path quality
-        async fn weighted_round_robin_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
-            if paths.is_empty() { return Err(RoutingError::NoPaths); }
+        async fn weighted_round_robin_selection(
+            &self,
+            paths: &HashMap<NodeEndpoint, PathQuality>,
+        ) -> Result<NodeEndpoint, RoutingError> {
+            if paths.is_empty() {
+                return Err(RoutingError::NoPaths);
+            }
             // Smooth Weighted Round Robin (similar to NGINX algorithm)
             // current_weight_i += weight_i; select max; current_weight_selected -= total_weight
             let mut weight_state = self.weighted_state.write().await;
             // Ensure state contains all paths (in case paths changed externally)
-            for ep in paths.keys() { weight_state.entry(ep.clone()).or_insert(0.0); }
+            for ep in paths.keys() {
+                weight_state.entry(ep.clone()).or_insert(0.0);
+            }
             // Remove any stale entries
-            weight_state.retain(|ep,_| paths.contains_key(ep));
+            weight_state.retain(|ep, _| paths.contains_key(ep));
 
             let mut total_weight: f32 = 0.0;
             let mut selected_ep: Option<NodeEndpoint> = None;
@@ -281,12 +300,20 @@ pub mod advanced_routing {
                 total_weight += base_w;
                 let entry = weight_state.entry(ep.clone()).or_insert(0.0);
                 *entry += base_w; // current_weight += weight
-                if *entry > selected_weight { selected_weight = *entry; selected_ep = Some(ep.clone()); }
+                if *entry > selected_weight {
+                    selected_weight = *entry;
+                    selected_ep = Some(ep.clone());
+                }
             }
 
             if let Some(sel) = selected_ep.clone() {
-                if let Some(entry) = weight_state.get_mut(&sel) { *entry -= total_weight; }
-                debug!("Selected path via weighted round-robin: {} (total_weight={:.3})", sel, total_weight);
+                if let Some(entry) = weight_state.get_mut(&sel) {
+                    *entry -= total_weight;
+                }
+                debug!(
+                    "Selected path via weighted round-robin: {} (total_weight={:.3})",
+                    sel, total_weight
+                );
                 Ok(sel)
             } else {
                 Err(RoutingError::NoPaths)
@@ -294,7 +321,10 @@ pub mod advanced_routing {
         }
 
         /// Least connections path selection
-        async fn least_connections_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
+        async fn least_connections_selection(
+            &self,
+            paths: &HashMap<NodeEndpoint, PathQuality>,
+        ) -> Result<NodeEndpoint, RoutingError> {
             let selected = paths
                 .iter()
                 .min_by_key(|(_, quality)| quality.active_connections)
@@ -306,7 +336,10 @@ pub mod advanced_routing {
         }
 
         /// Latency-based path selection
-        async fn latency_based_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
+        async fn latency_based_selection(
+            &self,
+            paths: &HashMap<NodeEndpoint, PathQuality>,
+        ) -> Result<NodeEndpoint, RoutingError> {
             let selected = paths
                 .iter()
                 .filter(|(_, quality)| quality.reliability_score > self.config.failover_threshold)
@@ -315,12 +348,18 @@ pub mod advanced_routing {
                 .ok_or(RoutingError::NoPaths)?;
 
             let lat = paths.get(&selected).map(|q| q.latency).unwrap_or_default();
-            debug!("Selected path via latency-based: {} (latency: {:?})", selected, lat);
+            debug!(
+                "Selected path via latency-based: {} (latency: {:?})",
+                selected, lat
+            );
             Ok(selected)
         }
 
         /// Bandwidth-based path selection
-        async fn bandwidth_based_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
+        async fn bandwidth_based_selection(
+            &self,
+            paths: &HashMap<NodeEndpoint, PathQuality>,
+        ) -> Result<NodeEndpoint, RoutingError> {
             let selected = paths
                 .iter()
                 .filter(|(_, quality)| quality.congestion_level < self.config.congestion_threshold)
@@ -329,24 +368,38 @@ pub mod advanced_routing {
                 .ok_or(RoutingError::NoPaths)?;
 
             let bw = paths.get(&selected).map(|q| q.bandwidth).unwrap_or(0);
-            debug!("Selected path via bandwidth-based: {} (bandwidth: {} bps)", selected, bw);
+            debug!(
+                "Selected path via bandwidth-based: {} (bandwidth: {} bps)",
+                selected, bw
+            );
             Ok(selected)
         }
 
         /// Adaptive path selection based on multiple metrics
-        async fn adaptive_selection(&self, paths: &HashMap<NodeEndpoint, PathQuality>) -> Result<NodeEndpoint, RoutingError> {
+        async fn adaptive_selection(
+            &self,
+            paths: &HashMap<NodeEndpoint, PathQuality>,
+        ) -> Result<NodeEndpoint, RoutingError> {
             let selected = paths
                 .iter()
                 .max_by(|(_, a), (_, b)| {
                     let score_a = self.calculate_adaptive_score(a);
                     let score_b = self.calculate_adaptive_score(b);
-                    score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+                    score_a
+                        .partial_cmp(&score_b)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .map(|(endpoint, _)| endpoint.clone())
                 .ok_or(RoutingError::NoPaths)?;
 
-            let score = paths.get(&selected).map(|q| self.calculate_adaptive_score(q)).unwrap_or(0.0);
-            debug!("Selected path via adaptive: {} (score: {:.3})", selected, score);
+            let score = paths
+                .get(&selected)
+                .map(|q| self.calculate_adaptive_score(q))
+                .unwrap_or(0.0);
+            debug!(
+                "Selected path via adaptive: {} (score: {:.3})",
+                selected, score
+            );
             Ok(selected)
         }
 
@@ -358,7 +411,10 @@ pub mod advanced_routing {
             let reliability_score = quality.reliability_score;
             let congestion_score = 1.0 - quality.congestion_level;
             // 正規化: 各スコアをだいたい 0..1 に収め総和を 0..1.5 程度に
-            let raw = latency_score * 0.25 + bandwidth_score * 0.25 + reliability_score * 0.3 + congestion_score * 0.2;
+            let raw = latency_score * 0.25
+                + bandwidth_score * 0.25
+                + reliability_score * 0.3
+                + congestion_score * 0.2;
             raw.max(0.01)
         }
 
@@ -372,18 +428,22 @@ pub mod advanced_routing {
             let connection_score = 1.0 / (quality.active_connections as f32 + 1.0);
 
             // Weighted combination of all metrics
-            latency_score * 0.2 + 
-            bandwidth_score * 0.2 + 
-            loss_score * 0.15 + 
-            reliability_score * 0.2 + 
-            congestion_score * 0.15 + 
-            connection_score * 0.1
+            latency_score * 0.2
+                + bandwidth_score * 0.2
+                + loss_score * 0.15
+                + reliability_score * 0.2
+                + congestion_score * 0.15
+                + connection_score * 0.1
         }
 
         /// Update path quality metrics
-        pub async fn update_path_quality(&self, endpoint: &NodeEndpoint, quality: PathQuality) -> Result<(), RoutingError> {
+        pub async fn update_path_quality(
+            &self,
+            endpoint: &NodeEndpoint,
+            quality: PathQuality,
+        ) -> Result<(), RoutingError> {
             let mut paths = self.paths.write().await;
-            
+
             if let Some(existing_quality) = paths.get_mut(endpoint) {
                 // Bootstrap: if this looks like the untouched default metrics, adopt new quality directly
                 let is_bootstrap = existing_quality.total_bytes_sent == 0
@@ -398,35 +458,45 @@ pub mod advanced_routing {
                     // Apply exponential moving average for smooth updates
                     let alpha = self.config.adaptive_learning_rate;
                     existing_quality.latency = Duration::from_nanos(
-                        ((1.0 - alpha) * existing_quality.latency.as_nanos() as f32 +
-                         alpha * quality.latency.as_nanos() as f32) as u64
+                        ((1.0 - alpha) * existing_quality.latency.as_nanos() as f32
+                            + alpha * quality.latency.as_nanos() as f32)
+                            as u64,
                     );
-                    existing_quality.bandwidth = 
-                        ((1.0 - alpha) * existing_quality.bandwidth as f32 +
-                         alpha * quality.bandwidth as f32) as u64;
-                    existing_quality.packet_loss = 
-                        (1.0 - alpha) * existing_quality.packet_loss +
-                        alpha * quality.packet_loss;
-                    existing_quality.congestion_level = 
-                        (1.0 - alpha) * existing_quality.congestion_level +
-                        alpha * quality.congestion_level;
-                    existing_quality.reliability_score = 
-                        (1.0 - alpha) * existing_quality.reliability_score +
-                        alpha * quality.reliability_score;
+                    existing_quality.bandwidth = ((1.0 - alpha) * existing_quality.bandwidth as f32
+                        + alpha * quality.bandwidth as f32)
+                        as u64;
+                    existing_quality.packet_loss =
+                        (1.0 - alpha) * existing_quality.packet_loss + alpha * quality.packet_loss;
+                    existing_quality.congestion_level = (1.0 - alpha)
+                        * existing_quality.congestion_level
+                        + alpha * quality.congestion_level;
+                    existing_quality.reliability_score = (1.0 - alpha)
+                        * existing_quality.reliability_score
+                        + alpha * quality.reliability_score;
                     existing_quality.last_updated = Instant::now();
                 }
-                
-                trace!("Updated path quality for {}: latency={:?}, bandwidth={}, loss={:.3}", 
-                       endpoint, existing_quality.latency, existing_quality.bandwidth, existing_quality.packet_loss);
+
+                trace!(
+                    "Updated path quality for {}: latency={:?}, bandwidth={}, loss={:.3}",
+                    endpoint,
+                    existing_quality.latency,
+                    existing_quality.bandwidth,
+                    existing_quality.packet_loss
+                );
             }
-            
+
             Ok(())
         }
 
         /// Process incoming packet with reordering
-        pub async fn process_incoming_packet(&self, endpoint: &NodeEndpoint, seq_num: u32, data: Vec<u8>) -> Vec<Vec<u8>> {
+        pub async fn process_incoming_packet(
+            &self,
+            endpoint: &NodeEndpoint,
+            seq_num: u32,
+            data: Vec<u8>,
+        ) -> Vec<Vec<u8>> {
             let mut buffers = self.reordering_buffers.write().await;
-            
+
             if let Some(buffer) = buffers.get_mut(endpoint) {
                 buffer.add_packet(seq_num, data)
             } else {
@@ -446,36 +516,47 @@ pub mod advanced_routing {
         /// Get current routing statistics
         pub async fn get_routing_stats(&self) -> RoutingStats {
             let paths = self.paths.read().await;
-            
+
             RoutingStats {
                 total_paths: paths.len(),
-                active_paths: paths.values().filter(|q| q.reliability_score > self.config.failover_threshold).count(),
-                avg_latency: paths.values().map(|q| q.latency.as_millis()).sum::<u128>() as f64 / paths.len() as f64,
+                active_paths: paths
+                    .values()
+                    .filter(|q| q.reliability_score > self.config.failover_threshold)
+                    .count(),
+                avg_latency: paths.values().map(|q| q.latency.as_millis()).sum::<u128>() as f64
+                    / paths.len() as f64,
                 total_bandwidth: paths.values().map(|q| q.bandwidth).sum(),
-                avg_packet_loss: paths.values().map(|q| q.packet_loss).sum::<f32>() / paths.len() as f32,
+                avg_packet_loss: paths.values().map(|q| q.packet_loss).sum::<f32>()
+                    / paths.len() as f32,
                 algorithm: self.config.algorithm.clone(),
             }
         }
 
         /// Perform path quality probing
-        pub async fn probe_path_quality(&self, endpoint: &NodeEndpoint) -> Result<PathQuality, RoutingError> {
+        pub async fn probe_path_quality(
+            &self,
+            endpoint: &NodeEndpoint,
+        ) -> Result<PathQuality, RoutingError> {
             // This would be implemented to actually measure path quality
             // For now, return current quality with simulated updates
             let paths = self.paths.read().await;
-            paths.get(endpoint).cloned().ok_or(RoutingError::PathNotFound)
+            paths
+                .get(endpoint)
+                .cloned()
+                .ok_or(RoutingError::PathNotFound)
         }
 
         /// Start background tasks for quality monitoring
         pub async fn start_monitoring(&self) -> Result<(), RoutingError> {
             let paths_clone = self.paths.clone();
             let config_clone = self.config.clone();
-            
+
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(config_clone.path_probe_interval);
-                
+
                 loop {
                     interval.tick().await;
-                    
+
                     let paths_read = paths_clone.read().await;
                     for endpoint in paths_read.keys() {
                         // Simulate quality probing
@@ -485,7 +566,7 @@ pub mod advanced_routing {
                     }
                 }
             });
-            
+
             info!("Started advanced routing quality monitoring");
             Ok(())
         }
@@ -531,13 +612,13 @@ pub mod advanced_routing {
         async fn test_basic_routing() {
             let config = AdvancedRoutingConfig::default();
             let router = AdvancedRouter::new(config);
-            
+
             let endpoint1 = create_test_endpoint(8001);
             let endpoint2 = create_test_endpoint(8002);
-            
+
             router.add_path(endpoint1.clone()).await.unwrap();
             router.add_path(endpoint2.clone()).await.unwrap();
-            
+
             let selected = router.select_path().await.unwrap();
             assert!(selected == endpoint1 || selected == endpoint2);
         }
@@ -547,30 +628,37 @@ pub mod advanced_routing {
             let mut config = AdvancedRoutingConfig::default();
             config.algorithm = RoutingAlgorithm::WeightedRoundRobin;
             let router = AdvancedRouter::new(config);
-            
+
             let endpoint1 = create_test_endpoint(8001);
             let endpoint2 = create_test_endpoint(8002);
-            
+
             router.add_path(endpoint1.clone()).await.unwrap();
             router.add_path(endpoint2.clone()).await.unwrap();
-            
+
             // Update path qualities with different weights
             let mut quality1 = PathQuality::default();
             quality1.endpoint = endpoint1.clone();
             quality1.latency = Duration::from_millis(10);
             quality1.bandwidth = 10_000_000;
-            
+
             let mut quality2 = PathQuality::default();
             quality2.endpoint = endpoint2.clone();
             quality2.latency = Duration::from_millis(50);
             quality2.bandwidth = 1_000_000;
-            
-            router.update_path_quality(&endpoint1, quality1).await.unwrap();
-            router.update_path_quality(&endpoint2, quality2).await.unwrap();
-            
+
+            router
+                .update_path_quality(&endpoint1, quality1)
+                .await
+                .unwrap();
+            router
+                .update_path_quality(&endpoint2, quality2)
+                .await
+                .unwrap();
+
             // Select paths multiple times and verify distribution probabilistically
             let mut selections: HashMap<String, u32> = HashMap::new();
-            for _ in 0..1500 { // cover full weighted cycle (max slots ~1000)
+            for _ in 0..1500 {
+                // cover full weighted cycle (max slots ~1000)
                 let selected = router.select_path().await.unwrap();
                 let key = format!("{}", selected);
                 *selections.entry(key).or_insert(0) += 1;
@@ -578,20 +666,32 @@ pub mod advanced_routing {
             let c1 = *selections.get(&format!("{}", endpoint1)).unwrap_or(&0);
             let c2 = *selections.get(&format!("{}", endpoint2)).unwrap_or(&0);
             // Both paths must receive traffic
-            assert!(c1 > 0 && c2 > 0, "expected both paths selected (c1={}, c2={})", c1, c2);
+            assert!(
+                c1 > 0 && c2 > 0,
+                "expected both paths selected (c1={}, c2={})",
+                c1,
+                c2
+            );
             // Compute expected ratio from weight function directly to avoid hard-coding.
             // Reconstruct weights used when building slots.
             let mut q_fast = PathQuality::default();
-            q_fast.latency = Duration::from_millis(10); q_fast.bandwidth = 10_000_000; q_fast.reliability_score = 1.0; q_fast.congestion_level = 0.0;
+            q_fast.latency = Duration::from_millis(10);
+            q_fast.bandwidth = 10_000_000;
+            q_fast.reliability_score = 1.0;
+            q_fast.congestion_level = 0.0;
             let mut q_slow = PathQuality::default();
-            q_slow.latency = Duration::from_millis(50); q_slow.bandwidth = 1_000_000; q_slow.reliability_score = 1.0; q_slow.congestion_level = 0.0;
+            q_slow.latency = Duration::from_millis(50);
+            q_slow.bandwidth = 1_000_000;
+            q_slow.reliability_score = 1.0;
+            q_slow.congestion_level = 0.0;
             let w_fast = router.calculate_path_weight(&q_fast);
             let w_slow = router.calculate_path_weight(&q_slow);
             let expected_ratio = (w_fast.max(w_slow) / w_fast.min(w_slow)).max(1.0);
             // Empirical ratio from counts (largest / smallest)
             let ratio = (c1.max(c2) as f32) / (c1.min(c2) as f32);
             // Allow 40% tolerance due to integer rounding & cycle boundary (1500 selections spans >1 cycle)
-            let lower = expected_ratio * 0.6; let upper = expected_ratio * 1.4;
+            let lower = expected_ratio * 0.6;
+            let upper = expected_ratio * 1.4;
             assert!(ratio >= lower && ratio <= upper, "ratio out of tolerance: counts=({},{}), ratio={}, expected≈{:.2} tol=[{:.2},{:.2}]", c1, c2, ratio, expected_ratio, lower, upper);
         }
 
@@ -600,25 +700,31 @@ pub mod advanced_routing {
             let mut config = AdvancedRoutingConfig::default();
             config.algorithm = RoutingAlgorithm::LatencyBased;
             let router = AdvancedRouter::new(config);
-            
+
             let endpoint1 = create_test_endpoint(8001);
             let endpoint2 = create_test_endpoint(8002);
-            
+
             router.add_path(endpoint1.clone()).await.unwrap();
             router.add_path(endpoint2.clone()).await.unwrap();
-            
+
             // Update path qualities with different latencies
             let mut quality1 = PathQuality::default();
             quality1.endpoint = endpoint1.clone();
             quality1.latency = Duration::from_millis(5);
-            
+
             let mut quality2 = PathQuality::default();
             quality2.endpoint = endpoint2.clone();
             quality2.latency = Duration::from_millis(50);
-            
-            router.update_path_quality(&endpoint1, quality1).await.unwrap();
-            router.update_path_quality(&endpoint2, quality2).await.unwrap();
-            
+
+            router
+                .update_path_quality(&endpoint1, quality1)
+                .await
+                .unwrap();
+            router
+                .update_path_quality(&endpoint2, quality2)
+                .await
+                .unwrap();
+
             // Should consistently select the lower latency path
             let selected = router.select_path().await.unwrap();
             assert_eq!(selected, endpoint1);
@@ -627,14 +733,14 @@ pub mod advanced_routing {
         #[tokio::test]
         async fn test_reordering_buffer() {
             let mut buffer = ReorderingBuffer::new(10, Duration::from_millis(1000));
-            
+
             // Add packets out of order
             let packets1 = buffer.add_packet(2, vec![2, 2, 2]);
             assert!(packets1.is_empty()); // Not ready yet
-            
+
             let packets2 = buffer.add_packet(0, vec![0, 0, 0]);
             assert_eq!(packets2.len(), 1); // Should return packet 0
-            
+
             let packets3 = buffer.add_packet(1, vec![1, 1, 1]);
             assert_eq!(packets3.len(), 2); // Should return packets 1 and 2
         }
@@ -643,23 +749,26 @@ pub mod advanced_routing {
         async fn test_adaptive_scoring() {
             let config = AdvancedRoutingConfig::default();
             let router = AdvancedRouter::new(config);
-            
+
             let mut quality1 = PathQuality::default();
             quality1.latency = Duration::from_millis(10);
             quality1.bandwidth = 10_000_000;
             quality1.packet_loss = 0.01;
             quality1.reliability_score = 0.9;
-            
+
             let mut quality2 = PathQuality::default();
             quality2.latency = Duration::from_millis(100);
             quality2.bandwidth = 1_000_000;
             quality2.packet_loss = 0.1;
             quality2.reliability_score = 0.7;
-            
+
             let score1 = router.calculate_adaptive_score(&quality1);
             let score2 = router.calculate_adaptive_score(&quality2);
-            
-            assert!(score1 > score2, "Quality1 should have higher score than Quality2");
+
+            assert!(
+                score1 > score2,
+                "Quality1 should have higher score than Quality2"
+            );
         }
 
         #[tokio::test]
@@ -667,11 +776,11 @@ pub mod advanced_routing {
             let mut config = AdvancedRoutingConfig::default();
             config.max_paths = 2;
             let router = AdvancedRouter::new(config);
-            
+
             let endpoint1 = create_test_endpoint(8001);
             let endpoint2 = create_test_endpoint(8002);
             let endpoint3 = create_test_endpoint(8003);
-            
+
             assert!(router.add_path(endpoint1).await.is_ok());
             assert!(router.add_path(endpoint2).await.is_ok());
             assert!(router.add_path(endpoint3).await.is_err()); // Should fail - max paths exceeded
@@ -701,11 +810,20 @@ pub mod advanced_routing {
             q_slow.latency = Duration::from_millis(40); // higher latency
             q_slow.reliability_score = 0.9; // acceptable
 
-            router.update_path_quality(&fast_unreliable, q_fast).await.unwrap();
-            router.update_path_quality(&slow_reliable, q_slow).await.unwrap();
+            router
+                .update_path_quality(&fast_unreliable, q_fast)
+                .await
+                .unwrap();
+            router
+                .update_path_quality(&slow_reliable, q_slow)
+                .await
+                .unwrap();
 
             let selected = router.select_path().await.unwrap();
-            assert_eq!(selected, slow_reliable, "Expected failover to reliable path despite higher latency");
+            assert_eq!(
+                selected, slow_reliable,
+                "Expected failover to reliable path despite higher latency"
+            );
         }
     }
 }

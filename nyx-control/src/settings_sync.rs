@@ -8,8 +8,8 @@
 //! merged view back onto the watch channel so that other subsystems observe
 //! updates in near-real-time.
 
-use tokio::sync::{watch, mpsc};
 use nyx_stream::{build_settings_frame, parse_settings_frame};
+use tokio::sync::{mpsc, watch};
 
 /// Command sent to `SettingsSync`.
 #[allow(dead_code)]
@@ -47,10 +47,17 @@ pub fn spawn_settings_sync(
                 Some(cmd) = cmd_rx.recv() => match cmd {
                     SettingsCmd::Inbound(bytes) => {
                         if let Ok((_rem, frame)) = parse_settings_frame(&bytes) {
-                            // merge by overriding only provided settings
+                            // Merge by overriding only provided settings
+                            let old_lp = current.low_power_preference;
                             current.apply(&frame);
-                            let _ = local_rx
-                                .borrow_and_update(); // wake receivers
+                            // Wake receivers after merge
+                            let _ = local_rx.borrow_and_update();
+                            // If Low Power preference changed, notify downstream (e.g., LowPowerManager)
+                            if current.low_power_preference != old_lp {
+                                // Log structured event using explicit formatting to avoid unused named args
+                                tracing::info!(target="settings", "low_power_preference_changed from={} to={}", old_lp, current.low_power_preference);
+                                // Downstream policy update hooks can be placed here (e.g., transport keepalive tuning)
+                            }
                         }
                     }
                     SettingsCmd::RegisterTx(tx) => {
@@ -63,4 +70,4 @@ pub fn spawn_settings_sync(
         }
     });
     cmd_tx
-} 
+}

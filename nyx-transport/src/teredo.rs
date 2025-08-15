@@ -16,9 +16,12 @@
 //! For integration Nyx treats the resulting `TeredoAddr` as an *alternate path*
 //! candidate when direct UDP traversal fails.
 
-use tokio::{net::UdpSocket, time::{timeout, Duration}};
-use std::net::{SocketAddr, Ipv6Addr, Ipv4Addr};
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use tokio::{
+    net::UdpSocket,
+    time::{timeout, Duration},
+};
 use tracing::instrument;
 
 /// Default Teredo server (`teredo.remlab.net`).
@@ -62,8 +65,14 @@ impl TeredoAddr {
         segments[7] = ((obsc_ip[2] as u16) << 8) | obsc_ip[3] as u16;
 
         TeredoAddr(Ipv6Addr::new(
-            segments[0], segments[1], segments[2], segments[3],
-            segments[4], segments[5], segments[6], segments[7],
+            segments[0],
+            segments[1],
+            segments[2],
+            segments[3],
+            segments[4],
+            segments[5],
+            segments[6],
+            segments[7],
         ))
     }
 
@@ -78,7 +87,9 @@ impl TeredoAddr {
 
     /// Return the underlying IPv6 address.
     #[must_use]
-    pub fn addr(&self) -> Ipv6Addr { self.0 }
+    pub fn addr(&self) -> Ipv6Addr {
+        self.0
+    }
 }
 
 /// Perform Teredo mapping query and return derived IPv6 address.
@@ -94,9 +105,13 @@ pub async fn discover(server: &str) -> Result<TeredoAddr> {
     // receive mapping response (expect 12 bytes: magic + mapped addr)
     let mut buf = [0u8; 32];
     let len = timeout(Duration::from_secs(2), sock.recv(&mut buf)).await??;
-    if len < 12 { bail!("short teredo response"); }
+    if len < 12 {
+        bail!("short teredo response");
+    }
     // Response format: [0xde,0xad,0xbe,0xef] + ip(4) + port(2)
-    if &buf[..4] != &[0xde, 0xad, 0xbe, 0xef] { bail!("invalid teredo magic"); }
+    if &buf[..4] != &[0xde, 0xad, 0xbe, 0xef] {
+        bail!("invalid teredo magic");
+    }
     let ip = Ipv4Addr::new(buf[4], buf[5], buf[6], buf[7]);
     let port = u16::from_be_bytes([buf[8], buf[9]]);
     Ok(TeredoAddr::from_mapping(ip, port))
@@ -112,4 +127,4 @@ mod tests {
         let t = discover(DEFAULT_SERVER).await.unwrap();
         println!("teredo {t:?}");
     }
-} 
+}

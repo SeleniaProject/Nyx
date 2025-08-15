@@ -16,4 +16,4 @@ fn bbrv2_cwnd_gain_cycle() {
     assert!(cwnd1 > 10.0);
     // Allow up to 1.3x due to controlled ramp (matches clamp in implementation).
     assert!(cwnd2 <= cwnd1 * 1.3);
-} 
+}

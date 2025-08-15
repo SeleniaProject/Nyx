@@ -1,19 +1,64 @@
 #![forbid(unsafe_code)]
 
-//! Plugin Settings and PLUGIN_REQUIRED Advertising for Nyx Protocol v1.0
-//!
-//! This module implements the SETTINGS frame extension for advertising
-//! required plugins during handshake phase as specified in v1.0 §7.2.
-//!
-//! When a connection requires specific plugins, the PLUGIN_REQUIRED setting
-//! must be advertised in the initial SETTINGS frame. Peers that don't support
-//! required plugins must terminate the connection with error code 0x07.
+//! Plugin SETTINGS helpers for CBOR-encoded lists (v1.0 formalization)
 
-use std::collections::HashSet;
+use crate::management::{setting_ids, Setting, SettingsFrame};
+
+/// Build a SETTINGS frame advertising required plugins (CBOR-encoded list length in value field)
+pub fn build_required_plugins_setting(plugin_ids: &[u32]) -> Setting {
+    // For now, still encode count in value for wire-compat; CBOR payload carriage to be handled by extended mechanism.
+    Setting {
+        id: setting_ids::PLUGIN_REQUIRED,
+        value: plugin_ids.len() as u32,
+    }
+}
+
+/// Extract counts of required/optional plugins from SETTINGS frame
+pub fn extract_plugin_counts(frame: &SettingsFrame) -> (u32, u32) {
+    let mut req = 0u32;
+    let mut opt = 0u32;
+    for s in &frame.settings {
+        if s.id == setting_ids::PLUGIN_REQUIRED {
+            req = s.value;
+        } else if s.id == setting_ids::PLUGIN_OPTIONAL {
+            opt = s.value;
+        }
+    }
+    (req, opt)
+}
+
+#[cfg(test)]
+mod counts_tests {
+    use super::*;
+
+    #[test]
+    fn required_optional_counts_roundtrip() {
+        let req = build_required_plugins_setting(&[1, 2, 3]);
+        let opt = Setting {
+            id: setting_ids::PLUGIN_OPTIONAL,
+            value: 2,
+        };
+        let frame = SettingsFrame {
+            settings: vec![req, opt],
+        };
+        let (r, o) = extract_plugin_counts(&frame);
+        assert_eq!(r, 3);
+        assert_eq!(o, 2);
+    }
+}
+
+// Plugin Settings and PLUGIN_REQUIRED Advertising for Nyx Protocol v1.0
+// This module implements the SETTINGS frame extension for advertising
+// required plugins during handshake phase as specified in v1.0 §7.2.
+// When a connection requires specific plugins, the PLUGIN_REQUIRED setting
+// must be advertised in the initial SETTINGS frame. Peers that don't support
+// required plugins must terminate the connection with error code 0x07.
+
+use bytes::{BufMut, BytesMut};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use thiserror::Error;
-use bytes::{Bytes, BytesMut, BufMut};
-use tracing::{debug, warn, trace};
+use tracing::{debug, trace, warn};
 
 /// Settings identifier for plugin requirements in SETTINGS frames
 pub const SETTINGS_PLUGIN_REQUIRED: u16 = 0x0010;
@@ -63,22 +108,22 @@ pub struct PluginSettingsManager {
 pub enum PluginSettingsError {
     #[error("Too many required plugins: {count} (max: {max})")]
     TooManyRequiredPlugins { count: usize, max: usize },
-    
+
     #[error("Plugin ID {0} is already registered")]
     DuplicatePlugin(u32),
-    
+
     #[error("Plugin ID {0} is reserved for system use")]
     ReservedPluginId(u32),
-    
+
     #[error("SETTINGS frame too large: {size} bytes")]
     SettingsFrameTooLarge { size: usize },
-    
+
     #[error("Malformed plugin requirement data: {0}")]
     MalformedData(String),
-    
+
     #[error("Required plugin {0} not supported by peer")]
     UnsupportedRequiredPlugin(u32),
-    
+
     #[error("Plugin version mismatch: plugin {id}, required {required_major}.{required_minor}, available {available_major}.{available_minor}")]
     VersionMismatch {
         id: u32,
@@ -130,7 +175,8 @@ impl PluginSettingsManager {
         }
 
         // Check for duplicates
-        if self.required_plugins.contains(&plugin_id) || self.optional_plugins.contains(&plugin_id) {
+        if self.required_plugins.contains(&plugin_id) || self.optional_plugins.contains(&plugin_id)
+        {
             return Err(PluginSettingsError::DuplicatePlugin(plugin_id));
         }
 
@@ -143,7 +189,10 @@ impl PluginSettingsManager {
             config_params,
         });
 
-        debug!("Added required plugin: ID={}, version={}.{}", plugin_id, min_version.0, min_version.1);
+        debug!(
+            "Added required plugin: ID={}, version={}.{}",
+            plugin_id, min_version.0, min_version.1
+        );
         Ok(())
     }
 
@@ -165,7 +214,8 @@ impl PluginSettingsManager {
         }
 
         // Check for duplicates
-        if self.required_plugins.contains(&plugin_id) || self.optional_plugins.contains(&plugin_id) {
+        if self.required_plugins.contains(&plugin_id) || self.optional_plugins.contains(&plugin_id)
+        {
             return Err(PluginSettingsError::DuplicatePlugin(plugin_id));
         }
 
@@ -178,7 +228,10 @@ impl PluginSettingsManager {
             config_params,
         });
 
-        debug!("Added optional plugin: ID={}, version={}.{}", plugin_id, min_version.0, min_version.1);
+        debug!(
+            "Added optional plugin: ID={}, version={}.{}",
+            plugin_id, min_version.0, min_version.1
+        );
         Ok(())
     }
 
@@ -199,7 +252,7 @@ impl PluginSettingsManager {
         }
 
         let mut data = BytesMut::new();
-        
+
         // Write requirement count (16-bit big-endian)
         data.put_u16(self.plugin_requirements.len() as u16);
 
@@ -207,30 +260,39 @@ impl PluginSettingsManager {
         for requirement in &self.plugin_requirements {
             // Plugin ID (32-bit big-endian)
             data.put_u32(requirement.plugin_id);
-            
+
             // Minimum version (major.minor, each 16-bit big-endian)
             data.put_u16(requirement.min_version.0);
             data.put_u16(requirement.min_version.1);
-            
+
             // Capability level (8-bit)
             data.put_u8(requirement.capability as u8);
-            
+
             // Configuration parameters length and data
             data.put_u16(requirement.config_params.len() as u16);
             data.extend_from_slice(&requirement.config_params);
 
-            trace!("Serialized plugin requirement: ID={}, version={}.{}, capability={:?}",
-                   requirement.plugin_id, requirement.min_version.0, requirement.min_version.1, requirement.capability);
+            trace!(
+                "Serialized plugin requirement: ID={}, version={}.{}, capability={:?}",
+                requirement.plugin_id,
+                requirement.min_version.0,
+                requirement.min_version.1,
+                requirement.capability
+            );
         }
 
         let result = data.freeze().to_vec();
-        
+
         // Validate total size is reasonable for SETTINGS frames
         if result.len() > 8192 {
             return Err(PluginSettingsError::SettingsFrameTooLarge { size: result.len() });
         }
 
-        debug!("Generated plugin SETTINGS frame data: {} bytes, {} requirements", result.len(), self.plugin_requirements.len());
+        debug!(
+            "Generated plugin SETTINGS frame data: {} bytes, {} requirements",
+            result.len(),
+            self.plugin_requirements.len()
+        );
         Ok(result)
     }
 
@@ -242,28 +304,30 @@ impl PluginSettingsManager {
     /// # Returns
     /// * `Ok(Vec<PluginRequirement>)` - Parsed plugin requirements
     /// * `Err(PluginSettingsError)` - Parse failed
-    pub fn parse_peer_settings_data(&self, settings_data: &[u8]) -> Result<Vec<PluginRequirement>, PluginSettingsError> {
+    pub fn parse_peer_settings_data(
+        &self,
+        settings_data: &[u8],
+    ) -> Result<Vec<PluginRequirement>, PluginSettingsError> {
         if settings_data.len() < 2 {
-            return Err(PluginSettingsError::MalformedData("Settings data too short".to_string()));
+            return Err(PluginSettingsError::MalformedData(
+                "Settings data too short".to_string(),
+            ));
         }
 
-        let mut cursor = std::io::Cursor::new(settings_data);
         let mut requirements = Vec::new();
 
         // Read requirement count
-        let count = u16::from_be_bytes([
-            settings_data[0],
-            settings_data[1]
-        ]) as usize;
-        
+        let count = u16::from_be_bytes([settings_data[0], settings_data[1]]) as usize;
+
         let mut offset = 2;
 
         // Parse each requirement
         for i in 0..count {
             if offset + 11 > settings_data.len() {
-                return Err(PluginSettingsError::MalformedData(
-                    format!("Insufficient data for requirement {}", i)
-                ));
+                return Err(PluginSettingsError::MalformedData(format!(
+                    "Insufficient data for requirement {}",
+                    i
+                )));
             }
 
             // Extract plugin ID (32-bit big-endian)
@@ -276,16 +340,10 @@ impl PluginSettingsManager {
             offset += 4;
 
             // Extract minimum version (major.minor, each 16-bit big-endian)
-            let min_major = u16::from_be_bytes([
-                settings_data[offset],
-                settings_data[offset + 1],
-            ]);
+            let min_major = u16::from_be_bytes([settings_data[offset], settings_data[offset + 1]]);
             offset += 2;
 
-            let min_minor = u16::from_be_bytes([
-                settings_data[offset],
-                settings_data[offset + 1],
-            ]);
+            let min_minor = u16::from_be_bytes([settings_data[offset], settings_data[offset + 1]]);
             offset += 2;
 
             // Extract capability level (8-bit)
@@ -293,28 +351,29 @@ impl PluginSettingsManager {
                 0 => PluginCapability::NotSupported,
                 1 => PluginCapability::Optional,
                 2 => PluginCapability::Required,
-                other => return Err(PluginSettingsError::MalformedData(
-                    format!("Invalid capability value: {}", other)
-                )),
+                other => {
+                    return Err(PluginSettingsError::MalformedData(format!(
+                        "Invalid capability value: {}",
+                        other
+                    )))
+                }
             };
             offset += 1;
 
             // Extract configuration parameters length and data
             if offset + 2 > settings_data.len() {
                 return Err(PluginSettingsError::MalformedData(
-                    "Missing config length".to_string()
+                    "Missing config length".to_string(),
                 ));
             }
 
-            let config_len = u16::from_be_bytes([
-                settings_data[offset],
-                settings_data[offset + 1],
-            ]) as usize;
+            let config_len =
+                u16::from_be_bytes([settings_data[offset], settings_data[offset + 1]]) as usize;
             offset += 2;
 
             if offset + config_len > settings_data.len() {
                 return Err(PluginSettingsError::MalformedData(
-                    "Insufficient data for config params".to_string()
+                    "Insufficient data for config params".to_string(),
                 ));
             }
 
@@ -328,11 +387,19 @@ impl PluginSettingsManager {
                 config_params,
             });
 
-            trace!("Parsed peer plugin requirement: ID={}, version={}.{}, capability={:?}",
-                   plugin_id, min_major, min_minor, capability);
+            trace!(
+                "Parsed peer plugin requirement: ID={}, version={}.{}, capability={:?}",
+                plugin_id,
+                min_major,
+                min_minor,
+                capability
+            );
         }
 
-        debug!("Parsed {} plugin requirements from peer SETTINGS frame", requirements.len());
+        debug!(
+            "Parsed {} plugin requirements from peer SETTINGS frame",
+            requirements.len()
+        );
         Ok(requirements)
     }
 
@@ -344,20 +411,32 @@ impl PluginSettingsManager {
     /// # Returns
     /// * `Ok(())` - All requirements can be satisfied
     /// * `Err(PluginSettingsError)` - One or more requirements cannot be satisfied
-    pub fn validate_peer_requirements(&self, peer_requirements: &[PluginRequirement]) -> Result<(), PluginSettingsError> {
+    pub fn validate_peer_requirements(
+        &self,
+        peer_requirements: &[PluginRequirement],
+    ) -> Result<(), PluginSettingsError> {
         for requirement in peer_requirements {
             if requirement.capability == PluginCapability::Required {
                 // Check if we support this required plugin
-                if !self.required_plugins.contains(&requirement.plugin_id) && 
-                   !self.optional_plugins.contains(&requirement.plugin_id) {
-                    warn!("Peer requires unsupported plugin: {}", requirement.plugin_id);
-                    return Err(PluginSettingsError::UnsupportedRequiredPlugin(requirement.plugin_id));
+                if !self.required_plugins.contains(&requirement.plugin_id)
+                    && !self.optional_plugins.contains(&requirement.plugin_id)
+                {
+                    warn!(
+                        "Peer requires unsupported plugin: {}",
+                        requirement.plugin_id
+                    );
+                    return Err(PluginSettingsError::UnsupportedRequiredPlugin(
+                        requirement.plugin_id,
+                    ));
                 }
 
                 // Version compatibility check: ensure our requested (or default) min version meets peer's minimum
-                if let Some((our_major, our_minor)) = self.get_version_requirement(requirement.plugin_id) {
+                if let Some((our_major, our_minor)) =
+                    self.get_version_requirement(requirement.plugin_id)
+                {
                     let (req_major, req_minor) = requirement.min_version;
-                    let meets = (our_major > req_major) || (our_major == req_major && our_minor >= req_minor);
+                    let meets = (our_major > req_major)
+                        || (our_major == req_major && our_minor >= req_minor);
                     if !meets {
                         return Err(PluginSettingsError::VersionMismatch {
                             id: requirement.plugin_id,
@@ -368,8 +447,10 @@ impl PluginSettingsManager {
                         });
                     }
                 }
-                debug!("Validated required plugin: {} (version {}.{})", 
-                       requirement.plugin_id, requirement.min_version.0, requirement.min_version.1);
+                debug!(
+                    "Validated required plugin: {} (version {}.{})",
+                    requirement.plugin_id, requirement.min_version.0, requirement.min_version.1
+                );
             }
         }
 
@@ -395,7 +476,10 @@ impl PluginSettingsManager {
     /// Enable or disable plugin negotiation
     pub fn set_negotiation_enabled(&mut self, enabled: bool) {
         self.negotiation_enabled = enabled;
-        debug!("Plugin negotiation {}", if enabled { "enabled" } else { "disabled" });
+        debug!(
+            "Plugin negotiation {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
 
     /// Get total number of plugin requirements
@@ -404,16 +488,31 @@ impl PluginSettingsManager {
     }
 
     /// Get a requested version requirement (min_version) for a plugin if present.
-    pub fn get_version_requirement(&self, plugin_id: u32) -> Option<(u16,u16)> {
-        self.plugin_requirements.iter().find(|r| r.plugin_id == plugin_id).map(|r| r.min_version)
+    pub fn get_version_requirement(&self, plugin_id: u32) -> Option<(u16, u16)> {
+        self.plugin_requirements
+            .iter()
+            .find(|r| r.plugin_id == plugin_id)
+            .map(|r| r.min_version)
     }
 
     /// Get required capabilities list declared locally for a plugin (synthetic: we treat capability Required as capability name list if config params encode UTF-8 CSV).
     pub fn get_required_capabilities(&self, plugin_id: u32) -> Option<Vec<String>> {
-        self.plugin_requirements.iter().find(|r| r.plugin_id==plugin_id && r.capability==PluginCapability::Required).map(|r| {
-            if r.config_params.is_empty() { return Vec::new(); }
-            match std::str::from_utf8(&r.config_params) { Ok(s) => s.split(',').filter(|x| !x.is_empty()).map(|s| s.trim().to_string()).collect(), Err(_) => Vec::new() }
-        })
+        self.plugin_requirements
+            .iter()
+            .find(|r| r.plugin_id == plugin_id && r.capability == PluginCapability::Required)
+            .map(|r| {
+                if r.config_params.is_empty() {
+                    return Vec::new();
+                }
+                match std::str::from_utf8(&r.config_params) {
+                    Ok(s) => s
+                        .split(',')
+                        .filter(|x| !x.is_empty())
+                        .map(|s| s.trim().to_string())
+                        .collect(),
+                    Err(_) => Vec::new(),
+                }
+            })
     }
 
     /// Clear all plugin requirements (useful for testing)
@@ -438,10 +537,10 @@ mod tests {
     #[test]
     fn test_add_required_plugin() {
         let mut manager = PluginSettingsManager::new();
-        
+
         let result = manager.add_required_plugin(12345, (1, 2), vec![0x01, 0x02]);
         assert!(result.is_ok());
-        
+
         assert!(manager.required_plugins.contains(&12345));
         assert_eq!(manager.requirement_count(), 1);
     }
@@ -449,10 +548,10 @@ mod tests {
     #[test]
     fn test_add_optional_plugin() {
         let mut manager = PluginSettingsManager::new();
-        
+
         let result = manager.add_optional_plugin(54321, (2, 0), vec![]);
         assert!(result.is_ok());
-        
+
         assert!(manager.optional_plugins.contains(&54321));
         assert_eq!(manager.requirement_count(), 1);
     }
@@ -460,61 +559,83 @@ mod tests {
     #[test]
     fn test_duplicate_plugin_rejection() {
         let mut manager = PluginSettingsManager::new();
-        
-        manager.add_required_plugin(12345, (1, 0), vec![]).expect("First addition");
+
+        manager
+            .add_required_plugin(12345, (1, 0), vec![])
+            .expect("First addition");
         let result = manager.add_required_plugin(12345, (1, 1), vec![]);
-        
-        assert!(matches!(result, Err(PluginSettingsError::DuplicatePlugin(12345))));
+
+        assert!(matches!(
+            result,
+            Err(PluginSettingsError::DuplicatePlugin(12345))
+        ));
     }
 
     #[test]
     fn test_reserved_plugin_id_rejection() {
         let mut manager = PluginSettingsManager::new();
-        
+
         let result = manager.add_required_plugin(0xFFFF0001, (1, 0), vec![]);
-        assert!(matches!(result, Err(PluginSettingsError::ReservedPluginId(0xFFFF0001))));
+        assert!(matches!(
+            result,
+            Err(PluginSettingsError::ReservedPluginId(0xFFFF0001))
+        ));
     }
 
     #[test]
     fn test_settings_frame_generation_parsing_roundtrip() {
         let mut manager = PluginSettingsManager::new();
-        
-        manager.add_required_plugin(1001, (1, 0), vec![0xAA]).expect("Add required");
-        manager.add_optional_plugin(2002, (2, 1), vec![0xBB, 0xCC]).expect("Add optional");
-        
-        let settings_data = manager.generate_settings_frame_data().expect("Generate settings");
+
+        manager
+            .add_required_plugin(1001, (1, 0), vec![0xAA])
+            .expect("Add required");
+        manager
+            .add_optional_plugin(2002, (2, 1), vec![0xBB, 0xCC])
+            .expect("Add optional");
+
+        let settings_data = manager
+            .generate_settings_frame_data()
+            .expect("Generate settings");
         assert!(!settings_data.is_empty());
-        
-        let parsed_requirements = manager.parse_peer_settings_data(&settings_data).expect("Parse settings");
+
+        let parsed_requirements = manager
+            .parse_peer_settings_data(&settings_data)
+            .expect("Parse settings");
         assert_eq!(parsed_requirements.len(), 2);
-        
+
         // Verify first requirement (required plugin)
         assert_eq!(parsed_requirements[0].plugin_id, 1001);
         assert_eq!(parsed_requirements[0].min_version, (1, 0));
-        assert_eq!(parsed_requirements[0].capability, PluginCapability::Required);
+        assert_eq!(
+            parsed_requirements[0].capability,
+            PluginCapability::Required
+        );
         assert_eq!(parsed_requirements[0].config_params, vec![0xAA]);
-        
+
         // Verify second requirement (optional plugin)
         assert_eq!(parsed_requirements[1].plugin_id, 2002);
         assert_eq!(parsed_requirements[1].min_version, (2, 1));
-        assert_eq!(parsed_requirements[1].capability, PluginCapability::Optional);
+        assert_eq!(
+            parsed_requirements[1].capability,
+            PluginCapability::Optional
+        );
         assert_eq!(parsed_requirements[1].config_params, vec![0xBB, 0xCC]);
     }
 
     #[test]
     fn test_peer_requirement_validation_success() {
         let mut manager = PluginSettingsManager::new();
-        manager.add_required_plugin(100, (1, 0), vec![]).expect("Add plugin");
-        
-        let peer_requirements = vec![
-            PluginRequirement {
-                plugin_id: 100,
-                min_version: (1, 0),
-                capability: PluginCapability::Required,
-                config_params: vec![],
-            }
-        ];
-        
+        manager
+            .add_required_plugin(100, (1, 0), vec![])
+            .expect("Add plugin");
+
+        let peer_requirements = vec![PluginRequirement {
+            plugin_id: 100,
+            min_version: (1, 0),
+            capability: PluginCapability::Required,
+            config_params: vec![],
+        }];
+
         let result = manager.validate_peer_requirements(&peer_requirements);
         assert!(result.is_ok());
     }
@@ -522,29 +643,30 @@ mod tests {
     #[test]
     fn test_peer_requirement_validation_failure() {
         let manager = PluginSettingsManager::new(); // No plugins registered
-        
-        let peer_requirements = vec![
-            PluginRequirement {
-                plugin_id: 999,
-                min_version: (1, 0),
-                capability: PluginCapability::Required,
-                config_params: vec![],
-            }
-        ];
-        
+
+        let peer_requirements = vec![PluginRequirement {
+            plugin_id: 999,
+            min_version: (1, 0),
+            capability: PluginCapability::Required,
+            config_params: vec![],
+        }];
+
         let result = manager.validate_peer_requirements(&peer_requirements);
-        assert!(matches!(result, Err(PluginSettingsError::UnsupportedRequiredPlugin(999))));
+        assert!(matches!(
+            result,
+            Err(PluginSettingsError::UnsupportedRequiredPlugin(999))
+        ));
     }
 
     #[test]
     fn test_malformed_settings_data_rejection() {
         let manager = PluginSettingsManager::new();
-        
+
         // Test data too short
         let result = manager.parse_peer_settings_data(&[0x00]);
         assert!(matches!(result, Err(PluginSettingsError::MalformedData(_))));
-        
-        // Test truncated data  
+
+        // Test truncated data
         let truncated_data = vec![0x00, 0x01, 0x00]; // Claims 1 requirement but insufficient data
         let result = manager.parse_peer_settings_data(&truncated_data);
         assert!(matches!(result, Err(PluginSettingsError::MalformedData(_))));
@@ -553,27 +675,34 @@ mod tests {
     #[test]
     fn test_too_many_required_plugins() {
         let mut manager = PluginSettingsManager::new();
-        
+
         // Add maximum allowed required plugins
         for i in 0..MAX_REQUIRED_PLUGINS {
-            manager.add_required_plugin(i as u32, (1, 0), vec![]).expect("Add within limit");
+            manager
+                .add_required_plugin(i as u32, (1, 0), vec![])
+                .expect("Add within limit");
         }
-        
+
         // Try to add one more - should fail
         let result = manager.add_required_plugin(MAX_REQUIRED_PLUGINS as u32, (1, 0), vec![]);
-        assert!(matches!(result, Err(PluginSettingsError::TooManyRequiredPlugins { .. })));
+        assert!(matches!(
+            result,
+            Err(PluginSettingsError::TooManyRequiredPlugins { .. })
+        ));
     }
 
     #[test]
     fn test_negotiation_toggle() {
         let mut manager = PluginSettingsManager::new();
         assert!(manager.is_negotiation_enabled());
-        
+
         manager.set_negotiation_enabled(false);
         assert!(!manager.is_negotiation_enabled());
-        
+
         // When disabled, should generate empty settings data
-        let settings_data = manager.generate_settings_frame_data().expect("Generate when disabled");
+        let settings_data = manager
+            .generate_settings_frame_data()
+            .expect("Generate when disabled");
         assert!(settings_data.is_empty());
     }
 }

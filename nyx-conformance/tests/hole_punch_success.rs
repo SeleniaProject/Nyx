@@ -1,8 +1,8 @@
-use nyx_transport::{Transport, PacketHandler, hole_punch};
+use async_trait::async_trait;
+use nyx_transport::{hole_punch, PacketHandler, Transport};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
-use async_trait::async_trait;
-use std::net::SocketAddr;
 
 struct CaptureOnce {
     tx: Mutex<Option<oneshot::Sender<()>>>,
@@ -20,12 +20,16 @@ impl PacketHandler for CaptureOnce {
 #[tokio::test]
 async fn hole_punch_reaches_peer() {
     let (tx1, rx1) = oneshot::channel();
-    let h1 = Arc::new(CaptureOnce { tx: Mutex::new(Some(tx1)) });
+    let h1 = Arc::new(CaptureOnce {
+        tx: Mutex::new(Some(tx1)),
+    });
     let t1 = Transport::start(0, h1).await.unwrap();
     let addr1 = t1.local_addr().unwrap();
 
     let (tx2, _rx2) = oneshot::channel();
-    let h2 = Arc::new(CaptureOnce { tx: Mutex::new(Some(tx2)) });
+    let h2 = Arc::new(CaptureOnce {
+        tx: Mutex::new(Some(tx2)),
+    });
     let t2 = Transport::start(0, h2).await.unwrap();
 
     // Peer performs hole punch toward t1
@@ -33,4 +37,4 @@ async fn hole_punch_reaches_peer() {
 
     let received = tokio::time::timeout(std::time::Duration::from_millis(100), rx1).await;
     assert!(received.is_ok(), "Peer should receive hole punch packet");
-} 
+}

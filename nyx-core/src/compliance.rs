@@ -49,7 +49,6 @@ pub fn determine(caps: &[Capability]) -> ComplianceLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn core_level() {
@@ -59,19 +58,43 @@ mod tests {
 
     #[test]
     fn plus_level() {
-        let caps = vec![Capability{ id: cap::MULTIPATH, flags:0}, Capability{ id:cap::HYBRID_PQ, flags:0}];
+        let caps = vec![
+            Capability {
+                id: cap::MULTIPATH,
+                flags: 0,
+            },
+            Capability {
+                id: cap::HYBRID_PQ,
+                flags: 0,
+            },
+        ];
         assert_eq!(determine(&caps), ComplianceLevel::Plus);
     }
 
     #[test]
     fn full_level() {
         let caps = vec![
-            Capability{ id: cap::MULTIPATH, flags:0},
-            Capability{ id: cap::HYBRID_PQ, flags:0},
-            Capability{ id: cap::CMIX, flags:0},
-            Capability{ id: cap::PLUGIN, flags:0},
-            Capability{ id: cap::LOW_POWER, flags:0},
+            Capability {
+                id: cap::MULTIPATH,
+                flags: 0,
+            },
+            Capability {
+                id: cap::HYBRID_PQ,
+                flags: 0,
+            },
+            Capability {
+                id: cap::CMIX,
+                flags: 0,
+            },
+            Capability {
+                id: cap::PLUGIN,
+                flags: 0,
+            },
+            Capability {
+                id: cap::LOW_POWER,
+                flags: 0,
+            },
         ];
         assert_eq!(determine(&caps), ComplianceLevel::Full);
     }
-} 
+}

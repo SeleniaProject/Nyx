@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput, BatchSize};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use nyx_fec::{NyxFec, DATA_SHARDS, PARITY_SHARDS, SHARD_SIZE};
 
 fn bench_encode(c: &mut Criterion) {
@@ -28,4 +28,4 @@ fn bench_encode(c: &mut Criterion) {
 }
 
 criterion_group!(benches, bench_encode);
-criterion_main!(benches); 
+criterion_main!(benches);

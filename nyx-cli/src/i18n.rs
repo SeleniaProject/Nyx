@@ -24,7 +24,9 @@ impl I18nCatalog {
         if let Ok(text) = fs::read_to_string(&path) {
             for line in text.lines() {
                 let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
                 if let Some((k, v)) = trimmed.split_once('=') {
                     entries.insert(k.trim().to_string(), v.trim().to_string());
                 }
@@ -53,8 +55,8 @@ impl I18nCatalog {
         while i < bytes.len() {
             if bytes[i] == b'{' {
                 // Try to find matching '}'
-                if let Some(close) = template[i+1..].find('}') {
-                    let inner = &template[i+1..i+1+close];
+                if let Some(close) = template[i + 1..].find('}') {
+                    let inner = &template[i + 1..i + 1 + close];
                     let replaced = Self::render_placeholder(inner.trim(), args);
                     out.push_str(&replaced);
                     i += close + 2; // skip '...}'
@@ -79,9 +81,13 @@ impl I18nCatalog {
             var_part = lhs.trim();
             let rhs = rhs.trim_start_matches(" or ").trim();
             // Accept quoted 'text' or "text"; otherwise take as raw
-            let fb = if (rhs.starts_with('\'') && rhs.ends_with('\'')) || (rhs.starts_with('"') && rhs.ends_with('"')) {
-                rhs[1..rhs.len()-1].to_string()
-            } else { rhs.to_string() };
+            let fb = if (rhs.starts_with('\'') && rhs.ends_with('\''))
+                || (rhs.starts_with('"') && rhs.ends_with('"'))
+            {
+                rhs[1..rhs.len() - 1].to_string()
+            } else {
+                rhs.to_string()
+            };
             fallback = Some(fb);
         }
 
@@ -89,19 +95,36 @@ impl I18nCatalog {
         let mut parts = var_part.split('|').map(|s| s.trim());
         let var_token = parts.next().unwrap_or("");
         let mut value = if let Some(name) = var_token.strip_prefix('$') {
-            if let Some(map) = args { map.get(name).cloned() } else { None }
-        } else { None };
+            if let Some(map) = args {
+                map.get(name).cloned()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         if value.is_none() {
-            if let Some(fb) = fallback { return fb; }
+            if let Some(fb) = fallback {
+                return fb;
+            }
             return format!("{{{}}}", spec); // leave as-is
         }
 
         let mut v = value.take().unwrap();
         for modifier in parts {
-            if modifier.eq_ignore_ascii_case("upper") { v = v.to_uppercase(); continue; }
-            if modifier.eq_ignore_ascii_case("lower") { v = v.to_lowercase(); continue; }
-            if modifier.eq_ignore_ascii_case("trim") { v = v.trim().to_string(); continue; }
+            if modifier.eq_ignore_ascii_case("upper") {
+                v = v.to_uppercase();
+                continue;
+            }
+            if modifier.eq_ignore_ascii_case("lower") {
+                v = v.to_lowercase();
+                continue;
+            }
+            if modifier.eq_ignore_ascii_case("trim") {
+                v = v.trim().to_string();
+                continue;
+            }
             if let Some(rest) = modifier.strip_prefix("truncate:") {
                 if let Ok(n) = rest.trim().parse::<usize>() {
                     if v.chars().count() > n {
@@ -122,5 +145,3 @@ pub fn localize(lang: &str, key: &str, args: Option<&HashMap<&str, String>>) -> 
     let cat = I18nCatalog::load(lang);
     cat.get(key, args)
 }
-
-

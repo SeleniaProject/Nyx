@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
 //! Misuse-resistant HKDF wrapper.
-//! 
+//!
 //! Provides type-based labels to avoid context/domain confusion when expanding keys.
 //! All APIs use HKDF-SHA256 as per Nyx specification.
 
-use sha2::Sha256;
 use hkdf::Hkdf;
+use sha2::Sha256;
 
 /// Label domain for HKDF expand operations. Ensures unique separation between different
 /// uses of the same input keying material according to the Nyx specification.
@@ -47,4 +47,4 @@ pub fn hkdf_expand(ikm: &[u8], label: KdfLabel, out_len: usize) -> Vec<u8> {
     hk.expand(label.as_bytes(), &mut okm)
         .expect("HKDF expand failed");
     okm
-} 
+}

@@ -1,7 +1,7 @@
 #![cfg(feature = "quic")]
 
-use nyx_transport::stun_server::start_stun_server;
 use nyx_transport::ice::decode_binding_response;
+use nyx_transport::stun_server::start_stun_server;
 use nyx_transport::UdpPool;
 use std::net::SocketAddr;
 
@@ -28,4 +28,4 @@ async fn stun_binding_response_reflection() {
     assert_eq!(addr.port(), sock.local_addr().unwrap().port());
 
     handle.abort();
-} 
+}

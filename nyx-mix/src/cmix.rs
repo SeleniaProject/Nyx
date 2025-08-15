@@ -22,13 +22,13 @@
 
 #![forbid(unsafe_code)]
 
+use crate::{accumulator::KeyCeremony, vdf};
+use num_bigint::BigUint;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio::time::{timeout, Duration, Instant};
-use crate::{accumulator::KeyCeremony, vdf};
-use num_bigint::BigUint;
 
 /// Default delay enforced by cMix (100 ms).
 const DEFAULT_DELAY_MS: u64 = 100;
@@ -119,7 +119,9 @@ impl CmixController {
                 let no_packet = packet_opt.is_none();
                 if let Some(pkt) = packet_opt {
                     buffer.push(pkt);
-                    if buffer.len() == 1 { next_deadline = Some(Instant::now() + delay); }
+                    if buffer.len() == 1 {
+                        next_deadline = Some(Instant::now() + delay);
+                    }
                 }
 
                 let should_emit = buffer.len() >= bsize || no_packet && !buffer.is_empty();
@@ -127,7 +129,9 @@ impl CmixController {
                     // Simulate VDF delay (already elapsed by timeout).
                     buffer.shuffle(&mut thread_rng());
                     let mut hasher = Sha256::new();
-                    for p in &buffer { hasher.update(p); }
+                    for p in &buffer {
+                        hasher.update(p);
+                    }
                     let digest = hasher.finalize();
                     // VDF evaluation based on delay
                     let iters = delay_ms.saturating_mul(VDF_ITERS_PER_MS);
@@ -148,27 +152,43 @@ impl CmixController {
                         acc_value: acc_bytes,
                         witness: witness.to_bytes_be(),
                     };
-                    if out_tx.send(batch).await.is_err() { break; }
+                    if out_tx.send(batch).await.is_err() {
+                        break;
+                    }
                     buffer.clear();
                     next_deadline = None;
                 }
             }
         });
-        Self { in_tx, out_rx, params }
+        Self {
+            in_tx,
+            out_rx,
+            params,
+        }
     }
 
     /// Sender handle for incoming packets.
-    #[must_use] pub fn sender(&self) -> mpsc::Sender<Vec<u8>> { self.in_tx.clone() }
+    #[must_use]
+    pub fn sender(&self) -> mpsc::Sender<Vec<u8>> {
+        self.in_tx.clone()
+    }
 
     /// Receive next cMix batch.
-    pub async fn recv(&mut self) -> Option<CmixBatch> { self.out_rx.recv().await }
+    pub async fn recv(&mut self) -> Option<CmixBatch> {
+        self.out_rx.recv().await
+    }
 
     /// Access RSA accumulator public parameters for verification.
-    #[must_use] pub fn params(&self) -> &crate::accumulator::AccumulatorParams { &self.params }
+    #[must_use]
+    pub fn params(&self) -> &crate::accumulator::AccumulatorParams {
+        &self.params
+    }
 }
 
 impl Default for CmixController {
-    fn default() -> Self { Self::new(DEFAULT_BATCH, DEFAULT_DELAY_MS) }
+    fn default() -> Self {
+        Self::new(DEFAULT_BATCH, DEFAULT_DELAY_MS)
+    }
 }
 
 /// Detailed verification error.
@@ -183,29 +203,49 @@ pub enum VerifyError {
 /// Verify `CmixBatch` integrity returning structured errors. `_expected_iters`
 /// allows callers to enforce a policy (e.g. calibrated value) – if `None`, any
 /// iteration count accepted.
-pub fn verify_batch_detailed(batch: &CmixBatch, params: &crate::accumulator::AccumulatorParams, _expected_iters: Option<u64>) -> Result<(), VerifyError> {
+pub fn verify_batch_detailed(
+    batch: &CmixBatch,
+    params: &crate::accumulator::AccumulatorParams,
+    _expected_iters: Option<u64>,
+) -> Result<(), VerifyError> {
     use crate::accumulator::verify_membership;
     // (1) Recompute digest.
     let mut hasher = Sha256::new();
-    for p in &batch.packets { hasher.update(p); }
-    if hasher.finalize().as_slice() != &batch.digest { return Err(VerifyError::DigestMismatch); }
+    for p in &batch.packets {
+        hasher.update(p);
+    }
+    if hasher.finalize().as_slice() != &batch.digest {
+        return Err(VerifyError::DigestMismatch);
+    }
     // (2) Enforce iteration policy if provided.
-    if let Some(exp) = _expected_iters { if exp != batch.vdf_iters { return Err(VerifyError::IterationsMismatch); } }
+    if let Some(exp) = _expected_iters {
+        if exp != batch.vdf_iters {
+            return Err(VerifyError::IterationsMismatch);
+        }
+    }
     // (3) VDF proof.
     let x = BigUint::from_bytes_be(&batch.digest);
     let y = BigUint::from_bytes_be(&batch.vdf_y);
     let pi = BigUint::from_bytes_be(&batch.vdf_pi);
-    if !vdf::verify(&x, &y, &pi, &params.n, batch.vdf_iters) { return Err(VerifyError::VdfInvalid); }
+    if !vdf::verify(&x, &y, &pi, &params.n, batch.vdf_iters) {
+        return Err(VerifyError::VdfInvalid);
+    }
     // (4) Accumulator membership.
     let elem = crate::accumulator::hash_to_prime(&batch.digest);
     let witness = BigUint::from_bytes_be(&batch.witness);
     let acc_val = BigUint::from_bytes_be(&batch.acc_value);
-    if !verify_membership(&params.n, &elem, &witness, &acc_val) { return Err(VerifyError::AccumulatorInvalid); }
+    if !verify_membership(&params.n, &elem, &witness, &acc_val) {
+        return Err(VerifyError::AccumulatorInvalid);
+    }
     Ok(())
 }
 
 /// Backwards-compatible boolean verifier wrapper.
-pub fn verify_batch(batch: &CmixBatch, params: &crate::accumulator::AccumulatorParams, expected_iters: Option<u64>) -> bool {
+pub fn verify_batch(
+    batch: &CmixBatch,
+    params: &crate::accumulator::AccumulatorParams,
+    expected_iters: Option<u64>,
+) -> bool {
     verify_batch_detailed(batch, params, expected_iters).is_ok()
 }
 
@@ -238,6 +278,9 @@ mod tests {
         // Tamper digest
         let mut tampered = batch.clone();
         tampered.digest[0] ^= 0xFF;
-        assert_eq!(verify_batch_detailed(&tampered, cmix.params(), None).unwrap_err(), VerifyError::DigestMismatch);
+        assert_eq!(
+            verify_batch_detailed(&tampered, cmix.params(), None).unwrap_err(),
+            VerifyError::DigestMismatch
+        );
     }
-} 
+}

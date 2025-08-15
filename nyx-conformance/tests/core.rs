@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 /// @spec 10. Compliance Levels
-
 use nyx_core::config::NyxConfig;
 use nyx_core::i18n::{tr, Lang};
 use std::{fs, path::PathBuf};
@@ -27,4 +26,4 @@ fn i18n_japanese_translation_contains_port() {
     let msg = tr(Lang::Ja, "init-success", None);
     // Japanese string should include kanji and the word "ポート"
     assert!(msg.contains("ポート"));
-} 
+}

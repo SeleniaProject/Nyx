@@ -24,23 +24,22 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use rand::RngCore;
-use tokio::{sync::{RwLock, Notify}, time::{sleep, Duration, Instant}};
+use tokio::{
+    sync::{Notify, RwLock},
+    time::{sleep, Duration, Instant},
+};
 
+use nyx_core::types::{is_valid_user_path_id, PathId, CONTROL_PATH_ID};
 use nyx_stream::{
-    build_header,
-    build_header_ext,
-    parse_header_ext,
-    FrameHeader,
-    FLAG_HAS_PATH_ID,
+    build_header, build_header_ext, parse_header_ext, FrameHeader, FLAG_HAS_PATH_ID,
     FLAG_MULTIPATH_ENABLED,
 };
-use nyx_core::types::{PathId, is_valid_user_path_id, CONTROL_PATH_ID};
 
 use crate::{PacketHandler, Transport};
 
 /// Management frame discriminators (Nyx §16).
 const FRAME_PATH_CHALLENGE: u8 = 0x33;
-const FRAME_PATH_RESPONSE: u8  = 0x34;
+const FRAME_PATH_RESPONSE: u8 = 0x34;
 
 /// Default validation parameters.
 const RETRY_INTERVAL: Duration = Duration::from_millis(250);
@@ -82,7 +81,9 @@ impl PathValidator {
         {
             let map = self.state.read().await;
             if let Some(e) = map.get(&addr) {
-                if e.validated { return; }
+                if e.validated {
+                    return;
+                }
             }
         }
 
@@ -92,13 +93,16 @@ impl PathValidator {
         let notify = Arc::new(Notify::new());
 
         let mut map = self.state.write().await;
-        map.insert(addr, Entry {
-            token,
-            retries_left: MAX_RETRIES,
-            validated: false,
-            last_sent: Instant::now() - RETRY_INTERVAL, // send immediately
-            waker: notify.clone(),
-        });
+        map.insert(
+            addr,
+            Entry {
+                token,
+                retries_left: MAX_RETRIES,
+                validated: false,
+                last_sent: Instant::now() - RETRY_INTERVAL, // send immediately
+                waker: notify.clone(),
+            },
+        );
         drop(map);
 
         // Spawn retry task (detached).
@@ -119,15 +123,21 @@ impl PathValidator {
             {
                 let map = self.state.read().await;
                 if let Some(e) = map.get(&addr) {
-                    if e.validated { return true; }
-                    if e.retries_left == 0 { return false; }
+                    if e.validated {
+                        return true;
+                    }
+                    if e.retries_left == 0 {
+                        return false;
+                    }
                     notify_opt = Some(e.waker.clone());
                 } else {
                     // No entry — consider unvalidated.
                     return false;
                 }
             }
-            if let Some(n) = notify_opt { n.notified().await; }
+            if let Some(n) = notify_opt {
+                n.notified().await;
+            }
         }
     }
 
@@ -177,10 +187,15 @@ impl PathValidator {
     async fn send_challenge(&self, addr: SocketAddr, token: &[u8; 16]) {
         self.send_challenge_with_path_id(addr, token, None).await;
     }
-    
+
     /// Build and transmit a `PATH_CHALLENGE` frame with optional PathID for multipath.
     /// This enables path validation across specific multipath routes in v1.0 specification.
-    async fn send_challenge_with_path_id(&self, addr: SocketAddr, token: &[u8; 16], path_id: Option<PathId>) {
+    async fn send_challenge_with_path_id(
+        &self,
+        addr: SocketAddr,
+        token: &[u8; 16],
+        path_id: Option<PathId>,
+    ) {
         let mut payload = Vec::with_capacity(1 + token.len());
         payload.push(FRAME_PATH_CHALLENGE);
         payload.extend_from_slice(token);
@@ -193,7 +208,7 @@ impl PathValidator {
 
         // Use extended header builder for PathID support
         let header_bytes = build_header_ext(header, path_id);
-        
+
         let mut packet = Vec::with_capacity(header_bytes.len() + payload.len());
         packet.extend_from_slice(&header_bytes);
         packet.extend_from_slice(&payload);
@@ -207,25 +222,30 @@ impl PathValidator {
     async fn send_response(&self, addr: SocketAddr, token: &[u8; 16]) {
         self.send_response_with_path_id(addr, token, None).await;
     }
-    
+
     /// Build and transmit a `PATH_RESPONSE` with PathID for multipath data plane.
-    async fn send_response_with_path_id(&self, addr: SocketAddr, token: &[u8; 16], path_id: Option<PathId>) {
+    async fn send_response_with_path_id(
+        &self,
+        addr: SocketAddr,
+        token: &[u8; 16],
+        path_id: Option<PathId>,
+    ) {
         let mut payload = Vec::with_capacity(1 + token.len());
         payload.push(FRAME_PATH_RESPONSE);
         payload.extend_from_slice(token);
 
-        let header = FrameHeader { 
+        let header = FrameHeader {
             frame_type: 1, // Control frame
-            flags: 0, 
-            length: payload.len() as u16 
+            flags: 0,
+            length: payload.len() as u16,
         };
-        
+
         let header_bytes = build_header_ext(header, path_id);
-        
+
         let mut packet = Vec::with_capacity(header_bytes.len() + payload.len());
         packet.extend_from_slice(&header_bytes);
         packet.extend_from_slice(&payload);
-        
+
         let _ = self.transport.send(addr, &packet).await;
     }
 
@@ -238,11 +258,13 @@ impl PathValidator {
         };
 
         // Only interested in Control packets.
-        if hdr.hdr.frame_type != 1 { return; }
+        if hdr.hdr.frame_type != 1 {
+            return;
+        }
 
         // Extract PathID if present for multipath validation
         let path_id = hdr.path_id;
-        
+
         // Validate PathID is in acceptable range if present
         if let Some(pid) = path_id {
             if pid != CONTROL_PATH_ID && !is_valid_user_path_id(pid) {
@@ -252,7 +274,9 @@ impl PathValidator {
         }
 
         // Need at least type byte.
-        if payload.is_empty() { return; }
+        if payload.is_empty() {
+            return;
+        }
         let frame_type = payload[0];
         payload = &payload[1..];
 
@@ -260,10 +284,11 @@ impl PathValidator {
             FRAME_PATH_CHALLENGE => {
                 // Echo back with PATH_RESPONSE, preserving PathID for multipath consistency
                 if let Ok((_, frame)) = build_parser_challenge(payload) {
-                    self.send_response_with_path_id(src, &frame.token, path_id).await;
-                    
+                    self.send_response_with_path_id(src, &frame.token, path_id)
+                        .await;
+
                     tracing::debug!(
-                        src = %src, 
+                        src = %src,
                         path_id = ?path_id,
                         "Responded to PATH_CHALLENGE with matching PathID"
                     );
@@ -277,7 +302,7 @@ impl PathValidator {
                         if entry.token == frame.token {
                             entry.validated = true;
                             entry.waker.notify_waiters();
-                            
+
                             tracing::debug!(
                                 src = %src,
                                 path_id = ?path_id,
@@ -306,4 +331,4 @@ impl PacketHandler for PathValidator {
     async fn handle_packet(&self, src: SocketAddr, data: &[u8]) {
         self.process_incoming(src, data).await;
     }
-} 
+}

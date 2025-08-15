@@ -21,12 +21,12 @@
 //! (~5 ms on modern CPUs).  Accuracy is sufficient because verification only
 //! checks elapsed time within a grace window.
 
-use std::time::Instant;
 use num_bigint::BigUint;
+use std::time::Instant;
 
 /// Minimum / maximum allowed difficulty.
-const MIN_T: u64 = 1_000;      // 1k squarings
-const MAX_T: u64 = 1_000_000;  // 1M squarings
+const MIN_T: u64 = 1_000; // 1k squarings
+const MAX_T: u64 = 1_000_000; // 1M squarings
 
 /// Calibrate difficulty parameter.
 ///
@@ -85,4 +85,4 @@ mod tests {
         // Should be power of two.
         assert_eq!(t & (t - 1), 0);
     }
-} 
+}

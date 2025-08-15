@@ -15,56 +15,71 @@ pub type NyxResult<T> = Result<T, NyxError>;
 pub enum NyxError {
     /// Connection to daemon failed
     #[error("Failed to connect to Nyx daemon: {message}")]
-    DaemonConnection { message: String, source_msg: Option<String> },
-    
+    DaemonConnection {
+        message: String,
+        source_msg: Option<String>,
+    },
+
     /// Stream operation failed
     #[error("Stream operation failed: {message}")]
-    Stream { message: String, stream_id: Option<u32> },
-    
+    Stream {
+        message: String,
+        stream_id: Option<u32>,
+    },
+
     /// Network error occurred
     #[error("Network error: {message}")]
-    Network { message: String, endpoint: Option<String> },
-    
+    Network {
+        message: String,
+        endpoint: Option<String>,
+    },
+
     /// Configuration error
     #[error("Configuration error: {message}")]
-    Config { message: String, path: Option<String> },
-    
+    Config {
+        message: String,
+        path: Option<String>,
+    },
+
     /// Authentication/authorization error
     #[error("Authentication error: {message}")]
     Auth { message: String },
-    
+
     /// Protocol error
     #[error("Protocol error: {message}")]
     Protocol { message: String, code: Option<u16> },
-    
+
     /// Timeout occurred
     #[error("Operation timed out after {duration:?}")]
     Timeout { duration: std::time::Duration },
-    
+
     /// Resource not found
     #[error("Resource not found: {resource}")]
     NotFound { resource: String },
-    
+
     /// Resource already exists
     #[error("Resource already exists: {resource}")]
     AlreadyExists { resource: String },
-    
+
     /// Permission denied
     #[error("Permission denied: {operation}")]
     PermissionDenied { operation: String },
-    
+
     /// Invalid input provided
     #[error("Invalid input: {message}")]
-    InvalidInput { message: String, field: Option<String> },
-    
+    InvalidInput {
+        message: String,
+        field: Option<String>,
+    },
+
     /// Internal SDK error
     #[error("Internal error: {message}")]
     Internal { message: String },
-    
+
     /// Operation was cancelled
     #[error("Operation cancelled")]
     Cancelled,
-    
+
     /// Reconnection failed
     #[cfg(feature = "reconnect")]
     #[error("Reconnection failed after {attempts} attempts")]
@@ -136,7 +151,7 @@ impl NyxError {
             NyxError::ReconnectionFailed { .. } => ErrorKind::Reconnection,
         }
     }
-    
+
     /// Check if the error is retryable
     pub fn is_retryable(&self) -> bool {
         match self {
@@ -154,7 +169,7 @@ impl NyxError {
             _ => false,
         }
     }
-    
+
     /// Check if the error is recoverable (can continue operation)
     pub fn is_recoverable(&self) -> bool {
         match self {
@@ -175,7 +190,7 @@ impl NyxError {
             _ => true,
         }
     }
-    
+
     /// Get retry delay suggestion based on error type
     pub fn retry_delay(&self) -> Option<std::time::Duration> {
         match self {
@@ -187,42 +202,49 @@ impl NyxError {
             _ => None,
         }
     }
-    
+
     /// Get troubleshooting information for the error
     pub fn troubleshooting_info(&self) -> Option<String> {
         match self {
             NyxError::DaemonConnection { .. } => Some(
                 "Check if the Nyx daemon is running and accessible at the configured endpoint. \
-                 Verify network connectivity and firewall settings.".to_string()
+                 Verify network connectivity and firewall settings."
+                    .to_string(),
             ),
             NyxError::Auth { .. } => Some(
                 "Authentication failed. Check your authentication token or credentials. \
-                 Ensure the token is valid and has not expired.".to_string()
+                 Ensure the token is valid and has not expired."
+                    .to_string(),
             ),
             NyxError::PermissionDenied { .. } => Some(
                 "Permission denied. Verify that your account has the necessary permissions \
-                 for this operation. Contact your administrator if needed.".to_string()
+                 for this operation. Contact your administrator if needed."
+                    .to_string(),
             ),
             NyxError::Network { .. } => Some(
                 "Network error occurred. Check your internet connection and try again. \
-                 If the problem persists, the remote service may be temporarily unavailable.".to_string()
+                 If the problem persists, the remote service may be temporarily unavailable."
+                    .to_string(),
             ),
             NyxError::Timeout { .. } => Some(
                 "Operation timed out. This may be due to network congestion or server load. \
-                 Try increasing the timeout value or retry the operation.".to_string()
+                 Try increasing the timeout value or retry the operation."
+                    .to_string(),
             ),
             NyxError::NotFound { .. } => Some(
                 "The requested resource was not found. Verify the resource identifier \
-                 and ensure it exists.".to_string()
+                 and ensure it exists."
+                    .to_string(),
             ),
             NyxError::InvalidInput { .. } => Some(
                 "Invalid input provided. Check the input parameters and ensure they \
-                 meet the required format and constraints.".to_string()
+                 meet the required format and constraints."
+                    .to_string(),
             ),
             _ => None,
         }
     }
-    
+
     /// Get error severity level
     pub fn severity(&self) -> ErrorSeverity {
         match self {
@@ -243,7 +265,7 @@ impl NyxError {
             NyxError::ReconnectionFailed { .. } => ErrorSeverity::High,
         }
     }
-    
+
     /// Get error code for protocol errors
     pub fn error_code(&self) -> Option<u16> {
         match self {
@@ -251,7 +273,7 @@ impl NyxError {
             _ => None,
         }
     }
-    
+
     /// Get stream ID if available
     pub fn stream_id(&self) -> Option<u32> {
         match self {
@@ -270,11 +292,17 @@ impl NyxError {
             NyxError::Auth { .. } => Some(0x06),
             NyxError::PermissionDenied { .. } => Some(0x06),
             // Unsupported capability surfaces upstream as Protocol error with 0x07; if message hints, map.
-            NyxError::Protocol { code: None, message } if message.contains("UNSUPPORTED_CAP") => Some(0x07),
+            NyxError::Protocol {
+                code: None,
+                message,
+            } if message.contains("UNSUPPORTED_CAP") => Some(0x07),
             // Internal maps to INTERNAL_ERROR (0x06)
             NyxError::Internal { .. } => Some(0x06),
             // Unimplemented maps to HTTP 501; surface as 0x501 for uniform handling across transports
-            NyxError::Protocol { code: None, message } if message.to_ascii_lowercase().contains("unimplemented") => Some(0x501),
+            NyxError::Protocol {
+                code: None,
+                message,
+            } if message.to_ascii_lowercase().contains("unimplemented") => Some(0x501),
             // Timeout / Network: typically no close frame mapping (transport-level) → None
             _ => None,
         }
@@ -292,7 +320,7 @@ pub enum CloseCodePolicy {
     UnsupportedCap = 0x07,
 }
 // Conversion helper (only compiled under grpc-backup feature):
-#[cfg(feature="grpc-backup")]
+#[cfg(feature = "grpc-backup")]
 impl CloseCodePolicy {
     pub fn to_grpc_status(self, msg: &str) -> tonic::Status {
         match self {
@@ -303,27 +331,30 @@ impl CloseCodePolicy {
 
 // Convenience constructors
 impl NyxError {
-    pub fn daemon_connection<E: std::error::Error + Send + Sync + 'static>(message: impl Into<String>, source: E) -> Self {
+    pub fn daemon_connection<E: std::error::Error + Send + Sync + 'static>(
+        message: impl Into<String>,
+        source: E,
+    ) -> Self {
         Self::DaemonConnection {
             message: message.into(),
             source_msg: Some(source.to_string()),
         }
     }
-    
+
     pub fn daemon_connection_msg(message: impl Into<String>) -> Self {
         Self::DaemonConnection {
             message: message.into(),
             source_msg: None,
         }
     }
-    
+
     pub fn stream_error(message: impl Into<String>, stream_id: Option<u32>) -> Self {
         Self::Stream {
             message: message.into(),
             stream_id,
         }
     }
-    
+
     pub fn stream_error_str(message: impl Into<String>, stream_id: Option<String>) -> Self {
         let stream_id_u32 = stream_id.and_then(|s| s.parse().ok());
         Self::Stream {
@@ -331,45 +362,45 @@ impl NyxError {
             stream_id: stream_id_u32,
         }
     }
-    
+
     pub fn network_error(message: impl Into<String>, endpoint: Option<String>) -> Self {
         Self::Network {
             message: message.into(),
             endpoint,
         }
     }
-    
+
     pub fn config_error(message: impl Into<String>, path: Option<String>) -> Self {
         Self::Config {
             message: message.into(),
             path,
         }
     }
-    
+
     pub fn protocol_error(message: impl Into<String>, code: Option<u16>) -> Self {
         Self::Protocol {
             message: message.into(),
             code,
         }
     }
-    
+
     pub fn timeout(duration: std::time::Duration) -> Self {
         Self::Timeout { duration }
     }
-    
+
     pub fn not_found(resource: impl Into<String>) -> Self {
         Self::NotFound {
             resource: resource.into(),
         }
     }
-    
+
     pub fn invalid_input(message: impl Into<String>, field: Option<String>) -> Self {
         Self::InvalidInput {
             message: message.into(),
             field,
         }
     }
-    
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal {
             message: message.into(),

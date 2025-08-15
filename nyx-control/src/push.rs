@@ -2,9 +2,9 @@
 //! All network interactions use `ureq` (pure Rust HTTP client).
 #![forbid(unsafe_code)]
 
+use nyx_core::PushProvider;
 use serde_json::Value as JsonValue;
 use tokio::sync::{mpsc, oneshot};
-use nyx_core::PushProvider;
 // Prefixed with underscore to retain for future crypto/time extensions without warning
 // (Removed unused top-level pasetors imports; generate_apns_token handles its own scoped imports)
 
@@ -20,7 +20,9 @@ pub enum PushError {
 }
 
 impl From<ureq::Error> for PushError {
-    fn from(e: ureq::Error) -> Self { Self::Http(Box::new(e)) }
+    fn from(e: ureq::Error) -> Self {
+        Self::Http(Box::new(e))
+    }
 }
 
 /// Simple push manager abstraction.
@@ -33,7 +35,10 @@ impl PushManager {
     /// Construct a new `PushManager` with given provider configuration.
     #[must_use]
     pub fn new(provider: PushProvider) -> Self {
-        Self { agent: ureq::Agent::new(), provider }
+        Self {
+            agent: ureq::Agent::new(),
+            provider,
+        }
     }
 
     /// Send JSON payload to a specific `device_token`.
@@ -44,8 +49,13 @@ impl PushManager {
             PushProvider::Fcm { server_key } => {
                 self.send_fcm(device_token, payload, server_key).await
             }
-            PushProvider::Apns { team_id, key_id, key_p8 } => {
-                self.send_apns(device_token, payload, team_id, key_id, key_p8).await
+            PushProvider::Apns {
+                team_id,
+                key_id,
+                key_p8,
+            } => {
+                self.send_apns(device_token, payload, team_id, key_id, key_p8)
+                    .await
             }
         }
     }
@@ -60,26 +70,30 @@ impl PushManager {
             "to": device_token,
             "data": payload,
         });
-        
+
         // Use blocking call in spawn_blocking for async compatibility
         let agent = self.agent.clone();
         let server_key = server_key.to_string();
         let body_str = body.to_string();
-        
+
         tokio::task::spawn_blocking(move || {
             let resp = agent
                 .post("https://fcm.googleapis.com/fcm/send")
                 .set("Authorization", &format!("key={}", server_key))
                 .set("Content-Type", "application/json")
                 .send_string(&body_str)?;
-                
+
             if resp.status() == 200 {
                 Ok(())
             } else {
-                Err(PushError::Server(resp.status(), 
-                    resp.into_string().unwrap_or("Unknown error".to_string())))
+                Err(PushError::Server(
+                    resp.status(),
+                    resp.into_string().unwrap_or("Unknown error".to_string()),
+                ))
             }
-        }).await.map_err(|e| PushError::Http(Box::new(e)))?
+        })
+        .await
+        .map_err(|e| PushError::Http(Box::new(e)))?
     }
 
     async fn send_apns(
@@ -97,7 +111,7 @@ impl PushManager {
         let url = format!("https://api.push.apple.com/3/device/{}", device_token);
         let agent = self.agent.clone();
         let payload_str = payload.to_string();
-        
+
         tokio::task::spawn_blocking(move || {
             let resp = agent
                 .post(&url)
@@ -106,23 +120,27 @@ impl PushManager {
                 .set("apns-priority", "5")
                 .set("content-type", "application/json")
                 .send_string(&payload_str)?;
-                
+
             if resp.status() == 200 {
                 Ok(())
             } else {
-                Err(PushError::Server(resp.status(), 
-                    resp.into_string().unwrap_or("Unknown error".to_string())))
+                Err(PushError::Server(
+                    resp.status(),
+                    resp.into_string().unwrap_or("Unknown error".to_string()),
+                ))
             }
-        }).await.map_err(|e| PushError::Http(Box::new(e)))?
+        })
+        .await
+        .map_err(|e| PushError::Http(Box::new(e)))?
     }
 }
 
 /// Generate APNS token using PASETO v4 public key authentication.
 fn generate_apns_token(team_id: &str, _key_id: &str, _key_p8: &str) -> Result<String, PushError> {
     use pasetors::{
-    keys::{AsymmetricKeyPair, Generate},
-        version4::V4,
         claims::Claims,
+        keys::{AsymmetricKeyPair, Generate},
+        version4::V4,
     };
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -136,22 +154,21 @@ fn generate_apns_token(team_id: &str, _key_id: &str, _key_p8: &str) -> Result<St
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    
-    let mut claims = Claims::new().map_err(|_| {
-        PushError::AuthenticationFailed("Failed to create claims".to_string())
-    })?;
-    
-    claims.issuer(team_id).map_err(|_| {
-        PushError::AuthenticationFailed("Failed to set issuer".to_string())
-    })?;
-    
-    claims.issued_at(&now.to_string()).map_err(|_| {
-        PushError::AuthenticationFailed("Failed to set issued at".to_string())
-    })?;
-    
-    claims.expiration(&(now + 3600).to_string()).map_err(|_| {
-        PushError::AuthenticationFailed("Failed to set expiration".to_string())
-    })?;
+
+    let mut claims = Claims::new()
+        .map_err(|_| PushError::AuthenticationFailed("Failed to create claims".to_string()))?;
+
+    claims
+        .issuer(team_id)
+        .map_err(|_| PushError::AuthenticationFailed("Failed to set issuer".to_string()))?;
+
+    claims
+        .issued_at(&now.to_string())
+        .map_err(|_| PushError::AuthenticationFailed("Failed to set issued at".to_string()))?;
+
+    claims
+        .expiration(&(now + 3600).to_string())
+        .map_err(|_| PushError::AuthenticationFailed("Failed to set expiration".to_string()))?;
 
     // Generate PASETO v4 token
     pasetors::public::sign(&keypair.secret, &claims, None, None)
@@ -180,13 +197,18 @@ impl PushHandle {
     /// Enqueue push notification and await result.
     pub async fn send(&self, token: &str, payload: JsonValue) -> Result<(), PushError> {
         let (tx, rx) = oneshot::channel();
-        let msg = PushRequest::Send { token: token.to_string(), payload, resp: tx };
+        let msg = PushRequest::Send {
+            token: token.to_string(),
+            payload,
+            resp: tx,
+        };
         // Translate channel closure into PushError::Server
         self.tx
             .send(msg)
             .await
             .map_err(|_| PushError::Server(500, "worker closed".into()))?;
-        rx.await.unwrap_or_else(|_| Err(PushError::Server(500, "worker closed".into())))
+        rx.await
+            .unwrap_or_else(|_| Err(PushError::Server(500, "worker closed".into())))
     }
 }
 
@@ -198,7 +220,11 @@ pub fn spawn_push_service(provider: PushProvider) -> PushHandle {
         let mgr = PushManager::new(provider);
         while let Some(req) = rx.recv().await {
             match req {
-                PushRequest::Send { token, payload, resp } => {
+                PushRequest::Send {
+                    token,
+                    payload,
+                    resp,
+                } => {
                     let result = mgr.send(&token, &payload).await;
                     let _ = resp.send(result);
                 }
@@ -215,9 +241,11 @@ mod tests {
 
     #[tokio::test]
     async fn fcm_request_builds() {
-        let mgr = PushManager::new(PushProvider::Fcm { server_key: "test_key".into() });
+        let mgr = PushManager::new(PushProvider::Fcm {
+            server_key: "test_key".into(),
+        });
         // Sending will fail due to invalid key, but it should return Server error not panic.
         let res = mgr.send("dummy", &json!({"k":"v"})).await;
         assert!(res.is_err());
     }
-} 
+}

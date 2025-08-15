@@ -3,18 +3,18 @@
 //! High-level stream layer façade wiring together congestion control and timing obfuscation.
 //! At this stage it provides a simple byte-oriented send/recv API and can be expanded later.
 
-use crate::{tx::TxQueue, receiver::MultipathReceiver};
-#[cfg(feature = "fec")]
-use nyx_fec::timing::TimingConfig;
 #[cfg(not(feature = "fec"))]
 use crate::tx::TimingConfig; // fallback from tx.rs compat
+use crate::{receiver::MultipathReceiver, tx::TxQueue};
+#[cfg(feature = "fec")]
+use nyx_fec::timing::TimingConfig;
 use tokio::sync::mpsc;
 
 /// StreamLayer bundles a [`TxQueue`] (with timing obfuscation) and exposes
 /// an async channel‐like API to the upper layers.
 pub struct StreamLayer {
-    sender: mpsc::Sender<Vec<u8>>,       // in-memory TX path (will feed FEC/transport)
-    tx_queue: TxQueue,                   // handles timing obfuscation
+    sender: mpsc::Sender<Vec<u8>>, // in-memory TX path (will feed FEC/transport)
+    tx_queue: TxQueue,             // handles timing obfuscation
     receiver: MultipathReceiver,
 }
 
@@ -34,7 +34,11 @@ impl StreamLayer {
         });
 
         // For tests we expose the obfuscated out_rx as StreamLayer receiver.
-        Self { sender: in_tx, tx_queue, receiver: MultipathReceiver::new() }
+        Self {
+            sender: in_tx,
+            tx_queue,
+            receiver: MultipathReceiver::new(),
+        }
     }
 
     /// Enqueue raw frame bytes for timed transmission.

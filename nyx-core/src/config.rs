@@ -4,13 +4,15 @@
 //! hot-reloading via the `notify` crate. All public APIs are `async`-ready but do not impose an
 //! async runtime themselves.
 
+use notify::{
+    Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher,
+};
 use serde::Deserialize;
 use std::{fs, path::Path, sync::Arc};
 use tokio::sync::watch;
-use notify::{RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher, Event, EventKind};
 
+use crate::types::{MAX_HOPS, MIN_HOPS};
 use crate::NyxError;
-use crate::types::{MIN_HOPS, MAX_HOPS};
 
 /// Push notification provider configuration used for Low Power Mode wake-up.
 #[derive(Debug, Clone, Deserialize)]
@@ -33,19 +35,19 @@ pub enum PushProvider {
 pub struct MultipathConfig {
     /// Enable multipath data plane
     pub enabled: bool,
-    
+
     /// Maximum number of concurrent paths (1-8)
     pub max_paths: usize,
-    
+
     /// Minimum number of hops for dynamic routing (3-7)  
     pub min_hops: u8,
-    
+
     /// Maximum number of hops for dynamic routing (3-7)
     pub max_hops: u8,
-    
+
     /// Reordering buffer timeout in milliseconds
     pub reorder_timeout_ms: u32,
-    
+
     /// Weight calculation method for round-robin scheduling
     pub weight_method: WeightMethod,
     /// Adaptive reorder buffer: target p95 delay factor vs RTT (e.g. 1.5 means target p95 <= 1.5*RTT)
@@ -82,19 +84,19 @@ pub enum WeightMethod {
 pub struct MixConfig {
     /// Mix routing mode: standard, cmix (default: standard)
     pub mode: MixMode,
-    
+
     /// Batch size for cMix mode (default: 100)
     pub batch_size: usize,
-    
+
     /// VDF delay in milliseconds for cMix mode (default: 100)
     pub vdf_delay_ms: u64,
-    
+
     /// Cover traffic generation rate (packets per second)
     pub cover_traffic_rate: f64,
-    
+
     /// Adaptive cover traffic (adjust based on utilization)
     pub adaptive_cover: bool,
-    
+
     /// Target utilization for adaptive cover traffic (0.2-0.6)
     pub target_utilization: f64,
 }
@@ -111,10 +113,19 @@ pub enum MixMode {
 
 impl Default for MixConfig {
     fn default() -> Self {
+        // Allow env overrides to enforce spec defaults or runtime tuning
+        let batch = std::env::var("NYX_CMIX_BATCH")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(100);
+        let vdf_ms = std::env::var("NYX_CMIX_VDF_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(100);
         Self {
             mode: MixMode::Standard,
-            batch_size: 100,
-            vdf_delay_ms: 100,
+            batch_size: batch,
+            vdf_delay_ms: vdf_ms,
             cover_traffic_rate: 10.0,
             adaptive_cover: true,
             target_utilization: 0.4,
@@ -175,9 +186,7 @@ impl MultipathConfig {
                 }
             }
             WeightMethod::Equal => 10, // Equal weight for all paths
-            WeightMethod::Custom(ref weights) => {
-                weights.first().copied().unwrap_or(10) as u32
-            }
+            WeightMethod::Custom(ref weights) => weights.first().copied().unwrap_or(10) as u32,
         }
     }
 }
@@ -201,7 +210,7 @@ pub struct NyxConfig {
 
     /// Multipath configuration
     pub multipath: MultipathConfig,
-    
+
     /// Mix routing configuration
     pub mix: MixConfig,
 }
@@ -240,7 +249,9 @@ impl NyxConfig {
     ///
     /// Returns the initial configuration and a [`watch::Receiver`] that yields a new [`NyxConfig`]
     /// wrapped in [`Arc`] every time the file is modified on disk.
-    pub fn watch_file<P: AsRef<Path>>(path: P) -> crate::NyxResult<(Arc<NyxConfig>, watch::Receiver<Arc<NyxConfig>>)> {
+    pub fn watch_file<P: AsRef<Path>>(
+        path: P,
+    ) -> crate::NyxResult<(Arc<NyxConfig>, watch::Receiver<Arc<NyxConfig>>)> {
         let path_buf = path.as_ref().to_path_buf();
         let initial_cfg = Arc::new(Self::from_file(&path_buf)?);
         // Clone for closure capture to avoid moving the original `path_buf`.
@@ -250,16 +261,17 @@ impl NyxConfig {
         // `notify` requires the watcher to stay alive for as long as we want events. We therefore
         // spawn it on a background task and intentionally leak it so that it lives for the process
         // lifetime. This avoids polluting the public API with a guard type the caller must hold.
-        let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res: NotifyResult<Event>| {
-            if let Ok(event) = res {
-                // Interested only in content modifications.
-                if matches!(event.kind, EventKind::Modify(_)) {
-                    if let Ok(updated) = Self::from_file(&path_in_closure) {
-                        let _ = tx.send(Arc::new(updated));
+        let mut watcher: RecommendedWatcher =
+            notify::recommended_watcher(move |res: NotifyResult<Event>| {
+                if let Ok(event) = res {
+                    // Interested only in content modifications.
+                    if matches!(event.kind, EventKind::Modify(_)) {
+                        if let Ok(updated) = Self::from_file(&path_in_closure) {
+                            let _ = tx.send(Arc::new(updated));
+                        }
                     }
                 }
-            }
-        })?;
+            })?;
 
         watcher.watch(&path_buf, RecursiveMode::NonRecursive)?;
         // Leak the watcher so it keeps running. Safe because it lives for the entire program.
@@ -267,4 +279,4 @@ impl NyxConfig {
 
         Ok((initial_cfg, rx))
     }
-} 
+}

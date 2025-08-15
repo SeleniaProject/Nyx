@@ -7,4 +7,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     .build_server(false)
     //     .compile(&["../nyx-daemon/proto/control.proto"], &["../nyx-daemon/proto"])?;
     Ok(())
-} 
+}

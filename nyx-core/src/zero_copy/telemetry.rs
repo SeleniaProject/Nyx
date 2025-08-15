@@ -5,23 +5,22 @@
 //! This module provides comprehensive telemetry collection and reporting
 //! for zero-copy optimization across the critical data path. It integrates
 //! with the existing Nyx telemetry system to provide detailed insights
-//! into memory allocation patterns, buffer pool performance, and 
+//! into memory allocation patterns, buffer pool performance, and
 //! optimization effectiveness.
 
 use super::*;
-use crate::zero_copy::manager::{ZeroCopyManager, AggregatedMetrics};
+use crate::zero_copy::manager::{AggregatedMetrics, ZeroCopyManager};
 // Conditional import - only available with telemetry feature
 #[cfg(feature = "telemetry")]
-use nyx_telemetry::{TelemetryCollector, MetricType, Timestamp};
+use nyx_telemetry::{MetricType, TelemetryCollector, Timestamp};
 
 #[cfg(not(feature = "telemetry"))]
 mod mock_telemetry {
     use std::collections::HashMap;
-    use std::sync::Arc;
-    
+
     #[derive(Clone)]
     pub struct TelemetryCollector;
-    
+
     impl TelemetryCollector {
         pub async fn record_metric(
             &self,
@@ -34,15 +33,15 @@ mod mock_telemetry {
             // No-op for testing
         }
     }
-    
+
     #[derive(Clone, Copy)]
     pub enum MetricType {
         Counter,
         Gauge,
     }
-    
+
     pub type Timestamp = std::time::Instant;
-    
+
     // We can't implement methods on external types, so just use constructor
     pub fn now() -> Timestamp {
         std::time::Instant::now()
@@ -50,15 +49,16 @@ mod mock_telemetry {
 }
 
 #[cfg(not(feature = "telemetry"))]
-use mock_telemetry::{TelemetryCollector, MetricType, now};
+use mock_telemetry::{now, MetricType, TelemetryCollector};
 
 #[cfg(feature = "telemetry")]
-fn now() -> std::time::Instant { std::time::Instant::now() }
-use std::sync::Arc;
+fn now() -> std::time::Instant {
+    std::time::Instant::now()
+}
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
-use tracing::{debug, info};
 
 /// Telemetry collector for zero-copy metrics
 pub struct ZeroCopyTelemetry {
@@ -109,12 +109,18 @@ pub struct TimestampedMetrics {
 
 impl ZeroCopyTelemetry {
     /// Create new telemetry collector
-    pub fn new(collector: Arc<TelemetryCollector>, manager: Arc<ZeroCopyManager>, config: TelemetryConfig) -> Self {
+    pub fn new(
+        collector: Arc<TelemetryCollector>,
+        manager: Arc<ZeroCopyManager>,
+        config: TelemetryConfig,
+    ) -> Self {
         Self {
             collector,
             manager,
             config: config.clone(),
-            metric_history: Arc::new(RwLock::new(VecDeque::with_capacity(config.max_history_entries))),
+            metric_history: Arc::new(RwLock::new(VecDeque::with_capacity(
+                config.max_history_entries,
+            ))),
         }
     }
 
@@ -154,37 +160,45 @@ impl ZeroCopyTelemetry {
                         let mut labels = HashMap::new();
                         labels.insert("path_id".to_string(), path_id.clone());
 
-                        collector.record_metric(
-                            "zero_copy_pool_total_buffers",
-                            MetricType::Gauge,
-                            stats.total_buffers as f64,
-                            timestamp,
-                            Some(labels.clone()),
-                        ).await;
+                        collector
+                            .record_metric(
+                                "zero_copy_pool_total_buffers",
+                                MetricType::Gauge,
+                                stats.total_buffers as f64,
+                                timestamp,
+                                Some(labels.clone()),
+                            )
+                            .await;
 
-                        collector.record_metric(
-                            "zero_copy_pool_hit_ratio",
-                            MetricType::Gauge,
-                            stats.hit_ratio,
-                            timestamp,
-                            Some(labels.clone()),
-                        ).await;
+                        collector
+                            .record_metric(
+                                "zero_copy_pool_hit_ratio",
+                                MetricType::Gauge,
+                                stats.hit_ratio,
+                                timestamp,
+                                Some(labels.clone()),
+                            )
+                            .await;
 
-                        collector.record_metric(
-                            "zero_copy_pool_hits",
-                            MetricType::Counter,
-                            stats.hits as f64,
-                            timestamp,
-                            Some(labels.clone()),
-                        ).await;
+                        collector
+                            .record_metric(
+                                "zero_copy_pool_hits",
+                                MetricType::Counter,
+                                stats.hits as f64,
+                                timestamp,
+                                Some(labels.clone()),
+                            )
+                            .await;
 
-                        collector.record_metric(
-                            "zero_copy_pool_misses",
-                            MetricType::Counter,
-                            stats.misses as f64,
-                            timestamp,
-                            Some(labels.clone()),
-                        ).await;
+                        collector
+                            .record_metric(
+                                "zero_copy_pool_misses",
+                                MetricType::Counter,
+                                stats.misses as f64,
+                                timestamp,
+                                Some(labels.clone()),
+                            )
+                            .await;
                     }
                 }
 
@@ -209,53 +223,65 @@ impl ZeroCopyTelemetry {
         let timestamp = now();
 
         // Pipeline-level metrics
-        collector.record_metric(
-            "zero_copy_total_allocations",
-            MetricType::Counter,
-            metrics.combined_allocations as f64,
-            timestamp,
-            None,
-        ).await;
+        collector
+            .record_metric(
+                "zero_copy_total_allocations",
+                MetricType::Counter,
+                metrics.combined_allocations as f64,
+                timestamp,
+                None,
+            )
+            .await;
 
-        collector.record_metric(
-            "zero_copy_total_bytes",
-            MetricType::Counter,
-            metrics.combined_bytes as f64,
-            timestamp,
-            None,
-        ).await;
+        collector
+            .record_metric(
+                "zero_copy_total_bytes",
+                MetricType::Counter,
+                metrics.combined_bytes as f64,
+                timestamp,
+                None,
+            )
+            .await;
 
-        collector.record_metric(
-            "zero_copy_ratio",
-            MetricType::Gauge,
-            metrics.average_zero_copy_ratio,
-            timestamp,
-            None,
-        ).await;
+        collector
+            .record_metric(
+                "zero_copy_ratio",
+                MetricType::Gauge,
+                metrics.average_zero_copy_ratio,
+                timestamp,
+                None,
+            )
+            .await;
 
-        collector.record_metric(
-            "zero_copy_reduction_ratio",
-            MetricType::Gauge,
-            metrics.average_reduction_ratio,
-            timestamp,
-            None,
-        ).await;
+        collector
+            .record_metric(
+                "zero_copy_reduction_ratio",
+                MetricType::Gauge,
+                metrics.average_reduction_ratio,
+                timestamp,
+                None,
+            )
+            .await;
 
-        collector.record_metric(
-            "zero_copy_allocation_overhead_ns",
-            MetricType::Gauge,
-            metrics.total_allocation_overhead_ns as f64,
-            timestamp,
-            None,
-        ).await;
+        collector
+            .record_metric(
+                "zero_copy_allocation_overhead_ns",
+                MetricType::Gauge,
+                metrics.total_allocation_overhead_ns as f64,
+                timestamp,
+                None,
+            )
+            .await;
 
-        collector.record_metric(
-            "zero_copy_active_paths",
-            MetricType::Gauge,
-            metrics.total_paths as f64,
-            timestamp,
-            None,
-        ).await;
+        collector
+            .record_metric(
+                "zero_copy_active_paths",
+                MetricType::Gauge,
+                metrics.total_paths as f64,
+                timestamp,
+                None,
+            )
+            .await;
     }
 
     /// Record detailed per-stage metrics
@@ -267,7 +293,9 @@ impl ZeroCopyTelemetry {
 
         for path_metrics in metrics.per_path_metrics.values() {
             for (stage, stats) in &path_metrics.stages {
-                let total_stats = stage_totals.entry(*stage).or_insert_with(StageStats::default);
+                let total_stats = stage_totals
+                    .entry(*stage)
+                    .or_insert_with(StageStats::default);
                 total_stats.total_allocations += stats.total_allocations;
                 total_stats.total_bytes += stats.total_bytes;
                 total_stats.total_copies += stats.total_copies;
@@ -289,37 +317,45 @@ impl ZeroCopyTelemetry {
             let mut labels = HashMap::new();
             labels.insert("stage".to_string(), stage_name.to_string());
 
-            collector.record_metric(
-                "zero_copy_stage_allocations",
-                MetricType::Counter,
-                stats.total_allocations as f64,
-                timestamp,
-                Some(labels.clone()),
-            ).await;
+            collector
+                .record_metric(
+                    "zero_copy_stage_allocations",
+                    MetricType::Counter,
+                    stats.total_allocations as f64,
+                    timestamp,
+                    Some(labels.clone()),
+                )
+                .await;
 
-            collector.record_metric(
-                "zero_copy_stage_bytes",
-                MetricType::Counter,
-                stats.total_bytes as f64,
-                timestamp,
-                Some(labels.clone()),
-            ).await;
+            collector
+                .record_metric(
+                    "zero_copy_stage_bytes",
+                    MetricType::Counter,
+                    stats.total_bytes as f64,
+                    timestamp,
+                    Some(labels.clone()),
+                )
+                .await;
 
-            collector.record_metric(
-                "zero_copy_stage_copies",
-                MetricType::Counter,
-                stats.total_copies as f64,
-                timestamp,
-                Some(labels.clone()),
-            ).await;
+            collector
+                .record_metric(
+                    "zero_copy_stage_copies",
+                    MetricType::Counter,
+                    stats.total_copies as f64,
+                    timestamp,
+                    Some(labels.clone()),
+                )
+                .await;
 
-            collector.record_metric(
-                "zero_copy_stage_zero_copy_ops",
-                MetricType::Counter,
-                stats.zero_copy_ops as f64,
-                timestamp,
-                Some(labels.clone()),
-            ).await;
+            collector
+                .record_metric(
+                    "zero_copy_stage_zero_copy_ops",
+                    MetricType::Counter,
+                    stats.zero_copy_ops as f64,
+                    timestamp,
+                    Some(labels.clone()),
+                )
+                .await;
 
             // Pool efficiency metrics
             let total_requests = stats.pool_hits + stats.pool_misses;
@@ -329,13 +365,15 @@ impl ZeroCopyTelemetry {
                 0.0
             };
 
-            collector.record_metric(
-                "zero_copy_stage_pool_hit_ratio",
-                MetricType::Gauge,
-                hit_ratio,
-                timestamp,
-                Some(labels),
-            ).await;
+            collector
+                .record_metric(
+                    "zero_copy_stage_pool_hit_ratio",
+                    MetricType::Gauge,
+                    hit_ratio,
+                    timestamp,
+                    Some(labels),
+                )
+                .await;
         }
     }
 
@@ -355,39 +393,48 @@ impl ZeroCopyTelemetry {
 
         // Analyze optimization opportunities
         if current_metrics.average_zero_copy_ratio < 0.7 {
-            report.optimization_opportunities.push(OptimizationOpportunity {
-                category: "Zero-Copy Ratio".to_string(),
-                description: format!("Current zero-copy ratio ({:.2}%) is below optimal threshold (70%)", 
-                                   current_metrics.average_zero_copy_ratio * 100.0),
-                potential_impact: ImpactLevel::High,
-                suggested_actions: vec![
-                    "Enable buffer pooling for all stages".to_string(),
-                    "Implement in-place operations where possible".to_string(),
-                    "Review data transformation requirements".to_string(),
-                ],
-            });
+            report
+                .optimization_opportunities
+                .push(OptimizationOpportunity {
+                    category: "Zero-Copy Ratio".to_string(),
+                    description: format!(
+                        "Current zero-copy ratio ({:.2}%) is below optimal threshold (70%)",
+                        current_metrics.average_zero_copy_ratio * 100.0
+                    ),
+                    potential_impact: ImpactLevel::High,
+                    suggested_actions: vec![
+                        "Enable buffer pooling for all stages".to_string(),
+                        "Implement in-place operations where possible".to_string(),
+                        "Review data transformation requirements".to_string(),
+                    ],
+                });
         }
 
         if current_metrics.average_reduction_ratio < 0.5 {
-            report.optimization_opportunities.push(OptimizationOpportunity {
-                category: "Copy Reduction".to_string(),
-                description: format!("Current copy reduction ratio ({:.2}%) indicates high memory copy overhead", 
-                                   current_metrics.average_reduction_ratio * 100.0),
-                potential_impact: ImpactLevel::Medium,
-                suggested_actions: vec![
-                    "Increase buffer pool sizes".to_string(),
-                    "Implement larger buffer size classes".to_string(),
-                    "Consider streaming processing patterns".to_string(),
-                ],
-            });
+            report
+                .optimization_opportunities
+                .push(OptimizationOpportunity {
+                    category: "Copy Reduction".to_string(),
+                    description: format!(
+                        "Current copy reduction ratio ({:.2}%) indicates high memory copy overhead",
+                        current_metrics.average_reduction_ratio * 100.0
+                    ),
+                    potential_impact: ImpactLevel::Medium,
+                    suggested_actions: vec![
+                        "Increase buffer pool sizes".to_string(),
+                        "Implement larger buffer size classes".to_string(),
+                        "Consider streaming processing patterns".to_string(),
+                    ],
+                });
         }
 
         // Analyze trends if sufficient history exists
         if history.len() >= 10 {
             let recent_metrics: Vec<_> = history.iter().rev().take(10).collect();
-            
+
             // Zero-copy ratio trend
-            let zero_copy_trend = Self::calculate_trend(&recent_metrics, |m| m.metrics.average_zero_copy_ratio);
+            let zero_copy_trend =
+                Self::calculate_trend(&recent_metrics, |m| m.metrics.average_zero_copy_ratio);
             report.performance_trends.push(PerformanceTrend {
                 metric_name: "Zero-Copy Ratio".to_string(),
                 trend_direction: zero_copy_trend.direction,
@@ -396,7 +443,9 @@ impl ZeroCopyTelemetry {
             });
 
             // Allocation overhead trend
-            let overhead_trend = Self::calculate_trend(&recent_metrics, |m| m.metrics.total_allocation_overhead_ns as f64);
+            let overhead_trend = Self::calculate_trend(&recent_metrics, |m| {
+                m.metrics.total_allocation_overhead_ns as f64
+            });
             report.performance_trends.push(PerformanceTrend {
                 metric_name: "Allocation Overhead".to_string(),
                 trend_direction: overhead_trend.direction,
@@ -426,7 +475,7 @@ impl ZeroCopyTelemetry {
 
         let values: Vec<f64> = metrics.iter().map(|m| extractor(m)).collect();
         let n = values.len() as f64;
-        
+
         // Simple linear regression to determine trend
         let sum_x: f64 = (0..values.len()).sum::<usize>() as f64;
         let sum_y: f64 = values.iter().sum();
@@ -434,7 +483,7 @@ impl ZeroCopyTelemetry {
         let sum_x2: f64 = (0..values.len()).map(|i| (i * i) as f64).sum();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
-        
+
         let direction = if slope > 0.001 {
             TrendDirection::Increasing
         } else if slope < -0.001 {
@@ -464,22 +513,29 @@ impl ZeroCopyTelemetry {
 
         // Based on zero-copy ratio
         if report.current_metrics.average_zero_copy_ratio < 0.5 {
-            recommendations.push("Priority: Enable comprehensive buffer pooling across all stages".to_string());
-            recommendations.push("Consider implementing custom allocators for frequent operations".to_string());
+            recommendations.push(
+                "Priority: Enable comprehensive buffer pooling across all stages".to_string(),
+            );
+            recommendations.push(
+                "Consider implementing custom allocators for frequent operations".to_string(),
+            );
         }
 
         // Based on trends
         for trend in &report.performance_trends {
-            if trend.metric_name == "Allocation Overhead" && 
-               matches!(trend.trend_direction, TrendDirection::Increasing) &&
-               matches!(trend.significance, SignificanceLevel::High) {
+            if trend.metric_name == "Allocation Overhead"
+                && matches!(trend.trend_direction, TrendDirection::Increasing)
+                && matches!(trend.significance, SignificanceLevel::High)
+            {
                 recommendations.push("Alert: Allocation overhead is increasing significantly - investigate memory leaks".to_string());
             }
         }
 
         // General recommendations
         if report.total_paths > 100 {
-            recommendations.push("Consider implementing global buffer pools for high-scale deployments".to_string());
+            recommendations.push(
+                "Consider implementing global buffer pools for high-scale deployments".to_string(),
+            );
         }
 
         if recommendations.is_empty() {
@@ -494,17 +550,19 @@ impl ZeroCopyTelemetry {
 /// This helper allows external components (e.g., daemon) to bind zero-copy metrics into their existing
 /// telemetry pipeline without duplicating wiring code.
 pub async fn spawn_zerocopy_telemetry_for_manager(
-	collector: std::sync::Arc<TelemetryCollector>,
-	manager: std::sync::Arc<crate::zero_copy::manager::ZeroCopyManager>,
-	cfg: TelemetryConfig,
+    collector: std::sync::Arc<TelemetryCollector>,
+    manager: std::sync::Arc<crate::zero_copy::manager::ZeroCopyManager>,
+    cfg: TelemetryConfig,
 ) -> tokio::task::JoinHandle<()> {
-	let zt = ZeroCopyTelemetry {
-		collector,
-		manager,
-		config: cfg.clone(),
-		metric_history: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::VecDeque::with_capacity(cfg.max_history_entries))),
-	};
-	zt.start_collection().await
+    let zt = ZeroCopyTelemetry {
+        collector,
+        manager,
+        config: cfg.clone(),
+        metric_history: std::sync::Arc::new(tokio::sync::RwLock::new(
+            std::collections::VecDeque::with_capacity(cfg.max_history_entries),
+        )),
+    };
+    zt.start_collection().await
 }
 
 /// Optimization analysis report

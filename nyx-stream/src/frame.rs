@@ -28,7 +28,7 @@ pub fn is_plugin_frame(frame_type: u8) -> bool {
 }
 
 /// Parsed header including optional `path_id` for multipath data plane.
-/// 
+///
 /// In Nyx Protocol v1.0, the PathID is a critical component of the multipath data plane
 /// that enables concurrent communication over up to 8 different network paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +41,7 @@ pub struct ParsedHeader {
 }
 
 /// Standard frame header structure compliant with Nyx Protocol v1.0
-/// 
+///
 /// This represents the core 4-byte header present in all Nyx packets,
 /// with optional PathID extension for multipath communication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,62 +55,75 @@ pub struct FrameHeader {
 }
 
 /// Parse standard 4-byte Nyx packet header.
-/// 
+///
 /// Header format (bytes 0-3):
 /// - Byte 0: frame_type (bits 7-6) + flags (bits 5-0)  
 /// - Byte 1: length high byte (bits 13-8)
 /// - Bytes 2-3: length continuation and reserved fields
-/// 
+///
 /// # Returns
-/// 
+///
 /// Parsed `FrameHeader` structure containing frame type, flags, and payload length.
 /// Length field uses 14 bits allowing payloads up to 16KB.
 pub fn parse_header(input: &[u8]) -> IResult<&[u8], FrameHeader> {
     let (input, byte0) = u8(input)?;
     let (input, byte1) = u8(input)?;
     let (input, len_bytes) = take(2u8)(input)?; // length low & reserved
-    
-    // byte0 = frame_type (2 bits) + flags (6 bits)  
+
+    // byte0 = frame_type (2 bits) + flags (6 bits)
     let frame_type = byte0 >> 6;
     let mut flags = byte0 & 0x3F;
-    
+
     // Extract multipath flag from byte1 bit 7 and add to flags
     if byte1 & 0x80 != 0 {
         flags |= FLAG_MULTIPATH_ENABLED;
     }
-    
+
     // Length from byte1 (low 7 bits) and len_bytes[0] - v1.0 uses 14-bit length field
     let length = (((byte1 & 0x7F) as u16) << 7) | (len_bytes[0] as u16);
-    
-    Ok((input, FrameHeader { frame_type, flags, length }))
+
+    Ok((
+        input,
+        FrameHeader {
+            frame_type,
+            flags,
+            length,
+        },
+    ))
 }
 
 /// Parse extended header with optional PathID field for multipath data plane.
-/// 
+///
 /// This implements the v1.0 multipath extension where PathID is present at byte 13
 /// when FLAG_HAS_PATH_ID or FLAG_MULTIPATH_ENABLED flags are set in the header.
-/// 
+///
 /// The PathID enables weighted round-robin scheduling across up to 8 concurrent
 /// network paths, with path weights calculated as inverse RTT for optimal load balancing.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `input` - Raw packet bytes starting from byte 0 (CID would precede this)
-/// 
+///
 /// # Returns
-/// 
+///
 /// ParsedHeader containing both the standard header fields and optional PathID.
 /// PathID range is 0-255 (u8) allowing for extensive path identification.
 pub fn parse_header_ext(input: &[u8]) -> IResult<&[u8], ParsedHeader> {
     let (input, hdr) = parse_header(input)?;
-    
+
     // Check for multipath data plane indicators
-    let has_path_id = (hdr.flags & FLAG_HAS_PATH_ID != 0) || 
-                      (hdr.flags & FLAG_MULTIPATH_ENABLED != 0);
-    
+    let has_path_id =
+        (hdr.flags & FLAG_HAS_PATH_ID != 0) || (hdr.flags & FLAG_MULTIPATH_ENABLED != 0);
+
     if has_path_id {
         let (input, pid) = u8(input)?;
-        Ok((input, ParsedHeader { hdr, path_id: Some(pid) }))
+        Ok((
+            input,
+            ParsedHeader {
+                hdr,
+                path_id: Some(pid),
+            },
+        ))
     } else {
         Ok((input, ParsedHeader { hdr, path_id: None }))
     }
@@ -126,7 +139,7 @@ mod tests_ext {
         // Create packet with frame_type=0, flags=0x60 (0x40 multipath + 0x20 path_id), length=50, path_id=9
         // Wire format: byte0 = (0 << 6) | 0x60 = 0x60, but flags must fit in 6 bits
         // So we use frame_type=1, flags=0x25 where 0x20=path_id flag, and put multipath in different location
-        let bytes = [0x65u8, 0x00u8, 0x32u8, 0x00u8, 0x09u8];  // frame_type=1, flags=0x25
+        let bytes = [0x65u8, 0x00u8, 0x32u8, 0x00u8, 0x09u8]; // frame_type=1, flags=0x25
         let (_, parsed) = parse_header_ext(&bytes).expect("parse");
         assert_eq!(parsed.hdr.frame_type, 1);
         assert_eq!(parsed.hdr.flags & FLAG_HAS_PATH_ID, FLAG_HAS_PATH_ID);
@@ -154,7 +167,10 @@ mod tests_ext {
         let bytes = [0x40u8, 0x80u8, 0x64u8, 0x00u8, 0x03u8];
         let (_, parsed) = parse_header_ext(&bytes).expect("parse");
         assert_eq!(parsed.hdr.frame_type, 1);
-        assert_eq!(parsed.hdr.flags & FLAG_MULTIPATH_ENABLED, FLAG_MULTIPATH_ENABLED);
+        assert_eq!(
+            parsed.hdr.flags & FLAG_MULTIPATH_ENABLED,
+            FLAG_MULTIPATH_ENABLED
+        );
         assert_eq!(parsed.hdr.length, 100);
         assert_eq!(parsed.path_id, Some(3));
     }
@@ -165,4 +181,4 @@ mod tests_ext {
         let (_, parsed) = parse_header_ext(&bytes).expect("parse");
         assert!(parsed.path_id.is_none());
     }
-} 
+}

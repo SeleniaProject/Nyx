@@ -41,10 +41,7 @@ impl SimplifiedMultipathIntegration {
             conversion_errors: 0,
         }));
 
-        Self {
-            manager,
-            stats,
-        }
+        Self { manager, stats }
     }
 
     /// Send frame through multipath
@@ -58,18 +55,18 @@ impl SimplifiedMultipathIntegration {
         } else {
             stats.frames_without_path_id += 1;
         }
-        
+
         drop(stats);
 
         // Send through multipath manager
         let packet = self.manager.send_packet(frame.data.clone()).await?;
-        
+
         // Convert back to frame
         let output_frame = self.packet_to_frame(&packet)?;
-        
+
         let mut stats = self.stats.lock().unwrap();
         stats.multipath_packets_sent += 1;
-        
+
         Ok(output_frame)
     }
 
@@ -77,20 +74,20 @@ impl SimplifiedMultipathIntegration {
     pub async fn receive_frame(&self, frame: SimpleFrame) -> Result<Vec<SimpleFrame>, String> {
         // Extract multipath packet from frame
         let packet = self.frame_to_packet(&frame)?;
-        
+
         // Process through multipath manager
         let ready_packets = self.manager.receive_packet(packet).await?;
-        
+
         // Convert back to frames
         let mut frames = Vec::new();
         for packet in ready_packets {
             let frame = self.packet_to_frame(&packet)?;
             frames.push(frame);
         }
-        
+
         let mut stats = self.stats.lock().unwrap();
         stats.multipath_packets_received += frames.len() as u64;
-        
+
         Ok(frames)
     }
 
@@ -142,7 +139,7 @@ impl SimplifiedMultipathIntegration {
 
         // Create frame
         let mut frame = SimpleFrame::new(SimpleFrameType::Data, frame_data);
-        
+
         // Add multipath metadata
         frame.set_flag(FLAG_HAS_PATH_ID);
         frame.add_extended_header("path_id", &packet.path_id.to_string())?;
@@ -161,12 +158,11 @@ impl SimplifiedMultipathIntegration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[tokio::test]
     async fn test_simplified_integration() {
         use nyx_core::config::MultipathConfig;
-        
+
         let config = MultipathConfig::default();
         let manager = Arc::new(MultipathManager::new_test(config));
         let integration = SimplifiedMultipathIntegration::new(manager.clone());
@@ -175,20 +171,23 @@ mod tests {
         manager.add_path(1).await.expect("Failed to add path");
 
         // Create test frame
-        let frame = SimpleFrame::new(
-            SimpleFrameType::Data, 
-            vec![1, 2, 3, 4, 5]
-        );
+        let frame = SimpleFrame::new(SimpleFrameType::Data, vec![1, 2, 3, 4, 5]);
 
         // Send frame
-        let sent_frame = integration.send_frame(frame).await.expect("Failed to send frame");
-        
+        let sent_frame = integration
+            .send_frame(frame)
+            .await
+            .expect("Failed to send frame");
+
         // Frame should have PathID flag set
         assert_ne!(sent_frame.flags & FLAG_HAS_PATH_ID, 0);
         assert!(sent_frame.extended_headers.contains_key("path_id"));
 
         // Receive the frame back
-        let received_frames = integration.receive_frame(sent_frame).await.expect("Failed to receive frame");
+        let received_frames = integration
+            .receive_frame(sent_frame)
+            .await
+            .expect("Failed to receive frame");
         assert_eq!(received_frames.len(), 1);
 
         let stats = integration.get_stats();

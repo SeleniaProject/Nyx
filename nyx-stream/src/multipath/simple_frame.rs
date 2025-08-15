@@ -39,15 +39,14 @@ impl SimpleFrame {
 
     /// Add extended header
     pub fn add_extended_header(&mut self, key: &str, value: &str) -> Result<(), String> {
-        self.extended_headers.insert(key.to_string(), value.to_string());
+        self.extended_headers
+            .insert(key.to_string(), value.to_string());
         Ok(())
     }
 
     /// Parse header (simplified)
     pub fn parse_header(&self) -> Result<SimpleHeader, String> {
-        Ok(SimpleHeader {
-            flags: self.flags,
-        })
+        Ok(SimpleHeader { flags: self.flags })
     }
 
     /// Parse extended header

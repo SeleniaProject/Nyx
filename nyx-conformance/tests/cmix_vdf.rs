@@ -1,5 +1,5 @@
-use nyx_mix::vdf::{prove, verify};
 use num_bigint::BigUint;
+use nyx_mix::vdf::{prove, verify};
 
 #[test]
 fn wesolowski_vdf_conformance() {
@@ -9,4 +9,4 @@ fn wesolowski_vdf_conformance() {
     let t = 25;
     let (y, pi) = prove(&x, &n, t);
     assert!(verify(&x, &y, &pi, &n, t));
-} 
+}

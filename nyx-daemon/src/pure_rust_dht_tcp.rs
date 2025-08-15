@@ -1,25 +1,25 @@
 //! Pure Rust DHT implementation using TCP/TLS networking
-//! 
+//!
 //! This module provides a complete Distributed Hash Table (DHT) implementation
 //! using only pure Rust dependencies, avoiding any C/C++ code entirely.
 //! Uses tokio TCP/TLS for networking to eliminate ring dependency.
 
+use bincode;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use multiaddr::Multiaddr;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH, Instant};
 use std::path::PathBuf;
-use tokio::sync::RwLock;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::fs;
-use serde::{Deserialize, Serialize};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
-use sha2::{Digest, Sha256};
-use multiaddr::Multiaddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
 use trust_dns_resolver::TokioAsyncResolver;
-use bincode;
-use tracing::{info, warn, error, debug};
 
 /// Pure Rust DHT implementation using TCP networking
 pub struct PureRustDht {
@@ -145,7 +145,7 @@ pub struct SerializableDhtRecord {
     pub timestamp: u64,
     pub ttl: u64,
     pub signature: Vec<u8>,
-    pub publisher: String,  // 'author' から 'publisher' に変更
+    pub publisher: String, // 'author' から 'publisher' に変更
 }
 
 /// Bootstrap manager for network initialization
@@ -226,10 +226,10 @@ impl TaskDhtHandle {
 
         // Save routing table
         self.save_routing_table(storage_dir).await?;
-        
-        // Save DHT records  
+
+        // Save DHT records
         self.save_dht_records(storage_dir).await?;
-        
+
         // Save bootstrap info
         self.save_bootstrap_info(storage_dir).await?;
 
@@ -244,22 +244,28 @@ impl TaskDhtHandle {
     async fn save_routing_table(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let routing_table = self.routing_table.read().await;
         let peers = routing_table.get_all_peers();
-        
-        let serializable_peers: Vec<SerializablePeerInfo> = peers.into_iter().map(|peer| {
-            SerializablePeerInfo {
+
+        let serializable_peers: Vec<SerializablePeerInfo> = peers
+            .into_iter()
+            .map(|peer| SerializablePeerInfo {
                 peer_id: peer.peer_id,
                 address: peer.address.to_string(),
                 public_key: peer.public_key,
-                last_seen: peer.last_seen.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                last_seen: peer
+                    .last_seen
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
                 response_time_ms: peer.avg_response_time.as_millis() as u64,
-            }
-        }).collect();
+            })
+            .collect();
 
         let peers_file = storage_dir.join("routing_table.json");
         let json_data = serde_json::to_string_pretty(&serializable_peers)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON serialization failed: {}", e)))?;
 
-        fs::write(&peers_file, json_data).await
+        fs::write(&peers_file, json_data)
+            .await
             .map_err(|e| DhtError::InvalidMessage(format!("Failed to write peers file: {}", e)))?;
 
         Ok(())
@@ -268,24 +274,35 @@ impl TaskDhtHandle {
     /// Save DHT records (simplified version for background tasks)
     async fn save_dht_records(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let storage = self.storage.read().await;
-        
-        let serializable_records: Vec<SerializableDhtRecord> = storage.iter().map(|(key, record)| {
-            SerializableDhtRecord {
-                key: key.clone(),
-                value: record.value.clone(),
-                timestamp: record.timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-                ttl: record.ttl.as_secs(),
-                signature: record.signature.clone().unwrap_or_default(),  // signature は既に Vec<u8>
-                publisher: String::from_utf8_lossy(&record.publisher.as_ref().unwrap_or(&Vec::new())).to_string(),   // Vec<u8> から String へ
-            }
-        }).collect();
+
+        let serializable_records: Vec<SerializableDhtRecord> = storage
+            .iter()
+            .map(|(key, record)| {
+                SerializableDhtRecord {
+                    key: key.clone(),
+                    value: record.value.clone(),
+                    timestamp: record
+                        .timestamp
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    ttl: record.ttl.as_secs(),
+                    signature: record.signature.clone().unwrap_or_default(), // signature は既に Vec<u8>
+                    publisher: String::from_utf8_lossy(
+                        &record.publisher.as_ref().unwrap_or(&Vec::new()),
+                    )
+                    .to_string(), // Vec<u8> から String へ
+                }
+            })
+            .collect();
 
         let records_file = storage_dir.join("dht_records.json");
         let json_data = serde_json::to_string_pretty(&serializable_records)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON serialization failed: {}", e)))?;
 
-        fs::write(&records_file, json_data).await
-            .map_err(|e| DhtError::InvalidMessage(format!("Failed to write records file: {}", e)))?;
+        fs::write(&records_file, json_data).await.map_err(|e| {
+            DhtError::InvalidMessage(format!("Failed to write records file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -293,13 +310,14 @@ impl TaskDhtHandle {
     /// Save bootstrap info (simplified version for background tasks)
     async fn save_bootstrap_info(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let bootstrap_manager = self.bootstrap_manager.read().await;
-        
+
         let bootstrap_file = storage_dir.join("bootstrap_nodes.json");
         let json_data = serde_json::to_string_pretty(&bootstrap_manager.bootstrap_nodes)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON serialization failed: {}", e)))?;
 
-        fs::write(&bootstrap_file, json_data).await
-            .map_err(|e| DhtError::InvalidMessage(format!("Failed to write bootstrap file: {}", e)))?;
+        fs::write(&bootstrap_file, json_data).await.map_err(|e| {
+            DhtError::InvalidMessage(format!("Failed to write bootstrap file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -308,12 +326,12 @@ impl TaskDhtHandle {
     async fn perform_network_health_check(&self) -> Result<bool, DhtError> {
         let routing_table = self.routing_table.read().await;
         let peer_count = routing_table.get_all_peers().len();
-        
+
         if peer_count < 1 {
             warn!("Network health check: No peers connected, network may be isolated");
             return Ok(false);
         }
-        
+
         debug!("Network health check: {} peers connected", peer_count);
         Ok(true)
     }
@@ -352,37 +370,22 @@ pub struct DhtRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DhtMessage {
     /// Ping message for connectivity testing
-    Ping {
-        node_id: NodeId,
-        timestamp: u64,
-    },
+    Ping { node_id: NodeId, timestamp: u64 },
     /// Pong response to ping
-    Pong {
-        node_id: NodeId,
-        timestamp: u64,
-    },
+    Pong { node_id: NodeId, timestamp: u64 },
     /// Find node request
     FindNode {
         target_id: String,
         requester_id: String,
     },
     /// Find node response
-    FindNodeResponse {
-        nodes: Vec<PeerInfo>,
-    },
+    FindNodeResponse { nodes: Vec<PeerInfo> },
     /// Store record request
-    Store {
-        record: DhtRecord,
-    },
+    Store { record: DhtRecord },
     /// Store response
-    StoreResponse {
-        success: bool,
-    },
+    StoreResponse { success: bool },
     /// Find value request
-    FindValue {
-        key: String,
-        requester_id: String,
-    },
+    FindValue { key: String, requester_id: String },
     /// Find value response - can return either value or closest nodes
     FindValueResponse {
         value: Option<Vec<u8>>,
@@ -446,23 +449,24 @@ impl PureRustDht {
         // Generate cryptographic keypair for node identity
         let mut csprng = rand::rngs::OsRng;
         let keypair = SigningKey::generate(&mut csprng);
-        
+
         // Create DNS resolver
-        let dns_resolver = TokioAsyncResolver::tokio_from_system_conf()
-            .map_err(|e| DhtError::Network(std::io::Error::new(
+        let dns_resolver = TokioAsyncResolver::tokio_from_system_conf().map_err(|e| {
+            DhtError::Network(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Failed to create DNS resolver: {}", e)
-            )))?;
-        
+                format!("Failed to create DNS resolver: {}", e),
+            ))
+        })?;
+
         // Calculate local node ID from public key
         let local_node_id = Self::calculate_node_id(&keypair.verifying_key().to_bytes());
-        
+
         // Initialize routing table
         let routing_table = Arc::new(RwLock::new(RoutingTable::new(local_node_id, 20)));
-        
+
         // Initialize storage
         let storage = Arc::new(RwLock::new(HashMap::new()));
-        
+
         // Setup persistent storage directory
         let storage_dir = storage_dir.unwrap_or_else(|| {
             let mut dir = std::env::temp_dir();
@@ -486,16 +490,19 @@ impl PureRustDht {
         }));
 
         // Initialize bootstrap manager
-        let bootstrap_nodes = bootstrap_peers.iter().map(|addr| BootstrapNode {
-            address: *addr,
-            node_id: None,
-            priority: 1,
-            last_successful_connection: None,
-            failure_count: 0,
-            average_response_time: 0.0,
-            reliability_score: 1.0,
-            supported_protocols: vec!["tcp".to_string()],
-        }).collect();
+        let bootstrap_nodes = bootstrap_peers
+            .iter()
+            .map(|addr| BootstrapNode {
+                address: *addr,
+                node_id: None,
+                priority: 1,
+                last_successful_connection: None,
+                failure_count: 0,
+                average_response_time: 0.0,
+                reliability_score: 1.0,
+                supported_protocols: vec!["tcp".to_string()],
+            })
+            .collect();
 
         let bootstrap_manager = Arc::new(RwLock::new(BootstrapManager {
             bootstrap_nodes,
@@ -535,26 +542,29 @@ impl PureRustDht {
 
         Ok(dht)
     }
-    
+
     /// Start the DHT node with full persistence and bootstrap integration
     pub async fn start(&mut self) -> Result<(), DhtError> {
         // Bind TCP listener
         let listener = TcpListener::bind(self.local_addr).await?;
         self.listener = Some(listener);
-        
+
         info!("Pure Rust DHT node started on {}", self.local_addr);
-        
+
         // Start accepting connections
         self.start_connection_handler().await?;
-        
+
         // Perform bootstrap process to join the network
         if let Err(e) = self.bootstrap().await {
-            warn!("Bootstrap process failed: {}, continuing with restored state", e);
+            warn!(
+                "Bootstrap process failed: {}, continuing with restored state",
+                e
+            );
         }
 
         // Start periodic tasks
         self.start_periodic_tasks().await;
-        
+
         Ok(())
     }
 
@@ -600,20 +610,20 @@ impl PureRustDht {
             auto_save_interval: self.auto_save_interval,
         }
     }
-    
+
     /// Start connection handler for incoming connections
     async fn start_connection_handler(&self) -> Result<(), DhtError> {
         if let Some(ref listener) = self.listener {
             let routing_table = Arc::clone(&self.routing_table);
             let storage = Arc::clone(&self.storage);
             let keypair = self.keypair.clone();
-            
+
             // Take local reference to avoid lifetime issues
             let listener_addr = listener.local_addr()?;
-            
+
             // Recreate listener for spawned task to avoid borrow checker issues
             let listener = TcpListener::bind(listener_addr).await?;
-            
+
             tokio::spawn(async move {
                 loop {
                     match listener.accept().await {
@@ -621,11 +631,17 @@ impl PureRustDht {
                             let routing_table = Arc::clone(&routing_table);
                             let storage = Arc::clone(&storage);
                             let keypair = keypair.clone();
-                            
+
                             tokio::spawn(async move {
                                 if let Err(e) = Self::handle_connection(
-                                    stream, peer_addr, routing_table, storage, keypair
-                                ).await {
+                                    stream,
+                                    peer_addr,
+                                    routing_table,
+                                    storage,
+                                    keypair,
+                                )
+                                .await
+                                {
                                     warn!("Error handling connection from {}: {}", peer_addr, e);
                                 }
                             });
@@ -638,10 +654,10 @@ impl PureRustDht {
                 }
             });
         }
-        
+
         Ok(())
     }
-    
+
     /// Handle incoming connection
     async fn handle_connection(
         mut stream: TcpStream,
@@ -651,33 +667,33 @@ impl PureRustDht {
         keypair: SigningKey,
     ) -> Result<(), DhtError> {
         debug!("Handling connection from {}", peer_addr);
-        
+
         // Read message length
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await?;
         let msg_len = u32::from_be_bytes(len_buf) as usize;
-        
+
         // Read message data
         let mut msg_buf = vec![0u8; msg_len];
         stream.read_exact(&mut msg_buf).await?;
-        
+
         // Deserialize message
         let message: DhtMessage = bincode::deserialize(&msg_buf)?;
-        
+
         // Process message
         let response = Self::process_message(message, routing_table, storage, &keypair).await?;
-        
+
         // Send response
         let response_data = bincode::serialize(&response)?;
         let response_len = (response_data.len() as u32).to_be_bytes();
-        
+
         stream.write_all(&response_len).await?;
         stream.write_all(&response_data).await?;
         stream.flush().await?;
-        
+
         Ok(())
     }
-    
+
     /// Process incoming DHT message
     async fn process_message(
         message: DhtMessage,
@@ -686,18 +702,20 @@ impl PureRustDht {
         keypair: &SigningKey,
     ) -> Result<DhtMessage, DhtError> {
         match message {
-            DhtMessage::Ping { node_id, timestamp } => {
-                Ok(DhtMessage::Pong {
-                    node_id: Self::calculate_node_id(&keypair.verifying_key().to_bytes()),
-                    timestamp,
-                })
-            }
-            DhtMessage::FindNode { target_id, requester_id } => {
+            DhtMessage::Ping { node_id, timestamp } => Ok(DhtMessage::Pong {
+                node_id: Self::calculate_node_id(&keypair.verifying_key().to_bytes()),
+                timestamp,
+            }),
+            DhtMessage::FindNode {
+                target_id,
+                requester_id,
+            } => {
                 let routing_table = routing_table.read().await;
                 let target_node_id = hex::decode(&target_id)
                     .map_err(|e| DhtError::InvalidMessage(format!("Invalid target_id: {}", e)))?;
-                let target_node_id: NodeId = target_node_id.try_into()
-                    .map_err(|_| DhtError::InvalidMessage("Invalid target_id length".to_string()))?;
+                let target_node_id: NodeId = target_node_id.try_into().map_err(|_| {
+                    DhtError::InvalidMessage("Invalid target_id length".to_string())
+                })?;
                 let closest_nodes = routing_table.find_closest_nodes(&target_node_id, 20);
                 Ok(DhtMessage::FindNodeResponse {
                     nodes: closest_nodes,
@@ -708,16 +726,15 @@ impl PureRustDht {
                 if Self::verify_record(&record)? {
                     let mut storage = storage.write().await;
                     storage.insert(record.key.clone(), record);
-                    Ok(DhtMessage::StoreResponse {
-                        success: true,
-                    })
+                    Ok(DhtMessage::StoreResponse { success: true })
                 } else {
-                    Ok(DhtMessage::StoreResponse {
-                        success: false,
-                    })
+                    Ok(DhtMessage::StoreResponse { success: false })
                 }
             }
-            DhtMessage::FindValue { key, requester_id: _ } => {
+            DhtMessage::FindValue {
+                key,
+                requester_id: _,
+            } => {
                 let storage = storage.read().await;
                 if let Some(record) = storage.get(&key) {
                     Ok(DhtMessage::FindValueResponse {
@@ -735,12 +752,12 @@ impl PureRustDht {
                     })
                 }
             }
-            _ => {
-                Err(DhtError::InvalidMessage("Unsupported message type".to_string()))
-            }
+            _ => Err(DhtError::InvalidMessage(
+                "Unsupported message type".to_string(),
+            )),
         }
     }
-    
+
     /// Send message to peer and receive response
     async fn send_message_to_peer(
         &self,
@@ -749,94 +766,104 @@ impl PureRustDht {
     ) -> Result<DhtMessage, DhtError> {
         // Connect to peer
         let mut stream = TcpStream::connect(peer_addr).await?;
-        
+
         // Serialize message
         let msg_data = bincode::serialize(&message)?;
         let msg_len = (msg_data.len() as u32).to_be_bytes();
-        
+
         // Send message
         stream.write_all(&msg_len).await?;
         stream.write_all(&msg_data).await?;
         stream.flush().await?;
-        
+
         // Read response length
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await?;
         let response_len = u32::from_be_bytes(len_buf) as usize;
-        
+
         // Read response data
         let mut response_buf = vec![0u8; response_len];
         stream.read_exact(&mut response_buf).await?;
-        
+
         // Deserialize response
         let response: DhtMessage = bincode::deserialize(&response_buf)?;
-        
+
         Ok(response)
     }
-    
+
     /// Connect to a specific peer
     async fn connect_to_peer(&self, peer_addr: SocketAddr) -> Result<(), DhtError> {
         let node_id = Self::calculate_node_id(&self.keypair.verifying_key().to_bytes());
-        
+
         // Send ping message (bincode-framed)
         let ping_message = DhtMessage::Ping {
             node_id,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
-                .unwrap_or_default().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
         };
         match self.send_message_to_peer(peer_addr, ping_message).await {
-            Ok(DhtMessage::Pong { node_id: peer_node_id, .. }) => {
+            Ok(DhtMessage::Pong {
+                node_id: peer_node_id,
+                ..
+            }) => {
                 // Add peer to routing table
                 let peer_info = PeerInfo {
                     peer_id: hex::encode(peer_node_id),
                     address: format!("/ip4/{}/tcp/{}", peer_addr.ip(), peer_addr.port())
-                        .parse().unwrap_or_else(|_| "/ip4/127.0.0.1/tcp/0".parse().expect("fallback multiaddr")),
+                        .parse()
+                        .unwrap_or_else(|_| {
+                            "/ip4/127.0.0.1/tcp/0".parse().expect("fallback multiaddr")
+                        }),
                     public_key: vec![], // Would be exchanged during handshake
                     last_seen: SystemTime::now(),
                     avg_response_time: Duration::from_millis(100),
                 };
-                
+
                 let mut routing_table = self.routing_table.write().await;
                 routing_table.add_peer(peer_info);
-                
+
                 info!("Successfully connected to peer {}", peer_addr);
                 Ok(())
             }
-            Ok(_) => Err(DhtError::InvalidMessage("Expected pong response".to_string())),
+            Ok(_) => Err(DhtError::InvalidMessage(
+                "Expected pong response".to_string(),
+            )),
             Err(e) => Err(e),
         }
     }
-    
+
     /// Store a record in the DHT
     pub async fn store(&self, key: &str, value: Vec<u8>) -> Result<(), DhtError> {
         // Create signed record
         let record = self.create_signed_record(key, value)?;
-        
+
         // Find closest nodes to store the record
         let target_id = Self::hash_key(key);
         let routing_table = self.routing_table.read().await;
         let closest_nodes = routing_table.find_closest_nodes(&target_id, 3);
-        
+
         // Store on closest nodes
         for peer in closest_nodes {
             if let Ok(peer_addr) = self.peer_info_to_socket_addr(&peer) {
                 let store_message = DhtMessage::Store {
                     record: record.clone(),
                 };
-                
+
                 if let Err(e) = self.send_message_to_peer(peer_addr, store_message).await {
                     warn!("Failed to store record on peer {}: {}", peer_addr, e);
                 }
             }
         }
-        
+
         // Also store locally
         let mut storage = self.storage.write().await;
         storage.insert(key.to_string(), record);
-        
+
         Ok(())
     }
-    
+
     /// Retrieve a record from the DHT
     pub async fn get(&self, key: &str) -> Result<Vec<u8>, DhtError> {
         // Check local storage first
@@ -846,21 +873,25 @@ impl PureRustDht {
                 return Ok(record.value.clone());
             }
         }
-        
+
         // Search network
         let target_id = Self::hash_key(key);
         let routing_table = self.routing_table.read().await;
         let closest_nodes = routing_table.find_closest_nodes(&target_id, 5);
-        
+
         for peer in closest_nodes {
             if let Ok(peer_addr) = self.peer_info_to_socket_addr(&peer) {
                 let find_message = DhtMessage::FindValue {
                     key: key.to_string(),
-                    requester_id: hex::encode(Self::calculate_node_id(&self.keypair.verifying_key().to_bytes())),
+                    requester_id: hex::encode(Self::calculate_node_id(
+                        &self.keypair.verifying_key().to_bytes(),
+                    )),
                 };
-                
+
                 match self.send_message_to_peer(peer_addr, find_message).await {
-                    Ok(DhtMessage::FindValueResponse { value: Some(value), .. }) => {
+                    Ok(DhtMessage::FindValueResponse {
+                        value: Some(value), ..
+                    }) => {
                         return Ok(value);
                     }
                     Ok(DhtMessage::FindValueResponse { nodes, .. }) => {
@@ -876,26 +907,29 @@ impl PureRustDht {
                 }
             }
         }
-        
-        Err(DhtError::NotFound(format!("Key '{}' not found in DHT", key)))
+
+        Err(DhtError::NotFound(format!(
+            "Key '{}' not found in DHT",
+            key
+        )))
     }
-    
+
     /// Find closest nodes to a target ID
     /// Advanced find node with iterative lookup
     pub async fn find_node(&self, target_id: &str) -> Result<Vec<PeerInfo>, DhtError> {
         self.iterative_find_node(target_id, false).await
     }
-    
+
     /// Advanced find value with iterative lookup
     pub async fn find_value(&self, key: &str) -> Result<Vec<u8>, DhtError> {
         // First check local storage
         if let Ok(value) = self.get(key).await {
             return Ok(value);
         }
-        
+
         // Perform iterative lookup for the key
         let peers = self.iterative_find_node(key, true).await?;
-        
+
         // Query found peers for the value
         for peer in peers {
             if let Ok(addr) = self.peer_info_to_socket_addr(&peer) {
@@ -906,67 +940,84 @@ impl PureRustDht {
                 }
             }
         }
-        
-        Err(DhtError::NotFound(format!("Value not found for key: {}", key)))
+
+        Err(DhtError::NotFound(format!(
+            "Value not found for key: {}",
+            key
+        )))
     }
-    
+
     /// Iterative find node algorithm (Kademlia standard)
-    async fn iterative_find_node(&self, target_id: &str, find_value: bool) -> Result<Vec<PeerInfo>, DhtError> {
+    async fn iterative_find_node(
+        &self,
+        target_id: &str,
+        find_value: bool,
+    ) -> Result<Vec<PeerInfo>, DhtError> {
         let target_hash = Self::hash_key(target_id);
         let alpha = 3; // Parallelism factor
         let k = 20; // Desired number of closest nodes
-        
+
         // Get initial closest nodes from routing table
         let routing_table = self.routing_table.read().await;
         let mut closest_nodes = routing_table.find_closest_nodes(&target_hash, k);
         drop(routing_table);
-        
+
         if closest_nodes.is_empty() {
             return Err(DhtError::NotFound("No nodes in routing table".to_string()));
         }
-        
+
         let mut queried_nodes = std::collections::HashSet::new();
         let mut contacted_nodes = std::collections::HashSet::new();
-        
+
         // Iterative improvement loop
-        for round in 0..10 { // Maximum 10 rounds
+        for round in 0..10 {
+            // Maximum 10 rounds
             let mut candidates = Vec::new();
-            
+
             // Select alpha unqueried nodes from closest_nodes
             for node in &closest_nodes {
                 if !queried_nodes.contains(&node.peer_id) && candidates.len() < alpha {
                     candidates.push(node.clone());
                 }
             }
-            
+
             if candidates.is_empty() {
                 break; // No more nodes to query
             }
-            
+
             // Query candidates in parallel
             let mut tasks = Vec::new();
             for candidate in candidates {
                 queried_nodes.insert(candidate.peer_id.clone());
                 contacted_nodes.insert(candidate.peer_id.clone());
-                
+
                 if let Ok(addr) = self.peer_info_to_socket_addr(&candidate) {
                     let target_id_owned = target_id.to_string();
                     let find_value_flag = find_value;
-                    
+
                     let task = tokio::spawn(async move {
                         if find_value_flag {
                             // Try to find value first via FindValue using bincode framing
                             if let Ok(mut stream) = tokio::net::TcpStream::connect(addr).await {
-                                let msg = DhtMessage::FindValue { key: target_id_owned.clone(), requester_id: "anonymous".to_string() };
+                                let msg = DhtMessage::FindValue {
+                                    key: target_id_owned.clone(),
+                                    requester_id: "anonymous".to_string(),
+                                };
                                 if let Ok(bytes) = bincode::serialize(&msg) {
                                     let len = (bytes.len() as u32).to_be_bytes();
-                                    if stream.write_all(&len).await.is_ok() && stream.write_all(&bytes).await.is_ok() {
+                                    if stream.write_all(&len).await.is_ok()
+                                        && stream.write_all(&bytes).await.is_ok()
+                                    {
                                         let mut len_buf = [0u8; 4];
                                         if stream.read_exact(&mut len_buf).await.is_ok() {
                                             let resp_len = u32::from_be_bytes(len_buf) as usize;
                                             let mut buf = vec![0u8; resp_len];
                                             if stream.read_exact(&mut buf).await.is_ok() {
-                                                if let Ok(DhtMessage::FindValueResponse { value: Some(_), .. }) = bincode::deserialize::<DhtMessage>(&buf) {
+                                                if let Ok(DhtMessage::FindValueResponse {
+                                                    value: Some(_),
+                                                    ..
+                                                }) = bincode::deserialize::<DhtMessage>(&buf)
+                                                {
                                                     // Peer has value; no new nodes from this
                                                     return None;
                                                 }
@@ -984,7 +1035,7 @@ impl PureRustDht {
                     tasks.push(task);
                 }
             }
-            
+
             // Collect results
             let mut new_nodes = Vec::new();
             for task in tasks {
@@ -994,14 +1045,14 @@ impl PureRustDht {
                     }
                 }
             }
-            
+
             // Add new nodes to closest_nodes and sort
             for node in new_nodes {
                 if !contacted_nodes.contains(&node.peer_id) {
                     closest_nodes.push(node);
                 }
             }
-            
+
             // Sort by distance to target and keep only k closest
             let target_hash = Self::hash_key(target_id);
             closest_nodes.sort_by_key(|node| {
@@ -1009,19 +1060,22 @@ impl PureRustDht {
                 Self::xor_distance(&target_hash, &node_hash)
             });
             closest_nodes.truncate(k);
-            
+
             // Check for convergence
             if round > 0 && closest_nodes.len() >= k {
                 // If we have k nodes and no improvement, stop
                 break;
             }
         }
-        
+
         Ok(closest_nodes)
     }
-    
+
     /// Query a peer for closest nodes to target
-    async fn query_peer_for_closest_nodes(peer_addr: std::net::SocketAddr, target_id: &str) -> Option<Vec<PeerInfo>> {
+    async fn query_peer_for_closest_nodes(
+        peer_addr: std::net::SocketAddr,
+        target_id: &str,
+    ) -> Option<Vec<PeerInfo>> {
         // Use the same length-prefixed bincode framing as the daemon handler
         if let Ok(mut stream) = tokio::net::TcpStream::connect(peer_addr).await {
             let message = DhtMessage::FindNode {
@@ -1030,13 +1084,16 @@ impl PureRustDht {
             };
             if let Ok(msg_data) = bincode::serialize(&message) {
                 let len = (msg_data.len() as u32).to_be_bytes();
-                if stream.write_all(&len).await.is_ok() && stream.write_all(&msg_data).await.is_ok() {
+                if stream.write_all(&len).await.is_ok() && stream.write_all(&msg_data).await.is_ok()
+                {
                     let mut len_buf = [0u8; 4];
                     if stream.read_exact(&mut len_buf).await.is_ok() {
                         let resp_len = u32::from_be_bytes(len_buf) as usize;
                         let mut resp_buf = vec![0u8; resp_len];
                         if stream.read_exact(&mut resp_buf).await.is_ok() {
-                            if let Ok(DhtMessage::FindNodeResponse { nodes }) = bincode::deserialize::<DhtMessage>(&resp_buf) {
+                            if let Ok(DhtMessage::FindNodeResponse { nodes }) =
+                                bincode::deserialize::<DhtMessage>(&resp_buf)
+                            {
                                 return Some(nodes);
                             }
                         }
@@ -1046,12 +1103,18 @@ impl PureRustDht {
         }
         None
     }
-    
+
     /// Query a peer for a specific value
-    async fn query_peer_for_value(&self, peer_addr: &std::net::SocketAddr, key: &str) -> Result<Option<Vec<u8>>, DhtError> {
+    async fn query_peer_for_value(
+        &self,
+        peer_addr: &std::net::SocketAddr,
+        key: &str,
+    ) -> Result<Option<Vec<u8>>, DhtError> {
         let find_value = DhtMessage::FindValue {
             key: key.to_string(),
-            requester_id: hex::encode(Self::calculate_node_id(&self.keypair.verifying_key().to_bytes())),
+            requester_id: hex::encode(Self::calculate_node_id(
+                &self.keypair.verifying_key().to_bytes(),
+            )),
         };
         match self.send_message_to_peer(*peer_addr, find_value).await? {
             DhtMessage::FindValueResponse { value: Some(v), .. } => Ok(Some(v)),
@@ -1059,20 +1122,21 @@ impl PureRustDht {
             _ => Ok(None),
         }
     }
-    
+
     /// Store value with intelligent routing
     pub async fn store_with_routing(&self, key: &str, value: Vec<u8>) -> Result<(), DhtError> {
         // Store locally first
         self.store(key, value.clone()).await?;
-        
+
         // Find k closest nodes to the key
         let closest_nodes = self.iterative_find_node(key, false).await?;
-        
+
         // Store on closest nodes
         let mut successful_stores = 0;
         let required_replicas = std::cmp::min(3, closest_nodes.len()); // Store on at least 3 nodes
-        
-        for node in closest_nodes.iter().take(required_replicas * 2) { // Try more nodes for redundancy
+
+        for node in closest_nodes.iter().take(required_replicas * 2) {
+            // Try more nodes for redundancy
             if let Ok(addr) = self.peer_info_to_socket_addr(node) {
                 match self.store_on_peer(&addr, key, &value).await {
                     Ok(_) => {
@@ -1087,58 +1151,74 @@ impl PureRustDht {
                 }
             }
         }
-        
+
         if successful_stores == 0 {
             return Err(DhtError::BootstrapFailed);
         }
-        
-        info!("Successfully stored key '{}' on {} nodes", key, successful_stores);
+
+        info!(
+            "Successfully stored key '{}' on {} nodes",
+            key, successful_stores
+        );
         Ok(())
     }
-    
+
     /// Store a value on a remote peer
-    async fn store_on_peer(&self, peer_addr: &std::net::SocketAddr, key: &str, value: &[u8]) -> Result<(), DhtError> {
-        let mut stream = tokio::net::TcpStream::connect(peer_addr).await
+    async fn store_on_peer(
+        &self,
+        peer_addr: &std::net::SocketAddr,
+        key: &str,
+        value: &[u8],
+    ) -> Result<(), DhtError> {
+        let mut stream = tokio::net::TcpStream::connect(peer_addr)
+            .await
             .map_err(|e| DhtError::Connection(e.to_string()))?;
-            
+
         let record = self.create_signed_record(key, value.to_vec())?;
         let message = DhtMessage::Store { record };
-        
-        let serialized = serde_json::to_vec(&message)
-            .map_err(|e| DhtError::Serialization(Box::new(bincode::ErrorKind::Custom(e.to_string()))))?;
-            
-        stream.write_all(&serialized).await
+
+        let serialized = serde_json::to_vec(&message).map_err(|e| {
+            DhtError::Serialization(Box::new(bincode::ErrorKind::Custom(e.to_string())))
+        })?;
+
+        stream
+            .write_all(&serialized)
+            .await
             .map_err(|e| DhtError::Connection(e.to_string()))?;
-            
+
         let mut buffer = vec![0; 1024];
-        let n = stream.read(&mut buffer).await
+        let n = stream
+            .read(&mut buffer)
+            .await
             .map_err(|e| DhtError::Connection(e.to_string()))?;
-            
+
         buffer.truncate(n);
         let response = serde_json::from_slice::<DhtMessage>(&buffer)
             .map_err(|e| DhtError::Deserialization(e.to_string()))?;
-            
+
         match response {
             DhtMessage::StoreResponse { success: true } => Ok(()),
-            DhtMessage::StoreResponse { success: false } => Err(DhtError::Protocol("Store rejected".to_string())),
+            DhtMessage::StoreResponse { success: false } => {
+                Err(DhtError::Protocol("Store rejected".to_string()))
+            }
             _ => Err(DhtError::Protocol("Unexpected response".to_string())),
         }
     }
-    
+
     /// Get all peer IDs for authentication system integration
     pub async fn get_all_peer_ids(&self) -> Result<Vec<String>, DhtError> {
         let routing_table = self.routing_table.read().await;
         let mut peer_ids = Vec::new();
-        
+
         for bucket in &routing_table.buckets {
             for peer in &bucket.peers {
                 peer_ids.push(peer.peer_id.clone());
             }
         }
-        
+
         Ok(peer_ids)
     }
-    
+
     /// Get local node ID for DHT integration
     pub async fn get_local_node_id(&self) -> Result<NodeId, DhtError> {
         // Generate deterministic node ID from our Ed25519 public key
@@ -1146,13 +1226,13 @@ impl PureRustDht {
         let mut hasher = Sha256::new();
         hasher.update(public_key.to_bytes());
         let hash_result = hasher.finalize();
-        
+
         let mut node_id = [0u8; 32];
         node_id.copy_from_slice(&hash_result[..32]);
-        
+
         Ok(node_id)
     }
-    
+
     /// Store data with enhanced error handling for authentication integration
     pub async fn store_with_metadata(
         &self,
@@ -1165,27 +1245,30 @@ impl PureRustDht {
             value,
             timestamp: SystemTime::now(),
             ttl: Duration::from_secs(3600), // Default 1 hour TTL
-            signature: None, // Authentication system will handle signatures
-            publisher: None, // Authentication system will handle publisher
+            signature: None,                // Authentication system will handle signatures
+            publisher: None,                // Authentication system will handle publisher
             metadata: Some(metadata),
         };
-        
+
         // Store locally
-        self.storage.write().await.insert(key.to_string(), record.clone());
-        
+        self.storage
+            .write()
+            .await
+            .insert(key.to_string(), record.clone());
+
         // Replicate to closest peers for persistence
         self.replicate_to_peers(&record).await?;
-        
+
         // Auto-save if needed
         let last_save = *self.last_save_time.read().await;
         if last_save.elapsed() > self.auto_save_interval {
             self.save_to_storage().await?;
             *self.last_save_time.write().await = Instant::now();
         }
-        
+
         Ok(())
     }
-    
+
     /// Enhanced get with metadata support
     pub async fn get_with_metadata(
         &self,
@@ -1196,12 +1279,14 @@ impl PureRustDht {
             let metadata = record.metadata.clone().unwrap_or_default();
             return Ok(Some((record.value.clone(), metadata)));
         }
-        
+
         // Query remote peers
         let closest_peers = self.find_closest_peers_for_key(key).await?;
-        
+
         for peer in closest_peers {
-            if let Ok(Some((value, metadata))) = self.query_peer_for_key_with_metadata(&peer, key).await {
+            if let Ok(Some((value, metadata))) =
+                self.query_peer_for_key_with_metadata(&peer, key).await
+            {
                 // Cache locally
                 let record = DhtRecord {
                     key: key.to_string(),
@@ -1213,29 +1298,29 @@ impl PureRustDht {
                     metadata: Some(metadata.clone()),
                 };
                 self.storage.write().await.insert(key.to_string(), record);
-                
+
                 return Ok(Some((value, metadata)));
             }
         }
-        
+
         Ok(None)
     }
-    
+
     /// Replicate record to closest peers for fault tolerance
     async fn replicate_to_peers(&self, record: &DhtRecord) -> Result<(), DhtError> {
         let closest_peers = self.find_closest_peers_for_key(&record.key).await?;
         let replication_factor = 3; // Replicate to 3 closest peers
-        
+
         for peer in closest_peers.into_iter().take(replication_factor) {
             if let Err(e) = self.send_store_request_to_peer(&peer, record).await {
                 warn!("Failed to replicate to peer {}: {}", peer.peer_id, e);
                 // Continue with other peers
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Send store request to specific peer
     async fn send_store_request_to_peer(
         &self,
@@ -1244,38 +1329,38 @@ impl PureRustDht {
     ) -> Result<(), DhtError> {
         // Convert multiaddr to socket address
         let socket_addr = self.multiaddr_to_socket_addr(&peer.address)?;
-        
+
         let store_msg = DhtMessage::Store {
             record: record.clone(),
         };
-        
+
         self.send_message_to_peer(socket_addr, store_msg).await?;
-        
+
         Ok(())
     }
-    
+
     /// Find closest peers for a specific key
     async fn find_closest_peers_for_key(&self, key: &str) -> Result<Vec<PeerInfo>, DhtError> {
         let key_hash = Self::hash_key(key);
         let routing_table = self.routing_table.read().await;
-        
+
         let mut all_peers = Vec::new();
         for bucket in &routing_table.buckets {
             all_peers.extend(bucket.peers.clone());
         }
-        
+
         // Sort by XOR distance to key
         all_peers.sort_by(|a, b| {
             let dist_a = Self::xor_distance(&Self::hash_key(&a.peer_id), &key_hash);
             let dist_b = Self::xor_distance(&Self::hash_key(&b.peer_id), &key_hash);
             dist_a.cmp(&dist_b)
         });
-        
+
         // Return closest k peers
         let k = 20; // Kademlia k parameter
         Ok(all_peers.into_iter().take(k).collect())
     }
-    
+
     /// Query peer for key with metadata
     async fn query_peer_for_key_with_metadata(
         &self,
@@ -1283,20 +1368,21 @@ impl PureRustDht {
         key: &str,
     ) -> Result<Option<(Vec<u8>, StorageMetadata)>, DhtError> {
         let socket_addr = self.multiaddr_to_socket_addr(&peer.address)?;
-        
+
         let find_value_msg = DhtMessage::FindValue {
             key: key.to_string(),
             requester_id: hex::encode(self.get_local_node_id().await?),
         };
-        
+
         // Send message and wait for response
-        self.send_message_to_peer(socket_addr, find_value_msg).await?;
-        
+        self.send_message_to_peer(socket_addr, find_value_msg)
+            .await?;
+
         // In a real implementation, this would wait for and parse the response
         // For now, we'll return None to indicate no value found
         Ok(None)
     }
-    
+
     /// Convert multiaddr to socket address
     fn multiaddr_to_socket_addr(&self, multiaddr: &Multiaddr) -> Result<SocketAddr, DhtError> {
         // Simple conversion - in production, this would handle various multiaddr formats
@@ -1319,38 +1405,40 @@ impl PureRustDht {
                 _ => continue,
             }
         }
-        
-        Err(DhtError::InvalidAddress("Could not convert multiaddr to socket addr".to_string()))
+
+        Err(DhtError::InvalidAddress(
+            "Could not convert multiaddr to socket addr".to_string(),
+        ))
     }
-    
+
     /// Hash a key to node ID space
     fn hash_key(key: &str) -> NodeId {
         let mut hasher = Sha256::new();
         hasher.update(key.as_bytes());
         let hash_result = hasher.finalize();
-        
+
         let mut node_id = [0u8; 32];
         node_id.copy_from_slice(&hash_result[..32]);
         node_id
     }
-    
+
     /// Get routing table statistics
     pub async fn get_routing_stats(&self) -> RoutingStats {
         let routing_table = self.routing_table.read().await;
         let mut total_peers = 0;
         let mut active_buckets = 0;
         let mut bucket_distribution = Vec::new();
-        
+
         for (i, bucket) in routing_table.buckets.iter().enumerate() {
             let peer_count = bucket.peers.len();
             total_peers += peer_count;
             bucket_distribution.push((i, peer_count));
-            
+
             if peer_count > 0 {
                 active_buckets += 1;
             }
         }
-        
+
         RoutingStats {
             total_peers,
             active_buckets,
@@ -1359,7 +1447,7 @@ impl PureRustDht {
             bucket_distribution,
         }
     }
-    
+
     /// Create a signed record
     fn create_signed_record(&self, key: &str, value: Vec<u8>) -> Result<DhtRecord, DhtError> {
         let timestamp = SystemTime::now();
@@ -1371,14 +1459,13 @@ impl PureRustDht {
         } else {
             Duration::from_secs(3600)
         };
-        
+
         // Create record content for signing
-        let record_content = format!("{}:{:?}:{:?}:{:?}", 
-            key, value, timestamp, ttl);
-        
+        let record_content = format!("{}:{:?}:{:?}:{:?}", key, value, timestamp, ttl);
+
         // Sign the record
         let signature = self.keypair.sign(record_content.as_bytes());
-        
+
         Ok(DhtRecord {
             key: key.to_string(),
             value,
@@ -1389,45 +1476,51 @@ impl PureRustDht {
             metadata: None, // Default no metadata
         })
     }
-    
+
     /// Verify a record's signature
     fn verify_record(record: &DhtRecord) -> Result<bool, DhtError> {
         let publisher = match &record.publisher {
             Some(p) => p,
             None => return Ok(false), // No publisher to verify
         };
-        
+
         if publisher.len() != 32 {
             return Ok(false);
         }
-        
+
         // Convert Vec<u8> to [u8; 32] for public key
         let mut pub_key_bytes = [0u8; 32];
         pub_key_bytes.copy_from_slice(publisher);
         let public_key = VerifyingKey::from_bytes(&pub_key_bytes)
             .map_err(|e| DhtError::Crypto(format!("Invalid public key: {}", e)))?;
-        
-        let record_content = format!("{}:{:?}:{:?}:{:?}", 
-            record.key, record.value, record.timestamp, record.ttl);
-        
+
+        let record_content = format!(
+            "{}:{:?}:{:?}:{:?}",
+            record.key, record.value, record.timestamp, record.ttl
+        );
+
         let signature_bytes = match &record.signature {
             Some(s) => s,
             None => return Ok(false), // No signature to verify
         };
-        
+
         if signature_bytes.len() != 64 {
             return Ok(false);
         }
-        
+
         // Convert Vec<u8> to [u8; 64] for signature
         let mut sig_bytes = [0u8; 64];
         sig_bytes.copy_from_slice(signature_bytes);
         let signature = Signature::from_bytes(&sig_bytes);
         // Reject expired records even if signature verifies
-        if record.timestamp + record.ttl <= SystemTime::now() { return Ok(false); }
-        Ok(public_key.verify(record_content.as_bytes(), &signature).is_ok())
+        if record.timestamp + record.ttl <= SystemTime::now() {
+            return Ok(false);
+        }
+        Ok(public_key
+            .verify(record_content.as_bytes(), &signature)
+            .is_ok())
     }
-    
+
     /// Calculate node ID from public key
     fn calculate_node_id(public_key: &[u8]) -> NodeId {
         let mut hasher = Sha256::new();
@@ -1437,7 +1530,7 @@ impl PureRustDht {
         node_id.copy_from_slice(&hash);
         node_id
     }
-    
+
     /// Calculate XOR distance between two node IDs
     fn xor_distance(a: &NodeId, b: &NodeId) -> NodeId {
         let mut distance = [0u8; 32];
@@ -1446,35 +1539,39 @@ impl PureRustDht {
         }
         distance
     }
-    
+
     /// Convert PeerInfo to SocketAddr
     fn peer_info_to_socket_addr(&self, peer: &PeerInfo) -> Result<SocketAddr, DhtError> {
         let addr_str = peer.address.to_string();
-        
+
         // Parse multiaddr to extract IP and port
         if let Some(ip_start) = addr_str.find("/ip4/") {
             let ip_start = ip_start + 5;
             if let Some(ip_end) = addr_str[ip_start..].find('/') {
                 let ip = &addr_str[ip_start..ip_start + ip_end];
-                
+
                 if let Some(port_start) = addr_str.find("/tcp/") {
                     let port_start = port_start + 5;
                     if let Some(port_end) = addr_str[port_start..].find('/') {
                         let port = &addr_str[port_start..port_start + port_end];
-                        let socket_addr = format!("{}:{}", ip, port).parse()
-                            .map_err(|e| DhtError::Communication(format!("Invalid address: {}", e)))?;
+                        let socket_addr = format!("{}:{}", ip, port).parse().map_err(|e| {
+                            DhtError::Communication(format!("Invalid address: {}", e))
+                        })?;
                         return Ok(socket_addr);
                     } else {
                         let port = &addr_str[port_start..];
-                        let socket_addr = format!("{}:{}", ip, port).parse()
-                            .map_err(|e| DhtError::Communication(format!("Invalid address: {}", e)))?;
+                        let socket_addr = format!("{}:{}", ip, port).parse().map_err(|e| {
+                            DhtError::Communication(format!("Invalid address: {}", e))
+                        })?;
                         return Ok(socket_addr);
                     }
                 }
             }
         }
-        
-        Err(DhtError::Communication("Invalid multiaddr format".to_string()))
+
+        Err(DhtError::Communication(
+            "Invalid multiaddr format".to_string(),
+        ))
     }
 }
 
@@ -1482,7 +1579,7 @@ impl RoutingTable {
     /// Create new routing table
     pub fn new(local_node_id: NodeId, k_value: usize) -> Self {
         let mut buckets = Vec::new();
-        
+
         // Create 256 buckets for each bit position
         for i in 0..=255 {
             buckets.push(KBucket {
@@ -1491,27 +1588,27 @@ impl RoutingTable {
                 distance_range: (i, i),
             });
         }
-        
+
         RoutingTable {
             buckets,
             local_node_id,
             k_value,
         }
     }
-    
+
     /// Add peer to routing table
     pub fn add_peer(&mut self, peer: PeerInfo) {
         // Calculate distance to determine bucket
         let peer_node_id = Self::hash_peer_id(&peer.peer_id);
         let distance = self.calculate_distance(&peer_node_id);
         let bucket_index = self.distance_to_bucket_index(distance);
-        
+
         if bucket_index < self.buckets.len() {
             let bucket = &mut self.buckets[bucket_index];
-            
+
             // Remove if already exists
             bucket.peers.retain(|p| p.peer_id != peer.peer_id);
-            
+
             // Add to end (most recently seen)
             if bucket.peers.len() < bucket.max_size {
                 bucket.peers.push(peer);
@@ -1522,11 +1619,11 @@ impl RoutingTable {
             }
         }
     }
-    
+
     /// Find closest nodes to target
     pub fn find_closest_nodes(&self, target_id: &NodeId, count: usize) -> Vec<PeerInfo> {
         let mut candidates = Vec::new();
-        
+
         // Collect all peers with their distances
         for bucket in &self.buckets {
             for peer in &bucket.peers {
@@ -1535,15 +1632,16 @@ impl RoutingTable {
                 candidates.push((distance, peer.clone()));
             }
         }
-        
+
         // Sort by distance and return closest
         candidates.sort_by_key(|(distance, _)| *distance);
-        candidates.into_iter()
+        candidates
+            .into_iter()
             .take(count)
             .map(|(_, peer)| peer)
             .collect()
     }
-    
+
     /// Find nodes in a specific bucket for maintenance
     pub fn find_bucket_nodes(&self, bucket_index: usize) -> Vec<PeerInfo> {
         if bucket_index < self.buckets.len() {
@@ -1552,7 +1650,7 @@ impl RoutingTable {
             Vec::new()
         }
     }
-    
+
     /// Get all peers for backup/persistence  
     pub fn get_all_peers(&self) -> Vec<PeerInfo> {
         let mut all_peers = Vec::new();
@@ -1561,11 +1659,11 @@ impl RoutingTable {
         }
         all_peers
     }
-    
+
     /// Remove stale peers based on last seen time
     pub fn remove_stale_peers(&mut self, stale_threshold: Duration) {
         let now = SystemTime::now();
-        
+
         for bucket in &mut self.buckets {
             bucket.peers.retain(|peer| {
                 match now.duration_since(peer.last_seen) {
@@ -1575,7 +1673,7 @@ impl RoutingTable {
             });
         }
     }
-    
+
     /// Update peer response time and last seen
     pub fn update_peer_stats(&mut self, peer_id: &str, response_time: Duration) {
         for bucket in &mut self.buckets {
@@ -1590,29 +1688,32 @@ impl RoutingTable {
             }
         }
     }
-    
+
     /// Find replacement candidates for a failed peer
     pub fn find_replacement_candidates(&self, failed_peer_id: &str, count: usize) -> Vec<PeerInfo> {
         let failed_peer_hash = Self::hash_peer_id(failed_peer_id);
-        
+
         // Find candidates from nearby buckets
-        let bucket_index = self.distance_to_bucket_index(self.calculate_distance(&failed_peer_hash));
+        let bucket_index =
+            self.distance_to_bucket_index(self.calculate_distance(&failed_peer_hash));
         let mut candidates = Vec::new();
-        
+
         // Check current bucket and adjacent buckets
-        for i in bucket_index.saturating_sub(2)..=std::cmp::min(bucket_index + 2, self.buckets.len() - 1) {
+        for i in
+            bucket_index.saturating_sub(2)..=std::cmp::min(bucket_index + 2, self.buckets.len() - 1)
+        {
             for peer in &self.buckets[i].peers {
                 if peer.peer_id != failed_peer_id {
                     candidates.push(peer.clone());
                 }
             }
         }
-        
+
         // Sort by response time and reliability
         candidates.sort_by(|a, b| a.avg_response_time.cmp(&b.avg_response_time));
         candidates.into_iter().take(count).collect()
     }
-    
+
     /// Calculate XOR distance between two node IDs
     fn xor_distance(id1: &NodeId, id2: &NodeId) -> u64 {
         let mut distance = 0u64;
@@ -1621,23 +1722,23 @@ impl RoutingTable {
         }
         distance
     }
-    
+
     /// Calculate distance from local node
     fn calculate_distance(&self, peer_id: &NodeId) -> u64 {
         Self::xor_distance(&self.local_node_id, peer_id)
     }
-    
+
     /// Convert distance to bucket index
     fn distance_to_bucket_index(&self, distance: u64) -> usize {
         if distance == 0 {
             return 0;
         }
-        
+
         // Find the position of the most significant bit
         let msb_pos = 64 - distance.leading_zeros() as usize;
         std::cmp::min(msb_pos, 255)
     }
-    
+
     /// Hash peer ID string to NodeId
     fn hash_peer_id(peer_id: &str) -> NodeId {
         let mut hasher = Sha256::new();
@@ -1661,7 +1762,10 @@ impl PureRustDht {
 
         // Ensure storage directory exists
         if let Err(e) = fs::create_dir_all(storage_dir).await {
-            return Err(DhtError::InvalidMessage(format!("Failed to create storage directory: {}", e)));
+            return Err(DhtError::InvalidMessage(format!(
+                "Failed to create storage directory: {}",
+                e
+            )));
         }
 
         // Save routing table
@@ -1727,8 +1831,11 @@ impl PureRustDht {
                 peer_id: peer_info.peer_id.clone(),
                 address: peer_info.address.to_string(),
                 public_key: peer_info.public_key.clone(),
-                last_seen: peer_info.last_seen.duration_since(UNIX_EPOCH)
-                    .unwrap_or_default().as_secs(),
+                last_seen: peer_info
+                    .last_seen
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
                 response_time_ms: peer_info.avg_response_time.as_millis() as u64,
             };
             serializable_peers.push(serializable_peer);
@@ -1739,23 +1846,28 @@ impl PureRustDht {
         let json_data = serde_json::to_string_pretty(&serializable_peers)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON serialization failed: {}", e)))?;
 
-        fs::write(&peers_file, json_data).await
+        fs::write(&peers_file, json_data)
+            .await
             .map_err(|e| DhtError::InvalidMessage(format!("Failed to write peers file: {}", e)))?;
 
-        debug!("Saved {} peers to routing table storage", serializable_peers.len());
+        debug!(
+            "Saved {} peers to routing table storage",
+            serializable_peers.len()
+        );
         Ok(())
     }
 
     /// Restore routing table from persistent storage
     async fn restore_routing_table(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let peers_file = storage_dir.join("routing_table.json");
-        
+
         if !peers_file.exists() {
             debug!("Routing table file does not exist, starting fresh");
             return Ok(());
         }
 
-        let json_data = fs::read_to_string(&peers_file).await
+        let json_data = fs::read_to_string(&peers_file)
+            .await
             .map_err(|e| DhtError::InvalidMessage(format!("Failed to read peers file: {}", e)))?;
 
         let serializable_peers: Vec<SerializablePeerInfo> = serde_json::from_str(&json_data)
@@ -1767,9 +1879,11 @@ impl PureRustDht {
         for serializable_peer in &serializable_peers {
             if let Ok(socket_addr) = serializable_peer.address.parse::<SocketAddr>() {
                 let address = if socket_addr.is_ipv4() {
-                    Multiaddr::from(socket_addr.ip()).with(multiaddr::Protocol::Tcp(socket_addr.port()))
+                    Multiaddr::from(socket_addr.ip())
+                        .with(multiaddr::Protocol::Tcp(socket_addr.port()))
                 } else {
-                    Multiaddr::from(socket_addr.ip()).with(multiaddr::Protocol::Tcp(socket_addr.port()))
+                    Multiaddr::from(socket_addr.ip())
+                        .with(multiaddr::Protocol::Tcp(socket_addr.port()))
                 };
                 let peer_info = PeerInfo {
                     peer_id: serializable_peer.peer_id.clone(),
@@ -1796,11 +1910,17 @@ impl PureRustDht {
             let serializable_record = SerializableDhtRecord {
                 key: key.clone(),
                 value: record.value.clone(),
-                timestamp: record.timestamp.duration_since(UNIX_EPOCH)
-                    .unwrap_or_default().as_secs(),
+                timestamp: record
+                    .timestamp
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
                 ttl: record.ttl.as_secs(),
-                signature: record.signature.clone().unwrap_or_default(),  // 既に Vec<u8>
-                publisher: String::from_utf8_lossy(&record.publisher.as_ref().unwrap_or(&Vec::new())).to_string(),   // Vec<u8> から String へ
+                signature: record.signature.clone().unwrap_or_default(), // 既に Vec<u8>
+                publisher: String::from_utf8_lossy(
+                    &record.publisher.as_ref().unwrap_or(&Vec::new()),
+                )
+                .to_string(), // Vec<u8> から String へ
             };
             serializable_records.push(serializable_record);
         }
@@ -1810,23 +1930,28 @@ impl PureRustDht {
         let json_data = serde_json::to_string_pretty(&serializable_records)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON serialization failed: {}", e)))?;
 
-        fs::write(&records_file, json_data).await
-            .map_err(|e| DhtError::InvalidMessage(format!("Failed to write records file: {}", e)))?;
+        fs::write(&records_file, json_data).await.map_err(|e| {
+            DhtError::InvalidMessage(format!("Failed to write records file: {}", e))
+        })?;
 
-        debug!("Saved {} DHT records to storage", serializable_records.len());
+        debug!(
+            "Saved {} DHT records to storage",
+            serializable_records.len()
+        );
         Ok(())
     }
 
     /// Restore DHT records from persistent storage
     async fn restore_dht_records(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let records_file = storage_dir.join("dht_records.json");
-        
+
         if !records_file.exists() {
             debug!("DHT records file does not exist, starting fresh");
             return Ok(());
         }
 
-        let json_data = fs::read_to_string(&records_file).await
+        let json_data = fs::read_to_string(&records_file)
+            .await
             .map_err(|e| DhtError::InvalidMessage(format!("Failed to read records file: {}", e)))?;
 
         let serializable_records: Vec<SerializableDhtRecord> = serde_json::from_str(&json_data)
@@ -1840,11 +1965,11 @@ impl PureRustDht {
                 value: serializable_record.value,
                 timestamp: UNIX_EPOCH + Duration::from_secs(serializable_record.timestamp),
                 ttl: Duration::from_secs(serializable_record.ttl),
-                signature: Some(serializable_record.signature),  // 既に Vec<u8>
-                publisher: Some(serializable_record.publisher.into_bytes()),   // String から Vec<u8> へ
+                signature: Some(serializable_record.signature), // 既に Vec<u8>
+                publisher: Some(serializable_record.publisher.into_bytes()), // String から Vec<u8> へ
                 metadata: None, // Legacy records have no metadata
             };
-            
+
             // Check if record is still valid (not expired)
             let now = SystemTime::now();
             if record.timestamp + record.ttl > now {
@@ -1859,30 +1984,35 @@ impl PureRustDht {
     /// Save bootstrap information to persistent storage
     async fn save_bootstrap_info(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let bootstrap_manager = self.bootstrap_manager.read().await;
-        
+
         // Save bootstrap nodes information
         let bootstrap_file = storage_dir.join("bootstrap_nodes.json");
         let json_data = serde_json::to_string_pretty(&bootstrap_manager.bootstrap_nodes)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON serialization failed: {}", e)))?;
 
-        fs::write(&bootstrap_file, json_data).await
-            .map_err(|e| DhtError::InvalidMessage(format!("Failed to write bootstrap file: {}", e)))?;
+        fs::write(&bootstrap_file, json_data).await.map_err(|e| {
+            DhtError::InvalidMessage(format!("Failed to write bootstrap file: {}", e))
+        })?;
 
-        debug!("Saved {} bootstrap nodes to storage", bootstrap_manager.bootstrap_nodes.len());
+        debug!(
+            "Saved {} bootstrap nodes to storage",
+            bootstrap_manager.bootstrap_nodes.len()
+        );
         Ok(())
     }
 
     /// Restore bootstrap information from persistent storage
     async fn restore_bootstrap_info(&self, storage_dir: &PathBuf) -> Result<(), DhtError> {
         let bootstrap_file = storage_dir.join("bootstrap_nodes.json");
-        
+
         if !bootstrap_file.exists() {
             debug!("Bootstrap nodes file does not exist, using configured nodes");
             return Ok(());
         }
 
-        let json_data = fs::read_to_string(&bootstrap_file).await
-            .map_err(|e| DhtError::InvalidMessage(format!("Failed to read bootstrap file: {}", e)))?;
+        let json_data = fs::read_to_string(&bootstrap_file).await.map_err(|e| {
+            DhtError::InvalidMessage(format!("Failed to read bootstrap file: {}", e))
+        })?;
 
         let bootstrap_nodes: Vec<BootstrapNode> = serde_json::from_str(&json_data)
             .map_err(|e| DhtError::InvalidMessage(format!("JSON deserialization failed: {}", e)))?;
@@ -1891,7 +2021,10 @@ impl PureRustDht {
         let mut bootstrap_manager = self.bootstrap_manager.write().await;
         bootstrap_manager.bootstrap_nodes = bootstrap_nodes;
 
-        info!("Restored {} bootstrap nodes from storage", bootstrap_manager.bootstrap_nodes.len());
+        info!(
+            "Restored {} bootstrap nodes from storage",
+            bootstrap_manager.bootstrap_nodes.len()
+        );
         Ok(())
     }
 
@@ -1928,15 +2061,15 @@ impl PureRustDht {
             // Estimate compression by comparing raw vs compressed sizes
             let mut uncompressed_size = 0u64;
             let mut compressed_size = 0u64;
-            
+
             for (_key, record) in storage.iter() {
                 let raw_data = bincode::serialize(record).unwrap_or_default();
                 uncompressed_size += raw_data.len() as u64;
-                
+
                 // Simulate compression (in real implementation, use actual compression)
                 compressed_size += (raw_data.len() as f64 * 0.7) as u64; // ~30% compression
             }
-            
+
             if uncompressed_size > 0 {
                 compressed_size as f64 / uncompressed_size as f64
             } else {
@@ -1966,7 +2099,7 @@ impl PureRustDht {
         info!("Starting DHT bootstrap process");
 
         let bootstrap_manager = self.bootstrap_manager.read().await;
-        
+
         if bootstrap_manager.bootstrap_nodes.is_empty() {
             warn!("No bootstrap nodes configured, cannot join network");
             return Err(DhtError::BootstrapFailed);
@@ -1975,8 +2108,11 @@ impl PureRustDht {
         // Sort bootstrap nodes by priority and reliability
         let mut sorted_nodes = bootstrap_manager.bootstrap_nodes.clone();
         sorted_nodes.sort_by(|a, b| {
-            a.priority.cmp(&b.priority)
-                .then_with(|| b.reliability_score.partial_cmp(&a.reliability_score).unwrap_or(std::cmp::Ordering::Equal))
+            a.priority.cmp(&b.priority).then_with(|| {
+                b.reliability_score
+                    .partial_cmp(&a.reliability_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         let max_concurrent = bootstrap_manager.max_concurrent_attempts;
@@ -1994,7 +2130,7 @@ impl PureRustDht {
             for node in chunk {
                 let node_addr = node.address;
                 let timeout = connection_timeout;
-                
+
                 let handle = tokio::spawn(async move {
                     Self::attempt_bootstrap_connection(node_addr, timeout).await
                 });
@@ -2007,7 +2143,7 @@ impl PureRustDht {
                     Ok(Ok(_)) => {
                         successful_connections += 1;
                         info!("Successfully connected to bootstrap node: {}", addr);
-                        
+
                         // Perform initial DHT queries to populate routing table
                         if let Err(e) = self.perform_initial_queries(addr).await {
                             warn!("Failed to perform initial queries to {}: {}", addr, e);
@@ -2031,16 +2167,24 @@ impl PureRustDht {
         }
 
         if successful_connections < min_successful {
-            error!("Bootstrap failed: only {} of {} required connections successful", 
-                   successful_connections, min_successful);
+            error!(
+                "Bootstrap failed: only {} of {} required connections successful",
+                successful_connections, min_successful
+            );
             return Err(DhtError::BootstrapFailed);
         }
 
-        info!("Bootstrap completed successfully: {}/{} connections established", 
-              successful_connections, successful_connections + failed_connections);
+        info!(
+            "Bootstrap completed successfully: {}/{} connections established",
+            successful_connections,
+            successful_connections + failed_connections
+        );
 
         // Update bootstrap node statistics (Resultを無視しない)
-        if let Err(e) = self.update_bootstrap_statistics(successful_connections, failed_connections).await {
+        if let Err(e) = self
+            .update_bootstrap_statistics(successful_connections, failed_connections)
+            .await
+        {
             warn!("Failed to update bootstrap statistics: {e}");
         }
 
@@ -2052,25 +2196,25 @@ impl PureRustDht {
 
     /// Attempt to connect to a single bootstrap node
     async fn attempt_bootstrap_connection(
-        node_addr: SocketAddr, 
-        timeout: Duration
+        node_addr: SocketAddr,
+        timeout: Duration,
     ) -> Result<(), DhtError> {
         let connection_start = Instant::now();
 
         // Attempt TCP connection with timeout
-        let stream = tokio::time::timeout(
-            timeout,
-            TcpStream::connect(node_addr)
-        ).await
-        .map_err(|_| DhtError::Connection("Bootstrap connection timeout".to_string()))?
-        .map_err(|e| DhtError::Connection(format!("Bootstrap connection failed: {}", e)))?;
+        let stream = tokio::time::timeout(timeout, TcpStream::connect(node_addr))
+            .await
+            .map_err(|_| DhtError::Connection("Bootstrap connection timeout".to_string()))?
+            .map_err(|e| DhtError::Connection(format!("Bootstrap connection failed: {}", e)))?;
 
         // Send ping message to verify connectivity
         // Build real ping message using our local node id
         let ping_msg = DhtMessage::Ping {
             node_id: Self::calculate_node_id(&self.keypair.verifying_key().to_bytes()),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
-                .unwrap_or_default().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
         };
 
         // Serialize and send ping with bincode framing
@@ -2078,26 +2222,40 @@ impl PureRustDht {
         let len = (msg_data.len() as u32).to_be_bytes();
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut stream = stream;
-        stream.write_all(&len).await
+        stream
+            .write_all(&len)
+            .await
             .map_err(|e| DhtError::Connection(format!("Write failed: {}", e)))?;
-        stream.write_all(&msg_data).await
+        stream
+            .write_all(&msg_data)
+            .await
             .map_err(|e| DhtError::Connection(format!("Write failed: {}", e)))?;
         let mut len_buf = [0u8; 4];
-        tokio::time::timeout(timeout, stream.read_exact(&mut len_buf)).await
+        tokio::time::timeout(timeout, stream.read_exact(&mut len_buf))
+            .await
             .map_err(|_| DhtError::Connection("Bootstrap read timeout".to_string()))
             .and_then(|r| r.map_err(|e| DhtError::Connection(format!("Read error: {}", e))))?;
         let resp_len = u32::from_be_bytes(len_buf) as usize;
         let mut resp_buf = vec![0u8; resp_len];
-        tokio::time::timeout(timeout, stream.read_exact(&mut resp_buf)).await
+        tokio::time::timeout(timeout, stream.read_exact(&mut resp_buf))
+            .await
             .map_err(|_| DhtError::Connection("Bootstrap read timeout".to_string()))
             .and_then(|r| r.map_err(|e| DhtError::Connection(format!("Read error: {}", e))))?;
         match bincode::deserialize::<DhtMessage>(&resp_buf) {
             Ok(DhtMessage::Pong { .. }) => {
-                debug!("Bootstrap connection to {} successful in {:?}", node_addr, connection_start.elapsed());
+                debug!(
+                    "Bootstrap connection to {} successful in {:?}",
+                    node_addr,
+                    connection_start.elapsed()
+                );
                 Ok(())
             }
-            Ok(_) => Err(DhtError::Protocol("Unexpected bootstrap response".to_string())),
-            Err(_) => Err(DhtError::Deserialization("Invalid bootstrap response".to_string())),
+            Ok(_) => Err(DhtError::Protocol(
+                "Unexpected bootstrap response".to_string(),
+            )),
+            Err(_) => Err(DhtError::Deserialization(
+                "Invalid bootstrap response".to_string(),
+            )),
         }
     }
 
@@ -2105,7 +2263,7 @@ impl PureRustDht {
     async fn perform_initial_queries(&self, bootstrap_addr: SocketAddr) -> Result<(), DhtError> {
         // Generate random node IDs to query for, this helps populate our routing table
         let mut query_targets = Vec::new();
-        
+
         // Query for our own node ID to find closest peers
         let local_node_id = Self::calculate_node_id(&self.keypair.verifying_key().to_bytes());
         query_targets.push(hex::encode(local_node_id));
@@ -2118,13 +2276,18 @@ impl PureRustDht {
 
         // Perform find_node queries for each target
         for target_id in query_targets {
-            if let Some(peer_list) = Self::query_peer_for_closest_nodes(bootstrap_addr, &target_id).await {
+            if let Some(peer_list) =
+                Self::query_peer_for_closest_nodes(bootstrap_addr, &target_id).await
+            {
                 let peer_count = peer_list.len();
                 let mut routing_table = self.routing_table.write().await;
                 for peer in peer_list {
                     routing_table.add_peer(peer);
                 }
-                debug!("Added {} peers to routing table from initial query", peer_count);
+                debug!(
+                    "Added {} peers to routing table from initial query",
+                    peer_count
+                );
             }
         }
 
@@ -2132,37 +2295,51 @@ impl PureRustDht {
     }
 
     /// Update bootstrap node statistics based on connection results
-    async fn update_bootstrap_statistics(&self, successful: usize, failed: usize) -> Result<(), DhtError> {
+    async fn update_bootstrap_statistics(
+        &self,
+        successful: usize,
+        failed: usize,
+    ) -> Result<(), DhtError> {
         let mut bootstrap_manager = self.bootstrap_manager.write().await;
-        
+
         // Update reliability scores based on success/failure rates
         let total_attempts = successful + failed;
         if total_attempts > 0 {
             let success_rate = successful as f64 / total_attempts as f64;
-            
+
             for node in &mut bootstrap_manager.bootstrap_nodes {
                 // Update reliability score with exponential moving average
                 let alpha = 0.1; // Learning rate
-                node.reliability_score = node.reliability_score * (1.0 - alpha) + success_rate * alpha;
-                
+                node.reliability_score =
+                    node.reliability_score * (1.0 - alpha) + success_rate * alpha;
+
                 // Update last successful connection if this attempt was successful
                 if successful > 0 {
                     node.last_successful_connection = Some(
-                        SystemTime::now().duration_since(UNIX_EPOCH)
-                            .unwrap_or_default().as_secs()
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
                     );
                 }
             }
         }
 
-        debug!("Updated bootstrap statistics: {} successful, {} failed", successful, failed);
+        debug!(
+            "Updated bootstrap statistics: {} successful, {} failed",
+            successful, failed
+        );
         Ok(())
     }
 
     /// Add a new bootstrap node
-    pub async fn add_bootstrap_node(&self, address: SocketAddr, priority: u32) -> Result<(), DhtError> {
+    pub async fn add_bootstrap_node(
+        &self,
+        address: SocketAddr,
+        priority: u32,
+    ) -> Result<(), DhtError> {
         let mut bootstrap_manager = self.bootstrap_manager.write().await;
-        
+
         let new_node = BootstrapNode {
             address,
             node_id: None,
@@ -2175,31 +2352,36 @@ impl PureRustDht {
         };
 
         bootstrap_manager.bootstrap_nodes.push(new_node);
-        info!("Added new bootstrap node: {} with priority {}", address, priority);
-        
+        info!(
+            "Added new bootstrap node: {} with priority {}",
+            address, priority
+        );
+
         // Save updated bootstrap configuration
         let storage_guard = self.persistent_storage.read().await;
         self.save_bootstrap_info(&storage_guard.storage_dir).await?;
-        
+
         Ok(())
     }
 
     /// Remove a bootstrap node
     pub async fn remove_bootstrap_node(&self, address: SocketAddr) -> Result<bool, DhtError> {
         let mut bootstrap_manager = self.bootstrap_manager.write().await;
-        
+
         let initial_len = bootstrap_manager.bootstrap_nodes.len();
-        bootstrap_manager.bootstrap_nodes.retain(|node| node.address != address);
-        
+        bootstrap_manager
+            .bootstrap_nodes
+            .retain(|node| node.address != address);
+
         let removed = bootstrap_manager.bootstrap_nodes.len() < initial_len;
         if removed {
             info!("Removed bootstrap node: {}", address);
-            
+
             // Save updated bootstrap configuration
             let storage_guard = self.persistent_storage.read().await;
             self.save_bootstrap_info(&storage_guard.storage_dir).await?;
         }
-        
+
         Ok(removed)
     }
 
@@ -2219,7 +2401,7 @@ impl PureRustDht {
     pub async fn perform_network_health_check(&self) -> Result<bool, DhtError> {
         if !self.is_network_connected().await {
             warn!("Network disconnection detected, attempting automatic recovery");
-            
+
             // Attempt to reconnect through bootstrap
             match self.bootstrap().await {
                 Ok(_) => {

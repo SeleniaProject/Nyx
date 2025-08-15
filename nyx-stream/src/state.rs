@@ -5,10 +5,10 @@
 //! For brevity we model HalfClosed in two variants depending on which side closed.
 
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant};
 use std::collections::{HashMap, VecDeque};
-use tokio::time::sleep;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 /// Stream logical state.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -73,7 +73,10 @@ impl Stream {
 
     /// Transition Idle → Open on first send.
     pub fn send_data(&mut self, data: &[u8]) -> Vec<u8> {
-        assert!(matches!(self.state, StreamState::Idle | StreamState::Open | StreamState::HalfClosedRemote));
+        assert!(matches!(
+            self.state,
+            StreamState::Idle | StreamState::Open | StreamState::HalfClosedRemote
+        ));
         if self.state == StreamState::Idle {
             self.state = StreamState::Open;
         }
@@ -84,19 +87,25 @@ impl Stream {
             data,
         };
         let bytes = crate::stream_frame::build_stream_frame(&frame);
-        self.sent.insert(self.send_offset, SentSegment { 
-            offset: self.send_offset, 
-            len: data.len(), 
-            timestamp: Instant::now(),
-            data: data.to_vec(),
-        });
+        self.sent.insert(
+            self.send_offset,
+            SentSegment {
+                offset: self.send_offset,
+                len: data.len(),
+                timestamp: Instant::now(),
+                data: data.to_vec(),
+            },
+        );
         self.send_offset += data.len() as u32;
         bytes
     }
 
     /// Mark local side finished sending.
     pub fn finish(&mut self) -> Option<Vec<u8>> {
-        if matches!(self.state, StreamState::Open | StreamState::HalfClosedRemote) {
+        if matches!(
+            self.state,
+            StreamState::Open | StreamState::HalfClosedRemote
+        ) {
             let frame = crate::stream_frame::StreamFrame {
                 stream_id: self.id,
                 offset: self.send_offset,
@@ -109,7 +118,9 @@ impl Stream {
                 s => s,
             };
             Some(crate::stream_frame::build_stream_frame(&frame))
-        } else { None }
+        } else {
+            None
+        }
     }
 
     /// Handle stream data from peer.
@@ -138,7 +149,9 @@ impl Stream {
                 to_remove.push(off);
             }
         }
-        for off in to_remove { self.sent.remove(&off); }
+        for off in to_remove {
+            self.sent.remove(&off);
+        }
     }
 
     /// Periodic timer: detect losses (RTO) and request retransmission.
@@ -163,12 +176,16 @@ impl Stream {
                     fin: false,
                     data: &seg.data,
                 };
-                let _ = tx.send(crate::stream_frame::build_stream_frame(&frame)).await;
+                let _ = tx
+                    .send(crate::stream_frame::build_stream_frame(&frame))
+                    .await;
             }
         }
     }
 
-    pub fn state(&self) -> StreamState { self.state }
+    pub fn state(&self) -> StreamState {
+        self.state
+    }
 
     /// Generate fake data using the advanced cache for testing and simulation
     pub fn generate_fake_data(&mut self, size: usize) -> Vec<u8> {
@@ -195,7 +212,7 @@ mod tests {
         let (ack_tx, _rx) = mpsc::channel(1);
         let mut s = Stream::new(1, ack_tx);
         assert_eq!(s.state(), StreamState::Idle);
-        let _ = s.send_data(&[1,2]);
+        let _ = s.send_data(&[1, 2]);
         assert_eq!(s.state(), StreamState::Open);
         let fin = s.finish();
         assert!(fin.is_some());
@@ -241,7 +258,7 @@ impl FakeDataCache {
     /// Store fake data pattern with computed hash key
     pub fn store(&mut self, data: Vec<u8>) -> u64 {
         let hash_key = self.compute_hash(&data);
-        
+
         if self.patterns.contains_key(&hash_key) {
             // Update existing entry
             if let Some(entry) = self.patterns.get_mut(&hash_key) {
@@ -257,16 +274,16 @@ impl FakeDataCache {
                 last_access: Instant::now(),
                 creation_time: Instant::now(),
             };
-            
+
             // Evict if necessary
             if self.patterns.len() >= self.max_size {
                 self.evict_lru();
             }
-            
+
             self.patterns.insert(hash_key, entry);
             self.access_order.push_back(hash_key);
         }
-        
+
         hash_key
     }
 
@@ -281,18 +298,19 @@ impl FakeDataCache {
             self.miss_count += 1;
             None
         };
-        
+
         if data.is_some() {
             self.update_lru_order(hash_key);
         }
-        
+
         data
     }
 
     /// Generate fake data using cached patterns or create new
     pub fn generate_fake_data(&mut self, size: usize) -> Vec<u8> {
         // Try to find similar-sized cached pattern
-        let best_match = self.patterns
+        let best_match = self
+            .patterns
             .iter()
             .filter(|(_, entry)| entry.data.len() <= size * 2 && entry.data.len() >= size / 2)
             .max_by_key(|(_, entry)| entry.frequency)
@@ -319,14 +337,14 @@ impl FakeDataCache {
         // Generate new fake data if no suitable cached pattern
         let mut data = vec![0u8; size];
         let mut rng = fastrand::Rng::new();
-        
+
         // Create pseudo-realistic pattern
         for i in 0..size {
             data[i] = match i % 4 {
                 0 => rng.u8(0x20..0x7F), // ASCII printable
                 1 => rng.u8(0x00..0x20), // Control chars
                 2 => rng.u8(0x80..0xFF), // High bytes
-                _ => (i % 256) as u8,     // Sequential pattern
+                _ => (i % 256) as u8,    // Sequential pattern
             };
         }
 
@@ -353,7 +371,8 @@ impl FakeDataCache {
     /// Clear expired entries based on age
     pub fn cleanup_expired(&mut self, max_age: Duration) {
         let now = Instant::now();
-        let expired_keys: Vec<u64> = self.patterns
+        let expired_keys: Vec<u64> = self
+            .patterns
             .iter()
             .filter(|(_, entry)| now.duration_since(entry.creation_time) > max_age)
             .map(|(key, _)| *key)
@@ -367,9 +386,9 @@ impl FakeDataCache {
 
     /// Compute hash for data pattern
     fn compute_hash(&self, data: &[u8]) -> u64 {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
-        
+        use std::hash::{Hash, Hasher};
+
         let mut hasher = DefaultHasher::new();
         data.hash(&mut hasher);
         hasher.finish()

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
-use tracing::{debug, warn, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Resource types that can be tracked and cleaned up
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -63,7 +63,11 @@ pub enum ResourceError {
 pub type CleanupCallback = Box<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 /// Async resource cleanup callback
-pub type AsyncCleanupCallback = Box<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+pub type AsyncCleanupCallback = Box<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Resource metadata and cleanup information
 pub struct ResourceInfo {
@@ -91,7 +95,10 @@ impl std::fmt::Debug for ResourceInfo {
             .field("is_cleaned_up", &self.is_cleaned_up)
             .field("metadata", &self.metadata)
             .field("has_cleanup_callback", &self.cleanup_callback.is_some())
-            .field("has_async_cleanup_callback", &self.async_cleanup_callback.is_some())
+            .field(
+                "has_async_cleanup_callback",
+                &self.async_cleanup_callback.is_some(),
+            )
             .finish()
     }
 }
@@ -105,7 +112,7 @@ impl Clone for ResourceInfo {
             created_at: self.created_at,
             last_accessed: self.last_accessed,
             access_count: self.access_count,
-            cleanup_callback: None, // Can't clone function pointers
+            cleanup_callback: None,       // Can't clone function pointers
             async_cleanup_callback: None, // Can't clone function pointers
             is_cleaned_up: self.is_cleaned_up,
             metadata: self.metadata.clone(),
@@ -206,19 +213,19 @@ pub struct ResourceManager {
     stream_id: u32,
     resources: Arc<RwLock<HashMap<String, ResourceInfo>>>,
     limits: ResourceLimits,
-    
+
     // Statistics
     cleanup_successes: Arc<Mutex<u64>>,
     cleanup_failures: Arc<Mutex<u64>>,
     resources_cleaned_up: Arc<Mutex<u64>>,
-    
+
     // Background cleanup task
     cleanup_task: Option<JoinHandle<()>>,
     cleanup_interval: Duration,
-    
+
     // Weak references for automatic cleanup
     weak_refs: Arc<Mutex<HashMap<String, Box<dyn std::any::Any + Send + Sync>>>>,
-    
+
     // Configuration
     enable_automatic_cleanup: bool,
     enable_memory_monitoring: bool,
@@ -247,21 +254,23 @@ impl ResourceManager {
     pub async fn register_resource(&self, mut resource: ResourceInfo) -> Result<(), ResourceError> {
         // Check limits
         self.check_limits(&resource).await?;
-        
+
         let resource_id = resource.id.clone();
         let resource_type = resource.resource_type;
         let size = resource.size_bytes;
-        
+
         resource.access(); // Mark as accessed
-        
+
         {
             let mut resources = self.resources.write().await;
             resources.insert(resource_id.clone(), resource);
         }
-        
-        debug!("Registered resource: {} (type: {}, size: {} bytes)", 
-               resource_id, resource_type, size);
-        
+
+        debug!(
+            "Registered resource: {} (type: {}, size: {} bytes)",
+            resource_id, resource_type, size
+        );
+
         Ok(())
     }
 
@@ -273,15 +282,15 @@ impl ResourceManager {
     ) -> Result<Arc<T>, ResourceError> {
         let resource_id = resource.id.clone();
         self.register_resource(resource).await?;
-        
+
         let arc_value = Arc::new(value);
         let weak_ref = Arc::downgrade(&arc_value);
-        
+
         {
             let mut weak_refs = self.weak_refs.lock().await;
             weak_refs.insert(resource_id.clone(), Box::new(weak_ref));
         }
-        
+
         Ok(arc_value)
     }
 
@@ -302,14 +311,14 @@ impl ResourceManager {
             let mut resources = self.resources.write().await;
             resources.remove(resource_id)
         };
-        
+
         if let Some(mut resource) = resource {
             if resource.is_cleaned_up {
                 return Err(ResourceError::AlreadyCleanedUp(resource_id.to_string()));
             }
-            
+
             let cleanup_result = self.execute_cleanup(&mut resource).await;
-            
+
             match cleanup_result {
                 Ok(()) => {
                     *self.cleanup_successes.lock().await += 1;
@@ -334,27 +343,33 @@ impl ResourceManager {
             let resources = self.resources.read().await;
             resources.keys().cloned().collect()
         };
-        
+
         let mut errors = Vec::new();
-        
+
         for resource_id in resource_ids {
             if let Err(e) = self.cleanup_resource(&resource_id).await {
                 errors.push(e);
             }
         }
-        
+
         // Clean up weak references
         {
             let mut weak_refs = self.weak_refs.lock().await;
             weak_refs.clear();
         }
-        
+
         if errors.is_empty() {
-            info!("Successfully cleaned up all resources for stream {}", self.stream_id);
+            info!(
+                "Successfully cleaned up all resources for stream {}",
+                self.stream_id
+            );
             Ok(())
         } else {
-            warn!("Some resources failed to clean up for stream {}: {} errors", 
-                  self.stream_id, errors.len());
+            warn!(
+                "Some resources failed to clean up for stream {}: {} errors",
+                self.stream_id,
+                errors.len()
+            );
             Err(errors)
         }
     }
@@ -364,7 +379,7 @@ impl ResourceManager {
         if !self.enable_automatic_cleanup || self.cleanup_task.is_some() {
             return;
         }
-        
+
         let resources = Arc::clone(&self.resources);
         let weak_refs = Arc::clone(&self.weak_refs);
         let limits = self.limits.clone();
@@ -374,16 +389,16 @@ impl ResourceManager {
         let cleanup_failures = Arc::clone(&self.cleanup_failures);
         let resources_cleaned_up = Arc::clone(&self.resources_cleaned_up);
         let cleanup_timeout = self.cleanup_timeout;
-        
+
         let task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Clean up resources based on weak references
                 Self::cleanup_weak_references(&resources, &weak_refs).await;
-                
+
                 // Clean up idle and old resources
                 Self::cleanup_idle_resources(
                     &resources,
@@ -392,21 +407,28 @@ impl ResourceManager {
                     &cleanup_successes,
                     &cleanup_failures,
                     &resources_cleaned_up,
-                ).await;
-                
+                )
+                .await;
+
                 debug!("Automatic cleanup completed for stream {}", stream_id);
             }
         });
-        
+
         self.cleanup_task = Some(task);
-        debug!("Started automatic cleanup task for stream {}", self.stream_id);
+        debug!(
+            "Started automatic cleanup task for stream {}",
+            self.stream_id
+        );
     }
 
     /// Stop automatic cleanup background task
     pub async fn stop_automatic_cleanup(&mut self) {
         if let Some(task) = self.cleanup_task.take() {
             task.abort();
-            debug!("Stopped automatic cleanup task for stream {}", self.stream_id);
+            debug!(
+                "Stopped automatic cleanup task for stream {}",
+                self.stream_id
+            );
         }
     }
 
@@ -415,7 +437,7 @@ impl ResourceManager {
         weak_refs: &Arc<Mutex<HashMap<String, Box<dyn std::any::Any + Send + Sync>>>>,
     ) {
         let mut to_cleanup = Vec::new();
-        
+
         {
             let mut weak_refs_guard = weak_refs.lock().await;
             weak_refs_guard.retain(|resource_id, _weak_ref_any| {
@@ -425,13 +447,16 @@ impl ResourceManager {
                 false // For now, clean up all weak references
             });
         }
-        
+
         if !to_cleanup.is_empty() {
             let mut resources_guard = resources.write().await;
             for resource_id in to_cleanup {
                 if let Some(mut resource) = resources_guard.remove(&resource_id) {
                     if let Err(e) = Self::execute_cleanup_sync(&mut resource).await {
-                        error!("Failed to clean up auto-managed resource {}: {}", resource_id, e);
+                        error!(
+                            "Failed to clean up auto-managed resource {}: {}",
+                            resource_id, e
+                        );
                     } else {
                         debug!("Auto-cleaned up resource: {}", resource_id);
                     }
@@ -449,32 +474,33 @@ impl ResourceManager {
         resources_cleaned_up: &Arc<Mutex<u64>>,
     ) {
         let mut to_cleanup = Vec::new();
-        
+
         {
             let resources_guard = resources.read().await;
             for (id, resource) in resources_guard.iter() {
                 if resource.is_cleaned_up {
                     continue;
                 }
-                
+
                 let should_cleanup = resource.idle_time() > limits.max_idle_time
                     || resource.age() > limits.max_resource_age;
-                
+
                 if should_cleanup {
                     to_cleanup.push(id.clone());
                 }
             }
         }
-        
+
         if !to_cleanup.is_empty() {
             let mut resources_guard = resources.write().await;
             for resource_id in to_cleanup {
                 if let Some(mut resource) = resources_guard.remove(&resource_id) {
                     let cleanup_result = tokio::time::timeout(
                         cleanup_timeout,
-                        Self::execute_cleanup_sync(&mut resource)
-                    ).await;
-                    
+                        Self::execute_cleanup_sync(&mut resource),
+                    )
+                    .await;
+
                     match cleanup_result {
                         Ok(Ok(())) => {
                             *cleanup_successes.lock().await += 1;
@@ -503,21 +529,21 @@ impl ResourceManager {
         if resource.is_cleaned_up {
             return Ok(());
         }
-        
+
         // Try async cleanup first
         if let Some(ref async_callback) = resource.async_cleanup_callback {
             let result = async_callback().await;
             resource.is_cleaned_up = true;
             return result;
         }
-        
+
         // Fall back to sync cleanup
         if let Some(ref callback) = resource.cleanup_callback {
             let result = callback();
             resource.is_cleaned_up = true;
             return result;
         }
-        
+
         // No cleanup callback, just mark as cleaned up
         resource.is_cleaned_up = true;
         Ok(())
@@ -525,13 +551,18 @@ impl ResourceManager {
 
     async fn check_limits(&self, resource: &ResourceInfo) -> Result<(), ResourceError> {
         let resources = self.resources.read().await;
-        
+
         // Check per-type limits
-        if let Some(&limit) = self.limits.max_resources_per_type.get(&resource.resource_type) {
-            let current_count = resources.values()
+        if let Some(&limit) = self
+            .limits
+            .max_resources_per_type
+            .get(&resource.resource_type)
+        {
+            let current_count = resources
+                .values()
                 .filter(|r| r.resource_type == resource.resource_type)
                 .count();
-            
+
             if current_count >= limit {
                 return Err(ResourceError::LimitExceeded {
                     resource_type: resource.resource_type,
@@ -540,13 +571,12 @@ impl ResourceManager {
                 });
             }
         }
-        
+
         // Check total memory limit
         if self.enable_memory_monitoring {
-            let total_memory: usize = resources.values()
-                .map(|r| r.size_bytes)
-                .sum::<usize>() + resource.size_bytes;
-            
+            let total_memory: usize =
+                resources.values().map(|r| r.size_bytes).sum::<usize>() + resource.size_bytes;
+
             if total_memory > self.limits.max_total_memory {
                 return Err(ResourceError::LimitExceeded {
                     resource_type: ResourceType::Buffer, // Generic for memory
@@ -555,39 +585,39 @@ impl ResourceManager {
                 });
             }
         }
-        
+
         Ok(())
     }
 
     /// Get current resource usage statistics
     pub async fn get_stats(&self) -> ResourceStats {
         let resources = self.resources.read().await;
-        
+
         let mut resources_by_type = HashMap::new();
         let mut memory_by_type = HashMap::new();
         let mut total_memory = 0;
         let mut oldest_age = None;
         let mut total_idle_time = Duration::ZERO;
         let mut idle_count = 0;
-        
+
         for resource in resources.values() {
             *resources_by_type.entry(resource.resource_type).or_insert(0) += 1;
             *memory_by_type.entry(resource.resource_type).or_insert(0) += resource.size_bytes;
             total_memory += resource.size_bytes;
-            
+
             let age = resource.age();
             oldest_age = Some(oldest_age.map_or(age, |old: Duration| old.max(age)));
-            
+
             total_idle_time += resource.idle_time();
             idle_count += 1;
         }
-        
+
         let average_idle_time = if idle_count > 0 {
             Some(total_idle_time / idle_count as u32)
         } else {
             None
         };
-        
+
         ResourceStats {
             total_resources: resources.len(),
             total_memory_bytes: total_memory,
@@ -637,31 +667,31 @@ impl ResourceManager {
     pub async fn force_cleanup_over_limits(&self) -> Result<usize, Vec<ResourceError>> {
         let mut cleaned_up = 0;
         let mut errors = Vec::new();
-        
+
         // Find resources that exceed limits
         let to_cleanup: Vec<String> = {
             let resources = self.resources.read().await;
             let mut candidates = Vec::new();
-            
+
             for (id, resource) in resources.iter() {
                 let should_cleanup = resource.idle_time() > self.limits.max_idle_time
                     || resource.age() > self.limits.max_resource_age;
-                
+
                 if should_cleanup {
                     candidates.push(id.clone());
                 }
             }
-            
+
             candidates
         };
-        
+
         for resource_id in to_cleanup {
             match self.cleanup_resource(&resource_id).await {
                 Ok(()) => cleaned_up += 1,
                 Err(e) => errors.push(e),
             }
         }
-        
+
         if errors.is_empty() {
             Ok(cleaned_up)
         } else {
@@ -675,10 +705,13 @@ impl Drop for ResourceManager {
         if let Some(task) = self.cleanup_task.take() {
             task.abort();
         }
-        
+
         // Note: We can't do async cleanup in Drop, so we just log a warning
         // The caller should call cleanup_all() before dropping
-        warn!("ResourceManager dropped without explicit cleanup for stream {}", self.stream_id);
+        warn!(
+            "ResourceManager dropped without explicit cleanup for stream {}",
+            self.stream_id
+        );
     }
 }
 
@@ -690,15 +723,11 @@ mod tests {
     #[tokio::test]
     async fn test_resource_registration() {
         let manager = ResourceManager::new(1);
-        
-        let resource = ResourceInfo::new(
-            "test_resource".to_string(),
-            ResourceType::Buffer,
-            1024,
-        );
-        
+
+        let resource = ResourceInfo::new("test_resource".to_string(), ResourceType::Buffer, 1024);
+
         manager.register_resource(resource).await.unwrap();
-        
+
         let stats = manager.get_stats().await;
         assert_eq!(stats.total_resources, 1);
         assert_eq!(stats.total_memory_bytes, 1024);
@@ -709,21 +738,18 @@ mod tests {
         let manager = ResourceManager::new(1);
         let cleaned_up = Arc::new(AtomicBool::new(false));
         let cleaned_up_clone = Arc::clone(&cleaned_up);
-        
-        let resource = ResourceInfo::new(
-            "test_resource".to_string(),
-            ResourceType::Buffer,
-            1024,
-        ).with_cleanup_callback(Box::new(move || {
-            cleaned_up_clone.store(true, Ordering::SeqCst);
-            Ok(())
-        }));
-        
+
+        let resource = ResourceInfo::new("test_resource".to_string(), ResourceType::Buffer, 1024)
+            .with_cleanup_callback(Box::new(move || {
+                cleaned_up_clone.store(true, Ordering::SeqCst);
+                Ok(())
+            }));
+
         manager.register_resource(resource).await.unwrap();
         manager.cleanup_resource("test_resource").await.unwrap();
-        
+
         assert!(cleaned_up.load(Ordering::SeqCst));
-        
+
         let stats = manager.get_stats().await;
         assert_eq!(stats.total_resources, 0);
         assert_eq!(stats.cleanup_successes, 1);
@@ -734,25 +760,25 @@ mod tests {
         let manager = ResourceManager::new(1);
         let cleaned_up = Arc::new(AtomicBool::new(false));
         let cleaned_up_clone = Arc::clone(&cleaned_up);
-        
-        let resource = ResourceInfo::new(
-            "auto_resource".to_string(),
-            ResourceType::Buffer,
-            1024,
-        ).with_cleanup_callback(Box::new(move || {
-            cleaned_up_clone.store(true, Ordering::SeqCst);
-            Ok(())
-        }));
-        
+
+        let resource = ResourceInfo::new("auto_resource".to_string(), ResourceType::Buffer, 1024)
+            .with_cleanup_callback(Box::new(move || {
+                cleaned_up_clone.store(true, Ordering::SeqCst);
+                Ok(())
+            }));
+
         let data = "test data";
-        let arc_data = manager.register_resource_with_auto_cleanup(resource, data).await.unwrap();
-        
+        let arc_data = manager
+            .register_resource_with_auto_cleanup(resource, data)
+            .await
+            .unwrap();
+
         // Drop the Arc
         drop(arc_data);
-        
+
         // Trigger cleanup
         ResourceManager::cleanup_weak_references(&manager.resources, &manager.weak_refs).await;
-        
+
         // Should be cleaned up automatically
         assert!(cleaned_up.load(Ordering::SeqCst));
     }
@@ -761,26 +787,21 @@ mod tests {
     async fn test_resource_limits() {
         let mut manager = ResourceManager::new(1);
         let mut limits = ResourceLimits::default();
-        limits.max_resources_per_type.insert(ResourceType::Buffer, 2);
+        limits
+            .max_resources_per_type
+            .insert(ResourceType::Buffer, 2);
         manager.set_limits(limits);
-        
+
         // Should be able to register up to limit
         for i in 0..2 {
-            let resource = ResourceInfo::new(
-                format!("resource_{}", i),
-                ResourceType::Buffer,
-                1024,
-            );
+            let resource = ResourceInfo::new(format!("resource_{}", i), ResourceType::Buffer, 1024);
             manager.register_resource(resource).await.unwrap();
         }
-        
+
         // Should fail on exceeding limit
-        let resource = ResourceInfo::new(
-            "resource_overflow".to_string(),
-            ResourceType::Buffer,
-            1024,
-        );
-        
+        let resource =
+            ResourceInfo::new("resource_overflow".to_string(), ResourceType::Buffer, 1024);
+
         let result = manager.register_resource(resource).await;
         assert!(matches!(result, Err(ResourceError::LimitExceeded { .. })));
     }
@@ -788,22 +809,18 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_all() {
         let manager = ResourceManager::new(1);
-        
+
         // Register multiple resources
         for i in 0..3 {
-            let resource = ResourceInfo::new(
-                format!("resource_{}", i),
-                ResourceType::Buffer,
-                1024,
-            );
+            let resource = ResourceInfo::new(format!("resource_{}", i), ResourceType::Buffer, 1024);
             manager.register_resource(resource).await.unwrap();
         }
-        
+
         let stats_before = manager.get_stats().await;
         assert_eq!(stats_before.total_resources, 3);
-        
+
         manager.cleanup_all().await.unwrap();
-        
+
         let stats_after = manager.get_stats().await;
         assert_eq!(stats_after.total_resources, 0);
         assert_eq!(stats_after.resources_cleaned_up, 3);
@@ -814,23 +831,20 @@ mod tests {
         let manager = ResourceManager::new(1);
         let cleaned_up = Arc::new(AtomicBool::new(false));
         let cleaned_up_clone = Arc::clone(&cleaned_up);
-        
-        let resource = ResourceInfo::new(
-            "async_resource".to_string(),
-            ResourceType::Buffer,
-            1024,
-        ).with_async_cleanup_callback(Box::new(move || {
-            let cleaned_up = Arc::clone(&cleaned_up_clone);
-            Box::pin(async move {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                cleaned_up.store(true, Ordering::SeqCst);
-                Ok(())
-            })
-        }));
-        
+
+        let resource = ResourceInfo::new("async_resource".to_string(), ResourceType::Buffer, 1024)
+            .with_async_cleanup_callback(Box::new(move || {
+                let cleaned_up = Arc::clone(&cleaned_up_clone);
+                Box::pin(async move {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    cleaned_up.store(true, Ordering::SeqCst);
+                    Ok(())
+                })
+            }));
+
         manager.register_resource(resource).await.unwrap();
         manager.cleanup_resource("async_resource").await.unwrap();
-        
+
         assert!(cleaned_up.load(Ordering::SeqCst));
     }
 }

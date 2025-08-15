@@ -9,14 +9,12 @@
 //! The adapter intentionally does not enforce AEAD/FEC here; those can be
 //! configured via the zero-copy pipeline if desired by callers.
 
+use anyhow::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use anyhow::Result;
 
-use nyx_core::zero_copy::{
-    ZeroCopyManager, ZeroCopyManagerConfig,
-};
 use nyx_core::zero_copy::integration::ZeroCopyPipeline;
+use nyx_core::zero_copy::{ZeroCopyManager, ZeroCopyManagerConfig};
 
 /// Runtime adapter that owns a zero-copy pipeline bound to a local UDP socket.
 pub struct ZeroCopyTxAdapter {
@@ -32,7 +30,11 @@ impl ZeroCopyTxAdapter {
         let pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id)
             .with_transmission(bind_addr)
             .await?;
-        Ok(Self { manager, pipeline, target: tokio::sync::Mutex::new(None) })
+        Ok(Self {
+            manager,
+            pipeline,
+            target: tokio::sync::Mutex::new(None),
+        })
     }
 
     /// Set default target address for subsequent sends.
@@ -42,8 +44,13 @@ impl ZeroCopyTxAdapter {
 
     /// Send a packet to `target`. If `target` is None, uses the default target.
     pub async fn send(&mut self, data: &[u8], target: Option<SocketAddr>) -> Result<usize> {
-        let dest = if let Some(t) = target { t } else {
-            self.target.lock().await.ok_or_else(|| anyhow::anyhow!("no target configured"))?
+        let dest = if let Some(t) = target {
+            t
+        } else {
+            self.target
+                .lock()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("no target configured"))?
         };
         // Use the end-to-end pipeline. AEAD/FEC are optional (not configured here).
         let bytes_sent = self
@@ -56,10 +63,11 @@ impl ZeroCopyTxAdapter {
 
     /// Expose current aggregated metrics from the pipeline manager.
     pub async fn metrics(&self) -> nyx_core::zero_copy::AllocationMetrics {
-        let path = self.manager.get_critical_path(&self.pipeline.path_id).await
+        let path = self
+            .manager
+            .get_critical_path(&self.pipeline.path_id)
+            .await
             .expect("critical path must exist while adapter lives");
         path.get_metrics().await
     }
 }
-
-

@@ -1,8 +1,8 @@
 /// 256-bit node identifier (blake3(pubkey) prefix).
-pub type NodeId = [u8; 32]; 
+pub type NodeId = [u8; 32];
 
 /// Path identifier for multipath data plane (0-255)
-/// 
+///
 /// PathID is a critical component of the Nyx Protocol v1.0 multipath data plane.
 /// It identifies which of up to 8 concurrent network paths a packet should use,
 /// enabling weighted round-robin scheduling and load balancing across multiple routes.
@@ -25,7 +25,7 @@ impl NodeEndpoint {
             port: addr.port(),
         }
     }
-    
+
     pub fn to_socket_addr(&self) -> std::net::SocketAddr {
         std::net::SocketAddr::new(self.ip, self.port)
     }
@@ -39,7 +39,7 @@ impl std::fmt::Display for NodeEndpoint {
 
 impl std::str::FromStr for NodeEndpoint {
     type Err = std::net::AddrParseError;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let addr: std::net::SocketAddr = s.parse()?;
         Ok(Self::new(addr))
@@ -59,7 +59,7 @@ impl From<NodeEndpoint> for std::net::SocketAddr {
 }
 
 /// Maximum number of concurrent paths in multipath mode (v1.0 specification)
-/// 
+///
 /// While PathID is u8 (0-255), the practical limit is 8 paths due to
 /// scheduling efficiency and network resource constraints.
 pub const MAX_PATHS: usize = 8;
@@ -88,4 +88,4 @@ pub fn is_system_path_id(path_id: PathId) -> bool {
 /// Validate PathID is within acceptable user range (1-239)
 pub fn is_valid_user_path_id(path_id: PathId) -> bool {
     path_id > CONTROL_PATH_ID && path_id < SYSTEM_PATH_ID_START
-} 
+}

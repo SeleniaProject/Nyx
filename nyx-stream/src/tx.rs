@@ -1,20 +1,20 @@
 #![forbid(unsafe_code)]
 
-use tokio::sync::mpsc;
-#[cfg(feature = "fec")]
-pub use nyx_fec::{TimingObfuscator, TimingConfig, Packet};
 use super::Sequencer;
-use tracing::instrument;
 #[cfg(feature = "hpke")]
-use crate::{HpkeRekeyManager, RekeyDecision, seal_for_rekey};
+use crate::{seal_for_rekey, HpkeRekeyManager, RekeyDecision};
 #[cfg(feature = "hpke")]
-use nyx_crypto::hpke::{PublicKey};
+use nyx_crypto::hpke::PublicKey;
 #[cfg(feature = "hpke")]
 use nyx_crypto::noise::SessionKey; // may be needed later for external APIs
-#[cfg(feature = "telemetry")]
-use nyx_telemetry::{inc_hpke_rekey_initiated, inc_hpke_rekey_applied};
+#[cfg(feature = "fec")]
+pub use nyx_fec::{Packet, TimingConfig, TimingObfuscator};
 #[cfg(feature = "telemetry")]
 use nyx_telemetry::record_stream_send;
+#[cfg(feature = "telemetry")]
+use nyx_telemetry::{inc_hpke_rekey_applied, inc_hpke_rekey_initiated};
+use tokio::sync::mpsc;
+use tracing::instrument;
 
 // Compatibility implementation used when the `fec` feature is disabled.
 // Mirrors the public surface and timing semantics of `nyx_fec::timing` so that
@@ -37,7 +37,10 @@ mod fec_compat {
     impl Default for TimingConfig {
         fn default() -> Self {
             // Keep defaults aligned with `nyx_fec::timing::TimingConfig` for parity.
-            Self { mean_ms: 20.0, sigma_ms: 10.0 }
+            Self {
+                mean_ms: 20.0,
+                sigma_ms: 10.0,
+            }
         }
     }
 
@@ -74,10 +77,14 @@ mod fec_compat {
         }
 
         /// Get a clone of the internal sender so producers can enqueue packets.
-        pub fn sender(&self) -> mpsc::Sender<Packet> { self.in_tx.clone() }
+        pub fn sender(&self) -> mpsc::Sender<Packet> {
+            self.in_tx.clone()
+        }
 
         /// Receive next obfuscated packet.
-        pub async fn recv(&mut self) -> Option<Packet> { self.out_rx.recv().await }
+        pub async fn recv(&mut self) -> Option<Packet> {
+            self.out_rx.recv().await
+        }
     }
 
     /// Sample a non-negative delay in milliseconds from N(mean, sigma).
@@ -90,7 +97,9 @@ mod fec_compat {
         // Clamp u1 away from 0 to avoid ln(0).
         let u1 = loop {
             let v = fastrand::f64();
-            if v > f64::MIN_POSITIVE { break v; }
+            if v > f64::MIN_POSITIVE {
+                break v;
+            }
         };
         let u2 = fastrand::f64();
         let z0 = (-2.0_f64 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
@@ -107,7 +116,10 @@ mod fec_compat {
         async fn delay_not_excessive_for_reasonable_params() {
             // This is a soft timing check to ensure the compat layer behaves similarly
             // to the main `nyx_fec` timing implementation.
-            let cfg = TimingConfig { mean_ms: 15.0, sigma_ms: 5.0 };
+            let cfg = TimingConfig {
+                mean_ms: 15.0,
+                sigma_ms: 5.0,
+            };
             let obf = TimingObfuscator::new(cfg);
             let start = Instant::now();
             let tx = obf.sender();
@@ -122,7 +134,7 @@ mod fec_compat {
 }
 
 #[cfg(not(feature = "fec"))]
-pub use fec_compat::{TimingObfuscator, TimingConfig, Packet};
+pub use fec_compat::{Packet, TimingConfig, TimingObfuscator};
 
 /// TxQueue integrates TimingObfuscator and provides outgoing packet stream.
 pub struct TxQueue {
@@ -154,7 +166,17 @@ impl TxQueue {
             }
         });
 
-    Self { in_tx, out_rx, sequencer: tokio::sync::Mutex::new(Sequencer::new()), #[cfg(feature="hpke")] rekey_mgr: tokio::sync::Mutex::new(None), #[cfg(feature="hpke")] peer_hpke_pk: None, #[cfg(feature="hpke")] pending_rekey_frames: tokio::sync::Mutex::new(Vec::new()) }
+        Self {
+            in_tx,
+            out_rx,
+            sequencer: tokio::sync::Mutex::new(Sequencer::new()),
+            #[cfg(feature = "hpke")]
+            rekey_mgr: tokio::sync::Mutex::new(None),
+            #[cfg(feature = "hpke")]
+            peer_hpke_pk: None,
+            #[cfg(feature = "hpke")]
+            pending_rekey_frames: tokio::sync::Mutex::new(Vec::new()),
+        }
     }
 
     #[cfg(feature = "hpke")]
@@ -165,7 +187,11 @@ impl TxQueue {
 
     #[cfg(feature = "hpke")]
     pub async fn hpke_current_key_clone(&self) -> Option<SessionKey> {
-        self.rekey_mgr.lock().await.as_ref().map(|m| m.current_key().clone())
+        self.rekey_mgr
+            .lock()
+            .await
+            .as_ref()
+            .map(|m| m.current_key().clone())
     }
 
     #[cfg(feature = "hpke")]
@@ -177,29 +203,45 @@ impl TxQueue {
     }
 
     #[cfg(feature = "hpke")]
-    pub async fn send_all_rekey_frames_via<F>(&self, mut sender: F) where F: FnMut(&[u8]) -> bool {
+    pub async fn send_all_rekey_frames_via<F>(&self, mut sender: F)
+    where
+        F: FnMut(&[u8]) -> bool,
+    {
         // Drain then attempt immediate send through provided closure (e.g., control channel writer)
         let frames = self.drain_rekey_frames().await;
-        for f in frames { let _ = sender(&f); }
+        for f in frames {
+            let _ = sender(&f);
+        }
     }
 
     #[cfg(feature = "hpke")]
-    pub async fn flush_rekey_frames<F>(&self, mut sender: F) where F: FnMut(&[u8]) -> bool {
+    pub async fn flush_rekey_frames<F>(&self, mut sender: F)
+    where
+        F: FnMut(&[u8]) -> bool,
+    {
         let mut guard = self.pending_rekey_frames.lock().await;
         let mut retained = Vec::new();
         for frame in guard.iter() {
-            if !sender(frame) { retained.push(frame.clone()); }
+            if !sender(frame) {
+                retained.push(frame.clone());
+            }
         }
         *guard = retained; // keep unsent
     }
 
     #[cfg(feature = "hpke")]
-    pub async fn flush_rekey_frames_async<F, Fut>(&self, mut sender: F) where F: FnMut(Vec<u8>) -> Fut, Fut: std::future::Future<Output=bool> {
+    pub async fn flush_rekey_frames_async<F, Fut>(&self, mut sender: F)
+    where
+        F: FnMut(Vec<u8>) -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
         let mut guard = self.pending_rekey_frames.lock().await;
         let mut retained = Vec::new();
         // drain in FIFO order
         for frame in guard.drain(..) {
-            if !sender(frame.clone()).await { retained.push(frame); }
+            if !sender(frame.clone()).await {
+                retained.push(frame);
+            }
         }
         *guard = retained;
     }
@@ -208,8 +250,8 @@ impl TxQueue {
     #[instrument(name = "nyx.stream.send", skip_all, fields(path_id = -1i8, cid = "unknown"))]
     pub async fn send(&self, bytes: Vec<u8>) {
         let _ = self.in_tx.send(Packet(bytes)).await;
-    #[cfg(feature = "telemetry")]
-    record_stream_send(255, "unknown"); // 255 sentinel for no specific path
+        #[cfg(feature = "telemetry")]
+        record_stream_send(255, "unknown"); // 255 sentinel for no specific path
     }
 
     /// Send bytes tagged with PathID, returning assigned sequence number.
@@ -223,40 +265,41 @@ impl TxQueue {
         buf.extend_from_slice(&s.to_le_bytes());
         buf.extend_from_slice(&bytes);
         let _ = self.in_tx.send(Packet(buf)).await;
-    #[cfg(feature = "telemetry")]
-    record_stream_send(path_id, "unknown");
-    #[cfg(feature = "hpke")]
-    {
-        // Evaluate rekey policy after each packet send.
-        if let Some(mgr) = self.rekey_mgr.lock().await.as_mut() {
-            match mgr.on_packet_sent() {
-                RekeyDecision::NoAction => {},
-                RekeyDecision::Initiate => {
-                    if let Some(peer_pk) = &self.peer_hpke_pk {
-                        if let Ok((frame, new_key)) = seal_for_rekey(peer_pk, b"nyx-hpke-rekey") {
-                            // Install new key locally
-                            mgr.install_new_key(new_key);
-                            #[cfg(feature="telemetry")]
+        #[cfg(feature = "telemetry")]
+        record_stream_send(path_id, "unknown");
+        #[cfg(feature = "hpke")]
+        {
+            // Evaluate rekey policy after each packet send.
+            if let Some(mgr) = self.rekey_mgr.lock().await.as_mut() {
+                match mgr.on_packet_sent() {
+                    RekeyDecision::NoAction => {}
+                    RekeyDecision::Initiate => {
+                        if let Some(peer_pk) = &self.peer_hpke_pk {
+                            if let Ok((frame, new_key)) = seal_for_rekey(peer_pk, b"nyx-hpke-rekey")
                             {
-                                inc_hpke_rekey_initiated();
-                                inc_hpke_rekey_applied();
-                            }
-                            // Serialize and stash frame for later control channel transmission
-                            let bytes = crate::build_rekey_frame(&frame);
-                            self.pending_rekey_frames.lock().await.push(bytes);
-                            // NOTE: Future: if a control channel handle is registered, attempt immediate send here.
-                        } else {
-                            #[cfg(feature="telemetry")]
-                            {
-                                nyx_telemetry::inc_hpke_rekey_failure();
-                                nyx_telemetry::inc_hpke_rekey_failure_reason("generate");
+                                // Install new key locally
+                                mgr.install_new_key(new_key);
+                                #[cfg(feature = "telemetry")]
+                                {
+                                    inc_hpke_rekey_initiated();
+                                    inc_hpke_rekey_applied();
+                                }
+                                // Serialize and stash frame for later control channel transmission
+                                let bytes = crate::build_rekey_frame(&frame);
+                                self.pending_rekey_frames.lock().await.push(bytes);
+                                // NOTE: Future: if a control channel handle is registered, attempt immediate send here.
+                            } else {
+                                #[cfg(feature = "telemetry")]
+                                {
+                                    nyx_telemetry::inc_hpke_rekey_failure();
+                                    nyx_telemetry::inc_hpke_rekey_failure_reason("generate");
+                                }
                             }
                         }
                     }
                 }
             }
         }
-    }
         s
     }
 

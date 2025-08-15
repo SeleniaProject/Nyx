@@ -1,14 +1,8 @@
 /// @spec 7. Extended Packet Format
 // Updated: simple_frame module provides SimpleFrame structures; previous MultipathFrame placeholder removed.
 // (No direct dependency needed for header flag tests.)
-
 use nyx_stream::{
-    FrameHeader,
-    build_header,
-    build_header_ext,
-    parse_header,
-    parse_header_ext,
-    FLAG_HAS_PATH_ID,
+    build_header_ext, parse_header, parse_header_ext, FrameHeader, FLAG_HAS_PATH_ID,
     FLAG_MULTIPATH_ENABLED,
 };
 
@@ -16,7 +10,11 @@ use nyx_stream::{
 // and appends the PathID byte correctly.
 #[test]
 fn build_ext_sets_flags_and_appends_path_id() {
-    let hdr = FrameHeader { frame_type: 0, flags: 0x00, length: 300 };
+    let hdr = FrameHeader {
+        frame_type: 0,
+        flags: 0x00,
+        length: 300,
+    };
     let bytes = build_header_ext(hdr, Some(42));
 
     // Extended header must be 5 bytes when PathID is present
@@ -27,8 +25,16 @@ fn build_ext_sets_flags_and_appends_path_id() {
     assert_eq!(parsed_base.frame_type, 0);
     assert_eq!(parsed_base.length, 300);
     // Both flags should be visible after parse: HAS_PATH_ID (in byte0 flags) and MULTIPATH (from byte1 bit7)
-    assert_ne!(parsed_base.flags & FLAG_HAS_PATH_ID, 0, "FLAG_HAS_PATH_ID must be set");
-    assert_ne!(parsed_base.flags & FLAG_MULTIPATH_ENABLED, 0, "FLAG_MULTIPATH_ENABLED must be set");
+    assert_ne!(
+        parsed_base.flags & FLAG_HAS_PATH_ID,
+        0,
+        "FLAG_HAS_PATH_ID must be set"
+    );
+    assert_ne!(
+        parsed_base.flags & FLAG_MULTIPATH_ENABLED,
+        0,
+        "FLAG_MULTIPATH_ENABLED must be set"
+    );
 
     // Parse extended header and verify PathID value
     let (_, parsed_ext) = parse_header_ext(&bytes).expect("parse extended header");
@@ -39,7 +45,11 @@ fn build_ext_sets_flags_and_appends_path_id() {
 // and does not append the PathID byte.
 #[test]
 fn build_ext_without_path_id_has_no_flags_and_no_extra_byte() {
-    let hdr = FrameHeader { frame_type: 2, flags: 0x05, length: 127 };
+    let hdr = FrameHeader {
+        frame_type: 2,
+        flags: 0x05,
+        length: 127,
+    };
     let bytes = build_header_ext(hdr, None);
 
     // Header must remain 4 bytes without PathID

@@ -1,4 +1,6 @@
-use nyx_crypto::noise::{initiator_generate, responder_process, initiator_finalize, derive_session_key};
+use nyx_crypto::noise::{
+    derive_session_key, initiator_finalize, initiator_generate, responder_process,
+};
 
 #[test]
 fn noise_nyx_handshake_vector() {
@@ -16,4 +18,4 @@ fn noise_nyx_handshake_vector() {
     let key_resp = derive_session_key(&shared_resp);
 
     assert_eq!(key_init.0, key_resp.0, "Session keys must match");
-} 
+}

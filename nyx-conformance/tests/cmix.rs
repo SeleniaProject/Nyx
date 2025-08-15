@@ -1,4 +1,7 @@
-use nyx_mix::{cmix::{CmixController, verify_batch}, vdf};
+use nyx_mix::{
+    cmix::{verify_batch, CmixController},
+    vdf,
+};
 use tokio::time::Duration;
 
 /// @spec 4. cMix Integration
@@ -17,4 +20,4 @@ async fn cmix_batch_verification() {
         .expect("batch timeout")
         .expect("controller closed");
     assert!(verify_batch(&batch, controller.params(), None));
-} 
+}

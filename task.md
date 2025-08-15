@@ -1,53 +1,68 @@
-NyxNet 未実装/プレースホルダー総点検チェックリスト
+### NyxNet v1.0 仕様準拠 未実装/要補完タスク一覧
 
-注意: 本チェックリストは仕様書(`spec/`配下)およびコード全体を横断的に走査し、未実装・プレースホルダー・スタブ・一時無効化・将来計画を網羅的に列挙しています。各項目は原則「実装」または「撤去(不要コード)」が必要です。
+以下は `spec/` に定義された Nyx Protocol v1.0 の要件に対し、コードベースで未実装または不足している点を精査し、実装タスクとして整理したものです。各タスクは根拠となる仕様/ドキュメントと、主な対象ファイルを併記します。
 
-nyx-sdk-wasm
-- [x] WASM: Multipath/Plugin system 未実装 → API 設計（control/query）を確定し順次実装(`nyx-sdk-wasm/src/lib.rs`)
-- [x] WASM: HPKE 等の公開API拡張（wasm-safe RNG/KEMの安定化に合わせ公開）(`nyx-sdk-wasm/src/lib.rs`)
- - [x] WASM: Multipath API 拡張（固定重み/再計算/履歴取得）と Plugin Registry 拡張（一括インポート/必須切替/IDエクスポート）
- - [x] WASM: ヘッドレス向け wasm テスト追加（Multipath 選択履歴/プラグイン設定ラウンドトリップ）(`nyx-sdk-wasm/tests/wasm_smoke.rs`)
+---
 
-nyx-mobile-ffi
-- [x] iOS/Android 非対象プラットフォーム時のスタブを縮小し、モバイル機能の本実装連携(`nyx-mobile-ffi/src/ios.rs`, `android.rs`, `common.rs`)
-- [x] Android/iOS ブリッジからテレメトリ連携（開始/停止/識別ラベル注入・低電力/ネットワーク種別反映）（`nyx-mobile-ffi/src/lib.rs`, feature `telemetry`）
-  - [x] Java/Obj-C からのイベント駆動フックでラベル注入強化（セッションID/端末モデル/OSバージョン）: C API `nyx_mobile_set_telemetry_label` を追加
-  - [ ] Daemon サイド Prometheus への反映整合性検証（モバイル由来メトリクスの名称/単位/ラベル）
+### 1. Telemetry (OTLP) 強化: ハンドシェイク計測の不足
+- [x] `nyx.handshake` スパンを実装（開始/完了、属性 `pq_mode`）
+- [x] `setting_ids::PQ_MODE` と整合し最終モードをスパン属性へ反映（`nyx-stream`→`nyx-crypto` に伝播）
+- [x] `nyx-telemetry` に `nyx.handshake` の捕捉テストを追加（in-memory/Exporter）
 
-テスト/ベンチ・一時無効化/モック/ダミー
-- [x] `#[cfg(feature = "legacy_tests_disabled")]` 系を段階的に撤去し、全テスト常時有効化(`nyx-stream/src/tests/*`, `nyx-conformance/tests/*`)（`nyx-conformance` は解除済み）
-- [x] `assert!(true)` 等のプレースホルダーテストを実仕様テストへ置換(`nyx-core/tests/low_power_mobile_ffi.rs`, `nyx-telemetry/tests/otlp_span.rs`, `nyx-stream/tests/*`, `nyx-sdk/tests/*`)
-- [x] WASM クライアント ↔ Daemon プラグイン・ハンドシェイク E2E スモーク（成功/0x07 失敗）
-- [ ] 各所の mock/dummy/no-op を本実装に置換し、必要なら feature で明確に隔離(`nyx-core/zero_copy/*`, `nyx-core/benches/*`, `nyx-daemon/tests/*` ほか)
+### 2. SETTINGS: Low Power Preference 広告・反映の未実装
+- [x] `LOW_POWER_PREFERENCE` 設定項目を追加し `SettingsFrame` に統合
+- [x] 受信 SETTINGS の値を `LowPowerManager` に反映（即時通知）
+- [x] 送信側 SETTINGS の初期値を端末状態/ユーザ選好で決定（`NYX_LOW_POWER`）
 
-プロトコル/管理フレーム
-- [x] Plugin 必須未対応時の CLOSE フレーム処理は実装済だが、プラグイン検出/互換性/署名検証の全系統を確定(`nyx-stream/src/plugin_frame.rs`, `plugin_handshake.rs`)
-- [x] Capability 交渉テスト(UNSUPPORTED_CAP 0x07)は成立しているが、対応表・拡張ポリシーをドキュメント化(`spec/Capability_Negotiation_Policy.md`, `spec/Capability_Negotiation_Policy_EN.md`)
+### 3. Low Power 時の Keepalive/タイマ調整の未適用
+- [x] Low Power 状態変化で `nyx-transport` の keepalive/idle timeout を動的変更（TCP fallback 経路）
+- [x] 通常=15–30s、Low Power=60s（env で上書き可: `NYX_TCP_KEEPALIVE(_LP)`, `NYX_TCP_IDLE(_LP)`）
+- [x] 低電力遷移の E2E テストを追加（WASM SETTINGS → HTTP 200 / フック発火）
 
-メトリクス/監視
-- [ ] Daemon の全メトリクス(システム/ネットワーク/エラー/レイヤ/アラート)の収集・閾値・アクションを実データに接続(`nyx-daemon/src/metrics.rs`)
-- [ ] Prometheus/OTLP へのエクスポート完全化（環境変数でのOTLP起動配線は導入済）(`nyx-daemon/src/metrics.rs`, `nyx-telemetry/`)
- - [x] Zero-Copy 集約メトリクスを `metrics` 経由で Prometheus `/metrics` に周期エクスポート（`nyx-daemon/src/zero_copy_bridge.rs`, `nyx-daemon/src/main.rs`）
- - [x] `/metrics` エンドポイント統合テスト（Zero-Copy 指標露出の検証）を追加（`nyx-daemon/tests/prometheus_metrics.rs`）
- - [x] OTLP エクスポータのスモーク（初期化→ダミースパン→安全終了・外部コレクタ不要）（`nyx-daemon/tests/otlp_export_smoke.rs`、`nyx-daemon` フィーチャ `experimental-metrics, otlp_exporter`）
- - [x] Alerts の HTTP 露出（`/api/v1/alerts/stats`, `/api/v1/alerts/analysis`）と Prometheus 連携（`nyx_alerts_active`, `nyx_alerts_resolved`, `nyx_alerts_suppressed` ほか）(`nyx-daemon/src/main.rs`, `nyx-daemon/src/prometheus_exporter.rs`)
- - [x] Mix の Adaptive Cover Telemetry を `metrics` と `nyx-telemetry` 双方に出力（`nyx-mix/src/adaptive.rs`）
- - [x] CLI: `nyx-cli` に Alerts サブコマンド追加（`alerts stats`/`alerts analysis`）し、JSON/表形式で出力（`nyx-cli/src/main.rs`）
- - [x] Mix の Adaptive Cover Telemetry を `metrics` と `nyx-telemetry` 双方に出力（`nyx-mix/src/adaptive.rs`）
- - [x] CLI: `nyx-cli` に Alerts サブコマンド追加（`alerts stats`/`alerts analysis`）し、JSON/表形式で出力（`nyx-cli/src/main.rs`）
+### 4. Anti-Replay/0-RTT Telemetry の欠落
+- [x] `nyx_replay_drop_total` / `nyx_early_data_accept_total` を追加
+- [x] `AeadError::Replay` でリプレイドロップをカウント
+- [x] 0-RTT 受理パスで受理件数をカウント（Handshake payload 受理時に計測し、テスト追加）
 
-セキュリティ/サンドボックス
-- [ ] 暗号鍵管理/キー配送/ローテーションの本運用仕様化(placeholder/固定鍵排除)(`nyx-crypto/`, `nyx-daemon/`)
+### 5. Multipath WRR v2: Loss 反映重みの未実装
+- [x] `update_path_quality(path_id, rtt, loss_rate)` を追加（`update_path_with_quality`）
+- [x] 重み計算に `(1 - loss_rate)` を適用（下限クランプ）
+- [x] Loss 条件の分布テストを追加
 
-デプロイ/運用
-- [ ] Helm/K8s マニフェストの最終化と seccomp プロファイルの整備(`charts/nyx/*`)
-- [ ] Dockerfile/CI の最適化と検証カバレッジの拡充
+### 6. SETTINGS の PQ モード整合性（v0.1 → v1.0 移行）
+- [x] 交渉を `PQ_MODE` に統一、`PQ_SUPPORTED` から移行（`nyx-stream` は両対応に拡張）
+- [x] WASM/CLI を含む設定の単一化（`NYX_PQ_MODE`/`NYX_LOW_POWER` 対応）
+- [x] 関連テスト（設定/交渉）を更新
 
-ドキュメント/報告
-- [ ] `IMPLEMENTATION_REPORT.md` と実装/テストの同期(仕様との差分を常時最新化)
+### 7. Plugin SETTINGS の搬送形式の簡略化見直し
+- [x] PLUGIN_REQUIRED/OPTIONAL を CBOR 配列搬送に正式対応（拡張 SETTINGS: `0xFFFF` セクション）
+- [x] 互換 API を維持（TLV 側は件数、拡張 CBOR 側は配列本体）し HTTP ゲートウェイで両対応
+- [x] テストを新旧両対応に強化（`nyx-stream/tests/plugin_settings_ext.rs`, `nyx-daemon` 単体）
 
-補足(個別ソース箇所 抜粋)
-  - [ ] `nyx-daemon/src/main.rs`: イベントストア/フィルタ(placeholder)の実装
-  - [ ] `nyx-daemon/src/libp2p_network.rs`: 値検索/署名/暗号/メッセージ処理の残存 placeholder を実装
-  - [ ] `nyx-cli/src/main_grpc_backup.rs`: リトライ回数設定/TUI ダッシュボード/ファイル受信の実装
+### 8. Handshake → Telemetry の属性整合
+- [x] `nyx.handshake` スパンに `pq_mode` を付与
+- [x] 可能なら `cid` を属性として付与（暫定: `unknown`）
+
+### 9. cMix/Delay 設定の仕様デフォルト値バインド確認
+- [x] 既定値が仕様（Batch=100, VDF=100ms）と一致するか検証（env で上書き可: `NYX_CMIX_BATCH`, `NYX_CMIX_VDF_MS`）
+- [x] 初期化時に補正・テストで固定化
+
+### 10. OTLP/依存バージョンの混在解消（安定化）
+- [x] `opentelemetry` 系依存のバージョンを統一（0.29 系）
+- [x] API 変更の影響を抑え、テレメトリ e2e テストを通過
+
+### 11. 0-RTT 受理パスの公開/検証強化
+- [ ] 受理パスの実装位置を明確化し堅牢性（再送/リプレイ/誤順序）を強化
+- [x] Telemetry で受理件数を計測
+
+---
+
+#### 参照（抜粋）
+- 仕様/設計: `spec/Nyx_Protocol_v1.0_Spec_EN.md`, `docs/en/Nyx_Protocol_v1.0_Spec.md`, `docs/WRR_SCHEDULER_V2.md`, `docs/LOW_POWER_MODE.md`, `docs/MOBILE_POWER_PUSH_INTEGRATION.md`
+- 実装箇所（例）:
+  - Telemetry: `nyx-telemetry/src/{lib.rs, otlp.rs, opentelemetry_integration.rs}`
+  - Handshake/AEAD: `nyx-crypto/src/{noise.rs, aead.rs}`
+  - SETTINGS/管理: `nyx-stream/src/{management.rs, settings.rs}`
+  - Multipath/WRR: `nyx-stream/src/scheduler_v2.rs`
+  - Low Power: `nyx-core/src/low_power.rs`, `nyx-transport/src/{lib.rs, tcp_fallback.rs}`
 

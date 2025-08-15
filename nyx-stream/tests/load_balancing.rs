@@ -27,4 +27,4 @@ fn weighted_rr_load_balances_by_weight() {
     assert!((ratio1 - 0.77).abs() < 0.05, "ratio1={ratio1}");
     assert!((ratio2 - 0.15).abs() < 0.04, "ratio2={ratio2}");
     assert!((ratio3 - 0.08).abs() < 0.03, "ratio3={ratio3}");
-} 
+}

@@ -17,7 +17,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use tokio::{net::UdpSocket, task::JoinHandle};
-use tracing::{info, error};
+use tracing::{error, info};
 
 const STUN_BINDING_REQUEST: u16 = 0x0001;
 const STUN_BINDING_RESPONSE: u16 = 0x0101;
@@ -27,9 +27,15 @@ const XOR_MAPPED_ADDR: u16 = 0x0020;
 /// Start a background STUN server on the specified port.
 /// Default bind address is loopback `127.0.0.1` unless `NYX_STUN_PUBLIC=1` is set.
 pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
-    let public = std::env::var("NYX_STUN_PUBLIC").ok().map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
-    let bind_addr = if public { SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) }
-                    else { SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)) };
+    let public = std::env::var("NYX_STUN_PUBLIC")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let bind_addr = if public {
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port))
+    } else {
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
+    };
     let socket = UdpSocket::bind(bind_addr).await?;
     info!("STUN server listening on {}", socket.local_addr()?);
     Ok(tokio::spawn(async move {
@@ -37,12 +43,18 @@ pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
         loop {
             match socket.recv_from(&mut buf).await {
                 Ok((len, src)) => {
-                    if len < 20 { continue; }
+                    if len < 20 {
+                        continue;
+                    }
                     let msg_type = u16::from_be_bytes([buf[0], buf[1]]);
-                    if msg_type != STUN_BINDING_REQUEST { continue; }
+                    if msg_type != STUN_BINDING_REQUEST {
+                        continue;
+                    }
                     let txid = &buf[8..20];
                     let resp = build_binding_response(src, txid);
-                    if socket.send_to(&resp, src).await.is_err() { error!("failed to send STUN response"); }
+                    if socket.send_to(&resp, src).await.is_err() {
+                        error!("failed to send STUN response");
+                    }
                 }
                 Err(e) => {
                     error!("stun recv error: {}", e);
@@ -50,24 +62,28 @@ pub async fn start_stun_server(port: u16) -> std::io::Result<JoinHandle<()>> {
             }
         }
     }))
-} 
+}
 
 /// Construct a STUN Binding Success Response with single XOR-MAPPED-ADDRESS attribute.
 fn build_binding_response(src: SocketAddr, txid: &[u8]) -> Vec<u8> {
     // STUN header (20 bytes) + XOR-MAPPED-ADDRESS attribute (4 + 8 = 12 bytes) = 32 bytes
     let mut resp = Vec::with_capacity(32);
     resp.extend_from_slice(&STUN_BINDING_RESPONSE.to_be_bytes()); // Type
-    // Message Length will be filled later after attributes are appended
-    resp.extend_from_slice(&[0,0]);
+                                                                  // Message Length will be filled later after attributes are appended
+    resp.extend_from_slice(&[0, 0]);
     resp.extend_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
     resp.extend_from_slice(txid); // 12 bytes
-    // Attribute start
+                                  // Attribute start
     resp.extend_from_slice(&XOR_MAPPED_ADDR.to_be_bytes());
     resp.extend_from_slice(&8u16.to_be_bytes());
     resp.push(0); // reserved
     resp.push(0x01); // Family IPv4
-    // Compute XORed port: port XOR the most significant 16 bits of the magic cookie
-    let x_port = if let SocketAddr::V4(v4) = src { v4.port() } else { 0 } ^ ((STUN_MAGIC_COOKIE >> 16) as u16);
+                     // Compute XORed port: port XOR the most significant 16 bits of the magic cookie
+    let x_port = if let SocketAddr::V4(v4) = src {
+        v4.port()
+    } else {
+        0
+    } ^ ((STUN_MAGIC_COOKIE >> 16) as u16);
     resp.extend_from_slice(&x_port.to_be_bytes());
     if let IpAddr::V4(ipv4) = src.ip() {
         let cookie = STUN_MAGIC_COOKIE.to_be_bytes();
@@ -76,7 +92,7 @@ fn build_binding_response(src: SocketAddr, txid: &[u8]) -> Vec<u8> {
             resp.push((*b) ^ cookie[i]);
         }
     } else {
-        resp.extend_from_slice(&[0,0,0,0]);
+        resp.extend_from_slice(&[0, 0, 0, 0]);
     }
     // Now set message length (bytes after the 20-byte header). Only one attribute: 4(header)+8(value)=12
     let msg_len = 12u16;
@@ -95,16 +111,19 @@ mod tests {
         // simple client send binding request (reuse existing code path in ice.rs?)
         use tokio::net::UdpSocket;
         let sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let mut req = [0u8;20];
+        let mut req = [0u8; 20];
         // minimal binding request
         req[0..2].copy_from_slice(&STUN_BINDING_REQUEST.to_be_bytes());
         req[4..8].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
-        sock.send_to(&req, ("127.0.0.1",3480)).await.unwrap();
-        let mut buf=[0u8;1500];
-        let (len,_) = timeout(Duration::from_millis(500), sock.recv_from(&mut buf)).await.unwrap().unwrap();
+        sock.send_to(&req, ("127.0.0.1", 3480)).await.unwrap();
+        let mut buf = [0u8; 1500];
+        let (len, _) = timeout(Duration::from_millis(500), sock.recv_from(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
         assert!(len >= 32, "unexpected STUN response length: {}", len);
         // Basic header checks
-        assert_eq!(u16::from_be_bytes([buf[0],buf[1]]), STUN_BINDING_RESPONSE);
+        assert_eq!(u16::from_be_bytes([buf[0], buf[1]]), STUN_BINDING_RESPONSE);
         drop(handle);
     }
 }

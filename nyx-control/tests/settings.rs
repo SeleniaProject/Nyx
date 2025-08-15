@@ -11,4 +11,4 @@ fn valid_settings_pass() {
 fn invalid_settings_fail() {
     let json = br#"{"max_streams":"bad"}"#;
     assert!(validate_settings(json).is_err());
-} 
+}

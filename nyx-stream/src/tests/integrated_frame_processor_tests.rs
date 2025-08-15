@@ -1,15 +1,17 @@
 mod integrated_frame_processor_tests {
+    use crate::integrated_frame_processor::{
+        FrameProcessingEvent, IntegratedFrameConfig, IntegratedFrameProcessor,
+    };
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::sleep;
-    use crate::integrated_frame_processor::{IntegratedFrameProcessor, IntegratedFrameConfig, FrameProcessingEvent};
 
     fn build_frame_bytes(stream_id: u32, offset: u32, fin: bool, data: &[u8]) -> Vec<u8> {
         let mut v = Vec::new();
         v.extend_from_slice(&stream_id.to_be_bytes());
         v.extend_from_slice(&offset.to_be_bytes());
-        v.push(if fin {1} else {0});
+        v.push(if fin { 1 } else { 0 });
         v.extend_from_slice(&(data.len() as u32).to_be_bytes());
         v.extend_from_slice(data);
         v
@@ -49,7 +51,10 @@ mod integrated_frame_processor_tests {
         assert!(info.is_some());
 
         // Close stream
-        processor.close_stream(stream_id, "test".into()).await.unwrap();
+        processor
+            .close_stream(stream_id, "test".into())
+            .await
+            .unwrap();
         let info2 = processor.get_stream_info(stream_id).await;
         assert!(info2.is_none());
 
@@ -82,7 +87,10 @@ mod integrated_frame_processor_tests {
     #[tokio::test]
     async fn test_event_handling() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let processor = Arc::new(IntegratedFrameProcessor::new(IntegratedFrameConfig::default(), tx));
+        let processor = Arc::new(IntegratedFrameProcessor::new(
+            IntegratedFrameConfig::default(),
+            tx,
+        ));
         processor.start().await.unwrap();
 
         let frame = build_frame_bytes(1, 0, false, b"event");
@@ -97,7 +105,9 @@ mod integrated_frame_processor_tests {
         assert!(evt.is_ok());
         if let Some(ev) = evt.unwrap() {
             match ev {
-                FrameProcessingEvent::FrameReassembled { stream_id, .. } => assert_eq!(stream_id, 1),
+                FrameProcessingEvent::FrameReassembled { stream_id, .. } => {
+                    assert_eq!(stream_id, 1)
+                }
                 _ => {}
             }
         }
@@ -110,7 +120,8 @@ mod integrated_frame_processor_tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut cfg = IntegratedFrameConfig::default();
         cfg.max_concurrent_streams = 50;
-        let processor: Arc<IntegratedFrameProcessor> = Arc::new(IntegratedFrameProcessor::new(cfg, tx));
+        let processor: Arc<IntegratedFrameProcessor> =
+            Arc::new(IntegratedFrameProcessor::new(cfg, tx));
         processor.start().await.unwrap();
 
         let mut handles = Vec::new();
@@ -124,7 +135,9 @@ mod integrated_frame_processor_tests {
                 }
             }));
         }
-        for h in handles { h.await.unwrap(); }
+        for h in handles {
+            h.await.unwrap();
+        }
         // Allow background stats updater to run at least once
         sleep(Duration::from_millis(200)).await;
         let stats = processor.get_stats().await;
