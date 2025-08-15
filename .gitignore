@@ -1,3 +1,13 @@
 target/
 formal/*.jar
 temp_integration.rs
+*.rlib
+*.redb
+nyx-daemon/reputation_store.json
+FINAL_VALIDATION_REPORT.json
+verification_report.json
+build_verification_report.json
+comprehensive_verification_report.json
+tla_verification_report.json
+tla_coverage_report.json
+tla_report.html
