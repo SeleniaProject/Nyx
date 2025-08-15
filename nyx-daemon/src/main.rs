@@ -195,7 +195,7 @@ async fn handle_pipe_client(stream: &mut tokio::net::windows::named_pipe::NamedP
 
 async fn process_request(req_line: &str, state: &DaemonState) -> (Response<serde_json::Value>, Option<tokio::sync::broadcast::Receiver<Event>>, Option<Vec<String>>) {
 	match serde_json::from_str::<RpcRequest>(req_line) {
-		Ok(RpcRequest { id, auth, req: Request::GetInfo }) => {
+	Ok(RpcRequest { id, auth: _, req: Request::GetInfo }) => {
 			let info = Info {
 				node_id: hex::encode(state.node_id),
 				version: env!("CARGO_PKG_VERSION").to_string(),
