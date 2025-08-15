@@ -14,19 +14,7 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/SeleniaProject/NyxNet
-nav:
-  - はじめに: index.md
-  - チュートリアル:
-      - 最小チャットアプリ: tutorial_chat.md
-  - v1.0 変更点: ja/v1_0_diff.md
-  - テレメトリ:
-      - HPKE リキー指標: HPKE_REKEY_TELEMETRY.md
-      - Spec Diff レポート: spec_diff_report.md
-  - Spec-Test マッピング: SPEC_TEST_MAPPING.md
-  - 最適化:
-      - 低電力モード: LOW_POWER_MODE.md
-  - WRR スケジューラ v2: WRR_SCHEDULER_V2.md
-  - Multipath フェイルオーバ: MULTIPATH_FAILOVER.md
+nav: []
 markdown_extensions:
   - admonition
   - codehilite
