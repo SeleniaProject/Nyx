@@ -38,6 +38,7 @@ enum Request {
 	SubscribeEvents { types: Option<Vec<String>> },
 	ListConfigVersions,
 	RollbackConfig { version: u64 },
+	CreateConfigSnapshot { description: Option<String> },
 }
 
 /// RPC request envelope carrying optional request id and auth token.
@@ -245,6 +246,13 @@ async fn process_request(req_line: &str, state: &DaemonState) -> (Response<serde
 			if res.success { let _ = state.events.sender().send(Event { ty: "system".into(), detail: format!("config_rolled_back:{version}") }); }
 			(Response::ok_with_id(id, serde_json::to_value(res).unwrap()), None, None)
 		}
+		Ok(RpcRequest { id, auth, req: Request::CreateConfigSnapshot { description } }) => {
+			if !is_authorized(state, auth.as_deref()) { return (Response::err_with_id(id, 401, "unauthorized"), None, None); }
+			match state.cfg.snapshot(description.as_deref().unwrap_or("manual_snapshot")).await {
+				Ok(ver) => (Response::ok_with_id(id, serde_json::json!({"version": ver})), None, None),
+				Err(e) => (Response::err_with_id(id, 500, e.to_string()), None, None),
+			}
+		}
 		Err(e) => (Response::err_with_id(None, 400, format!("invalid request: {e}")), None, None),
 	}
 }
@@ -358,6 +366,23 @@ mod tests {
 		assert!(resp.ok, "{resp:?}");
 		let cr: ConfigResponse = serde_json::from_value(resp.data.unwrap()).unwrap();
 		assert!(cr.success);
+	}
+
+	#[tokio::test]
+	async fn manual_snapshot_returns_version() {
+		let state = make_state_with_token(Some("s"));
+		let req = serde_json::json!({
+			"id": "ms1",
+			"auth": "s",
+			"op": "create_config_snapshot",
+			"description": "from_test"
+		})
+		.to_string();
+		let (resp, _rx, _filter) = process_request(&req, &state).await;
+		assert!(resp.ok);
+		let v = resp.data.unwrap();
+		let ver = v.get("version").and_then(|n| n.as_u64()).unwrap();
+		assert!(ver >= 1);
 	}
 }
 
