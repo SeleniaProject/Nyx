@@ -2,7 +2,7 @@
 
 #[tokio::test]
 async fn mix_defaults_follow_spec_or_env() {
-    use nyx_daemon::proto::NyxConfig;
+    use nyx_core::config::NyxConfig;
     // Without env overrides, defaults should be Batch=100, VDF=100ms via nyx-core config
     std::env::remove_var("NYX_CMIX_BATCH");
     std::env::remove_var("NYX_CMIX_VDF_MS");

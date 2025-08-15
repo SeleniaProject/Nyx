@@ -162,12 +162,12 @@ impl PluginFrameProcessor {
         }
 
         // Extract frame payload according to declared length
-        let frame_payload = &remaining[..parsed_header.hdr.length as usize];
+        let _frame_payload = &remaining[..parsed_header.hdr.length as usize];
 
         // Parse CBOR header - this consumes the beginning of frame_payload
         #[cfg(feature = "plugin")]
         {
-            let plugin_header = PluginHeader::decode(frame_payload)
+            let plugin_header = PluginHeader::decode(_frame_payload)
                 .map_err(|e| PluginFrameError::CborError(e.to_string()))?;
 
             // Calculate CBOR header size to determine payload split
@@ -177,8 +177,8 @@ impl PluginFrameProcessor {
             let payload_start = cbor_header_bytes.len();
 
             // Split payload: remaining data after CBOR header
-            let payload = if payload_start < frame_payload.len() {
-                &frame_payload[payload_start..]
+            let payload = if payload_start < _frame_payload.len() {
+                &_frame_payload[payload_start..]
             } else {
                 &[]
             };
@@ -303,11 +303,9 @@ impl PluginFrameProcessor {
     #[cfg(not(feature = "plugin"))]
     pub async fn process_plugin_frame(
         &mut self,
-        frame: ParsedPluginFrame<'_>,
+        _frame: ParsedPluginFrame<'_>,
     ) -> Result<PluginFrameResult, PluginFrameError> {
         // For non-plugin builds, reject all plugin frames
-        let plugin_id = 0; // Cannot access frame.plugin_header.id without plugin feature
-
         warn!("Plugin frame received but plugin support not enabled");
         Ok(PluginFrameResult::Error {
             error: "Plugin support not compiled in".to_string(),

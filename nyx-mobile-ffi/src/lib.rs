@@ -74,8 +74,8 @@ static RUNTIME: OnceCell<Arc<Runtime>> = OnceCell::new();
 static TELEMETRY: OnceCell<Arc<TelemetryCollector>> = OnceCell::new();
 #[cfg(feature = "telemetry")]
 static LABELS: OnceCell<std::sync::RwLock<HashMap<String, String>>> = OnceCell::new();
-#[cfg(not(feature = "telemetry"))]
-type HashMap<K, V> = std::collections::HashMap<K, V>; // keep type references compilable when telemetry disabled
+// When telemetry is disabled, all HashMap usages are cfg-gated out as well,
+// hence no alias is needed. Removing it avoids dead_code warnings.
 
 // ---- Cross-crate event callback bridge ----
 // Allows core (nyx-core) to register a single C-ABI callback to receive

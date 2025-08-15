@@ -21,7 +21,8 @@ async fn realistic_frame_processing_benchmark(
 ) -> RealisticMetrics {
     let mut frame_handler = FrameHandler::new(frame_size * 2, Duration::from_secs(30));
     let start_time = Instant::now();
-    let cpu_start = std::process::id(); // Placeholder for CPU usage measurement
+    // Placeholder for potential CPU usage measurement (currently unused)
+    let _cpu_start = std::process::id();
 
     let mut total_bytes = 0;
     let mut latencies = Vec::new();

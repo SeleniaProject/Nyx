@@ -8,7 +8,6 @@
 
 use crate::error::{NyxError, NyxResult};
 // use crate::proto::nyx_control_client::NyxControlClient; // Removed: C/C++ dependency
-use crate::config::RetryConfig;
 use crate::daemon::ConnectionInfo;
 use crate::retry::{RetryExecutor, RetryStrategy};
 

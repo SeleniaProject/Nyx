@@ -1,4 +1,4 @@
-#![cfg(feature = "pq")]
+#![cfg(feature = "kyber")]
 /// @spec 3. Hybrid Post-Quantum Handshake
 use nyx_crypto::noise::pq::{initiator_encapsulate, responder_decapsulate, responder_keypair};
 

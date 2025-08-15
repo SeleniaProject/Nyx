@@ -74,11 +74,11 @@ impl PushProvider for ApnsProvider {
 
 #[derive(Clone, Default)]
 pub struct PushManagerInner {
-    pub queue: VecDeque<QueuedItem>,
-    pub max_queue: usize,
-    pub providers: HashMap<String, Arc<dyn PushProvider>>, // name -> provider
-    pub topic_routes: HashMap<String, String>,             // topic -> provider name
-    pub retry_config: RetryConfig,
+    queue: VecDeque<QueuedItem>,
+    max_queue: usize,
+    providers: HashMap<String, Arc<dyn PushProvider>>, // name -> provider
+    topic_routes: HashMap<String, String>,             // topic -> provider name
+    retry_config: RetryConfig,
 }
 
 impl std::fmt::Debug for PushManagerInner {

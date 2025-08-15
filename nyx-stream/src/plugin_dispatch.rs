@@ -258,8 +258,9 @@ impl PluginDispatcher {
         // Create IPC channel with appropriate buffer size
         let (tx, rx) = mpsc::channel(1024);
 
-        let stats_clone = Arc::clone(&self.stats);
-        let stats_clone = Arc::clone(&self.stats);
+    // Clone shared runtime statistics once for use within the spawned task.
+    // Avoid redundant cloning to reduce noise and potential confusion.
+    let stats_clone = Arc::clone(&self.stats);
 
         // Spawn plugin runtime with comprehensive message processing
         let join_handle = tokio::spawn(async move {
@@ -389,7 +390,9 @@ impl PluginDispatcher {
 
         for plugin_id in plugin_ids {
             if let Err(e) = self.unload_plugin(plugin_id).await {
-                eprintln!("Error unloading plugin {}: {}", plugin_id, e);
+                // Use structured tracing instead of stderr to unify logging behavior
+                // across library crates and enable subscribers to process events.
+                error!(plugin_id = %plugin_id, error = %e, "Error unloading plugin");
             }
         }
     }

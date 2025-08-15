@@ -30,10 +30,7 @@ use tokio::{
 };
 
 use nyx_core::types::{is_valid_user_path_id, PathId, CONTROL_PATH_ID};
-use nyx_stream::{
-    build_header, build_header_ext, parse_header_ext, FrameHeader, FLAG_HAS_PATH_ID,
-    FLAG_MULTIPATH_ENABLED,
-};
+use nyx_stream::{build_header, build_header_ext, parse_header_ext, FrameHeader};
 
 use crate::{PacketHandler, Transport};
 

@@ -379,7 +379,7 @@ impl PerformanceVerificationSuite {
     }
 
     /// Run comprehensive performance verification for all implemented features
-    pub async fn run_comprehensive_verification(&mut self) -> ComprehensivePerformanceMetrics {
+    async fn run_comprehensive_verification(&mut self) -> ComprehensivePerformanceMetrics {
         info!("Starting comprehensive performance verification");
         let start_time = Instant::now();
 

@@ -1,4 +1,3 @@
-use nyx_sdk::*;
 // NOTE: This test is currently disabled because it uses methods that don't exist
 // in the current NyxDaemon implementation. The methods like status(), health_check(),
 // and open_stream() need to be implemented or the tests need to be rewritten.

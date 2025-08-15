@@ -10,9 +10,9 @@
 //! - Transport layer: Network I/O, packet handling, connection management
 
 use anyhow::Result;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use std::pin::Pin;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -461,7 +461,7 @@ impl LayerManager {
 
     /// Check crypto layer health
     async fn check_crypto_health(&self, health: &mut LayerHealth) -> Result<()> {
-        let crypto = self.crypto_layer.read().await;
+        let _crypto = self.crypto_layer.read().await;
         let sessions = self.active_sessions.read().await;
 
         health.status = LayerStatus::Active;
@@ -1036,7 +1036,7 @@ impl LayerManager {
     async fn synchronize_layer_configs(&self) -> Result<()> {
         debug!("Synchronizing layer configurations");
 
-        let config = self.config.read().await;
+        let _config = self.config.read().await;
 
         // Apply configuration to all layers
         // This would update each layer's configuration

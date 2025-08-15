@@ -6,18 +6,14 @@
 //! optimization system, including unit tests, integration tests, and
 //! performance benchmarks.
 
-use nyx_core::zero_copy::integration::{
-    fec_integration, transmission_integration, ZeroCopyPipeline,
-};
-use nyx_core::zero_copy::manager::{ProcessingContext, ZeroCopyBuffer};
-use nyx_core::zero_copy::telemetry::{TelemetryConfig, ZeroCopyTelemetry};
+use nyx_core::zero_copy::integration::ZeroCopyPipeline;
+use nyx_core::zero_copy::manager::ZeroCopyBuffer;
 use nyx_core::zero_copy::{
     AllocationEvent, AllocationTracker, BufferPool, CriticalPath, CriticalPathConfig,
     OperationType, Stage, ZeroCopyError, ZeroCopyManager, ZeroCopyManagerConfig,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::test;
 
 /// Test allocation tracking functionality
 #[tokio::test]
@@ -428,7 +424,7 @@ async fn test_integration_pipeline() {
     let codec: Arc<dyn FecCodec> = Arc::new(RaptorQCodec::new(0.3)); // 30% redundancy
 
     // Create zero-copy pipeline
-    let mut pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id.clone());
+    let pipeline = ZeroCopyPipeline::new(Arc::clone(&manager), path_id.clone());
     #[cfg(feature = "nyx-crypto")]
     {
         pipeline = pipeline.with_aead(crypter);

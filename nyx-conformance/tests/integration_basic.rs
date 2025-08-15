@@ -43,7 +43,7 @@ async fn test_basic_stream_operations() {
     info!("Testing basic stream operations");
 
     // Create multiple streams
-    let mut streams: Vec<()> = Vec::new(); // placeholder, async stream disabled
+    let _streams: Vec<()> = Vec::new(); // placeholder, async stream disabled
 
     // Simplified: NyxAsyncStream/FrameHandler disabled in current build; just create FlowController
     let flow_controller = FlowController::new(65536);
@@ -253,7 +253,7 @@ async fn test_resource_management() {
     // Create and drop many objects to test cleanup
     for iteration in 0..10 {
         let mut crypto_objects = Vec::new();
-        let mut stream_objects: Vec<()> = Vec::new();
+        let stream_objects: Vec<()> = Vec::new();
 
         // Create crypto objects (simplified without HPKE)
         for i in 0..10 {

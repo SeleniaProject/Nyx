@@ -1,5 +1,6 @@
 // (Removed duplicate PathQuality definition; canonical version defined later.)
 // NOTE: Removed inner #![forbid(unsafe_code)] attribute (belongs in crate root)
+#![allow(dead_code, unused_imports)]
 
 //! Advanced path building system for Nyx daemon.
 //!
@@ -300,7 +301,7 @@ impl DhtPeerDiscovery {
         }
         // Region diversity enforcement: ensure at least 2 distinct regions for All
         if let DiscoveryCriteria::All = &criteria {
-            use std::collections::{HashMap, HashSet};
+            use std::collections::HashSet;
             let mut regions: HashSet<String> = HashSet::new();
             for p in &peers {
                 regions.insert(p.region.clone());
@@ -1165,7 +1166,7 @@ impl DhtPeerDiscovery {
     /// Cache discovered peers
     async fn cache_discovered_peers(
         &self,
-        criteria: &DiscoveryCriteria,
+        _criteria: &DiscoveryCriteria,
         peers: &[crate::proto::PeerInfo],
     ) {
         let mut cache = self.peer_cache.lock().unwrap();
@@ -1358,13 +1359,13 @@ impl DhtPeerDiscovery {
         let mut score_list: Vec<(String, f64)> =
             scores.iter().map(|(a, s)| (a.clone(), *s)).collect();
         score_list.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let mut score_hot: Vec<String> = score_list
+        let score_hot: Vec<String> = score_list
             .iter()
             .filter(|(_, s)| *s >= -0.1)
             .take(32)
             .map(|(a, _)| a.clone())
             .collect();
-        let mut score_cold: Vec<String> = score_list
+        let score_cold: Vec<String> = score_list
             .iter()
             .filter(|(_, s)| *s <= -0.3)
             .map(|(a, _)| a.clone())
@@ -5155,8 +5156,8 @@ impl PathBuilder {
         let bandwidth_sample_size = 8usize.min(sample.len());
         let mut bandwidth_samples: Vec<f64> = Vec::with_capacity(bandwidth_sample_size);
         for cand in sample {
-            let mut latency_ms;
-            let mut bandwidth_mbps;
+            let latency_ms;
+            let bandwidth_mbps;
             let mut success_rate = 0.95;
             if self.config.enable_real_probing {
                 if let Some(addr) = addr_map.get(&cand.id) {
@@ -5523,8 +5524,8 @@ impl PathBuilder {
 #[cfg(test)]
 mod path_builder_tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::time::Duration;
+    
+    
     #[tokio::test]
     async fn topology_updates_from_dht_region() {
         let pb = PathBuilder::new(
@@ -5764,7 +5765,7 @@ mod path_builder_tests {
             eprintln!("warning: latency did not change sufficiently in probe; continuing");
         }
         // グローバルレジストリに node: ハッシュキーが存在しメトリクスが記録されているか (最低限 monitor 生成)
-        let node_key_prefix = "node:"; // 1 monitor 以上
+        let _node_key_prefix = "node:"; // 1 monitor 以上
         let stats = GLOBAL_PATH_PERFORMANCE_REGISTRY.global_stats().await; // 利用で内部 metrics 取得
         assert!(
             stats.active_paths >= 1,

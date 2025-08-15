@@ -142,7 +142,6 @@ use event_system::EventSystem;
 use health_monitor::HealthMonitor;
 #[cfg(feature = "experimental-metrics")]
 use layer_manager::LayerManager;
-use nyx_mix::cover_adaptive::{AdaptiveCoverConfig, AdaptiveCoverGenerator};
 #[cfg(feature = "path-builder")]
 use path_builder::PathBuilder;
 #[cfg(feature = "experimental-dht")]
@@ -150,14 +149,13 @@ use pure_rust_dht_tcp::PureRustDht;
 #[cfg(feature = "experimental-p2p")]
 use pure_rust_p2p::{P2PConfig, P2PNetworkEvent, PureRustP2P};
 use session_manager::{SessionManager, SessionManagerConfig};
-use std::borrow::Cow;
-use std::sync::atomic::Ordering as AtomicOrdering;
 #[cfg(feature = "experimental-metrics")]
 use stream_manager::{StreamManager, StreamManagerConfig};
 // HTTP server (Axum) to serve pure-Rust JSON API for CLI
 // use axum::{Router, routing::{get, post}, extract::{Path, State, Query}, Json}; // duplicate import removed
 use axum::http::HeaderMap;
-use base64::{engine::general_purpose, Engine as _};
+#[cfg(feature = "plugin")]
+use base64::Engine as _;
 #[cfg(feature = "plugin")]
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use nyx_stream::management::parse_settings_frame_ext;
@@ -167,7 +165,7 @@ use nyx_stream::management::ERR_UNSUPPORTED_CAP;
 use nyx_stream::plugin_handshake::{PluginHandshakeCoordinator, PluginHandshakeError};
 #[cfg(feature = "plugin")]
 use nyx_stream::plugin_settings::PluginSettingsManager;
-use nyx_stream::{parse_close_frame, parse_settings_frame, Setting, SettingsFrame};
+use nyx_stream::{parse_close_frame, parse_settings_frame};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[cfg(feature = "plugin")]
@@ -1121,7 +1119,7 @@ impl ControlService {
                 // Map compile-time features to capability ids used in nyx-core::compliance::cap
                 use nyx_core::compliance::{self, ComplianceLevel};
                 // Collect capability ids
-                let mut caps: Vec<u32> = Vec::new();
+                let caps: Vec<u32> = Vec::new();
                 #[cfg(feature = "mpr_experimental")]
                 caps.push(compliance::cap::MULTIPATH);
                 #[cfg(feature = "hybrid")]
@@ -1144,7 +1142,7 @@ impl ControlService {
                 }
             }),
             capabilities: Some({
-                let mut caps: Vec<u32> = Vec::new();
+                let caps: Vec<u32> = Vec::new();
                 #[cfg(feature = "mpr_experimental")]
                 caps.push(nyx_core::compliance::cap::MULTIPATH);
                 #[cfg(feature = "hybrid")]
@@ -1245,6 +1243,7 @@ fn parse_wasm_settings_to_state(payload: &[u8]) -> Result<PluginNegotiationState
 #[cfg(test)]
 mod wasm_settings_tests {
     use super::*;
+    use nyx_stream::Setting;
 
     #[test]
     fn test_parse_wasm_settings_to_state_basic() {
@@ -2452,7 +2451,7 @@ async fn http_open_stream(
     headers: HeaderMap,
     Json(req): Json<HttpOpenRequest>,
 ) -> Json<HttpStreamResponse> {
-    let mut metadata = auth_metadata_from_headers(&headers);
+    let metadata = auth_metadata_from_headers(&headers);
     let open = OpenRequest {
         destination: req.destination.clone(),
         target_address: req.destination,

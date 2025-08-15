@@ -498,7 +498,7 @@ impl MultipathManager {
         let stats = path_stats
             .get_mut(&path_id)
             .ok_or_else(|| format!("Path {} not found", path_id))?;
-
+        #[cfg(feature = "telemetry")]
         let prev_var = stats.rtt_var;
         stats.update_rtt(rtt);
         #[cfg(feature = "telemetry")]
@@ -691,7 +691,9 @@ impl MultipathManager {
     async fn start_stats_update_task(&self) {
         let scheduler = Arc::clone(&self.scheduler);
         let path_stats = Arc::clone(&self.path_stats);
+        #[cfg(feature = "telemetry")]
         let last_totals = Arc::new(Mutex::new((0u64, HashMap::<PathId, u64>::new())));
+        #[cfg(feature = "telemetry")]
         let last_totals_clone = last_totals.clone();
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(1));

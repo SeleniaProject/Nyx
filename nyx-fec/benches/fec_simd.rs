@@ -14,12 +14,13 @@ fn bench_encode(c: &mut Criterion) {
                     .map(|i| vec![i as u8; SHARD_SIZE])
                     .collect();
                 shards.extend((0..PARITY_SHARDS).map(|_| vec![0u8; SHARD_SIZE]));
+                shards
+            },
+            |mut shards| {
+                // Create &mut [u8] views per iteration from owned shards
                 let mut mut_refs: Vec<&mut [u8]> =
                     shards.iter_mut().map(|v| v.as_mut_slice()).collect();
-                mut_refs
-            },
-            |mut_refs| {
-                codec.encode(&mut_refs).expect("encode");
+                codec.encode(&mut mut_refs[..]).expect("encode");
             },
             BatchSize::SmallInput,
         )

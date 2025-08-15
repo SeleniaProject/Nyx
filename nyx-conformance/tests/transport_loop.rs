@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use nyx_transport::{PacketHandler, Transport};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
 
@@ -20,7 +20,7 @@ impl PacketHandler for CaptureHandler {
 #[tokio::test]
 async fn transport_send_receive_local() {
     // Setup two transports on random ports
-    let (tx1, rx1) = oneshot::channel();
+    let (tx1, _rx1) = oneshot::channel();
     let h1 = Arc::new(CaptureHandler {
         sender: Mutex::new(Some(tx1)),
     });
@@ -35,7 +35,7 @@ async fn transport_send_receive_local() {
     let addr2 = t2.local_addr().unwrap();
     // Send payload from t1 to t2
     let payload = b"ping".to_vec();
-    t1.send(addr2, &payload).await;
+    let _ = t1.send(addr2, &payload).await;
 
     // Wait for reception
     let received = tokio::time::timeout(std::time::Duration::from_millis(100), rx2)

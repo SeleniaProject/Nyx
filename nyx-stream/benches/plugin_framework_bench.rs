@@ -9,14 +9,18 @@
 //! - Handshake negotiation latency
 //! - Frame processing throughput
 
+#[cfg(feature = "plugin")]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::time::Duration;
+#[cfg(not(feature = "plugin"))]
+use criterion::{criterion_group, criterion_main, Criterion};
 
 #[cfg(feature = "plugin")]
 use nyx_stream::{
-    build_plugin_frame, plugin_support_flags, setting_ids, Permission, PluginFrameProcessor,
-    PluginHandshakeCoordinator, PluginHeader, PluginInfo, PluginRegistry, Setting, SettingsFrame,
+    build_plugin_frame, Permission, PluginFrameProcessor, PluginHandshakeCoordinator, PluginHeader,
+    PluginInfo, PluginRegistry, Setting, SettingsFrame,
 };
+#[cfg(feature = "plugin")]
+use nyx_stream::management::{plugin_support_flags, setting_ids};
 
 #[cfg(feature = "plugin")]
 fn bench_plugin_header_cbor_encoding(c: &mut Criterion) {
@@ -312,10 +316,12 @@ criterion_group!(
     bench_permission_checking,
     bench_plugin_handshake,
     bench_plugin_registry_operations,
-    bench_frame_type_validation
+    bench_frame_type_validation,
 );
 
 #[cfg(not(feature = "plugin"))]
-criterion_group!(plugin_benches,);
+fn noop_bench(_c: &mut Criterion) {}
+#[cfg(not(feature = "plugin"))]
+criterion_group!(plugin_benches, noop_bench);
 
 criterion_main!(plugin_benches);

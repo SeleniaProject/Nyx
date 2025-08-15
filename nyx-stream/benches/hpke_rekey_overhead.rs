@@ -1,11 +1,16 @@
+#[cfg(feature = "hpke")]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use nyx_crypto::noise::SessionKey;
-use nyx_stream::{
-    hpke_rekey_manager::RekeyDecision,
-    hpke_rekey_manager::{HpkeRekeyManager, RekeyPolicy},
-};
-use std::time::{Duration, Instant};
+#[cfg(not(feature = "hpke"))]
+use criterion::{criterion_group, criterion_main, Criterion};
+#[cfg(feature = "hpke")]
+use std::time::Duration;
 
+#[cfg(feature = "hpke")]
+use nyx_crypto::noise::SessionKey;
+#[cfg(feature = "hpke")]
+use nyx_stream::hpke_rekey_manager::{HpkeRekeyManager, RekeyDecision, RekeyPolicy};
+
+#[cfg(feature = "hpke")]
 fn bench_rekey_overhead(c: &mut Criterion) {
     let mut group = c.benchmark_group("hpke_rekey_overhead");
     // 異なる min_cooldown / rekey頻度 (packet_interval) 組合せを比較
@@ -41,5 +46,10 @@ fn bench_rekey_overhead(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "hpke")]
 criterion_group!(name = hpke; config = Criterion::default().sample_size(30); targets = bench_rekey_overhead);
+#[cfg(not(feature = "hpke"))]
+fn noop(_c: &mut Criterion) {}
+#[cfg(not(feature = "hpke"))]
+criterion_group!(name = hpke; config = Criterion::default(); targets = noop);
 criterion_main!(hpke);

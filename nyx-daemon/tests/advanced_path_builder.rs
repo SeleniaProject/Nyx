@@ -7,7 +7,7 @@
 //! and integration with DHT discovery system. All tests use pure Rust
 //! implementations without C/C++ dependencies.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,14 +16,11 @@ use geo::Point;
 use multiaddr::Multiaddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
-use tokio::time::timeout;
 
 // Import the path builder and related types
 use nyx_daemon::path_builder::{CachedPeerInfo, DhtPeerDiscovery, DiscoveryCriteria};
 // Use a fixed threshold in tests to avoid accessing private constants
 const GEO_RADIUS_KM: f64 = 500.0;
-use nyx_daemon::pure_rust_dht::InMemoryDht;
 
 /// Mock TCP server that responds to bandwidth probes for testing
 struct MockProbeServer {
@@ -139,7 +136,7 @@ async fn test_advanced_active_bandwidth_probe() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Create test peer
-    let mut test_peer = create_test_peer(
+    let test_peer = create_test_peer(
         "test-peer-1",
         server_addr,
         "us-east-1",
@@ -151,7 +148,7 @@ async fn test_advanced_active_bandwidth_probe() {
 
     // Create DHT peer discovery instance
     let dht = Arc::new(nyx_daemon::path_builder::DummyDhtHandle::new());
-    let mut peer_discovery = DhtPeerDiscovery::new(dht);
+    let peer_discovery = DhtPeerDiscovery::new(dht);
 
     // Perform active bandwidth probe
     // Active probe API not available in simplified discovery; just simulate success path exercising server
@@ -365,7 +362,7 @@ async fn test_path_diversity_score_calculation() {
 
     // Create DHT peer discovery instance
     let dht = Arc::new(nyx_daemon::path_builder::DummyDhtHandle::new());
-    let mut peer_discovery = DhtPeerDiscovery::new(dht);
+    let peer_discovery = DhtPeerDiscovery::new(dht);
 
     // Calculate diversity scores
     // Diversity score calculation not exposed; approximate by region uniqueness
@@ -456,7 +453,7 @@ async fn test_performance_optimization_integration() {
 
     // Create DHT peer discovery instance
     let dht = Arc::new(nyx_daemon::path_builder::DummyDhtHandle::new());
-    let mut peer_discovery = DhtPeerDiscovery::new(dht);
+    let peer_discovery = DhtPeerDiscovery::new(dht);
 
     // Run optimization which should probe responsive peers
     // Optimization routine not present; simulate reorder by bandwidth

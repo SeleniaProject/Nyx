@@ -1,12 +1,11 @@
-use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use nyx_crypto::noise::NoiseProtocol;
-use nyx_mix::PathBuilder;
-use nyx_stream::integrated_frame_processor::*;
-use nyx_transport::quic::QuicTransport;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
+use tokio::sync::mpsc;
+
+use nyx_stream::integrated_frame_processor::*;
+use nyx_stream::{build_stream_frame, StreamFrame};
 
 /// Performance benchmark suite for NyxNet
 /// Target: 1Gbps throughput with low latency
@@ -32,7 +31,7 @@ impl Default for BenchmarkConfig {
 struct PerformanceMetrics {
     throughput_mbps: f64,
     latency_ms: f64,
-    packet_loss_rate: f64,
+    _packet_loss_rate: f64,
     cpu_usage_percent: f64,
     memory_usage_mb: f64,
 }
@@ -45,23 +44,28 @@ impl PerformanceMetrics {
     }
 }
 
-async fn setup_integrated_processor() -> IntegratedFrameProcessor {
+async fn setup_integrated_processor() -> Arc<IntegratedFrameProcessor> {
     let config = IntegratedFrameConfig {
         max_concurrent_streams: 2000,
-        frame_timeout: Duration::from_secs(30),
-        flow_control_window: 1048576, // 1MB for high throughput
-        congestion_window: 524288,    // 512KB
-        max_frame_size: 65536,        // 64KB max frame
-        enable_flow_control: true,
-        enable_congestion_control: true,
-        stats_update_interval: Duration::from_millis(100),
+        default_stream_window: 1_048_576, // 1MB for high throughput
+        max_frame_size: 65_536,            // 64KB max frame
+        reassembly_timeout: Duration::from_secs(30),
+        flow_control_update_interval: Duration::from_millis(100),
+        congestion_control_enabled: true,
+        backpressure_threshold: 0.8,
+        max_processing_queue_size: 100,
+        stream_cleanup_interval: Duration::from_secs(60),
+        priority_queue_enabled: true,
     };
 
-    IntegratedFrameProcessor::new(config).await
+    let (event_sender, _event_receiver) = mpsc::unbounded_channel();
+    let processor = Arc::new(IntegratedFrameProcessor::new(config, event_sender));
+    processor.start().await.unwrap();
+    processor
 }
 
 async fn benchmark_frame_processing_throughput(
-    processor: &IntegratedFrameProcessor,
+    processor: &Arc<IntegratedFrameProcessor>,
     data_size: usize,
     num_streams: usize,
     duration_secs: u64,
@@ -78,7 +82,7 @@ async fn benchmark_frame_processing_throughput(
     let mut handles = Vec::new();
 
     for stream_id in 0..num_streams {
-        let processor_clone = processor.clone();
+        let processor_clone = Arc::clone(processor);
         let data_clone = data.clone();
         let test_end = start_time + test_duration;
 
@@ -89,11 +93,16 @@ async fn benchmark_frame_processing_throughput(
 
             while Instant::now() < test_end {
                 let frame_start = Instant::now();
+                // Build a valid stream frame
+                let frame = StreamFrame {
+                    stream_id: stream_id as u32,
+                    offset: 0,
+                    fin: false,
+                    data: &data_clone,
+                };
+                let frame_bytes = build_stream_frame(&frame);
 
-                match processor_clone
-                    .process_frame(stream_id as u64, data_clone.clone())
-                    .await
-                {
+                match processor_clone.process_frame(&frame_bytes).await {
                     Ok(_) => {
                         let latency = frame_start.elapsed();
                         local_latencies.push(latency.as_micros() as f64 / 1000.0); // Convert to ms
@@ -138,14 +147,14 @@ async fn benchmark_frame_processing_throughput(
     PerformanceMetrics {
         throughput_mbps,
         latency_ms: avg_latency,
-        packet_loss_rate: 0.0, // Calculate based on failed frames
+        _packet_loss_rate: 0.0, // Calculate based on failed frames (unused in bench)
         cpu_usage_percent: cpu_usage,
         memory_usage_mb: memory_usage,
     }
 }
 
 async fn benchmark_mixed_workload(
-    processor: &IntegratedFrameProcessor,
+    processor: &Arc<IntegratedFrameProcessor>,
     config: &BenchmarkConfig,
 ) -> Vec<PerformanceMetrics> {
     let mut results = Vec::new();
@@ -203,7 +212,9 @@ fn bench_integrated_processor_performance(c: &mut Criterion) {
             |b, &size| {
                 let data = vec![0xBB; size];
                 b.to_async(&rt).iter(|| async {
-                    let result = processor.process_frame(1, black_box(data.clone())).await;
+                    let frame = StreamFrame { stream_id: 1, offset: 0, fin: false, data: &data };
+                    let bytes = build_stream_frame(&frame);
+                    let result = processor.process_frame(&bytes).await;
                     black_box(result)
                 })
             },
@@ -225,11 +236,13 @@ fn bench_integrated_processor_performance(c: &mut Criterion) {
                     let mut handles = Vec::new();
 
                     for i in 0..count {
-                        let processor_clone = processor.clone();
+                        let processor_clone = Arc::clone(&processor);
                         let data = vec![0xCC; 4096];
+                        let frame = StreamFrame { stream_id: i as u32, offset: 0, fin: false, data: &data };
+                        let bytes = build_stream_frame(&frame);
 
                         let handle = tokio::spawn(async move {
-                            processor_clone.process_frame(i as u64, data).await
+                            processor_clone.process_frame(&bytes).await
                         });
 
                         handles.push(handle);
@@ -253,12 +266,12 @@ fn bench_end_to_end_performance(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             // Simulate end-to-end stream setup
             let processor = setup_integrated_processor().await;
-
-            // Simulate handshake and stream establishment
-            let stream_id = 1;
-            let handshake_data = vec![0x01, 0x02, 0x03, 0x04]; // Minimal handshake
-
-            let result = processor.process_frame(stream_id, handshake_data).await;
+            // Simulate first data frame on a stream
+            let stream_id = 1u32;
+            let handshake_data = vec![0x01, 0x02, 0x03, 0x04];
+            let frame = StreamFrame { stream_id, offset: 0, fin: false, data: &handshake_data };
+            let bytes = build_stream_frame(&frame);
+            let result = processor.process_frame(&bytes).await;
             black_box(result)
         })
     });
@@ -266,7 +279,7 @@ fn bench_end_to_end_performance(c: &mut Criterion) {
     c.bench_function("e2e_data_transfer", |b| {
         b.to_async(&rt).iter(|| async {
             let processor = setup_integrated_processor().await;
-            let stream_id = 1;
+            let stream_id = 1u32;
 
             // Transfer 1MB of data in chunks
             let chunk_size = 16384; // 16KB chunks
@@ -275,7 +288,9 @@ fn bench_end_to_end_performance(c: &mut Criterion) {
 
             for i in 0..num_chunks {
                 let chunk_data = vec![0xDD; chunk_size];
-                let _ = processor.process_frame(stream_id, chunk_data).await;
+                let frame = StreamFrame { stream_id, offset: i as u32 * chunk_size as u32, fin: false, data: &chunk_data };
+                let bytes = build_stream_frame(&frame);
+                let _ = processor.process_frame(&bytes).await;
             }
 
             black_box(())
@@ -335,7 +350,7 @@ pub async fn run_comprehensive_performance_test() -> Result<(), Box<dyn std::err
     }
 
     // Cleanup
-    processor.shutdown().await;
+    let _ = processor.shutdown().await;
 
     Ok(())
 }
@@ -349,7 +364,10 @@ criterion_main!(benches);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        benchmark_frame_processing_throughput, run_comprehensive_performance_test,
+        setup_integrated_processor,
+    };
 
     #[tokio::test]
     async fn test_performance_targets() {

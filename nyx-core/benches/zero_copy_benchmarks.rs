@@ -11,7 +11,6 @@ use nyx_core::zero_copy::{
     ZeroCopyManagerConfig,
 };
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::runtime::Runtime;
 
 /// Benchmark allocation tracking overhead
