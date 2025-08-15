@@ -536,8 +536,6 @@ impl NyxAead {
         plaintext: &[u8],
         aad: &[u8],
     ) -> Result<Vec<u8>, AeadError> {
-        // 期待サイズ: plaintext + 16(tag)
-        let expected = plaintext.len() + 16;
         let out = self
             .cipher
             .encrypt(
@@ -550,6 +548,8 @@ impl NyxAead {
             .map_err(|e| AeadError::EncryptionFailed(format!("Encryption failed: {:?}", e)))?;
         #[cfg(feature = "telemetry")]
         {
+            // 期待サイズ: plaintext + 16(tag)
+            let expected = plaintext.len() + 16;
             if out.capacity() > expected {
                 // 余剰容量を再割当由来とみなす簡易ヒューリスティック
                 self.alloc_counter
@@ -727,7 +727,7 @@ impl KeyRotationManager {
                 };
 
                 for context_id in context_ids {
-                    if let Err(e) = Self::check_and_rotate_context(
+                    if let Err(_e) = Self::check_and_rotate_context(
                         context_id,
                         &contexts,
                         &configs,

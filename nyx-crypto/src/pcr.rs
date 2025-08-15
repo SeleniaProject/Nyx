@@ -83,7 +83,7 @@ impl PcrRekeyManager {
         }
     }
 
-    pub async fn perform_rekey(&self, reason: &str) {
+    pub async fn perform_rekey(&self, _reason: &str) {
         let mut key_guard = self.key.write().await;
         let mut old = key_guard.clone();
         let new_key = pcr_rekey(&mut old); // old zeroized

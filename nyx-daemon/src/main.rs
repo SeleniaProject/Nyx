@@ -2158,7 +2158,7 @@ async fn http_wasm_settings(
     if let Ok((_rem, frame)) = parse_settings_frame(&body) {
         for s in frame.settings.iter() {
             if s.id == mgmt_setting_ids::LOW_POWER_PREFERENCE {
-                let prefer_low = s.value != 0;
+                let _prefer_low = s.value != 0;
                 #[cfg(feature = "low_power")]
                 {
                     if prefer_low {

@@ -29,3 +29,11 @@ opt-level = "z"
 debug = 0
 codegen-units = 1
 opt-level = 0
+
+# Package-specific profile overrides (Cargo workspace-wide). This moves per-crate
+# tuning out of sub-crates to avoid the warning:
+#  "profiles for the non root package will be ignored, specify profiles at the workspace root".
+# Keep nyx-mobile-ffi optimized for release builds without impacting other crates.
+[profile.release.package.nyx-mobile-ffi]
+codegen-units = 1
+opt-level = 3

@@ -438,6 +438,7 @@ impl AdaptiveRaptorQ {
 
     /// Forward encoding to the underlying codec
     pub fn encode(&self, data: &[u8]) -> Vec<EncodingPacket> {
+        #[cfg(feature = "telemetry")]
         let before_cap = data.len(); // proxy baseline
         let out = self.codec.encode(data);
         #[cfg(feature = "telemetry")]
