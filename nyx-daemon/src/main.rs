@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};
 
-use nyx_daemon::nyx_daemon_config::{ConfigManager, ConfigResponse, NyxConfig};
+use nyx_daemon::nyx_daemon_config::{ConfigManager, ConfigResponse, NyxConfig, VersionSummary};
 use nyx_daemon::nyx_daemon_events::{Event, EventSystem};
 
 #[cfg(unix)]
@@ -36,6 +36,8 @@ enum Request {
 	ReloadConfig,
 	UpdateConfig { settings: serde_json::Map<String, serde_json::Value> },
 	SubscribeEvents { types: Option<Vec<String>> },
+	ListConfigVersions,
+	RollbackConfig { version: u64 },
 }
 
 /// RPC request envelope carrying optional request id and auth token.
@@ -231,6 +233,17 @@ async fn process_request(req_line: &str, state: &DaemonState) -> (Response<serde
 			if !is_authorized(state, auth.as_deref()) { return (Response::err_with_id(id, 401, "unauthorized"), None, None); }
 			let rx = state.events.subscribe();
 			(Response::ok_with_id(id, serde_json::json!({"subscribed": true})), Some(rx), types)
+		}
+		Ok(RpcRequest { id, auth, req: Request::ListConfigVersions }) => {
+			if !is_authorized(state, auth.as_deref()) { return (Response::err_with_id(id, 401, "unauthorized"), None, None); }
+			let list: Vec<VersionSummary> = state.cfg.list_versions().await;
+			(Response::ok_with_id(id, serde_json::to_value(list).unwrap()), None, None)
+		}
+		Ok(RpcRequest { id, auth, req: Request::RollbackConfig { version } }) => {
+			if !is_authorized(state, auth.as_deref()) { return (Response::err_with_id(id, 401, "unauthorized"), None, None); }
+			let res = state.cfg.rollback(version).await.unwrap_or_else(|e| ConfigResponse { success: false, message: e.to_string(), validation_errors: vec![] });
+			if res.success { let _ = state.events.sender().send(Event { ty: "system".into(), detail: format!("config_rolled_back:{version}") }); }
+			(Response::ok_with_id(id, serde_json::to_value(res).unwrap()), None, None)
 		}
 		Err(e) => (Response::err_with_id(None, 400, format!("invalid request: {e}")), None, None),
 	}

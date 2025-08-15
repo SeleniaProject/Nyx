@@ -41,6 +41,14 @@ pub struct ConfigVersion {
     pub description: String,
 }
 
+/// Public summary view of stored versions (no full config payloads).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionSummary {
+    pub version: u64,
+    pub timestamp: SystemTime,
+    pub description: String,
+}
+
 /// Response type returned by update/reload operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigResponse {
@@ -197,5 +205,13 @@ impl ConfigManager {
             }
             None => Err(anyhow!("version {} not found", version)),
         }
+    }
+
+    /// List summaries of stored configuration versions (most recent last).
+    pub async fn list_versions(&self) -> Vec<VersionSummary> {
+        let list = self.versions.read().await;
+        list.iter()
+            .map(|v| VersionSummary { version: v.version, timestamp: v.timestamp, description: v.description.clone() })
+            .collect()
     }
 }
