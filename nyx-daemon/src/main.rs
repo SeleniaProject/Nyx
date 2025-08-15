@@ -2003,7 +2003,7 @@ async fn spawn_http_server(service: std::sync::Arc<ControlService>) -> anyhow::R
         )
         .route(
             "/api/v1/plugin/reload",
-            post(|Json(body): Json<serde_json::Value>| async move {
+            post(|Json(_body): Json<serde_json::Value>| async move {
                 #[cfg(feature = "plugin")]
                 {
                     // Optional raw JSON manifest in request body {"manifest": [...]} for remote update

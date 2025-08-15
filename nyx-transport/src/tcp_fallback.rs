@@ -154,6 +154,7 @@ async fn write_frame(stream: &mut TcpStream, data: &[u8]) -> std::io::Result<()>
 }
 
 /// Server-side listener accepting encapsulated TCP connections.
+#[allow(dead_code)] // config and pool reserved for optimized reuse path
 pub struct TcpEncapListener {
     pub incoming: mpsc::Receiver<(SocketAddr, Vec<u8>)>,
     config: TcpFallbackConfig,
@@ -162,6 +163,7 @@ pub struct TcpEncapListener {
 }
 
 /// Connection pool for efficient connection reuse
+#[allow(dead_code)] // cleanup interval used only when pooling enabled
 struct ConnectionPool {
     idle_connections: HashMap<SocketAddr, Vec<TcpStream>>,
     max_idle_per_peer: usize,

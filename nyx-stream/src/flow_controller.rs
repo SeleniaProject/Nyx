@@ -138,6 +138,7 @@ pub enum CongestionState {
 
 /// Congestion control using TCP-like algorithm
 #[derive(Debug)]
+#[allow(dead_code)] // fast_recovery_exit_point reserved for fast recovery experiments
 pub struct CongestionController {
     cwnd: u32,     // Congestion window
     ssthresh: u32, // Slow start threshold

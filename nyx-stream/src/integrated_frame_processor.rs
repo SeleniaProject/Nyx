@@ -172,6 +172,7 @@ pub enum FrameProcessingEvent {
 }
 
 /// Main integrated frame processing system
+#[allow(dead_code)] // background task handles reserved for future parallel processing
 pub struct IntegratedFrameProcessor {
     config: IntegratedFrameConfig,
     frame_handler: Arc<Mutex<FrameHandler>>,

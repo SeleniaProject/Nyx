@@ -564,6 +564,7 @@ pub mod event {
 
     // NOTE: Removed duplicate ConfigRequest and PerformanceMetrics definitions to avoid type conflicts.
 
+    #[allow(dead_code)] // fluent builders primarily used in diagnostic-heavy builds
     impl Event {
         pub fn new(event_type: String, severity: EventSeverity) -> Self {
             Self {
@@ -634,6 +635,7 @@ pub fn map_close_code_to_grpc(code: u16) -> &'static str {
 
 // Server types for gRPC replacement
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // server wrapper kept for potential gRPC/IPC backends
 pub struct NyxControlServer<T>
 where
     T: NyxControl,
@@ -643,6 +645,7 @@ where
     pub address: String,
 }
 
+#[allow(dead_code)] // constructor used in alternate deployment modes
 impl<T> NyxControlServer<T>
 where
     T: NyxControl,
