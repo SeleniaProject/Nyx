@@ -14,7 +14,8 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/SeleniaProject/NyxNet
-nav: []
+nav:
+  - トップ: index.md
 markdown_extensions:
   - admonition
   - codehilite
