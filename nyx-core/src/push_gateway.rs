@@ -392,8 +392,6 @@ impl PushGatewayManager {
         }
 
     let mut attempt: u8 = 0;
-    // Track last error (if any) only when a failure occurs to avoid unused assignment warnings
-    let mut last_error: Option<String> = None;
 
         loop {
             attempt += 1;
@@ -451,8 +449,6 @@ impl PushGatewayManager {
                     return Ok(());
                 }
                 Err(e) => {
-                    // Record last error for final logging on retry exhaustion
-                    last_error = Some(e.to_string());
 
                     // Update failure metrics
                     {
@@ -476,12 +472,9 @@ impl PushGatewayManager {
                     if attempt >= self.max_retries {
                         let mut s = self.state.lock().unwrap();
                         s.reconnect_in_flight = false;
-
-                        // Use a stable string slice for structured logging
-                        let last_error_str = last_error.as_deref().unwrap_or("");
                         error!(
                             total_attempts = attempt,
-                            last_error = last_error_str,
+                            error = %e,
                             "Reconnection retries exhausted"
                         );
 
