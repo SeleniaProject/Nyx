@@ -384,5 +384,15 @@ mod tests {
 		let ver = v.get("version").and_then(|n| n.as_u64()).unwrap();
 		assert!(ver >= 1);
 	}
+
+	#[tokio::test]
+	async fn invalid_request_returns_400() {
+		let state = make_state_with_token(None);
+		let req = "{ not_json }"; // パース不能
+		let (resp, _rx, _filter) = process_request(req, &state).await;
+		assert!(!resp.ok);
+		assert_eq!(resp.code, 400);
+		assert!(resp.error.unwrap().contains("invalid request"));
+	}
 }
 

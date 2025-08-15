@@ -68,7 +68,7 @@ On rare JSON serialization failures, the daemon falls back to the same envelope 
 ### Types
 
 - ConfigResponse: `{ success: bool, message: string, validation_errors: string[] }`
-- VersionSummary: `{ version: u64, timestamp: number, description: string }`
+- VersionSummary: `{ version: u64, timestamp: { "secs_since_epoch": u64, "nanos_since_epoch": u32 }, description: string }`
 - Event: `{ ty: string, detail: string }`
 
 Notes:
