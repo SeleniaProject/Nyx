@@ -48,7 +48,7 @@ async fn setup_integrated_processor() -> Arc<IntegratedFrameProcessor> {
     let config = IntegratedFrameConfig {
         max_concurrent_streams: 2000,
         default_stream_window: 1_048_576, // 1MB for high throughput
-        max_frame_size: 65_536,            // 64KB max frame
+        max_frame_size: 65_536,           // 64KB max frame
         reassembly_timeout: Duration::from_secs(30),
         flow_control_update_interval: Duration::from_millis(100),
         congestion_control_enabled: true,
@@ -212,7 +212,12 @@ fn bench_integrated_processor_performance(c: &mut Criterion) {
             |b, &size| {
                 let data = vec![0xBB; size];
                 b.to_async(&rt).iter(|| async {
-                    let frame = StreamFrame { stream_id: 1, offset: 0, fin: false, data: &data };
+                    let frame = StreamFrame {
+                        stream_id: 1,
+                        offset: 0,
+                        fin: false,
+                        data: &data,
+                    };
                     let bytes = build_stream_frame(&frame);
                     let result = processor.process_frame(&bytes).await;
                     black_box(result)
@@ -238,12 +243,18 @@ fn bench_integrated_processor_performance(c: &mut Criterion) {
                     for i in 0..count {
                         let processor_clone = Arc::clone(&processor);
                         let data = vec![0xCC; 4096];
-                        let frame = StreamFrame { stream_id: i as u32, offset: 0, fin: false, data: &data };
+                        let frame = StreamFrame {
+                            stream_id: i as u32,
+                            offset: 0,
+                            fin: false,
+                            data: &data,
+                        };
                         let bytes = build_stream_frame(&frame);
 
-                        let handle = tokio::spawn(async move {
-                            processor_clone.process_frame(&bytes).await
-                        });
+                        let handle =
+                            tokio::spawn(
+                                async move { processor_clone.process_frame(&bytes).await },
+                            );
 
                         handles.push(handle);
                     }
@@ -269,7 +280,12 @@ fn bench_end_to_end_performance(c: &mut Criterion) {
             // Simulate first data frame on a stream
             let stream_id = 1u32;
             let handshake_data = vec![0x01, 0x02, 0x03, 0x04];
-            let frame = StreamFrame { stream_id, offset: 0, fin: false, data: &handshake_data };
+            let frame = StreamFrame {
+                stream_id,
+                offset: 0,
+                fin: false,
+                data: &handshake_data,
+            };
             let bytes = build_stream_frame(&frame);
             let result = processor.process_frame(&bytes).await;
             black_box(result)
@@ -288,7 +304,12 @@ fn bench_end_to_end_performance(c: &mut Criterion) {
 
             for i in 0..num_chunks {
                 let chunk_data = vec![0xDD; chunk_size];
-                let frame = StreamFrame { stream_id, offset: i as u32 * chunk_size as u32, fin: false, data: &chunk_data };
+                let frame = StreamFrame {
+                    stream_id,
+                    offset: i as u32 * chunk_size as u32,
+                    fin: false,
+                    data: &chunk_data,
+                };
                 let bytes = build_stream_frame(&frame);
                 let _ = processor.process_frame(&bytes).await;
             }

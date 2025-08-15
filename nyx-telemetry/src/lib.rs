@@ -206,6 +206,7 @@ pub struct MixMetrics {
 }
 
 /// Comprehensive telemetry collector
+#[allow(dead_code)] // optional metrics; only registered under certain runtime configs
 pub struct TelemetryCollector {
     config: TelemetryConfig,
     registry: Registry,
@@ -239,6 +240,7 @@ pub struct TelemetryCollector {
     dynamic_series_limit: usize,
 }
 
+#[allow(dead_code)] // registry wiring occurs only when metrics backend is enabled
 impl TelemetryCollector {
     /// Create a new telemetry collector
     pub fn new(config: TelemetryConfig) -> Result<Self> {

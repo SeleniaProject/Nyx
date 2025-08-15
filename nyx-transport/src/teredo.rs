@@ -124,8 +124,8 @@ mod tests {
     #[ignore]
     async fn test_discover() {
         // This test is ignored by default as it performs external network IO.
-    let t = discover(DEFAULT_SERVER).await.unwrap();
-    // Use tracing for test diagnostics to honor subscriber configuration.
-    tracing::info!(?t, "teredo discovery result");
+        let t = discover(DEFAULT_SERVER).await.unwrap();
+        // Use tracing for test diagnostics to honor subscriber configuration.
+        tracing::info!(?t, "teredo discovery result");
     }
 }

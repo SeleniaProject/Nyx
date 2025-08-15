@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 const GAIN_CYCLE: [f64; 8] = [1.25, 0.9, 1.0, 0.95, 0.9, 0.85, 0.8, 0.8];
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[allow(dead_code)] // experimental congestion phases retained for calibration
 enum Mode {
     Startup,
     Drain,
@@ -18,6 +19,7 @@ enum Mode {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // fields used in experimental algorithms, not active by default
 pub struct CongestionCtrl {
     cwnd: f64, // congestion window in packets
     #[allow(dead_code)]

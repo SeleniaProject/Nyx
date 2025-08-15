@@ -6,7 +6,9 @@
 //! internal/private types or async networking. It simulates peer data and
 //! benchmarks selection/diversity algorithms deterministically.
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
+use criterion::{
+    black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
+};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
@@ -155,7 +157,8 @@ fn create_benchmark_peers(count: usize) -> Vec<BenchPeer> {
             _ => (0.0, 0.0),
         };
 
-        let capabilities_set: HashSet<String> = capabilities.iter().map(|s| s.to_string()).collect();
+        let capabilities_set: HashSet<String> =
+            capabilities.iter().map(|s| s.to_string()).collect();
 
         let peer = BenchPeer {
             peer_id: format!("benchmark-peer-{}", i),
@@ -196,7 +199,7 @@ fn bench_path_diversity_calculation(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark peer selection optimization performance  
+/// Benchmark peer selection optimization performance
 fn bench_peer_selection_optimization(c: &mut Criterion) {
     let mut group = c.benchmark_group("peer_selection_optimization");
     group.sample_size(50);
@@ -246,7 +249,9 @@ fn bench_diverse_path_selection(c: &mut Criterion) {
                 b.iter_batched(
                     || black_box(test_peers.clone()),
                     |peers| {
-                        let selected = select_diverse_path_peers(black_box(&peers), black_box(path_len)).unwrap();
+                        let selected =
+                            select_diverse_path_peers(black_box(&peers), black_box(path_len))
+                                .unwrap();
                         black_box(selected)
                     },
                     BatchSize::LargeInput,
@@ -296,8 +301,11 @@ fn bench_memory_usage(c: &mut Criterion) {
                     b.iter_batched(
                         || black_box(create_benchmark_peers(peer_count)),
                         |test_peers| {
-                            let selected = select_diverse_path_peers(black_box(&test_peers), black_box(5)).unwrap();
-                            let diversity_score = black_box(calculate_path_diversity_score(black_box(&selected)));
+                            let selected =
+                                select_diverse_path_peers(black_box(&test_peers), black_box(5))
+                                    .unwrap();
+                            let diversity_score =
+                                black_box(calculate_path_diversity_score(black_box(&selected)));
                             black_box((selected.len(), diversity_score))
                         },
                         BatchSize::LargeInput,
@@ -325,8 +333,11 @@ fn bench_memory_usage(c: &mut Criterion) {
                 b.iter_batched(
                     || black_box(create_benchmark_peers(peer_count)),
                     |test_peers| {
-                        let selected = select_diverse_path_peers(black_box(&test_peers), black_box(5)).unwrap();
-                        let diversity_score = black_box(calculate_path_diversity_score(black_box(&selected)));
+                        let selected =
+                            select_diverse_path_peers(black_box(&test_peers), black_box(5))
+                                .unwrap();
+                        let diversity_score =
+                            black_box(calculate_path_diversity_score(black_box(&selected)));
                         black_box((selected.len(), diversity_score))
                     },
                     BatchSize::LargeInput,

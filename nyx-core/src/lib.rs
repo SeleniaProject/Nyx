@@ -21,7 +21,7 @@ pub mod types;
 #[cfg(target_os = "windows")]
 pub mod windows;
 pub mod zero_copy; // Zero-copy optimization for critical data paths // 新しい共有パス性能モニタ
-                                                                     // New v1.0 Critical Priority modules
+                   // New v1.0 Critical Priority modules
 #[cfg(feature = "cmix")]
 pub mod cmix_integration;
 #[cfg(feature = "multipath_dp")]

@@ -557,6 +557,7 @@ impl EventHandler for CallbackEventHandler {
 }
 
 /// Event manager for handling multiple event handlers
+#[allow(dead_code)] // queued event buffer reserved for future async delivery
 pub struct EventManager {
     handlers: Arc<tokio::sync::RwLock<Vec<Arc<dyn EventHandler>>>>,
     event_queue: Arc<tokio::sync::Mutex<Vec<NyxEvent>>>,

@@ -173,9 +173,7 @@ fn bench_histogram_memory_usage(c: &mut Criterion) {
                         .collect();
 
                     // Perform operations on all histograms
-                    let total_samples: u64 = histograms.iter()
-                        .map(|h| h.total_samples())
-                        .sum();
+                    let total_samples: u64 = histograms.iter().map(|h| h.total_samples()).sum();
 
                     total_samples
                 })

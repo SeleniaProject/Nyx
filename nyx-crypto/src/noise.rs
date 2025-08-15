@@ -252,6 +252,7 @@ impl NoiseTransport {
 
 /// Complete Noise XX pattern handshake implementation
 #[cfg(feature = "classic")]
+#[allow(dead_code)] // kept for future Noise handshake extensions and test scaffolding
 pub struct NoiseHandshake {
     state: HandshakeState,
     pattern: HandshakePattern,
@@ -279,6 +280,7 @@ pub struct NoiseHandshake {
 }
 
 /// Hybrid post-quantum Noise handshake (Nyx Protocol v1.0)
+#[allow(dead_code)] // kept for hybrid patterns exploration, not yet wired in runtime
 pub struct HybridNoiseHandshake {
     state: HandshakeState,
     pattern: HandshakePattern,
@@ -328,6 +330,7 @@ pub struct HybridNoiseHandshake {
 }
 
 #[cfg(feature = "classic")]
+#[allow(dead_code)] // helper methods used by alternative handshake flows and tests
 impl NoiseHandshake {
     /// Create a new initiator handshake
     pub fn new_initiator() -> Result<Self, NoiseError> {

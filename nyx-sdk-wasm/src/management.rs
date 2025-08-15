@@ -24,6 +24,7 @@ fn build_settings_frame(settings: &[Setting]) -> Vec<u8> {
 mod setting_ids {
     pub const PLUGIN_SUPPORT: u16 = 0x0010;
     pub const PLUGIN_REQUIRED: u16 = 0x0011;
+    #[allow(dead_code)] // reserved for plugin negotiation flags
     pub const PLUGIN_OPTIONAL: u16 = 0x0012;
     pub const PLUGIN_SECURITY_POLICY: u16 = 0x0013;
 }

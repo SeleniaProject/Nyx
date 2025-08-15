@@ -23,6 +23,7 @@ use tokio::time::interval;
 use tracing::{info, warn};
 
 #[derive(Clone)]
+#[allow(dead_code)] // DHT handle kept for future rendezvous extensions
 pub struct RendezvousClient {
     endpoint: String,
     node_id: NodeId,

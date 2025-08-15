@@ -120,6 +120,7 @@ pub struct MultipathStats {
 }
 
 /// Main multipath data plane manager
+#[allow(dead_code)] // event channel and start_time reserved for future APIs
 pub struct MultipathManager {
     /// Configuration parameters
     config: MultipathConfig,

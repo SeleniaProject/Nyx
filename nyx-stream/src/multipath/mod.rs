@@ -457,6 +457,7 @@ impl ReorderingBuffer {
 }
 
 /// Multipath Manager coordinates multiple paths and data routing
+#[allow(dead_code)] // telemetry hooks for multipath tuning; not all fields used yet
 pub struct MultipathManager {
     paths: HashMap<PathId, PathStats>,
     scheduler: WrrScheduler,

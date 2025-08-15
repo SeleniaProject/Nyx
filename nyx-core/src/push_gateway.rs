@@ -391,7 +391,7 @@ impl PushGatewayManager {
             s.reconnect_in_flight = true;
         }
 
-    let mut attempt: u8 = 0;
+        let mut attempt: u8 = 0;
 
         loop {
             attempt += 1;
@@ -449,7 +449,6 @@ impl PushGatewayManager {
                     return Ok(());
                 }
                 Err(e) => {
-
                     // Update failure metrics
                     {
                         let mut s = self.state.lock().unwrap();

@@ -113,6 +113,7 @@ pub struct StreamStats {
 }
 
 /// A Nyx network stream implementing AsyncRead + AsyncWrite
+#[allow(dead_code)] // connection_info used by debug builds and diagnostics
 pub struct NyxStream {
     stream_id: String,
     target: String,
@@ -128,6 +129,7 @@ pub struct NyxStream {
     reconnect_manager: Option<Arc<ReconnectionManager>>,
 }
 
+#[allow(dead_code)] // error handling path not yet wired into public API
 impl NyxStream {
     /// Create a new stream (internal use)
     pub(crate) async fn new(

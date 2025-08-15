@@ -322,10 +322,10 @@ mod tests {
 // cross-module integration smoke test (only compiled with path-builder feature)
 #[cfg(all(test, feature = "path-builder"))]
 mod pb_integration_tests {
-    
+
     use crate::path_builder_broken::{DhtPeerDiscovery, DiscoveryCriteria, DummyDhtHandle};
     use std::sync::Arc;
-    
+
     #[tokio::test]
     async fn region_discovery_from_inmemory_dht() {
         let handle = Arc::new(DummyDhtHandle::new());

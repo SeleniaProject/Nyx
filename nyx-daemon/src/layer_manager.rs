@@ -10,9 +10,9 @@
 //! - Transport layer: Network I/O, packet handling, connection management
 
 use anyhow::Result;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use std::pin::Pin;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
 

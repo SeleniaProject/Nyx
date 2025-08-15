@@ -216,6 +216,7 @@ impl PathValidator {
 
     /// Build and transmit a `PATH_RESPONSE` replying to a given token.
     /// Echoes back the PathID from the original challenge for multipath consistency.
+    #[allow(dead_code)] // reserved for active PATH_REPONSE in future handshake
     async fn send_response(&self, addr: SocketAddr, token: &[u8; 16]) {
         self.send_response_with_path_id(addr, token, None).await;
     }

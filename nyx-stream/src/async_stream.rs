@@ -88,6 +88,7 @@ pub struct FlowStats {
 
 /// Frame buffer for reassembly
 #[derive(Debug)]
+#[allow(dead_code)] // buffer shaping is reserved for future flow-control refinements
 struct FrameBuffer {
     frames: VecDeque<StreamFrame<'static>>,
     expected_offset: u32,
@@ -216,6 +217,7 @@ impl Default for CleanupConfig {
 
 /// Pending operation tracking
 #[derive(Debug)]
+#[allow(dead_code)] // diagnostics-only timestamp not wired in production path yet
 struct PendingOperation {
     id: u64,
     operation_type: String,

@@ -168,6 +168,7 @@ struct ConnectionPool {
     cleanup_interval: Duration,
 }
 
+#[allow(dead_code)] // connection pooling disabled by default; kept for future reuse
 impl ConnectionPool {
     fn new() -> Self {
         Self {
@@ -671,7 +672,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_stats() {
-    let mut listener = TcpEncapListener::bind(4482).await.unwrap();
+        let mut listener = TcpEncapListener::bind(4482).await.unwrap();
         let conn = TcpEncapConnection::connect("127.0.0.1:4482").await.unwrap();
 
         let initial_stats = conn.get_stats().await;
@@ -741,7 +742,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_frame_size_limits() {
-    let _listener = TcpEncapListener::bind(4484).await.unwrap();
+        let _listener = TcpEncapListener::bind(4484).await.unwrap();
         let conn = TcpEncapConnection::connect("127.0.0.1:4484").await.unwrap();
 
         // Test maximum frame size

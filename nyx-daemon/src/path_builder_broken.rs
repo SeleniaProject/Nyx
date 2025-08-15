@@ -5524,8 +5524,7 @@ impl PathBuilder {
 #[cfg(test)]
 mod path_builder_tests {
     use super::*;
-    
-    
+
     #[tokio::test]
     async fn topology_updates_from_dht_region() {
         let pb = PathBuilder::new(

@@ -258,9 +258,9 @@ impl PluginDispatcher {
         // Create IPC channel with appropriate buffer size
         let (tx, rx) = mpsc::channel(1024);
 
-    // Clone shared runtime statistics once for use within the spawned task.
-    // Avoid redundant cloning to reduce noise and potential confusion.
-    let stats_clone = Arc::clone(&self.stats);
+        // Clone shared runtime statistics once for use within the spawned task.
+        // Avoid redundant cloning to reduce noise and potential confusion.
+        let stats_clone = Arc::clone(&self.stats);
 
         // Spawn plugin runtime with comprehensive message processing
         let join_handle = tokio::spawn(async move {

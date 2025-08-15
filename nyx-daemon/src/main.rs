@@ -2249,6 +2249,7 @@ async fn http_wasm_handshake_start(State(st): State<AppState>) -> Json<serde_jso
     }
     #[cfg(not(feature = "plugin"))]
     {
+    let _ = &st; // suppress unused when plugin feature is disabled
         Json(serde_json::json!({"started": false, "error": "plugin feature disabled"}))
     }
 }
@@ -2285,6 +2286,7 @@ async fn http_wasm_handshake_process_peer_settings(
     }
     #[cfg(not(feature = "plugin"))]
     {
+    let _ = (&st, &body); // suppress unused when plugin feature is disabled
         Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
     }
 }
@@ -2356,6 +2358,7 @@ async fn http_wasm_handshake_complete(State(st): State<AppState>) -> Json<serde_
     }
     #[cfg(not(feature = "plugin"))]
     {
+    let _ = &st; // suppress unused when plugin feature is disabled
         Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
     }
 }
@@ -2392,6 +2395,7 @@ async fn http_wasm_set_required_plugins(
     }
     #[cfg(not(feature = "plugin"))]
     {
+    let _ = (&st, &body); // suppress unused when plugin feature is disabled
         Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
     }
 }
@@ -2422,6 +2426,7 @@ async fn http_reload_plugin_manifest_json(body: axum::body::Bytes) -> Json<serde
     }
     #[cfg(not(feature = "plugin"))]
     {
+    let _ = &body; // suppress unused when plugin feature is disabled
         Json(serde_json::json!({"ok": false, "error": "plugin feature disabled"}))
     }
 }
