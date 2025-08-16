@@ -90,7 +90,7 @@ async fn main() -> io::Result<()> {
 	let config_path = std::env::var("NYX_CONFIG").ok().map(PathBuf::from);
 	let cfg_mgr = ConfigManager::new(NyxConfig::default(), config_path);
 	let events = EventSystem::new(1024);
-	let token = std::env::var("NYX_DAEMON_TOKEN").ok();
+	let token = ensure_token_from_env_or_cookie();
 	let state = Arc::new(DaemonState { start_time: Instant::now(), node_id, cfg: cfg_mgr, events, token });
 
 	info!("starting nyx-daemon (plain IPC) at {}", DEFAULT_ENDPOINT);
@@ -140,6 +140,68 @@ async fn main() -> io::Result<()> {
 				// Client disconnects when done; loop continues to create the next instance.
 			});
 		}
+	}
+}
+
+fn ensure_token_from_env_or_cookie() -> Option<String> {
+	// 1) Environment variable takes precedence (non-empty)
+	if let Ok(t) = std::env::var("NYX_DAEMON_TOKEN") {
+		let tt = t.trim().to_string();
+		if !tt.is_empty() { return Some(tt); }
+	}
+
+	// 2) Determine cookie path: explicit env or default per-user path
+	let cookie_path = if let Ok(p) = std::env::var("NYX_DAEMON_COOKIE") {
+		if !p.trim().is_empty() { std::path::PathBuf::from(p) } else { default_cookie_path() }
+	} else {
+		default_cookie_path()
+	};
+
+	// 3) If cookie exists and non-empty, read it
+	if let Ok(s) = std::fs::read_to_string(&cookie_path) {
+		let tok = s.trim().to_string();
+		if !tok.is_empty() { return Some(tok); }
+	}
+
+	// 4) Otherwise, auto-generate a cookie (Tor-like UX)
+	let mut bytes = [0u8; 32];
+	rand::thread_rng().fill_bytes(&mut bytes);
+	let tok = hex::encode(bytes);
+	if let Some(parent) = cookie_path.parent() {
+		if let Err(e) = std::fs::create_dir_all(parent) { warn!("failed to create cookie dir: {e}"); return None; }
+	}
+	if let Err(e) = std::fs::write(&cookie_path, &tok) {
+		warn!("failed to write cookie file {}: {e}", cookie_path.display());
+		return None;
+	}
+	// Best-effort permission tightening (Unix only)
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::PermissionsExt;
+		if let Ok(meta) = std::fs::metadata(&cookie_path) {
+			let mut perm = meta.permissions();
+			perm.set_mode(0o600);
+			let _ = std::fs::set_permissions(&cookie_path, perm);
+		}
+	}
+	info!("generated control auth cookie at {}", cookie_path.display());
+	Some(tok)
+}
+
+fn default_cookie_path() -> std::path::PathBuf {
+	#[cfg(windows)]
+	{
+		if let Ok(appdata) = std::env::var("APPDATA") {
+			return std::path::Path::new(&appdata).join("nyx").join("control.authcookie");
+		}
+		return std::path::PathBuf::from("control.authcookie");
+	}
+	#[cfg(unix)]
+	{
+		if let Ok(home) = std::env::var("HOME") {
+			return std::path::Path::new(&home).join(".nyx").join("control.authcookie");
+		}
+		std::path::PathBuf::from("control.authcookie")
 	}
 }
 
@@ -258,7 +320,13 @@ async fn process_request(req_line: &str, state: &DaemonState) -> (Response<serde
 }
 
 fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
-	match (&state.token, auth) {
+	// Treat empty or whitespace-only token as not set (disabled auth)
+	let effective = state
+		.token
+		.as_deref()
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty());
+	match (effective, auth) {
 		(None, _) => true, // if no token is set, allow all (development default)
 		(Some(expected), Some(provided)) => {
 			let ok = provided == expected;
@@ -393,6 +461,20 @@ mod tests {
 		assert!(!resp.ok);
 		assert_eq!(resp.code, 400);
 		assert!(resp.error.unwrap().contains("invalid request"));
+	}
+
+	#[tokio::test]
+	async fn empty_env_token_is_treated_as_disabled() {
+		// Simulate daemon started with empty token ("   ") which should disable auth
+		let mut state = make_state_with_token(Some("   "));
+		// ensure internal state reflects token provided
+		// but authorization treats it as None
+		let req = serde_json::json!({
+			"id": "r1",
+			"op": "reload_config"
+		}).to_string();
+		let (resp, _rx, _filter) = process_request(&req, &state).await;
+		assert!(resp.ok, "auth should be disabled when token is empty/whitespace");
 	}
 }
 
