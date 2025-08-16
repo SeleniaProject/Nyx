@@ -1,1 +1,200 @@
-﻿
+﻿#![forbid(unsafe_code)]
+
+use std::collections::{HashMap, VecDeque};
+use std::time::Duration;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PathId(pub u8);
+
+#[derive(Debug, Clone, Copy)]
+pub struct PathMetric {
+	pub rtt: Duration,
+	pub loss: f32,
+	pub weight: u32,
+}
+
+#[derive(Debug)]
+pub struct WeightedScheduler {
+	base_weights: HashMap<PathId, f64>,
+	weights: HashMap<PathId, f64>,
+	rtt_ewma_ns: HashMap<PathId, f64>,
+	order: Vec<PathId>,
+	loss_penalty: HashMap<PathId, f64>,
+	ring: Vec<PathId>,
+	idx: usize,
+}
+
+impl WeightedScheduler {
+	pub fn new(paths: &[(PathId, PathMetric)]) -> Self {
+		let mut base_weights = HashMap::new();
+		let mut weights = HashMap::new();
+		let mut rtt_ewma_ns = HashMap::new();
+		let mut order = Vec::new();
+		for (id, m) in paths.iter().copied() {
+			base_weights.insert(id, (m.weight.max(1)) as f64);
+			weights.insert(id, (m.weight.max(1)) as f64);
+			rtt_ewma_ns.insert(id, m.rtt.as_nanos() as f64);
+			order.push(id);
+		}
+	let loss_penalty = order.iter().map(|&id| (id, 1.0)).collect();
+	let mut s = Self { base_weights, weights, rtt_ewma_ns, order, loss_penalty, ring: Vec::new(), idx: 0 };
+		s.rebuild_ring();
+		s
+	}
+
+	pub fn next_path(&mut self) -> PathId {
+		if self.ring.is_empty() { self.rebuild_ring(); }
+		let id = self.ring[self.idx % self.ring.len()];
+		self.idx = (self.idx + 1) % self.ring.len();
+		id
+	}
+
+	/// Observe an RTT sample for a path and adjust weights accordingly.
+	pub fn observe_rtt(&mut self, path: PathId, sample: Duration) {
+		const ALPHA: f64 = 0.85; // EWMA smoothing
+		let s_ns = sample.as_nanos() as f64;
+		let prev = self.rtt_ewma_ns.get(&path).copied().unwrap_or(s_ns);
+		let ewma = ALPHA * prev + (1.0 - ALPHA) * s_ns;
+		self.rtt_ewma_ns.insert(path, ewma);
+		self.recompute_weights();
+		self.rebuild_ring();
+	}
+
+	/// Observe a loss (timeout or retransmit trigger) for a path to penalize its share.
+	pub fn observe_loss(&mut self, path: PathId) {
+		let p = self.loss_penalty.entry(path).or_insert(1.0);
+		*p = (*p * 0.9).max(0.5); // lower-bound
+		self.recompute_weights();
+		self.rebuild_ring();
+	}
+
+	fn recompute_weights(&mut self) {
+		if self.rtt_ewma_ns.is_empty() { return; }
+		let min_rtt = self.rtt_ewma_ns.values().copied().fold(f64::INFINITY, f64::min);
+		if !min_rtt.is_finite() { return; }
+		// For each path: weight = base * clamp((min_rtt / rtt), 0.5..=4.0) * loss_penalty
+		for (id, base) in self.base_weights.clone() {
+			let rtt = self.rtt_ewma_ns.get(&id).copied().unwrap_or(min_rtt);
+			let mut factor = (min_rtt / rtt).clamp(0.5, 4.0);
+			// Protect against NaN or zero
+			if !factor.is_finite() || factor <= 0.0 { factor = 1.0; }
+			let penalty = *self.loss_penalty.get(&id).unwrap_or(&1.0);
+			self.weights.insert(id, base * factor * penalty);
+		}
+	}
+
+	fn rebuild_ring(&mut self) {
+		self.ring.clear();
+		if self.weights.is_empty() {
+			self.ring.push(PathId(0));
+			self.idx = 0;
+			return;
+		}
+		// Normalize to an integer ring with capped total slots
+		const MAX_SLOTS: usize = 64;
+		let sum: f64 = self.weights.values().sum();
+		if sum <= 0.0 { self.ring.push(PathId(0)); self.idx = 0; return; }
+		// Compute slots per path deterministically following original order
+		let mut quotas: HashMap<PathId, usize> = HashMap::new();
+		let mut total_slots = 0usize;
+		for id in &self.order {
+			let w = *self.weights.get(id).unwrap_or(&1.0);
+			let share = (w / sum) * (MAX_SLOTS as f64);
+			let slots = share.round() as usize;
+			let slots = slots.max(1);
+			quotas.insert(*id, slots);
+			total_slots += slots;
+		}
+		// Interleave by round-robin until quotas are exhausted
+		let mut remaining = quotas.clone();
+		while self.ring.len() < total_slots {
+			let mut any = false;
+			for id in &self.order {
+				let r = remaining.get_mut(id).unwrap();
+				if *r > 0 {
+					self.ring.push(*id);
+					*r -= 1;
+					any = true;
+					if self.ring.len() >= MAX_SLOTS { break; }
+				}
+			}
+			if !any { break; }
+			if self.ring.len() >= MAX_SLOTS { break; }
+		}
+		self.idx = self.idx % self.ring.len();
+	}
+}
+
+#[derive(Debug)]
+pub struct RetransmitQueue {
+	q: VecDeque<(u64, PathId)>,
+}
+
+impl RetransmitQueue {
+	pub fn new() -> Self { Self { q: VecDeque::new() } }
+	pub fn push(&mut self, seq: u64, from: PathId) { self.q.push_back((seq, from)); }
+	pub fn pop(&mut self) -> Option<(u64, PathId)> { self.q.pop_front() }
+	pub fn is_empty(&self) -> bool { self.q.is_empty() }
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn weighted_rr_cycles() {
+		let paths = vec![
+			(PathId(1), PathMetric{ rtt: Duration::from_millis(10), loss: 0.0, weight: 1 }),
+			(PathId(2), PathMetric{ rtt: Duration::from_millis(20), loss: 0.0, weight: 2 }),
+		];
+		let mut s = WeightedScheduler::new(&paths);
+		let picks: Vec<_> = (0..6).map(|_| s.next_path().0).collect();
+		// Path 2 should appear ~2x
+		let c1 = picks.iter().filter(|&&p| p==1).count();
+		let c2 = picks.iter().filter(|&&p| p==2).count();
+		assert!(c2 >= c1);
+	}
+
+	#[test]
+	fn observe_rtt_increases_weight_for_faster_path() {
+		let paths = vec![
+			(PathId(1), PathMetric{ rtt: Duration::from_millis(50), loss: 0.0, weight: 1 }),
+			(PathId(2), PathMetric{ rtt: Duration::from_millis(50), loss: 0.0, weight: 1 }),
+		];
+		let mut s = WeightedScheduler::new(&paths);
+		// Initially roughly balanced
+		let picks: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
+		let c1 = picks.iter().filter(|&&p| p==1).count();
+		let c2 = picks.iter().filter(|&&p| p==2).count();
+		assert!((c1 as i32 - c2 as i32).abs() <= 8);
+
+		// Path 1 becomes much faster
+		s.observe_rtt(PathId(1), Duration::from_millis(5));
+		let picks: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
+		let c1b = picks.iter().filter(|&&p| p==1).count();
+		let c2b = picks.iter().filter(|&&p| p==2).count();
+		assert!(c1b > c2b); // faster path is preferred
+	}
+
+	#[test]
+	fn observe_loss_penalizes_path_share() {
+		let paths = vec![
+			(PathId(1), PathMetric{ rtt: Duration::from_millis(10), loss: 0.0, weight: 1 }),
+			(PathId(2), PathMetric{ rtt: Duration::from_millis(10), loss: 0.0, weight: 1 }),
+		];
+		let mut s = WeightedScheduler::new(&paths);
+		// Balanced first
+		let picks: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
+		let c1 = picks.iter().filter(|&&p| p==1).count();
+		let c2 = picks.iter().filter(|&&p| p==2).count();
+		assert!((c1 as i32 - c2 as i32).abs() <= 8);
+
+		// Penalize path 1 by observing losses
+		for _ in 0..5 { s.observe_loss(PathId(1)); }
+		let picks: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
+		let c1b = picks.iter().filter(|&&p| p==1).count();
+		let c2b = picks.iter().filter(|&&p| p==2).count();
+		assert!(c2b > c1b);
+	}
+}
+
