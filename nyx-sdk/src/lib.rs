@@ -13,7 +13,6 @@ pub mod config;
 pub mod events;
 pub mod daemon;
 pub mod stream;
-pub mod proto;
 pub mod reconnect;
 pub mod retry;
 
