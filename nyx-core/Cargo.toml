@@ -87,10 +87,8 @@ path = "../nyx-mobile-ffi"
 optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-anyhow = "1"
-# Use pure-Rust seccomp-bpf compiler/runtime instead of libseccomp bindings
-seccompiler = "0.4"
-seccomp = "0.1"
+# Pure Rust implementation without C dependencies
+nix = { version = "0.27", features = ["signal", "fs", "net"] }
 
 [target.'cfg(target_os = "openbsd")'.dependencies]
 pledge = "0.4"
@@ -99,6 +97,10 @@ unveil = "0.3"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.56", features = ["Win32_Foundation","Win32_System_Threading","Win32_System_JobObjects", "Win32_Security"] }
 win32job = "2.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Pure Rust implementation without C dependencies
+nix = { version = "0.27", features = ["signal", "fs", "net"] }
 
 [dev-dependencies]
 hex-literal = "0.4"
