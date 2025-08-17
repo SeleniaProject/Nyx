@@ -2,7 +2,7 @@
 use rand::{Rng, SeedableRng};
 
 /// Configuration for the network simulator.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimConfig {
 	/// Packet loss probability in [0.0, 1.0].
 	pub loss: f64,
@@ -11,6 +11,9 @@ pub struct SimConfig {
 	/// Jitter range (+/-) in milliseconds applied uniformly.
 	pub jitter_ms: u64,
 	/// Probability of reordering two consecutive packets in [0.0, 1.0].
+	/// Note: reordering is applied locally before the final sort by delivery
+	/// time, so it primarily affects the mapping between sequence numbers and
+	/// their drawn latencies rather than the final chronological order.
 	pub reorder: f64,
 	/// Bandwidth in packets per second (pps). 0 = unlimited (no queueing delay).
 	pub bandwidth_pps: u64,
@@ -47,7 +50,7 @@ impl Default for SimConfig {
 }
 
 /// A scheduled delivery event for a simulated packet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeliveryEvent {
 	/// Monotonic simulated clock time when the packet is delivered.
 	pub delivery_ms: u64,
@@ -201,6 +204,74 @@ mod tests {
 	let cfg = SimConfig { loss: 0.0, latency_ms: 10, jitter_ms: 0, reorder: 1.0, bandwidth_pps: 0, max_queue: 8, ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0, duplicate: 0.0, corruption: 0.0 };
 		let mut sim = NetworkSimulator::new(cfg, 7);
 		let evs = sim.send_burst(5);
+		assert!(evs.windows(2).all(|w| w[0].delivery_ms <= w[1].delivery_ms));
+	}
+
+	#[test]
+	fn bandwidth_queue_and_tail_drop() {
+		// Very limited bandwidth -> only a few departures fit without exceeding max_queue
+		let cfg = SimConfig { loss: 0.0, latency_ms: 1, jitter_ms: 0, reorder: 0.0,
+			bandwidth_pps: 10, max_queue: 3,
+			ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0,
+			duplicate: 0.0, corruption: 0.0 };
+		let mut sim = NetworkSimulator::new(cfg, 1);
+		// Enqueue 10 packets; only up to max_queue should be accepted in this batch
+		let evs = sim.send_burst(10);
+		assert!(evs.len() <= cfg.max_queue);
+		assert!(sim.queue_depth <= cfg.max_queue);
+	}
+
+	#[test]
+	fn duplicate_and_corruption_flags() {
+		let cfg = SimConfig { loss: 0.0, latency_ms: 1, jitter_ms: 0, reorder: 0.0,
+			bandwidth_pps: 0, max_queue: 128,
+			ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0,
+			duplicate: 1.0, corruption: 1.0 };
+		let mut sim = NetworkSimulator::new(cfg, 2);
+		let evs = sim.send_burst(5);
+		// With duplicate=1.0, each accepted packet yields two events
+		assert_eq!(evs.len() % 2, 0);
+		assert!(evs.iter().all(|e| e.corrupted));
+		// For each seq, exactly two events should exist and be 1ms apart (since jitter=0)
+		use std::collections::BTreeMap;
+		let mut by_seq: BTreeMap<u64, Vec<&DeliveryEvent>> = BTreeMap::new();
+		for e in &evs { by_seq.entry(e.seq).or_default().push(e); }
+		for (_s, v) in by_seq.iter() {
+			assert_eq!(v.len(), 2);
+			let d0 = v[0].delivery_ms.min(v[1].delivery_ms);
+			let d1 = v[0].delivery_ms.max(v[1].delivery_ms);
+			assert!(d1.saturating_sub(d0) <= 1);
+		}
+	}
+
+	#[test]
+	fn gilbert_elliott_burst_loss() {
+		// Configure strong bursts: once in bad state, drop almost always
+		let cfg = SimConfig { loss: 0.0, latency_ms: 1, jitter_ms: 0, reorder: 0.0,
+			bandwidth_pps: 0, max_queue: 1024,
+			ge_good_to_bad: 0.5, ge_bad_to_good: 0.1, ge_loss_good: 0.01, ge_loss_bad: 0.9,
+			duplicate: 0.0, corruption: 0.0 };
+		let mut sim = NetworkSimulator::new(cfg, 3);
+		let evs = sim.send_burst(200);
+		// Expect some loss overall
+		assert!(evs.len() < 200);
+	}
+
+	#[test]
+	fn multipath_weighted_distribution() {
+		let cfg = SimConfig { loss: 0.0, latency_ms: 5, jitter_ms: 1, reorder: 0.0,
+			bandwidth_pps: 0, max_queue: 128,
+			ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0,
+			duplicate: 0.0, corruption: 0.0 };
+		let seeds = [10u64, 11u64, 12u64];
+		let weights = Some(vec![2.0, 1.0, 1.0]);
+		let mut m = MultiPathSimulator::new_n(cfg, &seeds, weights);
+		let n = 40;
+		let evs = m.send_burst(n);
+		assert_eq!(evs.len(), n);
+		// Count per-seq modulo assumption: each path allocates independent seq starting at 0
+		// We can't tell path directly from event, but distribution should be stable across seeds.
+		// Basic check: merged is time-sorted and non-decreasing by delivery.
 		assert!(evs.windows(2).all(|w| w[0].delivery_ms <= w[1].delivery_ms));
 	}
 }
