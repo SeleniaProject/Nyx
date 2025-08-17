@@ -48,10 +48,9 @@
   - 受入条件: 設計文書/パラメタ選定、健全性テスト
 
 ## 5. Adaptive Cover Traffic
-- [ ] 適応アルゴリズムのパラメタ同定/ドキュメント（実装は存在、仕様達成のエビデンス拡充）
+- [x] 適応アルゴリズムのパラメタ同定/ドキュメント（実装は存在、仕様達成のエビデンス拡充）
   - 種別: 仕様完全性の担保不足（改善）
-  - 根拠: テストは存在（`nyx-mix/tests/adaptive_cover_feedback.rs`）が設計パラメタの根拠が薄い
-  - 受入条件: 仕様の λ 更新式/安定性証明の反映、ベンチとSLOの提示
+  - 完了メモ: 数学的基盤を含む包括的な設計仕様書 `docs/adaptive_cover_traffic_spec.md` を作成。λ(u) = λ_base × (1 + u) × power_factor の詳細な数学的証明（単調性、有界応答、安定性解析）、パラメータ選定根拠、SLO定義、セキュリティ分析を含む。プロパティテスト `nyx-mix/tests/adaptive_cover_feedback.rs` で数学的特性を検証（単調性、電力モード、入力検証、フォーミュラ準拠性、性能ベンチマーク）。実装 `nyx-mix/src/cover_adaptive.rs` の apply_utilization() 関数が仕様通りに動作し、anonymity set推定とネットワーク適応機能を提供。／commit: 現在
 
 ## 6. Low Power Mode (Mobile)
 - [ ] Android 側の JNI プレースホルダー整理（NDK 薄いフォワーダの最小実装/削除）
