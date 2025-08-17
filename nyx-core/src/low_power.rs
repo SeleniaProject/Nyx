@@ -38,7 +38,7 @@ impl InactivityTrigger {
 	/// Returns true if inactivity exceeded threshold and rate limiter allows firing.
 	pub fn should_trigger(&mut self, now: TimestampMs) -> bool {
 		let idle = now.0.saturating_sub(self.last_activity.0);
-		if idle as u128 >= self.threshold.as_millis() as u128 {
+	if idle as u128 >= self.threshold.as_millis() {
 			// simulate logical time refill based on idle duration
 			self.limiter.refill_with(Duration::from_millis(idle));
 			if self.limiter.allow() { self.last_activity = now; true } else { false }

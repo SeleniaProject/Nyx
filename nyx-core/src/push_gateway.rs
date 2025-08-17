@@ -10,9 +10,10 @@ pub struct PushGateway<P> {
 impl<P: PushProvider + 'static> PushGateway<P> {
 	pub fn new(provider: Arc<P>, per_sec: f64) -> Self { Self { provider, limiter: std::sync::Mutex::new(RateLimiter::new(1.0, per_sec)) } }
 	pub async fn send(&self, token: &str, title: &str, body: &str) -> anyhow::Result<bool> {
-		let mut l = self.limiter.lock().unwrap();
-		if !l.allow() { return Ok(false); }
-		drop(l);
+		{
+			let mut l = self.limiter.lock().unwrap();
+			if !l.allow() { return Ok(false); }
+		}
 		self.provider.send(token, title, body).await?;
 		Ok(true)
 	}
