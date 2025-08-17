@@ -57,7 +57,7 @@ graph TD
     end
     CLI -->|gRPC| Daemon
     APP -->|SDK API| Daemon
-    subgraph Daemon (nyxd)
+    subgraph Daemon [nyxd]
         subgraph Tokio Tasks
             TR(TransportAdapter)
             SS(StreamLayer)

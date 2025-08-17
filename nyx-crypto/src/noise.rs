@@ -294,14 +294,20 @@ mod tests {
 	#[test]
 	fn test_hybrid_message_too_short() {
 		let err = validate_hybrid_message_len(&[1,2,3,4,5,6,7]).unwrap_err();
-	match err { Error::Protocol(s) => assert!(s.contains("too short")) }
+		match err { 
+			Error::Protocol(s) => assert!(s.contains("too short")),
+			_ => panic!("Expected Protocol error"),
+		}
 	}
 
 	#[test]
 	fn test_hybrid_message_too_long() {
 		let v = vec![0u8; super::MAX_NOISE_MSG_LEN + 1];
 		let err = validate_hybrid_message_len(&v).unwrap_err();
-		match err { Error::Protocol(s) => assert!(s.contains("too long")) }
+		match err { 
+			Error::Protocol(s) => assert!(s.contains("too long")),
+			_ => panic!("Expected Protocol error"),
+		}
 	}
 
 	#[test]

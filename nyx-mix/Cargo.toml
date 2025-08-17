@@ -34,3 +34,6 @@ lazy_static = "1"
 tokio-stream = { version = "0.1", features=["sync"] }
 nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 metrics = { version = "0.22", optional = true }
+
+[dev-dependencies]
+proptest = "1.4"

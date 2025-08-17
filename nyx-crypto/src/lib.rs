@@ -22,8 +22,16 @@ pub mod pcr;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-	#[error("{0}")]
+	#[error("Protocol error: {0}")]
 	Protocol(String),
+	#[error("Cryptographic operation failed: {0}")]
+	Crypto(String),
+	#[error("Invalid key: {0}")]
+	InvalidKey(String),
+	#[error("Authentication failed: {0}")]
+	AuthenticationFailed(String),
+	#[error("Post-quantum operation failed: {0}")]
+	PostQuantumError(String),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

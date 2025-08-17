@@ -1,0 +1,587 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run nyx-stream tests",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-stream"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry tests (prom+otlp)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry tests (otlp exporter)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry tests (otlp exporter)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry tests (otlp exporter)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_e2e_collector",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry tests (all OTLP)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Build nyx-core (all features)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"build",
+				"-p",
+				"nyx-core",
+				"--features",
+				"os_sandbox",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test only",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Build nyx-core without os_sandbox feature change",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"build",
+				"-p",
+				"nyx-core",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test (single)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test (single) again",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Re-run the single nyx-telemetry timeout test",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Rebuild and re-run the timeout test after API fixes",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Build and run timeout test after BSP builder fix",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run timeout test with updated BSP config",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Re-run timeout test after switching to SimpleSpanProcessor on schedule_delay=0",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint",
+				"-q"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run OTLP timeout test",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Re-run nyx-telemetry timeout test (focused)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Re-run nyx-telemetry timeout test after shutdown timeout tweak",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Re-run nyx-telemetry timeout test with diagnostics",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test now",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture",
+				"--quiet"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Clean and run nyx-telemetry timeout test (isolated target)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"cargo clean -p nyx-telemetry; cargo test -p nyx-telemetry --features \"prometheus otlp_exporter otlp\" --test otlp_timeout -- --nocapture --quiet --target-dir target/otlp-timeout-iso-20250818"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-stream tests (baseline)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-stream"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test (isolated target-dir)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/otlp-timeout-iso2-20250818",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test (fresh target-dir)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/otlp-timeout-iso-20250818b",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry timeout test (workspace target-dir)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture",
+				"--exact",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Re-run nyx-telemetry timeout test (fresh target-dir)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/otlp-timeout-iso-20250818c",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture",
+				"--exact",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Re-run nyx-telemetry timeout test (fresh target-dir)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/otlp-timeout-iso-20250818c",
+				"--test",
+				"otlp_timeout",
+				"--",
+				"--nocapture",
+				"--exact",
+				"otlp_exporter_times_out_quickly_on_unreachable_endpoint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry E2E test (isolated)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/otlp-timeout-iso-20250818c",
+				"--test",
+				"otlp_e2e_collector",
+				"--",
+				"--nocapture"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run all nyx-telemetry tests (isolated)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/otlp-timeout-iso-20250818c",
+				"-q"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Run nyx-telemetry full test sweep (isolated)",
+			"type": "shell",
+			"command": "cargo",
+			"args": [
+				"test",
+				"-p",
+				"nyx-telemetry",
+				"--features",
+				"prometheus otlp_exporter otlp",
+				"--target-dir",
+				"target/nyx-telemetry-full-20250818",
+				"-q"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "test"
+		}
+	]
+}

@@ -11,8 +11,8 @@ default = ["classic"]
 # Optional/experimental feature flag used for cfg guards in code paths (no deps)
 bike = []
 hpke = ["dep:hpke"]
-# Telemetry (no extra deps here; used only for conditional instrumentation counters)
-telemetry = []
+# Telemetry (with optional nyx-telemetry integration)
+telemetry = ["dep:nyx-telemetry"]
 # Classic (Elliptic Curve) X25519 only build
 classic = ["x25519-dalek"]
 
@@ -67,6 +67,9 @@ pbkdf2 = { version = "0.12", features = ["simple"] }
 hmac = "0.12"
 getrandom = "0.2"
 tracing = "0.1"
+
+# Telemetry and metrics dependencies (optional)
+nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 
 # System dependencies
 

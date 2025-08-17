@@ -37,10 +37,33 @@ pub struct MixConfig {
 	/// 動作モード (デフォルト/CMix)
 	#[serde(default)]
 	pub mode: Mode,
-	/// カバートラフィック基準レート (pps)
+	
+	/// Base cover traffic rate in packets per second.
+	///
+	/// This parameter sets the minimum anonymity protection level when the network
+	/// is idle (utilization = 0). The value is chosen based on:
+	/// 
+	/// - **Anonymity Requirements**: Must provide sufficient mixing for small networks
+	/// - **Bandwidth Efficiency**: Low enough to avoid excessive overhead  
+	/// - **Attack Resistance**: High enough to prevent timing analysis
+	///
+	/// **Default Value**: 5.0 pps
+	/// **Rationale**: Provides 50:1 anonymity set for typical user rate of 0.1 pps
+	/// **Range**: [0.1, 100.0] (validated in implementation)
 	#[serde(default = "MixConfig::default_lambda")] 
 	pub base_cover_lambda: f32,
-	/// 低電力時の比率 (0..=1)
+	
+	/// Power reduction factor for mobile/battery-constrained devices.
+	///
+	/// When low_power mode is enabled, the effective cover traffic rate becomes:
+	/// `effective_rate = base_cover_lambda × low_power_ratio × (1 + utilization)`
+	///
+	/// **Default Value**: 0.4 (60% reduction)
+	/// **Rationale**: 
+	/// - Balances battery life with anonymity protection
+	/// - Maintains minimum 20:1 anonymity set for typical usage
+	/// - Allows graceful degradation for resource-constrained devices
+	/// **Range**: [0.1, 1.0] (values below 0.1 provide insufficient anonymity)
 	#[serde(default = "MixConfig::default_low_power_ratio")] 
 	pub low_power_ratio: f32,
 }

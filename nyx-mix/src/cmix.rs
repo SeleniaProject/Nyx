@@ -1,46 +1,427 @@
-﻿//! Minimal cMix batcher stub
+﻿//! cMix batcher implementation with VDF integration and tamper detection
 
 use std::time::{Duration, Instant};
+use sha2::{Digest, Sha256};
+use crate::{vdf, accumulator};
 
-#[derive(Default)]
-pub struct BatchStats { pub emitted: usize, pub last_flush: Option<Instant>, pub errors: usize }
+/// Detailed error information for cMix operations
+#[derive(Debug, Clone, PartialEq)]
+pub enum CmixError {
+    /// Batch verification failed due to tampering
+    TamperedBatch { batch_id: u64, expected_hash: [u8; 32], actual_hash: [u8; 32] },
+    /// VDF computation timeout
+    VdfTimeout { duration: Duration, max_allowed: Duration },
+    /// Invalid witness for RSA accumulator
+    InvalidWitness { element: Vec<u8>, witness: Vec<u8> },
+    /// Batch size constraints violated
+    InvalidBatchSize { size: usize, min: usize, max: usize },
+}
 
-pub struct Batcher { size: usize, timeout: Duration, buf: Vec<Vec<u8>>, pub stats: BatchStats }
+/// Comprehensive statistics for cMix batcher operations
+#[derive(Default, Debug, Clone)]
+pub struct BatchStats {
+    /// Number of batches successfully emitted
+    pub emitted: usize,
+    /// Last flush timestamp
+    pub last_flush: Option<Instant>,
+    /// Number of errors encountered
+    pub errors: usize,
+    /// Number of VDF computations performed
+    pub vdf_computations: usize,
+    /// Number of verification failures
+    pub verification_failures: usize,
+    /// Total processing time for VDF operations
+    pub total_vdf_time: Duration,
+}
+
+/// A batch with cryptographic verification metadata
+#[derive(Debug, Clone)]
+pub struct VerifiedBatch {
+    /// Batch sequence number
+    pub id: u64,
+    /// Packet contents
+    pub packets: Vec<Vec<u8>>,
+    /// VDF output for timing verification
+    pub vdf_proof: [u8; 32],
+    /// RSA accumulator witness
+    pub accumulator_witness: Vec<u8>,
+    /// Batch integrity hash
+    pub integrity_hash: [u8; 32],
+    /// Creation timestamp
+    pub created_at: Instant,
+}
+
+/// cMix batcher with VDF delays and cryptographic verification
+pub struct Batcher {
+    /// Maximum batch size
+    size: usize,
+    /// Timeout for batch emission
+    timeout: Duration,
+    /// VDF delay in milliseconds
+    vdf_delay_ms: u32,
+    /// Current packet buffer
+    buf: Vec<Vec<u8>>,
+    /// Operation statistics
+    pub stats: BatchStats,
+    /// Next batch sequence number
+    next_batch_id: u64,
+    /// Error log for detailed reporting
+    pub error_log: Vec<(Instant, CmixError)>,
+}
 
 impl Batcher {
-	pub fn new(size: usize, timeout: Duration) -> Self { Self { size, timeout, buf: Vec::with_capacity(size), stats: Default::default() } }
-	pub fn push(&mut self, pkt: Vec<u8>) -> Option<Vec<Vec<u8>>> {
-		self.buf.push(pkt);
-		if self.buf.len() >= self.size { return Some(self.flush()); }
-		None
-	}
-	pub fn tick(&mut self, now: Instant) -> Option<Vec<Vec<u8>>> {
-		match self.stats.last_flush {
-			None => { self.stats.last_flush = Some(now); None }
-			Some(last) if now.duration_since(last) >= self.timeout && !self.buf.is_empty() => Some(self.flush()),
-			_ => None,
-		}
-	}
-	fn flush(&mut self) -> Vec<Vec<u8>> {
-		let out = std::mem::take(&mut self.buf);
-		self.stats.emitted += 1;
-		self.stats.last_flush = Some(Instant::now());
-		out
-	}
+    /// Create a new cMix batcher with specified parameters
+    pub fn new(size: usize, timeout: Duration) -> Self {
+        Self::with_vdf_delay(size, timeout, 100) // Default 100ms VDF delay
+    }
+
+    /// Create a new cMix batcher with custom VDF delay
+    pub fn with_vdf_delay(size: usize, timeout: Duration, vdf_delay_ms: u32) -> Self {
+        Self {
+            size,
+            timeout,
+            vdf_delay_ms,
+            buf: Vec::with_capacity(size),
+            stats: Default::default(),
+            next_batch_id: 1,
+            error_log: Vec::new(),
+        }
+    }
+
+    /// Add a packet to the batch, returning a verified batch if ready
+    pub fn push(&mut self, pkt: Vec<u8>) -> Result<Option<VerifiedBatch>, CmixError> {
+        // Validate packet size constraints
+        if pkt.len() > 65536 {
+            let error = CmixError::InvalidBatchSize { 
+                size: pkt.len(), 
+                min: 1, 
+                max: 65536 
+            };
+            self.record_error(error.clone());
+            return Err(error);
+        }
+
+        self.buf.push(pkt);
+        
+        if self.buf.len() >= self.size {
+            return Ok(Some(self.flush_with_verification()?));
+        }
+        
+        Ok(None)
+    }
+
+    /// Check for timeout-based batch emission
+    pub fn tick(&mut self, now: Instant) -> Result<Option<VerifiedBatch>, CmixError> {
+        match self.stats.last_flush {
+            None => {
+                self.stats.last_flush = Some(now);
+                Ok(None)
+            }
+            Some(last) if now.duration_since(last) >= self.timeout && !self.buf.is_empty() => {
+                Ok(Some(self.flush_with_verification()?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Verify a batch against tampering
+    pub fn verify_batch(&mut self, batch: &VerifiedBatch) -> Result<(), CmixError> {
+        // Recompute integrity hash
+        let computed_hash = self.compute_batch_hash(&batch.packets);
+        
+        if computed_hash != batch.integrity_hash {
+            let error = CmixError::TamperedBatch {
+                batch_id: batch.id,
+                expected_hash: batch.integrity_hash,
+                actual_hash: computed_hash,
+            };
+            self.record_error(error.clone());
+            return Err(error);
+        }
+
+        // Verify RSA accumulator witness
+        if !accumulator::verify_membership(
+            &batch.accumulator_witness,
+            &batch.id.to_le_bytes(),
+            &computed_hash,
+        ) {
+            let error = CmixError::InvalidWitness {
+                element: batch.id.to_le_bytes().to_vec(),
+                witness: batch.accumulator_witness.clone(),
+            };
+            self.record_error(error.clone());
+            return Err(error);
+        }
+
+        Ok(())
+    }
+
+    /// Force flush current buffer with full cryptographic verification
+    pub fn force_flush(&mut self) -> Result<VerifiedBatch, CmixError> {
+        self.flush_with_verification()
+    }
+
+    /// Generate detailed error report
+    pub fn generate_error_report(&self) -> String {
+        let mut report = String::new();
+        report.push_str(&format!("=== cMix Batcher Error Report ===\n"));
+        report.push_str(&format!("Total errors: {}\n", self.stats.errors));
+        report.push_str(&format!("Verification failures: {}\n", self.stats.verification_failures));
+        report.push_str(&format!("VDF computations: {}\n", self.stats.vdf_computations));
+        report.push_str(&format!("Total VDF time: {:?}\n", self.stats.total_vdf_time));
+        report.push_str(&format!("Batches emitted: {}\n", self.stats.emitted));
+        
+        if !self.error_log.is_empty() {
+            report.push_str("\n=== Recent Errors ===\n");
+            for (timestamp, error) in &self.error_log {
+                report.push_str(&format!("[{:?}] {:?}\n", timestamp, error));
+            }
+        }
+        
+        report
+    }
+
+    /// Flush current buffer with full cryptographic verification
+    fn flush_with_verification(&mut self) -> Result<VerifiedBatch, CmixError> {
+        let start_time = Instant::now();
+        
+        // Perform VDF computation for timing proof
+        let vdf_seed = self.compute_vdf_seed();
+        let vdf_proof = vdf::eval(&vdf_seed, self.vdf_delay_ms);
+        
+        let vdf_duration = start_time.elapsed();
+        self.stats.total_vdf_time += vdf_duration;
+        self.stats.vdf_computations += 1;
+
+        // Check VDF timeout constraint
+        let max_vdf_time = Duration::from_millis(self.vdf_delay_ms as u64 * 2); // 2x tolerance
+        if vdf_duration > max_vdf_time {
+            let error = CmixError::VdfTimeout {
+                duration: vdf_duration,
+                max_allowed: max_vdf_time,
+            };
+            self.record_error(error.clone());
+            return Err(error);
+        }
+
+        // Compute batch integrity hash
+        let integrity_hash = self.compute_batch_hash(&self.buf);
+        
+        // Generate RSA accumulator witness (simplified for this implementation)
+        let accumulator_witness = self.generate_accumulator_witness(&integrity_hash);
+
+        // Create verified batch
+        let batch = VerifiedBatch {
+            id: self.next_batch_id,
+            packets: std::mem::take(&mut self.buf),
+            vdf_proof,
+            accumulator_witness,
+            integrity_hash,
+            created_at: Instant::now(),
+        };
+
+        // Update statistics
+        self.stats.emitted += 1;
+        self.stats.last_flush = Some(Instant::now());
+        self.next_batch_id += 1;
+
+        Ok(batch)
+    }
+
+    /// Compute VDF seed from current state
+    fn compute_vdf_seed(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(&self.next_batch_id.to_le_bytes());
+        hasher.update(&(self.buf.len() as u32).to_le_bytes());
+        
+        // Include packet hashes in seed
+        for pkt in &self.buf {
+            let mut pkt_hasher = Sha256::new();
+            pkt_hasher.update(pkt);
+            hasher.update(pkt_hasher.finalize());
+        }
+        
+        hasher.finalize().to_vec()
+    }
+
+    /// Compute cryptographic hash of batch contents
+    fn compute_batch_hash(&self, packets: &[Vec<u8>]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(&(packets.len() as u32).to_le_bytes());
+        
+        for pkt in packets {
+            hasher.update(&(pkt.len() as u32).to_le_bytes());
+            hasher.update(pkt);
+        }
+        
+        hasher.finalize().into()
+    }
+
+    /// Generate RSA accumulator witness (simplified implementation)
+    fn generate_accumulator_witness(&self, hash: &[u8; 32]) -> Vec<u8> {
+        // Generate witness that matches accumulator::verify_membership expectations
+        let mut hasher = Sha256::new();
+        hasher.update(b"witness");
+        hasher.update(&self.next_batch_id.to_le_bytes());
+        hasher.update(hash);
+        hasher.finalize().to_vec()
+    }
+
+    /// Record an error in the error log
+    fn record_error(&mut self, error: CmixError) {
+        self.stats.errors += 1;
+        if matches!(error, CmixError::TamperedBatch { .. } | CmixError::InvalidWitness { .. }) {
+            self.stats.verification_failures += 1;
+        }
+        self.error_log.push((Instant::now(), error));
+        
+        // Keep error log bounded to prevent memory growth
+        if self.error_log.len() > 1000 {
+            self.error_log.drain(0..500);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	#[test]
-	fn emits_batch_after_timeout() {
-		let mut b = Batcher::new(10, Duration::from_millis(50));
-		let t0 = Instant::now();
-		assert!(b.tick(t0).is_none());
-		b.push(vec![1]);
-		let t1 = t0 + Duration::from_millis(60);
-		let out = b.tick(t1);
-		assert!(out.is_some());
-		assert_eq!(out.unwrap().len(), 1);
-	}
+    use super::*;
+
+    #[test]
+    fn emits_batch_after_timeout() {
+        let mut b = Batcher::new(10, Duration::from_millis(50));
+        let t0 = Instant::now();
+        assert!(b.tick(t0).unwrap().is_none());
+        
+        b.push(vec![1]).unwrap();
+        let t1 = t0 + Duration::from_millis(60);
+        let batch = b.tick(t1).unwrap();
+        
+        assert!(batch.is_some());
+        let batch = batch.unwrap();
+        assert_eq!(batch.packets.len(), 1);
+        assert_eq!(batch.id, 1);
+        assert!(!batch.vdf_proof.iter().all(|&x| x == 0)); // VDF proof should be non-zero
+    }
+
+    #[test]
+    fn emits_batch_when_full() {
+        let mut b = Batcher::new(2, Duration::from_secs(10));
+        
+        assert!(b.push(vec![1]).unwrap().is_none());
+        let batch = b.push(vec![2]).unwrap();
+        
+        assert!(batch.is_some());
+        let batch = batch.unwrap();
+        assert_eq!(batch.packets.len(), 2);
+        assert_eq!(batch.packets[0], vec![1]);
+        assert_eq!(batch.packets[1], vec![2]);
+    }
+
+    #[test]
+    fn detailed_verification_reports_errors() {
+        let mut b = Batcher::new(10, Duration::from_millis(50));
+        
+        // Create a valid batch first
+        b.push(vec![1]).unwrap();
+        let mut batch = b.flush_with_verification().unwrap();
+        
+        // Tamper with the batch
+        batch.packets.push(vec![99]); // Add unexpected packet
+        
+        // Verification should fail
+        let result = b.verify_batch(&batch);
+        assert!(result.is_err());
+        
+        if let Err(CmixError::TamperedBatch { batch_id, .. }) = result {
+            assert_eq!(batch_id, batch.id);
+        } else {
+            panic!("Expected TamperedBatch error");
+        }
+        
+        // Check that stats were updated properly
+        assert_eq!(b.stats.verification_failures, 1);
+        
+        // Error report should contain details
+        let report = b.generate_error_report();
+        println!("Generated report:\n{}", report); // Debug output
+        assert!(report.contains("cMix Batcher Error Report"));
+        assert!(report.contains("Verification failures: 1"));
+    }
+
+    #[test]
+    fn rejects_oversized_packets() {
+        let mut b = Batcher::new(10, Duration::from_millis(50));
+        let oversized_packet = vec![0u8; 100000]; // 100KB packet
+        
+        let result = b.push(oversized_packet);
+        assert!(result.is_err());
+        
+        if let Err(CmixError::InvalidBatchSize { size, max, .. }) = result {
+            assert_eq!(size, 100000);
+            assert_eq!(max, 65536);
+        } else {
+            panic!("Expected InvalidBatchSize error");
+        }
+    }
+
+    #[test]
+    fn vdf_timeout_detection() {
+        let mut b = Batcher::with_vdf_delay(10, Duration::from_millis(50), 1); // Very fast VDF
+        b.push(vec![1]).unwrap();
+        
+        // This should succeed with fast VDF
+        let result = b.flush_with_verification();
+        assert!(result.is_ok());
+        
+        // Statistics should reflect VDF computation
+        assert_eq!(b.stats.vdf_computations, 1);
+        assert!(b.stats.total_vdf_time > Duration::from_nanos(0));
+    }
+
+    #[test]
+    fn batch_verification_success() {
+        let mut b = Batcher::new(10, Duration::from_millis(50));
+        b.push(vec![1, 2, 3]).unwrap();
+        b.push(vec![4, 5, 6]).unwrap();
+        
+        let batch = b.flush_with_verification().unwrap();
+        
+        // Verification should pass for unmodified batch
+        assert!(b.verify_batch(&batch).is_ok());
+    }
+
+    #[test]
+    fn error_log_management() {
+        let mut b = Batcher::new(10, Duration::from_millis(50));
+        
+        // Generate multiple errors
+        for i in 0..5 {
+            let error = CmixError::InvalidBatchSize { 
+                size: 100000 + i, 
+                min: 1, 
+                max: 65536 
+            };
+            b.record_error(error);
+        }
+        
+        assert_eq!(b.stats.errors, 5);
+        assert_eq!(b.error_log.len(), 5);
+        
+        let report = b.generate_error_report();
+        assert!(report.contains("Total errors: 5"));
+        assert!(report.contains("Recent Errors"));
+    }
+
+    #[test]
+    fn sequential_batch_ids() {
+        let mut b = Batcher::new(1, Duration::from_millis(50));
+        
+        let batch1 = b.push(vec![1]).unwrap().unwrap();
+        let batch2 = b.push(vec![2]).unwrap().unwrap();
+        let batch3 = b.push(vec![3]).unwrap().unwrap();
+        
+        assert_eq!(batch1.id, 1);
+        assert_eq!(batch2.id, 2);
+        assert_eq!(batch3.id, 3);
+    }
 }

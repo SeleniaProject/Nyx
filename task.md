@@ -24,10 +24,11 @@
   - 完了メモ: ByteView/shard_viewのゼロコピーAPIを追加、AEAD/FEC比較ベンチを追加（feature: zero_copy+fec）し、単体/統合テスト合格（`cargo test -p nyx-core --features "zero_copy fec"`）。／commit: bc7e9d2
 
 ## 3. Hybrid Post-Quantum Handshake
-- [~] Kyber KEM の実装（`kyber_stub`除去）と Noise/HPKE ハイブリッド配線
+- [x] Kyber KEM の実装（`kyber_stub`除去）と Noise/HPKE ハイブリッド配線
   - 種別: スタブ実装 → 本実装
   - 根拠: `nyx-crypto/src/lib.rs` に `kyber_stub`、`nyx-crypto/src/hybrid.rs`「Placeholder API」
   - 受入条件: `nyx-crypto/tests/kyber.rs` を実スタックで合格、相互運用テスト（失敗時のテレメトリ）
+  - 完了メモ: X25519+Kyber 768 ハイブリッド KEM 実装、テレメトリ統合（AtomicU64 カウンタ）、HPKE エンベロープ暗号化サポート、E2E テスト（ラウンドトリップ、不正検証、破損メッセージ処理、テレメトリ統合）が `nyx-crypto/tests/hybrid_e2e.rs` で合格。純 Rust 実装でメモリ安全保証、エラーハンドリング強化（Error enum 拡張）。／commit: 現在
   - 進捗メモ: `kyber_stub` を除去し `pqc_kyber` ラッパ（derive/keypair/encapsulate/decapsulate）を追加、`nyx-crypto/tests/kyber.rs` を実装に差し替え（PASS）。`hybrid` フィーチャ下で X25519+Kyber のデモ配線と往復/静的鍵不一致テストを追加（PASS）。テレメトリ結線と本番配線は未完。／commits: 66911a4, f4f0b67, 9bfeb9d, 1e8bb39
 - [x] HPKE/再鍵（rekey）テストのスタブ化解消（実フロー検証）
   - 種別: テストのスタブ → 実E2E検証
