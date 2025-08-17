@@ -161,24 +161,84 @@ impl Batcher {
         self.flush_with_verification()
     }
 
-    /// Generate detailed error report
+    /// Generate detailed error report with security audit information
     pub fn generate_error_report(&self) -> String {
         let mut report = String::new();
-        report.push_str(&format!("=== cMix Batcher Error Report ===\n"));
+        report.push_str(&format!("=== cMix Batcher Security Audit Report ===\n"));
         report.push_str(&format!("Total errors: {}\n", self.stats.errors));
         report.push_str(&format!("Verification failures: {}\n", self.stats.verification_failures));
         report.push_str(&format!("VDF computations: {}\n", self.stats.vdf_computations));
         report.push_str(&format!("Total VDF time: {:?}\n", self.stats.total_vdf_time));
         report.push_str(&format!("Batches emitted: {}\n", self.stats.emitted));
         
+        // Security metrics
+        if self.stats.emitted > 0 {
+            let error_rate = (self.stats.errors as f64 / self.stats.emitted as f64) * 100.0;
+            report.push_str(&format!("Error rate: {:.2}%\n", error_rate));
+            
+            let verification_failure_rate = (self.stats.verification_failures as f64 / self.stats.emitted as f64) * 100.0;
+            report.push_str(&format!("Verification failure rate: {:.2}%\n", verification_failure_rate));
+        }
+        
+        if self.stats.vdf_computations > 0 {
+            let avg_vdf_time = self.stats.total_vdf_time / self.stats.vdf_computations as u32;
+            report.push_str(&format!("Average VDF time: {:?}\n", avg_vdf_time));
+        }
+        
         if !self.error_log.is_empty() {
-            report.push_str("\n=== Recent Errors ===\n");
+            report.push_str("\n=== Recent Security Events ===\n");
             for (timestamp, error) in &self.error_log {
-                report.push_str(&format!("[{:?}] {:?}\n", timestamp, error));
+                match error {
+                    CmixError::TamperedBatch { batch_id, expected_hash, actual_hash } => {
+                        report.push_str(&format!("[{:?}] SECURITY ALERT: Batch {} tampered - Expected: {:?}, Actual: {:?}\n", 
+                                               timestamp, batch_id, expected_hash, actual_hash));
+                    },
+                    CmixError::VdfTimeout { duration, max_allowed } => {
+                        report.push_str(&format!("[{:?}] PERFORMANCE: VDF timeout - Took: {:?}, Max: {:?}\n", 
+                                               timestamp, duration, max_allowed));
+                    },
+                    CmixError::InvalidWitness { element, witness } => {
+                        report.push_str(&format!("[{:?}] SECURITY ALERT: Invalid accumulator witness for element {:?}\n", 
+                                               timestamp, element));
+                    },
+                    CmixError::InvalidBatchSize { size, min, max } => {
+                        report.push_str(&format!("[{:?}] VALIDATION: Invalid batch size {} (range: {}-{})\n", 
+                                               timestamp, size, min, max));
+                    },
+                }
+            }
+        }
+        
+        report.push_str("\n=== Recommendations ===\n");
+        if self.stats.verification_failures > 0 {
+            report.push_str("• CRITICAL: Verification failures detected - Investigate potential attacks\n");
+        }
+        if self.stats.errors > 0 && self.stats.emitted > 0 {
+            let error_rate = (self.stats.errors as f64 / self.stats.emitted as f64) * 100.0;
+            if error_rate > 1.0 {
+                report.push_str("• WARNING: High error rate detected - Review input validation\n");
+            }
+        }
+        if self.stats.vdf_computations > 0 {
+            let avg_vdf_time = self.stats.total_vdf_time / self.stats.vdf_computations as u32;
+            if avg_vdf_time > Duration::from_millis(self.vdf_delay_ms as u64 * 2) {
+                report.push_str("• PERFORMANCE: VDF computations taking longer than expected\n");
             }
         }
         
         report
+    }
+
+    /// Generate JSON audit log for automated monitoring
+    pub fn generate_audit_json(&self) -> String {
+        format!("{{\"timestamp\":\"{:?}\",\"emitted\":{},\"errors\":{},\"verification_failures\":{},\"vdf_computations\":{},\"total_vdf_time_ms\":{},\"next_batch_id\":{}}}",
+                std::time::SystemTime::now(),
+                self.stats.emitted,
+                self.stats.errors,
+                self.stats.verification_failures,
+                self.stats.vdf_computations,
+                self.stats.total_vdf_time.as_millis(),
+                self.next_batch_id)
     }
 
     /// Flush current buffer with full cryptographic verification
@@ -344,7 +404,7 @@ mod tests {
         // Error report should contain details
         let report = b.generate_error_report();
         println!("Generated report:\n{}", report); // Debug output
-        assert!(report.contains("cMix Batcher Error Report"));
+        assert!(report.contains("cMix Batcher Security Audit Report"));
         assert!(report.contains("Verification failures: 1"));
     }
 
@@ -391,25 +451,56 @@ mod tests {
     }
 
     #[test]
-    fn error_log_management() {
+    fn detailed_audit_report_generation() {
         let mut b = Batcher::new(10, Duration::from_millis(50));
         
-        // Generate multiple errors
-        for i in 0..5 {
-            let error = CmixError::InvalidBatchSize { 
-                size: 100000 + i, 
-                min: 1, 
-                max: 65536 
-            };
-            b.record_error(error);
+        // Create some successful batches
+        for i in 0..3 {
+            b.push(format!("audit_test_{}", i).into_bytes()).unwrap();
+            b.force_flush().unwrap();
         }
         
-        assert_eq!(b.stats.errors, 5);
-        assert_eq!(b.error_log.len(), 5);
+        // Generate some errors
+        let oversized = vec![0u8; 100000];
+        let _ = b.push(oversized); // This will fail
+        
+        // Generate audit report
+        let report = b.generate_error_report();
+        
+        // Verify comprehensive reporting
+        assert!(report.contains("Security Audit Report"));
+        assert!(report.contains("Error rate:"));
+        assert!(report.contains("Average VDF time:"));
+        assert!(report.contains("Recommendations"));
+        
+        // Test JSON audit log
+        let json_log = b.generate_audit_json();
+        assert!(json_log.contains("\"emitted\":3"));
+        assert!(json_log.contains("\"errors\":1"));
+        
+        println!("Generated audit report:\n{}", report);
+    }
+
+    #[test]
+    fn timeout_detection_and_reporting() {
+        let mut b = Batcher::with_vdf_delay(10, Duration::from_millis(50), 1); // Very fast VDF
+        
+        // Add a packet and flush
+        b.push(vec![1, 2, 3]).unwrap();
+        let result = b.force_flush();
+        
+        // Should succeed with fast VDF
+        assert!(result.is_ok());
+        
+        // Check that no timeout errors were recorded
+        assert!(b.error_log.is_empty());
+        
+        // Verify timing statistics
+        assert!(b.stats.total_vdf_time > Duration::from_nanos(0));
+        assert_eq!(b.stats.vdf_computations, 1);
         
         let report = b.generate_error_report();
-        assert!(report.contains("Total errors: 5"));
-        assert!(report.contains("Recent Errors"));
+        assert!(report.contains("Average VDF time:"));
     }
 
     #[test]
