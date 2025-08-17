@@ -23,14 +23,12 @@ impl NyxStream {
 
 	/// 受信（ミリ秒タイムアウト）。期限までにデータがなければ Timeout。
 	pub async fn recv(&self, timeout_ms: u64) -> Result<Option<Bytes>> {
-		// 即時チェック
-		if let Some(b) = self.inner.recv().await.map_err(|e| Error::Protocol(e.to_string()))? {
-			return Ok(Some(b));
-		}
+		// 即時（ノンブロッキング）チェック
+		if let Some(b) = self.inner.try_recv().await.map_err(|e| Error::Protocol(e.to_string()))? { return Ok(Some(b)); }
 		if timeout_ms == 0 { return Ok(None); }
 		let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
 		while tokio::time::Instant::now() < deadline {
-			if let Some(b) = self.inner.recv().await.map_err(|e| Error::Protocol(e.to_string()))? {
+			if let Some(b) = self.inner.try_recv().await.map_err(|e| Error::Protocol(e.to_string()))? {
 				return Ok(Some(b));
 			}
 			tokio::time::sleep(std::time::Duration::from_millis(1)).await;

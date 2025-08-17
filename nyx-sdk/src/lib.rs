@@ -1,12 +1,13 @@
 #![forbid(unsafe_code)]
 
-//! Nyx SDK (minimal skeleton)
-//! - Error and Result types
-//! - Lightweight in-process stream abstraction for apps
-//! - Basic daemon IPC client (JSON over Unix socket / Windows named pipe)
+//! Nyx SDK — Application-facing API surface
 //!
-//! NOTE: This is a lean, dependency-friendly surface to allow the workspace to
-//! build. It can be extended progressively to integrate with nyx-stream/core.
+//! - Error/Result types (`nyx_sdk::Error` / `nyx_sdk::Result<T>`)
+//! - Lightweight stream API for apps (`NyxStream`)
+//! - Daemon IPC client (JSON over Unix Domain Socket / Windows Named Pipe)
+//! - JSON models that mirror future gRPC/prost types (`proto`)
+//!
+//! Designed to minimize dependencies and integrate cleanly with `nyx-stream` and `nyx-core`.
 
 pub mod error;
 pub mod config;
@@ -15,9 +16,12 @@ pub mod daemon;
 pub mod stream;
 pub mod reconnect;
 pub mod retry;
+pub mod proto;
 
 pub use error::{Error, Result};
 pub use config::SdkConfig;
 pub use events::Event;
 pub use stream::NyxStream;
+pub use daemon::DaemonClient;
+pub use proto as api;
 

@@ -53,6 +53,11 @@ enum Commands {
 		#[command(subcommand)]
 		action: ConfigCmd,
 	},
+	/// Convenience: set or show the codec frame size cap (bytes)
+	FrameLimit {
+		/// When provided, sets the cap to this value (1024..=67108864). If omitted, shows current default.
+		#[arg(long)] set: Option<u64>,
+	},
 	/// Generate a cookie token file compatible with daemon auth
 	GenCookie {
 		/// Output path (default: platform-specific). Example: %APPDATA%/nyx/control.authcookie
@@ -165,7 +170,7 @@ async fn main() -> anyhow::Result<()> {
 		}
 		Commands::PrometheusGet { url } => {
 			match prometheus_client::scrape_text(url).await {
-				Ok(body) => { print!("{}", body); Ok(()) }
+				Ok(body) => { print!("{body}"); Ok(()) }
 				Err(e) => { Err(anyhow::anyhow!(format!("prometheus fetch failed: {e}"))) }
 			}
 		}
@@ -185,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
 					let p = path.unwrap_or_else(|| "nyx.toml".to_string());
 					let pathbuf = PathBuf::from(&p);
 					if pathbuf.exists() && !force {
-						eprintln!("refusing to overwrite existing file: {} (use --force)", p);
+						eprintln!("refusing to overwrite existing file: {p} (use --force)");
 						std::process::exit(2);
 					}
 					let template = TEMPLATE_NYX_TOML;
@@ -194,6 +199,18 @@ async fn main() -> anyhow::Result<()> {
 					Ok(())
 				}
 			}
+		}
+		Commands::FrameLimit { set } => {
+			if let Some(n) = set {
+				let mut map = serde_json::Map::new();
+				map.insert("max_frame_len_bytes".into(), serde_json::Value::from(n));
+				let v = client.update_config(map).await;
+				print_result(v.map(|r| serde_json::to_value(r).unwrap()));
+			} else {
+				let current = nyx_stream::FrameCodec::default_limit() as u64;
+				println!("{current}");
+			}
+			Ok(())
 		}
 		Commands::GenCookie { path, force, length } => {
 			let pathbuf = if let Some(p) = path { PathBuf::from(p) } else { default_cookie_path() };
@@ -320,6 +337,10 @@ daemon_endpoint = "\\\\.\\pipe\\nyx-daemon"
 request_timeout_ms = 5000
 # Set a control token if daemon requires auth
 token = ""
+
+# Static safety limits
+# If set, this applies at daemon startup or reload.
+max_frame_len_bytes = 8388608
 "#;
 
 fn default_cookie_path() -> PathBuf {
@@ -327,10 +348,8 @@ fn default_cookie_path() -> PathBuf {
 		if let Ok(appdata) = std::env::var("APPDATA") {
 			return PathBuf::from(appdata).join("nyx").join("control.authcookie");
 		}
-	} else {
-		if let Ok(home) = std::env::var("HOME") {
-			return PathBuf::from(home).join(".nyx").join("control.authcookie");
-		}
+	} else if let Ok(home) = std::env::var("HOME") {
+		return PathBuf::from(home).join(".nyx").join("control.authcookie");
 	}
 	PathBuf::from("control.authcookie")
 }

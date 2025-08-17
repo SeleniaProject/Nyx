@@ -28,9 +28,7 @@ struct RpcRequest<'a> {
 #[derive(Debug, Deserialize)]
 struct RpcResponseValue {
     ok: bool,
-    #[allow(dead_code)]
     code: u16,
-    #[allow(dead_code)]
     id: Option<String>,
     #[serde(default)]
     data: Option<serde_json::Value>,
@@ -114,11 +112,16 @@ impl DaemonClient {
             let mut tmp = Vec::with_capacity(1024);
             loop {
                 tmp.clear();
-                if let Err(e) = read_one_line(&mut s, &mut tmp).await { let _ = tx.send(Event { ty: "system".into(), detail: format!("stream_closed:{e}") }); break; }
+                if let Err(e) = read_one_line(&mut s, &mut tmp).await {
+                    let _ = tx.send(Event { ty: "system".into(), detail: format!("events_stream_closed:{e}") });
+                    break;
+                }
                 if tmp.is_empty() { continue; }
                 match serde_json::from_slice::<Event>(&tmp) {
-                    Ok(ev) => { let _ = tx.send(ev); }
-                    Err(e) => { let _ = tx.send(Event { ty: "system".into(), detail: format!("bad_event:{e}") }); }
+                    Ok(ev) => { if tx.send(ev).is_err() { break; } }
+                    Err(e) => {
+                        if tx.send(Event { ty: "system".into(), detail: format!("events_decode_error:{e}") }).is_err() { break; }
+                    }
                 }
             }
         });
@@ -134,11 +137,17 @@ impl DaemonClient {
         read_one_line_with_timeout(&mut stream, &mut buf, self.cfg.request_timeout_ms).await?;
         let resp: RpcResponseValue = serde_json::from_slice(&buf)?;
         if resp.ok {
+            // Optionally validate success code and note id for diagnostics
+            let _resp_id = resp.id.as_deref();
+            let _resp_code = resp.code;
             let v = resp.data.ok_or_else(|| Error::protocol("missing data"))?;
             let t = serde_json::from_value(v)?;
             Ok(t)
         } else {
-            Err(Error::protocol(resp.error.unwrap_or_else(|| "unknown error".into())))
+            let code = resp.code;
+            let id_suffix = resp.id.as_deref().map(|s| format!(" id={}", s)).unwrap_or_default();
+            let msg = resp.error.unwrap_or_else(|| "unknown error".into());
+            Err(Error::protocol(format!("{} (code={}){}", msg, code, id_suffix)))
         }
     }
 }
@@ -164,10 +173,8 @@ fn default_cookie_path() -> PathBuf {
         if let Ok(appdata) = std::env::var("APPDATA") {
             return PathBuf::from(appdata).join("nyx").join("control.authcookie");
         }
-    } else {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(".nyx").join("control.authcookie");
-        }
+    } else if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".nyx").join("control.authcookie");
     }
     PathBuf::from("control.authcookie")
 }
@@ -199,7 +206,7 @@ async fn read_one_line<R: AsyncRead + Unpin>(reader: &mut R, out: &mut Vec<u8>) 
         if out.contains(&b'\n') { break; }
         if out.len() > 64 * 1024 { return Err(Error::protocol("response too large")); }
     }
-    if let Some(pos) = out.iter().position(|&b| b == b'\n') { out.truncate(pos); }
+    if let Some(pos) = memchr::memchr(b'\n', out) { out.truncate(pos); }
     // Trim a trailing CR if present (handle CRLF)
     if out.last().copied() == Some(b'\r') { out.pop(); }
     Ok(())
@@ -219,7 +226,7 @@ async fn read_one_line_with_timeout<R: AsyncRead + Unpin>(reader: &mut R, out: &
         if out.contains(&b'\n') { break; }
         if out.len() > 64 * 1024 { return Err(Error::protocol("response too large")); }
     }
-    if let Some(pos) = out.iter().position(|&b| b == b'\n') { out.truncate(pos); }
+    if let Some(pos) = memchr::memchr(b'\n', out) { out.truncate(pos); }
     if out.last().copied() == Some(b'\r') { out.pop(); }
     Ok(())
 }

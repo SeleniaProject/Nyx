@@ -183,7 +183,7 @@ Authorized operations require a token (see Security). Include it via `auth`:
 ### Status
 
 - Actively developed. Multi-crate workspace builds and tests pass across platforms.
-- `nyx-cli` is currently a placeholder entrypoint (WIP).
+- `nyx-cli` is under active development; core commands work with JSON RPC (WIP).
 - Documentation site under refactor; refer to `spec/` for authoritative protocol details.
 
 ### OS Support
@@ -203,9 +203,15 @@ Authorized operations require a token (see Security). Include it via `auth`:
 ### Configuration
 
 - `NYX_CONFIG`: Optional path to a config file that the daemon will manage.
+- `NYX_FRAME_MAX_LEN`: Optional process-wide override (bytes) for Frame codec safety cap. Valid range 1024..=67108864. Defaults to 8 MiB when unset.
 - Configuration can be hot-reloaded and snapshotted via daemon RPC:
 	- `reload_config`, `update_config { settings }`, `create_config_snapshot`,
 		`list_config_versions`, `rollback_config { version }`.
+
+Daemon dynamic settings accepted via `update_config`:
+- `log_level`: one of `trace|debug|info|warn|error` (applies immediately)
+- `metrics_interval_secs`: 1..=3600
+- `max_frame_len_bytes`: 1024..=67108864; also sets `NYX_FRAME_MAX_LEN` env so codec limit is applied.
 
 ### Telemetry
 
