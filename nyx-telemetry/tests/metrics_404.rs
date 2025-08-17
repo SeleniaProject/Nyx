@@ -7,7 +7,11 @@ async fn non_metrics_path_404() {
 		.await
 		.expect("start http server");
 	let url = format!("http://{}/nope", guard.addr());
-	let resp = ureq::get(&url).call();
+	let agent = ureq::AgentBuilder::new()
+		.timeout_connect(std::time::Duration::from_millis(200))
+		.timeout(std::time::Duration::from_millis(800))
+		.build();
+	let resp = agent.get(&url).call();
 	// Warp will 404 JSON by default; status 404 is enough.
 	assert!(resp.is_err(), "expected 404 error, got: {resp:?}");
 }

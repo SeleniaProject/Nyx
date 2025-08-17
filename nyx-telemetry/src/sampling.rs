@@ -3,7 +3,9 @@
 use rand::Rng;
 
 /// Return true with probability p in [0.0, 1.0].
-pub fn sample(p: f64) -> bool {
+ // This helper is primarily used in tests; allow dead code in library builds.
+ #[allow(dead_code)]
+ pub fn sample(p: f64) -> bool {
 	if !(0.0..=1.0).contains(&p) {
 		return false;
 	}
