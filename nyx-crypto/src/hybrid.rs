@@ -114,6 +114,7 @@ mod demo {
 		handshake_key: AeadKey,
 		handshake_hash: [u8;32],
 	}
+	#[derive(Debug)]
 	pub struct ResponderResult { pub tx: AeadSession, pub rx: AeadSession, pub msg2: Vec<u8> }
 
 	/// Initiator: hybrid IK handshake (X25519 ss/es + Kyber encapsulation to responder PQ pk)
