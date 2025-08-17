@@ -18,6 +18,7 @@ use crate::{
 	plugin_cbor::{parse_plugin_header, PluginCborError},
 	plugin_registry::{Permission, PluginInfo, PluginRegistry},
 };
+use crate::plugin_sandbox::{SandboxGuard, SandboxPolicy};
 
 /// Plugin Framework dispatch errors for v1.0
 #[derive(Error, Debug)]
@@ -98,6 +99,7 @@ pub struct PluginDispatcher {
 	registry: Arc<PluginRegistry>,
 	runtimes: Arc<Mutex<HashMap<PluginId, RuntimeHandle>>>,
 	stats: PluginRuntimeStats,
+	sandbox: Option<SandboxGuard>,
 }
 
 impl PluginDispatcher {
@@ -106,8 +108,19 @@ impl PluginDispatcher {
 			registry,
 			runtimes: Arc::new(Mutex::new(HashMap::new())),
 			stats: PluginRuntimeStats::default(),
+			sandbox: None,
 		}
 	}
+
+		/// Create a dispatcher with a sandbox policy enforced in plugin runtimes.
+		pub fn new_with_sandbox(registry: Arc<PluginRegistry>, policy: SandboxPolicy) -> Self {
+			Self {
+				registry,
+				runtimes: Arc::new(Mutex::new(HashMap::new())),
+				stats: PluginRuntimeStats::default(),
+				sandbox: Some(SandboxGuard::new(policy)),
+			}
+		}
 
 	/// Dispatch a plugin frame to the appropriate plugin runtime
 	///
@@ -163,6 +176,11 @@ impl PluginDispatcher {
 				"Plugin lacks required permission for frame",
 			);
 			return Err(DispatchError::InsufficientPermissions(plugin_id));
+		}
+
+		// Sandbox preflight for CONTROL frames: enforce policy early
+		if frame_type == FRAME_TYPE_PLUGIN_CONTROL {
+			self.enforce_sandbox_control(&plugin_header)?;
 		}
 
 		// Get runtime sender (clone) then drop lock before await
@@ -252,11 +270,12 @@ impl PluginDispatcher {
 		}
 
 
-		// IPC channel
+	// IPC channel
 		let (tx, mut rx) = mpsc::channel::<PluginMessage>(capacity);
 
-	// Clone shared runtime statistics once for spawned task
+	// Clone shared runtime statistics and sandbox once for spawned task
 	let stats_clone = self.stats.clone();
+    let sandbox_clone = self.sandbox.clone();
 
 	// Spawn plugin runtime with message processing loop
 	let join_handle = tokio::spawn(async move {
@@ -268,7 +287,7 @@ impl PluginDispatcher {
 			while let Some(plugin_message) = rx.recv().await {
 				message_count = message_count.saturating_add(1);
 
-				match Self::process_plugin_message(plugin_id, &plugin_message).await {
+				match Self::process_plugin_message(plugin_id, &plugin_message, sandbox_clone.as_ref()).await {
 					Ok(()) => {
 						debug!(plugin_id = %plugin_id, msg = message_count, "Processed plugin message");
 					}
@@ -346,6 +365,11 @@ impl PluginDispatcher {
 			#[cfg(feature = "telemetry")] telemetry::record_counter("nyx_stream_dispatch_nowait_permission_denied", 1);
 			return Err(DispatchError::InsufficientPermissions(plugin_id));
 		}
+		// Sandbox preflight for CONTROL frames: enforce policy early
+		if frame_type == FRAME_TYPE_PLUGIN_CONTROL {
+			self.enforce_sandbox_control(&plugin_header)?;
+		}
+
 		let tx = {
 			let runtimes = self.runtimes.lock().await;
 			let rh = runtimes.get(&plugin_id).ok_or_else(|| {
@@ -409,6 +433,7 @@ impl PluginDispatcher {
 	async fn process_plugin_message(
 		plugin_id: PluginId,
 		message: &PluginMessage,
+		sandbox: Option<&SandboxGuard>,
 	) -> Result<(), DispatchError> {
 		match message.frame_type {
 			FRAME_TYPE_PLUGIN_HANDSHAKE => {
@@ -421,7 +446,7 @@ impl PluginDispatcher {
 			}
 			FRAME_TYPE_PLUGIN_CONTROL => {
 				debug!(plugin_id = %plugin_id, "Processing control message");
-				Self::process_control_message(plugin_id, message).await
+				Self::process_control_message(plugin_id, message, sandbox).await
 			}
 			FRAME_TYPE_PLUGIN_ERROR => {
 				warn!(plugin_id = %plugin_id, "Processing error message");
@@ -468,12 +493,25 @@ impl PluginDispatcher {
 	async fn process_control_message(
 		plugin_id: PluginId,
 		message: &PluginMessage,
+		sandbox: Option<&SandboxGuard>,
 	) -> Result<(), DispatchError> {
 		debug!(
 			plugin_id = %plugin_id,
 			flags = format_args!("0x{:02X}", message.plugin_header.flags),
 			"Plugin sent control message",
 		);
+		// 簡易プロトコル: header.data が UTF-8 の "SBX:CONNECT <addr>" / "SBX:OPEN <path>" を含む場合、
+		// サンドボックス方針を適用して許可/拒否（拒否時はエラー）
+		if let Some(sb) = sandbox {
+			if let Ok(s) = std::str::from_utf8(&message.plugin_header.data) {
+				let s = s.trim();
+				if let Some(rest) = s.strip_prefix("SBX:CONNECT ") {
+					sb.check_connect(rest).map_err(|e| DispatchError::RuntimeError(plugin_id, e.to_string()))?;
+				} else if let Some(rest) = s.strip_prefix("SBX:OPEN ") {
+					sb.check_open_path(rest).map_err(|e| DispatchError::RuntimeError(plugin_id, e.to_string()))?;
+				}
+			}
+		}
 		Ok(())
 	}
 
@@ -499,6 +537,23 @@ fn sanitize_log_bytes(buf: &[u8], max: usize) -> String {
 			c => c,
 		})
 		.collect()
+}
+
+impl PluginDispatcher {
+	/// Enforce sandbox policy on CONTROL frame payloads (preflight).
+	fn enforce_sandbox_control(&self, header: &PluginHeader) -> Result<(), DispatchError> {
+		if let Some(ref sb) = self.sandbox {
+			if let Ok(s) = std::str::from_utf8(&header.data) {
+				let s = s.trim();
+				if let Some(rest) = s.strip_prefix("SBX:CONNECT ") {
+					sb.check_connect(rest).map_err(|e| DispatchError::RuntimeError(header.id, e.to_string()))?;
+				} else if let Some(rest) = s.strip_prefix("SBX:OPEN ") {
+					sb.check_open_path(rest).map_err(|e| DispatchError::RuntimeError(header.id, e.to_string()))?;
+				}
+			}
+		}
+		Ok(())
+	}
 }
 
 #[cfg(test)]
@@ -730,6 +785,39 @@ mod tests {
 	// Re-loading an existing plugin (e.g., id=1) at capacity should be OK (idempotent)
 	let again = PluginInfo::new(PluginId(1), "cap-1", [Permission::Handshake]);
 	dispatcher.load_plugin(again).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn sandbox_locked_down_denies_control_ops() {
+		let registry = Arc::new(PluginRegistry::new());
+		let dispatcher = PluginDispatcher::new_with_sandbox(registry.clone(), SandboxPolicy::locked_down());
+		let pid = PluginId(88);
+		let info = PluginInfo::new(pid, "sbx", [Permission::Control]);
+		registry.register(info.clone()).await.unwrap();
+		dispatcher.load_plugin(info).await.unwrap();
+
+		// Build control header with SBX:CONNECT
+		let mut hbytes = Vec::new();
+		let header = PluginHeader { id: pid, flags: 0, data: b"SBX:CONNECT 127.0.0.1:80".to_vec() };
+		ciborium::ser::into_writer(&header, &mut hbytes).unwrap();
+		let err = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, hbytes).await.unwrap_err();
+		match err { DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contains("denied")); }, other => panic!("{other:?}") }
+	}
+
+	#[tokio::test]
+	async fn sandbox_permissive_allows_control_ops() {
+		let registry = Arc::new(PluginRegistry::new());
+		let dispatcher = PluginDispatcher::new_with_sandbox(registry.clone(), SandboxPolicy::permissive());
+		let pid = PluginId(89);
+		let info = PluginInfo::new(pid, "sbx2", [Permission::Control]);
+		registry.register(info.clone()).await.unwrap();
+		dispatcher.load_plugin(info).await.unwrap();
+
+		// OPEN is allowed
+		let mut hbytes = Vec::new();
+		let header = PluginHeader { id: pid, flags: 0, data: b"SBX:OPEN /tmp/x".to_vec() };
+		ciborium::ser::into_writer(&header, &mut hbytes).unwrap();
+		dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, hbytes).await.unwrap();
 	}
 }
 
