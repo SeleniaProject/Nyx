@@ -1,4 +1,3 @@
-
 //! Nyx cryptography primitives and protocols (unsafe-forbid, WASM-friendly).
 //! - AEAD: ChaCha20-Poly1305 wrapper with zeroizing keys
 //! - KDF: HKDF-SHA256 helpers, RFC8439 nonce derivation
@@ -10,28 +9,28 @@
 //!   - Anti-downgrade: legacy (no header) must not carry 0-RTT; responder enforces
 #![forbid(unsafe_code)]
 
+pub mod aead;
+pub mod hpke;
+pub mod hybrid;
+pub mod kdf;
+pub mod keystore;
 #[cfg(feature = "classic")]
 pub mod noise;
-pub mod hpke;
-pub mod aead;
-pub mod kdf;
-pub mod session;
-pub mod hybrid;
-pub mod keystore;
 pub mod pcr;
+pub mod session;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-	#[error("Protocol error: {0}")]
-	Protocol(String),
-	#[error("Cryptographic operation failed: {0}")]
-	Crypto(String),
-	#[error("Invalid key: {0}")]
-	InvalidKey(String),
-	#[error("Authentication failed: {0}")]
-	AuthenticationFailed(String),
-	#[error("Post-quantum operation failed: {0}")]
-	PostQuantumError(String),
+    #[error("Protocol error: {0}")]
+    Protocol(String),
+    #[error("Cryptographic operation failed: {0}")]
+    Crypto(String),
+    #[error("Invalid key: {0}")]
+    InvalidKey(String),
+    #[error("Authentication failed: {0}")]
+    AuthenticationFailed(String),
+    #[error("Post-quantum operation failed: {0}")]
+    PostQuantumError(String),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -39,4 +38,3 @@ pub type Result<T> = core::result::Result<T, Error>;
 // Feature-gated Kyber KEM wrapper (pure Rust implementation via pqc_kyber)
 #[cfg(feature = "kyber")]
 pub mod kyber;
-
