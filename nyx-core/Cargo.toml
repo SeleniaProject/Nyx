@@ -31,6 +31,8 @@ num_cpus = "1.16"
 socket2 = "0.5"
 # Needed for push module and concurrent maps
 dashmap = "5.5"
+# Cross-platform libc for system calls
+libc = "0.2"
 
 # Optional telemetry integration
 nyx-telemetry = { path = "../nyx-telemetry", optional = true }
@@ -57,6 +59,8 @@ cbor4ii = { version = "0.3", optional = true, features = ["serde1"] }
 
 [features]
 default = []
+# Enable OS-level sandbox enforcement (platform-dependent). Off by default.
+os_sandbox = []
 # Enable automatic error metric recording.
 telemetry = ["nyx-telemetry"]
 # Enable mobile platform integration

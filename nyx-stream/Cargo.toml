@@ -70,6 +70,8 @@ dynamic_plugin = ["libloading", "nix", "caps", "extrasafe"]
 hpke = ["nyx-crypto/hpke"]
 fec = ["dep:nyx-fec"]
 telemetry = ["dep:nyx-telemetry"]
+# OS-level sandbox support (passes through to nyx-core)
+os_sandbox = ["nyx-core/os_sandbox"]
 # Added to silence unexpected cfg warnings referenced in source
 prometheus = []
 dynamic_config = []

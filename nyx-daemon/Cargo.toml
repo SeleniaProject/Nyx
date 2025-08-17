@@ -38,6 +38,7 @@ experimental-all = [
  # Enable SIMD-accelerated JSON via simd-json (optional)
  simd = ["dep:simd-json"]
  telemetry = []
+os_sandbox = ["nyx-core/os_sandbox"]
 
 [dependencies]
 async-trait = "0.1"

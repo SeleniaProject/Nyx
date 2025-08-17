@@ -16,6 +16,7 @@ use nyx_daemon::metrics::MetricsCollector;
 #[cfg(feature = "low_power")]
 use nyx_daemon::nyx_daemon_low_power::LowPowerBridge;
 use nyx_daemon::prometheus_exporter::maybe_start_from_env;
+use nyx_core::sandbox::{apply_policy as apply_os_sandbox, SandboxPolicy, SandboxStatus};
 
 #[cfg(unix)]
 use tokio::net::UnixListener;
@@ -117,6 +118,15 @@ async fn main() -> io::Result<()> {
 	let events = EventSystem::new(1024);
 	let token = ensure_token_from_env_or_cookie();
 	let state = Arc::new(DaemonState { start_time: Instant::now(), node_id, cfg: cfg_mgr, events, token });
+
+	// Try to apply minimal OS-level sandboxing (no-op on unsupported platforms/features)
+	match apply_os_sandbox(SandboxPolicy::Minimal) {
+		SandboxStatus::Applied => info!("OS sandbox applied (Minimal)"),
+		SandboxStatus::Unsupported => {
+			// Keep noise low in logs; sandbox may be disabled intentionally
+			tracing::debug!("OS sandbox unsupported or disabled on this build/platform")
+		}
+	}
 
 	// Start low-power bridge (mobile FFI) if enabled, keep handle alive in a detached task holder.
 	#[cfg(feature = "low_power")]

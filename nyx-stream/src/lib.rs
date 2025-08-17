@@ -16,9 +16,10 @@ pub mod plugin_frame;      // Full plugin frame (CBOR-serializable)
 pub mod plugin_dispatch;   // Dispatcher for plugin frames
 pub mod plugin_handshake;  // Handshake helpers and types
 pub mod plugin_ipc;        // IPC helper traits (stubs for now)
-pub mod plugin_sandbox;    // Sandbox policy stubs
+pub mod plugin_sandbox;    // Cooperative sandbox (policy + guards)
 pub mod plugin_manifest;   // Manifest loader (TOML)
 pub mod plugin_settings;   // Runtime settings for plugins
+pub mod hpke_rekey;        // Rekey trigger helpers (tests/integration use)
 
 pub use errors::{Error, Result};
 pub use frame::{Frame, FrameHeader, FrameType};

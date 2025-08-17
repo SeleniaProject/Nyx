@@ -65,6 +65,7 @@ authors = ["NyxNet Contributors"]
 [dev-dependencies]
 hyper = { version = "0.14", features = ["client", "tcp"] }
 ureq = { version = "2.9", default-features = false, features = ["json"] }
+tokio-stream = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 pprof = { version = "0.11", optional = true }

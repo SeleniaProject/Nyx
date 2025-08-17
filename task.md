@@ -1,0 +1,140 @@
+# Nyx 仕様準拠タスクチェックリスト
+
+出典: `spec/spec_diff_report.json`, `spec/spec_test_mapping.json` とリポジトリ全体のプレースホルダー/スタブ痕跡検索結果に基づく一覧。
+
+凡例: [ ] 未着手 / [x] 完了（PR/コミットIDを併記）/ [~] 進行中
+
+## 1. Protocol Combinator (Plugin Framework)
+- [x] プラグインIPCの実装をスタブから実体へ置換（プロセス間/スレッド間IPC、バックプレッシャ、再接続）
+  - 種別: スタブ実装 → 本実装
+  - 根拠: `nyx-stream/src/plugin_ipc.rs`「traits/stubs」, `nyx-stream/README.md`
+  - 受入条件: 仕様のフレーム化/CBORヘッダと互換、帯域/エラー時の再送ポリシー含むE2Eテスト追加
+  - 完了メモ: InProc IPC 実装と mpsc Adapter を追加、E2E テスト（nowait リトライ/backoff、再接続・全フレーム型）を `nyx-stream/src/plugin_integration_test.rs` と `nyx-stream/tests/plugin_dispatch_nowait_tests.rs` で合格（`cargo test -p nyx-stream` 全通過）／commit: 331baab
+- [~] プラグインサンドボックスの実装（Windows/macOS/Linux 各プラットフォーム）
+  - 種別: プレースホルダー/スタブ → 本実装
+  - 根拠: `nyx-stream/src/plugin_sandbox.rs`「Sandbox policy placeholder」, `nyx-core/src/sandbox.rs`「sandbox policy stub」, `nyx-stream/README.md`
+  - 受入条件: 最小権限適用・逸脱時ブロック、統合テストとドキュメント
+  - 進捗メモ: nyx-stream に `SandboxPolicy`/`SandboxGuard` を実装し、dispatcher 前の事前検査（ネットワーク/FS 許可リスト、Windows パス正規化）を適用。単体/統合テストと最小ドキュメントを追加し合格。OS レベル（Windows）は `win32job` の安全 API で KillOnJobClose を適用（`nyx-core` の feature `os_sandbox`）し、`nyx-daemon` 起動時に適用するよう連携（ビルド/テスト緑）。macOS/Linux のバックエンド実装とポリシー拡張/ドキュメント拡充は未了。／commit: 013214f
+
+## 2. Multipath Data Plane
+- [x] ゼロコピー統合の実装（暗号/FECレイヤと連携）
+  - 種別: スタブ → 本実装
+  - 根拠: `nyx-core/src/zero_copy/integration.rs`「Stub for integrating zero-copy buffers」
+  - 受入条件: 大容量フローでコピー回数削減のベンチ（>10% CPU削減目安）
+  - 完了メモ: ByteView/shard_viewのゼロコピーAPIを追加、AEAD/FEC比較ベンチを追加（feature: zero_copy+fec）し、単体/統合テスト合格（`cargo test -p nyx-core --features "zero_copy fec"`）。／commit: bc7e9d2
+
+## 3. Hybrid Post-Quantum Handshake
+- [~] Kyber KEM の実装（`kyber_stub`除去）と Noise/HPKE ハイブリッド配線
+  - 種別: スタブ実装 → 本実装
+  - 根拠: `nyx-crypto/src/lib.rs` に `kyber_stub`、`nyx-crypto/src/hybrid.rs`「Placeholder API」
+  - 受入条件: `nyx-crypto/tests/kyber.rs` を実スタックで合格、相互運用テスト（失敗時のテレメトリ）
+  - 進捗メモ: `kyber_stub` を除去し `pqc_kyber` ラッパ（derive/keypair/encapsulate/decapsulate）を追加、`nyx-crypto/tests/kyber.rs` を実装に差し替え（PASS）。`hybrid` フィーチャ下で X25519+Kyber のデモ配線と往復/静的鍵不一致テストを追加（PASS）。テレメトリ結線と本番配線は未完。／commits: 66911a4, f4f0b67, 9bfeb9d, 1e8bb39
+- [x] HPKE/再鍵（rekey）テストのスタブ化解消（実フロー検証）
+  - 種別: テストのスタブ → 実E2E検証
+  - 根拠: `nyx-stream/src/tests/hpke_rekey_integration_tests.rs`「This is a stub」
+  - 受入条件: 実際の鍵更新トリガ・暗号フレームの往復/失敗系の検証
+  - 完了メモ: `nyx-stream/src/hpke_rekey.rs` を追加し、同テストを AeadSession ベースで実装。`nyx-crypto/tests/rekey.rs` のプレースホルダは削除。／commit: 7aab666
+
+## 4. cMix Integration
+- [ ] cMixバッチャの本実装（最小実装/スタブの置換）
+  - 種別: スタブ → 本実装
+  - 根拠: `nyx-mix/src/cmix.rs`「Minimal cMix batcher stub」
+  - 受入条件: `nyx-conformance/tests/cmix*.rs` 合格、タイムアウト/改ざん検知の詳細レポート
+- [ ] RSA アキュムレータ統合
+  - 種別: プレースホルダー → 本実装
+  - 根拠: `nyx-mix/src/accumulator.rs`「Placeholder for RSA accumulator integration」
+  - 受入条件: 証明生成/検証と誤り検知のプロパティテスト
+- [ ] VDF の安全実装（疑似実装の置換）
+  - 種別: スタブ → 本実装
+  - 根拠: `nyx-mix/src/vdf.rs`「VDF stub (not cryptographically secure)」
+  - 受入条件: 設計文書/パラメタ選定、健全性テスト
+
+## 5. Adaptive Cover Traffic
+- [ ] 適応アルゴリズムのパラメタ同定/ドキュメント（実装は存在、仕様達成のエビデンス拡充）
+  - 種別: 仕様完全性の担保不足（改善）
+  - 根拠: テストは存在（`nyx-mix/tests/adaptive_cover_feedback.rs`）が設計パラメタの根拠が薄い
+  - 受入条件: 仕様の λ 更新式/安定性証明の反映、ベンチとSLOの提示
+
+## 6. Low Power Mode (Mobile)
+- [ ] Android 側の JNI プレースホルダー整理（NDK 薄いフォワーダの最小実装/削除）
+  - 種別: プレースホルダー整理
+  - 根拠: `nyx-mobile-ffi/android/NyxMobileJNI.java`「minimal placeholder」, `examples/mobile/android`「thin stubs」
+  - 受入条件: C ABI に一本化しサンプル更新、画面OFF比率ポリシーのE2E確認
+
+## 7. Extended Packet Format / FEC
+- [ ] アダプティブ RaptorQ のチューニングロジック実装
+  - 種別: スタブ → 本実装
+  - 根拠: `nyx-fec/README.md`「stub for adaptive redundancy tuning」
+  - 受入条件: 損失率トレースでの最適化テスト、RTT/ジッタ連動
+
+## 8. Capability Negotiation
+- [ ] 交渉ポリシーの仕様文書と実装のトレーサビリティ補強
+  - 種別: 仕様完全性の担保不足（改善）
+  - 根拠: Conformance テストはあるが（`nyx-conformance/tests/capability_negotiation_properties.rs`）、運用ポリシー文書のリンクが不足
+  - 受入条件: `spec/Capability_Negotiation_Policy*.md` との項番対応表、拒否/降格の監査ログテスト
+
+## 9. Telemetry Schema (OTLP/Prometheus)
+- [x] OTLP エクスポータのエンドツーエンド検証とシャットダウンフロー（ローカル修正、PR準備中）
+  - 種別: 実装は存在（E2E整備を追加）
+  - 根拠: `nyx-telemetry/src/opentelemetry_integration.rs`、E2E/timeout テストを追加
+  - 受入条件: in-memory/実サーバ向けの統合テスト、リトライ/タイムアウト計測
+  - 完了メモ: モック gRPC コレクタを `tests/otlp_e2e_collector.rs` に実装し、スパン受信と `shutdown()` での flush を検証（PASS）。
+    タイムアウト挙動は `tests/otlp_timeout.rs` で未到達エンドポイントに対する短時間での終了を検証（PASS）。
+    フィーチャ: `prometheus otlp_exporter otlp` で `cargo test -p nyx-telemetry` 全通過。
+
+## 10. Compliance Levels
+- [ ] レベル毎の必須/任意機能マトリクスの自動検証
+  - 種別: 仕様完全性の担保不足（改善）
+  - 根拠: `nyx-conformance/tests/core.rs` の基本検証のみ
+  - 受入条件: Core/Plus/Full のCIマトリクスとバッジ、未達時に失敗
+
+## Transport 層（仕様キーワード: QUIC/TCP/Teredo/DATAGRAM）
+- [ ] QUIC 実装（feature-gated stub の置換、C依存なし）
+  - 種別: スタブ → 本実装
+  - 根拠: `nyx-transport/src/quic.rs`「feature-gated stub」、`nyx-transport/README.md`
+  - 受入条件: DATAGRAM/ストリーム両対応、損失/再送/0-RTT テスト
+- [ ] Teredo/IPv4-mapped IPv6 ヘルパの実装
+  - 種別: プレースホルダー → 本実装
+  - 根拠: `nyx-transport/src/teredo.rs`「placeholder for Teredo handling」
+  - 受入条件: アドレス検証/マッピング単体テスト、NAT透過検証
+- [ ] NAT トラバーサルのプレースホルダー解消（STUN/TURN 相当の抽象化）
+  - 種別: プレースホルダー → 設計/実装
+  - 根拠: `nyx-transport/src/lib.rs` モジュールドキュメントの placeholders 記述
+  - 受入条件: 最低限の穴あけ/フォールバック設計とテスト
+
+## CLI / Control / SDK まわり
+- [ ] CLI の API バインド生成物プレースホルダー解消
+  - 種別: プレースホルダー整理
+  - 根拠: `nyx-cli/src/nyx.api.rs`「Generated API bindings placeholder」
+  - 受入条件: 生成パイプライン復活 or ファイル除去とREADME更新
+- [ ] DHT テストのプレースホルダー解消（実テスト追加 or 無効化）
+  - 種別: テストのプレースホルダー整理
+  - 根拠: `nyx-control/tests/dht.rs`「Placeholder to keep test module」
+  - 受入条件: 実装の有無に合わせて整備
+- [ ] SDK の gRPC Backup 機能（プレースホルダー）
+  - 種別: プレースホルダー → 本実装 or スコープ外としてドキュメント化
+  - 根拠: `nyx-sdk/README.md`「feature placeholder; gRPC is disabled by default」
+
+## Daemon / 暗号依存
+- [ ] Pure Rust 暗号への移行（`ring`依存のため暫定無効化の解消）
+  - 種別: 技術的負債の解消
+  - 根拠: `nyx-daemon/Cargo.toml` コメント「temporarily disabled due to ring dependency」
+  - 受入条件: 代替実装/検証とベンチ、セキュリティレビュー
+
+## ベンチ/テストのプレースホルダー整理
+- [ ] ベンチのプレースホルダー削除 or 実測シナリオ化
+  - 種別: プレースホルダー整理
+  - 根拠: `nyx-stream/benches/*.rs`, `nyx-daemon/benches/*.rs`「Placeholder for clippy」
+  - 受入条件: 実運用に近いシナリオのベンチを追加
+
+## メタ/スクリプト
+- [ ] `scripts/spec_diff.py` の「Future extensions」整理（未実装拡張の追跡）
+  - 種別: 未実装の明確化
+  - 根拠: 同ファイルの文言「not yet implemented but scaffold ready」
+  - 受入条件: 追跡項目を本チェックリストへ統合
+
+---
+
+補足:
+- セクション 1〜10 は `spec/Nyx_Protocol_v1.0_Spec*.md` の章立てに準拠。テストが存在していても、該当ソースにプレースホルダー/スタブが残る箇所は上記タスクで解消する。
+- 完了時はチェックを付け、関連PR/コミットID、簡単な検証結果を併記してください。
