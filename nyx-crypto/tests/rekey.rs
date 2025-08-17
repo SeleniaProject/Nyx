@@ -1,7 +1,6 @@
-
+// Removed: placeholder rekey test superseded by nyx-stream integration tests.
 #[test]
 fn hpke_rekey_counter_stub() {
-	// 実体は上位レイヤで検証。ここでは将来のメトリクス結線の退行検知としてプレースホルダ。
-	assert!(true);
+	// Intentionally empty placeholder retained to keep test discovery stable.
 }
 
