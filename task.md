@@ -62,6 +62,7 @@
   - 種別: スタブ → 本実装
   - 根拠: `nyx-fec/README.md`「stub for adaptive redundancy tuning」
   - 受入条件: 損失率トレースでの最適化テスト、RTT/ジッタ連動
+  - 完了メモ: PID制御ベースの適応アルゴリズムを `nyx-fec/src/raptorq.rs` に実装。NetworkMetrics による品質評価、multi-factor modulation (品質/帯域幅/安定性)、指数移動平均による損失率追跡を含む。包括的テストスイート (37テスト)、パフォーマンスベンチマーク (単一更新10ns)、詳細実装ガイドを追加。Pure Rust実装でC/C++依存なし。／commit: 85ce4fc
 
 ## 8. Capability Negotiation
 - [ ] 交渉ポリシーの仕様文書と実装のトレーサビリティ補強
