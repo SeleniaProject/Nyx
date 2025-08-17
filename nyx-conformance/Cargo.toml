@@ -12,6 +12,7 @@ nyx-crypto = { path = "../nyx-crypto" }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
 nyx-core = { path = "../nyx-core" }
 nyx-control = { path = "../nyx-control" }
 nyx-stream = { path = "../nyx-stream" }
@@ -47,3 +48,4 @@ plugin = ["nyx-stream/plugin"]
 quic = ["nyx-transport/quic"]
 telemetry = ["dep:nyx-telemetry", "nyx-stream/telemetry"]
 raptorq = ["nyx-fec/raptorq"]
+multipath = ["nyx-core/multipath"]
