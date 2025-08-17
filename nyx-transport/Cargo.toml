@@ -26,6 +26,7 @@ nyx-stream = { path = "../nyx-stream" }
 futures = "0.3"
 anyhow = "1"
 nom = { version = "7", default-features = false, features = ["std"] }
+thiserror = "1"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
