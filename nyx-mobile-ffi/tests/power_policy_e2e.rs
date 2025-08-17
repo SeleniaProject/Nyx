@@ -5,6 +5,7 @@
 
 use std::ffi::CString;
 use std::time::{Duration, Instant};
+use nyx_mobile_ffi::{NyxPowerState, NyxStatus};
 
 // Import the C FFI functions
 extern "C" {
