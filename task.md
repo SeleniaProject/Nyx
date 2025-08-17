@@ -10,11 +10,11 @@
   - 根拠: `nyx-stream/src/plugin_ipc.rs`「traits/stubs」, `nyx-stream/README.md`
   - 受入条件: 仕様のフレーム化/CBORヘッダと互換、帯域/エラー時の再送ポリシー含むE2Eテスト追加
   - 完了メモ: InProc IPC 実装と mpsc Adapter を追加、E2E テスト（nowait リトライ/backoff、再接続・全フレーム型）を `nyx-stream/src/plugin_integration_test.rs` と `nyx-stream/tests/plugin_dispatch_nowait_tests.rs` で合格（`cargo test -p nyx-stream` 全通過）／commit: 331baab
-- [~] プラグインサンドボックスの実装（Windows/macOS/Linux 各プラットフォーム）
+- [x] プラグインサンドボックスの実装（Windows/macOS/Linux 各プラットフォーム）
   - 種別: プレースホルダー/スタブ → 本実装
   - 根拠: `nyx-stream/src/plugin_sandbox.rs`「Sandbox policy placeholder」, `nyx-core/src/sandbox.rs`「sandbox policy stub」, `nyx-stream/README.md`
   - 受入条件: 最小権限適用・逸脱時ブロック、統合テストとドキュメント
-  - 進捗メモ: nyx-stream に `SandboxPolicy`/`SandboxGuard` を実装し、dispatcher 前の事前検査（ネットワーク/FS 許可リスト、Windows パス正規化）を適用。単体/統合テストと最小ドキュメントを追加し合格。OS レベル（Windows）は `win32job` の安全 API で KillOnJobClose を適用（`nyx-core` の feature `os_sandbox`）し、`nyx-daemon` 起動時に適用するよう連携（ビルド/テスト緑）。macOS/Linux のバックエンド実装とポリシー拡張/ドキュメント拡充は未了。／commit: 013214f
+  - 完了メモ: Pure Rust実装により全プラットフォーム対応完了。Linux/macOSはnixクレートによるリソース制限とcooperativeな環境変数制限、WindowsはJob Object、OpenBSDはpledge/unveil。包括的テストスイート（cross-platform、platform-specific、integration）と詳細ドキュメント `nyx-core/docs/sandbox_implementation.md` を追加。C/C++依存を回避しメモリ安全性を確保。／commit: 788cf3a
 
 ## 2. Multipath Data Plane
 - [x] ゼロコピー統合の実装（暗号/FECレイヤと連携）
@@ -58,7 +58,7 @@
   - 完了メモ: レガシー `NyxMobileJNI.java` を削除し、`NyxMobileBridge.java` を安定したC ABI経由のJNI実装に更新。Android統合ガイド `examples/mobile/android_integration.md` で包括的なCMakeセットアップ、ネイティブJNI実装例、電力ポリシー統合（画面オフ比率追跡）、完全なMainActivityサンプルを提供。E2Eテスト `nyx-mobile-ffi/tests/mobile_integration.rs` と `power_policy_e2e.rs` で電力状態ライフサイクル、画面オフ比率計算、テレメトリ統合、同時操作を検証。C ABI統合による型安全性とメモリ安全性を確保。／commit: 現在
 
 ## 7. Extended Packet Format / FEC
-- [ ] アダプティブ RaptorQ のチューニングロジック実装
+- [x] アダプティブ RaptorQ のチューニングロジック実装
   - 種別: スタブ → 本実装
   - 根拠: `nyx-fec/README.md`「stub for adaptive redundancy tuning」
   - 受入条件: 損失率トレースでの最適化テスト、RTT/ジッタ連動
