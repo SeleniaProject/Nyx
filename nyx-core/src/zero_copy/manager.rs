@@ -1,6 +1,27 @@
-﻿use std::sync::{Arc, Mutex};
+﻿use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 
-/// Immutable buffer backed by Arc for zero-copy sharing.
+/// Immutable buffer backed by `Arc<[u8]>` for zero-copy sharing.
+///
+/// This type is cheap to clone and can be passed across threads safely.
+///
+/// Examples
+/// -------
+/// ```
+/// use nyx_core::zero_copy::manager::Buffer;
+/// 
+/// // Create from a Vec
+/// let b: Buffer = vec![1,2,3].into();
+/// assert_eq!(b.as_slice(), &[1,2,3]);
+/// 
+/// // Create from a slice
+/// let b2: Buffer = (&[4,5][..]).into();
+/// assert_eq!(b2.as_ref(), &[4,5]);
+/// 
+/// // Cheap clones share the same backing allocation
+/// let c = b.clone();
+/// assert_eq!(b, c);
+/// ```
 #[derive(Clone)]
 pub struct Buffer(Arc<[u8]>);
 
@@ -11,7 +32,48 @@ impl Buffer {
 	pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
+impl From<Vec<u8>> for Buffer {
+	fn from(v: Vec<u8>) -> Self { Buffer::from_vec(v) }
+}
+
+impl From<&[u8]> for Buffer {
+	fn from(s: &[u8]) -> Self { Self(Arc::<[u8]>::from(s)) }
+}
+
+impl AsRef<[u8]> for Buffer {
+	fn as_ref(&self) -> &[u8] { self.as_slice() }
+}
+
+impl Deref for Buffer {
+	type Target = [u8];
+	fn deref(&self) -> &Self::Target { self.as_slice() }
+}
+
+impl PartialEq for Buffer { fn eq(&self, other: &Self) -> bool { self.as_slice() == other.as_slice() } }
+impl Eq for Buffer {}
+
+impl std::fmt::Debug for Buffer {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Buffer(len={})", self.len())
+	}
+}
+
 /// A very small buffer pool that reuses vectors to reduce allocations.
+///
+/// The pool is thread-safe. Oversized vectors (capacity above the configured
+/// bound) are dropped instead of being retained.
+///
+/// Example
+/// -------
+/// ```
+/// use nyx_core::zero_copy::manager::BufferPool;
+/// let pool = BufferPool::with_capacity(1024);
+/// let mut v = pool.acquire(128);
+/// v.extend_from_slice(&[1,2,3]);
+/// pool.release(v);
+/// let w = pool.acquire(64);
+/// assert!(w.capacity() >= 64);
+/// ```
 #[derive(Default)]
 pub struct BufferPool { free: Mutex<Vec<Vec<u8>>>, cap: usize }
 
