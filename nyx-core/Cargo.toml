@@ -38,6 +38,9 @@ nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 # Optional crypto integration
 nyx-crypto = { path = "../nyx-crypto", optional = true }
 
+# Optional FEC integration for zero-copy helpers
+nyx-fec = { path = "../nyx-fec", optional = true }
+
 # Optional FEC integration (removed due to circular dependency)
 # nyx-fec integration is handled through traits and feature gates
 
@@ -70,6 +73,8 @@ multipath_dp = []
 cmix = ["num-bigint", "num-traits"]
 # Enable zero-copy integration with crypto components (fec handled separately)
 zero_copy = ["nyx-crypto"]
+# Enable FEC helpers (e.g., 1280B shard views)
+fec = ["dep:nyx-fec"]
 # Alias feature to enable optional dependency `nyx-crypto`
 nyx-crypto = ["dep:nyx-crypto"]
 

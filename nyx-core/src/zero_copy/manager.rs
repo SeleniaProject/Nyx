@@ -123,9 +123,10 @@ mod tests {
 
 	#[test]
 	fn pool_mutex_poison_recovery() {
-		let p = BufferPool::with_capacity(1024);
+		use std::sync::Arc;
+		let p = Arc::new(BufferPool::with_capacity(1024));
 		// Poison the mutex in another thread while holding the lock
-		let p_ref = &p;
+		let p_ref = Arc::clone(&p);
 		let handle = std::thread::spawn(move || {
 			let _guard = p_ref.free.lock().expect("lock before poison");
 			panic!("intentional panic to poison mutex");
