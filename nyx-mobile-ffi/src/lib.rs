@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-#[no_mangle]
 pub extern "C" fn nyx_mobile_init() -> i32 { 0 }
 
 #[cfg(test)]
