@@ -1,0 +1,722 @@
+﻿[
+    {
+        "path":  "build-protoc/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-cli/tests/alerts_cmd.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-cli/tests/integration_tests.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-cli/tests/performance_tests.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-cli/tests/status_and_reconnect.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/adaptive_cover.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/aead_comprehensive.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/capability.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/capability_extended.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/close.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/close_error.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/cmix_vdf.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/component_integration.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/congestion.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/cover_lambda.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/cover_lambda5.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/cryptographic_operation_properties.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/e2e_full.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/e2e_scenarios.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/e2e_scenarios_simple.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/fec.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/fec_parity.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/fec_reconstruct.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/fec_shuffle.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/frame.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/frame_reserved.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/handshake.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/header_error.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/header_invalid.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/hole_punch.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/hole_punch_success.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/ice.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/ice_handshake.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/ice_txid_fail.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/integration_basic.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/kdf.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/kyber.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/load_testing_performance.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/localized.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/low_power.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/management.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/mix.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/multipath.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/multipath_loss_reorder.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/multipath_receiver.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/multipath_routing_properties.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/multipath_selection_properties.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/multipath_three.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/network_failure_recovery.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/network_simulation_properties.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/noise_handshake_vectors.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/obfuscator_delay.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/obfuscator_delay_stats.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/obfuscator_sigma_bound.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/path_id.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/pathbuilder_bias.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/pathbuilder_dynamic.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/performance_verification.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/ping.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/plugin.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/plugin_flags.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/plugin_missing.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/protocol_state_machine_properties.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/raptorq_prop.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/reorder.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/reorder_capacity.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/scheduler_prop.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/settings.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/settings_error.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/settings_unknown.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/stream_frame.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/stream_layer.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/stun.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/telemetry.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/timing.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/timing_obfuscator.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/transport_loop.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/txqueue.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/txqueue_stress.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/utilization_decay.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/utilization_estimator.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/weighted_bandwidth.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-conformance/tests/weighted_path.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-control/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-control/tests/dht.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-control/tests/settings.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-core/benches/push_gateway_enhanced.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-core/tests/low_power_mobile_ffi.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-core/tests/low_power_screen_off_ratio.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-core/tests/zero_copy_tests.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-crypto/benches/constant_time.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-crypto/tests/zeroization_audit.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/advanced_path_builder.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/alerts_http.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/alerts_metrics.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/low_power_wasm.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/mix_defaults.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/otlp_export_smoke.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/prometheus_metrics.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-daemon/tests/wasm_plugin_handshake.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-fec/benches/fec_simd.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-mix/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-mix/tests/adaptive_cover_feedback.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-mix/tests/low_power_screen_off_ratio.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-mobile-ffi/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-sdk-wasm/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-sdk-wasm/tests/wasm_smoke.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-sdk/tests/error_close_code.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-sdk/tests/integration_tests.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/benches/hpke_rekey_overhead.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/benches/plugin_framework_bench.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/benches/realistic_performance_test.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/congestion.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/load_balancing.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/multipath_end_to_end_reassembly.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/multipath_failover_end_to_end.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/multipath_pathid_integration.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/multipath_telemetry_counters.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/multipath_unhealthy_path_bias.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/obfuscator.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/plugin_settings_ext.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/reordering_and_hops.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/resource_cleanup_integration.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/stream.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/telemetry_span.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-stream/tests/weighted_round_robin_scheduler_v2.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/correlation.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/early_data.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/exporter.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/metrics_404.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/otlp_e2e_collector.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/otlp_in_memory.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/otlp_span.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/sampling_metrics.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-telemetry/tests/span_metric_integration.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-transport/benches/send_mmsg.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-transport/src/lib.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-transport/tests/ice.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-transport/tests/low_power_config.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-transport/tests/stun_server.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "nyx-transport/tests/teredo.rs",
+        "size":  2,
+        "status":  "whitespace-only"
+    },
+    {
+        "path":  "target/debug/.cargo-lock",
+        "size":  0,
+        "status":  "empty"
+    }
+]
