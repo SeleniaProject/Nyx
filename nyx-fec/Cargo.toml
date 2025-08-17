@@ -5,6 +5,7 @@ edition = "2021"
 
 description = "Nyx Reed-Solomon FEC wrapper for 1280B fixed packets"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
 
 [package.metadata.docs.rs]
 # Avoid enabling any optional features that could pull C/C++ backends on docs.rs
@@ -14,13 +15,8 @@ features = []
 reed-solomon-erasure = "6"
 ## Keep the crate lean: other deps were unused in this crate. Add back only if required.
 
-[target.'cfg(windows)'.dependencies]
-# no platform-specific deps required currently
-
 [features]
 default = []
-# Enable SIMD-accelerated C backend of reed-solomon-erasure (requires cc).
-simd = ["reed-solomon-erasure/simd-accel"]
 raptorq = []
 telemetry = []
 

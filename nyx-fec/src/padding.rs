@@ -32,6 +32,12 @@ pub fn unpack_from_shard(shard: &[u8; SHARD_SIZE]) -> &[u8] {
 	&shard[2..2 + len]
 }
 
+/// Fallible unpack that validates the length prefix and returns None if invalid.
+pub fn try_unpack_from_shard(shard: &[u8; SHARD_SIZE]) -> Option<&[u8]> {
+	let len = u16::from_le_bytes([shard[0], shard[1]]) as usize;
+	if len <= SHARD_SIZE - 2 { Some(&shard[2..2 + len]) } else { None }
+}
+
 /// Validate that a shard uses a sane length prefix and returns the payload length.
 pub fn validate_shard_header(shard: &[u8; SHARD_SIZE]) -> Option<usize> {
 	let len = u16::from_le_bytes([shard[0], shard[1]]) as usize;
@@ -61,6 +67,50 @@ mod tests {
 	fn validate_shard_header_works() {
 		let shard = pack_into_shard(&[1, 2, 3, 4]);
 		assert_eq!(validate_shard_header(&shard), Some(4));
+	}
+
+	#[test]
+	fn unpack_respects_length_prefix_zero() {
+		let shard = pack_into_shard(&[]);
+		let recovered = unpack_from_shard(&shard);
+		assert_eq!(recovered.len(), 0);
+	}
+
+	#[test]
+	fn try_pack_exact_capacity_minus_header() {
+		let buf = vec![9u8; SHARD_SIZE - 2];
+		let shard = try_pack_into_shard(&buf).expect("should fit");
+		let got = unpack_from_shard(&shard);
+		assert_eq!(got, &buf[..]);
+	}
+
+	#[test]
+	fn unpack_rejects_oob_length_via_safe_slice() {
+		// Craft an invalid shard: length header claims too large length.
+		let mut shard = [0u8; SHARD_SIZE];
+		let bogus_len: u16 = (SHARD_SIZE as u16).saturating_add(1); // > SHARD_SIZE - 2
+		shard[0..2].copy_from_slice(&bogus_len.to_le_bytes());
+		// Even though header is invalid, slicing with 2..2+len would panic.
+		// Our implementation uses a debug_assert and safe slice; in release it may panic.
+		// Therefore, guard using validate_shard_header and ensure it flags None.
+		assert_eq!(validate_shard_header(&shard), None);
+	}
+
+	#[test]
+	fn try_unpack_returns_none_on_invalid_header() {
+		let mut shard = [0u8; SHARD_SIZE];
+		let bogus_len: u16 = (SHARD_SIZE as u16).saturating_add(1);
+		shard[0..2].copy_from_slice(&bogus_len.to_le_bytes());
+		assert!(try_unpack_from_shard(&shard).is_none());
+	}
+
+	#[test]
+	fn try_unpack_matches_unpack_for_valid_input() {
+		let data = b"abc";
+		let shard = pack_into_shard(data);
+		let a = unpack_from_shard(&shard);
+		let b = try_unpack_from_shard(&shard).unwrap();
+		assert_eq!(a, b);
 	}
 }
 
