@@ -1,0 +1,254 @@
+name: Compliance Matrix Validation
+
+on:
+  push:
+    branches: [ main, develop, 'feature/*', 'chore/*' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 06:00 UTC to catch compliance regressions
+    - cron: '0 6 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Core compliance is mandatory for all builds
+  core-compliance:
+    name: 🔐 Core Compliance Gate
+    runs-on: ubuntu-latest
+    env:
+      NYX_REQUIRED_COMPLIANCE_LEVEL: "core"
+      NYX_CI_OUTPUT_DIR: "./compliance-reports"
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+        
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      
+    - name: Run Core compliance gate
+      run: |
+        mkdir -p $NYX_CI_OUTPUT_DIR
+        cargo test --package nyx-conformance ci_compliance_gate_main --features hybrid -- --nocapture
+        
+    - name: Upload compliance reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: core-compliance-reports
+        path: ./compliance-reports/
+        retention-days: 30
+
+  # Test all compliance levels with feature matrix
+  compliance-matrix:
+    name: 🧪 Compliance Matrix (${{ matrix.level }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [core, plus, full]
+        include:
+          - level: core
+            features: "hybrid"
+            required: true
+          - level: plus  
+            features: "hybrid,multipath,telemetry,fec"
+            required: false
+          - level: full
+            features: "hybrid,multipath,telemetry,fec,cmix,vdf,plugin,mobile,quic"
+            required: false
+    
+    env:
+      NYX_REQUIRED_COMPLIANCE_LEVEL: ${{ matrix.level }}
+      NYX_CI_OUTPUT_DIR: "./compliance-reports/${{ matrix.level }}"
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: compliance-${{ matrix.level }}-${{ matrix.features }}
+        
+    - name: Create output directory
+      run: mkdir -p $NYX_CI_OUTPUT_DIR
+      
+    - name: Run compliance matrix test
+      run: |
+        cargo test --package nyx-conformance ci_compliance_matrix_full --features ${{ matrix.features }} -- --nocapture
+        
+    - name: Run feature compilation verification
+      run: |
+        cargo test --package nyx-conformance ci_feature_compilation_verification --features ${{ matrix.features }} -- --nocapture
+        
+    - name: Run hierarchy validation
+      run: |
+        cargo test --package nyx-conformance ci_compliance_hierarchy_validation --features ${{ matrix.features }} -- --nocapture
+        
+    - name: Test specific compliance level gate
+      if: matrix.required
+      run: |
+        cargo test --package nyx-conformance ci_compliance_gate_main --features ${{ matrix.features }} -- --nocapture
+      continue-on-error: ${{ !matrix.required }}
+        
+    - name: Upload matrix reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: compliance-matrix-${{ matrix.level }}
+        path: ./compliance-reports/${{ matrix.level }}/
+        retention-days: 30
+
+  # Generate compliance badges and documentation  
+  compliance-badges:
+    name: 📊 Generate Compliance Badges
+    runs-on: ubuntu-latest
+    needs: [core-compliance, compliance-matrix]
+    if: always()
+    env:
+      NYX_CI_OUTPUT_DIR: "./badges"
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      
+    - name: Create badges directory
+      run: mkdir -p $NYX_CI_OUTPUT_DIR
+      
+    - name: Generate badges with full feature set
+      run: |
+        cargo test --package nyx-conformance ci_compliance_matrix_full --features hybrid,multipath,telemetry,fec,cmix,vdf,plugin,mobile,quic -- --nocapture
+        
+    - name: Upload badge artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: compliance-badges
+        path: ./badges/
+        retention-days: 90
+        
+    - name: Comment PR with compliance status
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = './badges/compliance_badges.md';
+          
+          if (fs.existsSync(path)) {
+            const badgeContent = fs.readFileSync(path, 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🔍 Compliance Status\n\n${badgeContent}`
+            });
+          }
+
+  # Compliance regression detection
+  regression-check:
+    name: 🚨 Regression Detection
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      
+    - name: Run regression detection
+      run: |
+        cargo test --package nyx-conformance test_compliance_regression_detection --features hybrid,multipath,telemetry,fec -- --nocapture
+        
+    - name: Verify compliance level progression
+      run: |
+        cargo test --package nyx-conformance test_compliance_level_progression --features hybrid,multipath,telemetry,fec -- --nocapture
+
+  # Cross-platform compliance verification
+  cross-platform-compliance:
+    name: 🌐 Cross-Platform Compliance (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    env:
+      NYX_REQUIRED_COMPLIANCE_LEVEL: "core"
+      NYX_CI_OUTPUT_DIR: "./compliance-reports/cross-platform"
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: compliance-${{ matrix.os }}
+        
+    - name: Create output directory
+      run: mkdir -p ${{ env.NYX_CI_OUTPUT_DIR }}
+      shell: bash
+      
+    - name: Run core compliance on ${{ matrix.os }}
+      run: |
+        cargo test --package nyx-conformance ci_compliance_gate_main --features hybrid -- --nocapture
+      shell: bash
+        
+    - name: Upload cross-platform reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: compliance-cross-platform-${{ matrix.os }}
+        path: ./compliance-reports/cross-platform/
+        retention-days: 14
+
+  # Summary job for status checks
+  compliance-summary:
+    name: 📋 Compliance Summary
+    runs-on: ubuntu-latest
+    needs: [core-compliance, compliance-matrix, compliance-badges, regression-check, cross-platform-compliance]
+    if: always()
+    
+    steps:
+    - name: Check compliance results
+      run: |
+        echo "Core compliance: ${{ needs.core-compliance.result }}"
+        echo "Compliance matrix: ${{ needs.compliance-matrix.result }}"
+        echo "Badge generation: ${{ needs.compliance-badges.result }}"
+        echo "Regression check: ${{ needs.regression-check.result }}"
+        echo "Cross-platform: ${{ needs.cross-platform-compliance.result }}"
+        
+        # Fail if core compliance failed
+        if [ "${{ needs.core-compliance.result }}" != "success" ]; then
+          echo "❌ Core compliance gate failed - this is a blocking issue"
+          exit 1
+        fi
+        
+        echo "✅ Compliance validation completed successfully"

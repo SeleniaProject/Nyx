@@ -89,10 +89,11 @@
     フィーチャ: `prometheus otlp_exporter otlp` で `cargo test -p nyx-telemetry` 全通過。
 
 ## 10. Compliance Levels
-- [ ] レベル毎の必須/任意機能マトリクスの自動検証
+- [x] レベル毎の必須/任意機能マトリクスの自動検証
   - 種別: 仕様完全性の担保不足（改善）
   - 根拠: `nyx-conformance/tests/core.rs` の基本検証のみ
   - 受入条件: Core/Plus/Full のCIマトリクスとバッジ、未達時に失敗
+  - 完了メモ: 本格的なCI/CDコンプライアンス検証システムを実装。GitHub Actions ワークフロー (`.github/workflows/compliance-matrix.yml`) でCore必須/Plus・Full任意の自動検証、詳細なコンプライアンスマトリクステスト (`nyx-conformance/tests/ci_compliance_gates.rs`) 、環境変数による柔軟な設定、JSONレポート・バッジ生成、回帰検知、クロスプラットフォーム検証を提供。開発者向けMakefileで簡単実行、包括的ドキュメント (`docs/compliance_ci_integration.md`) で運用ガイドを整備。Pure Rust実装で4つの主要テスト（ゲート・マトリクス・機能・階層）全て合格。／commit: 現在
 
 ## Transport 層（仕様キーワード: QUIC/TCP/Teredo/DATAGRAM）
 - [ ] QUIC 実装（feature-gated stub の置換、C依存なし）
