@@ -11,7 +11,8 @@ impl<P: PushProvider + 'static> PushGateway<P> {
 	pub fn new(provider: Arc<P>, per_sec: f64) -> Self { Self { provider, limiter: std::sync::Mutex::new(RateLimiter::new(1.0, per_sec)) } }
 	pub async fn send(&self, token: &str, title: &str, body: &str) -> anyhow::Result<bool> {
 		{
-			let mut l = self.limiter.lock().unwrap();
+			// Be resilient to mutex poisoning; recover inner limiter to avoid panics in library code
+			let mut l = match self.limiter.lock() { Ok(g) => g, Err(p) => p.into_inner() };
 			if !l.allow() { return Ok(false); }
 		}
 		self.provider.send(token, title, body).await?;
@@ -33,5 +34,26 @@ mod tests {
 	assert!(!gw.send("t", "a", "b").await.unwrap());
 		// allow after wait
 		tokio::time::sleep(Duration::from_millis(10)).await;
+	}
+
+	#[tokio::test]
+	async fn gateway_mutex_poison_recovery() {
+		struct NoopPush;
+		#[async_trait::async_trait]
+		impl crate::push::PushProvider for NoopPush {
+			async fn send(&self, _token: &str, _title: &str, _body: &str) -> anyhow::Result<()> { Ok(()) }
+		}
+		let gw = Arc::new(PushGateway::new(Arc::new(NoopPush), 1000.0));
+		// Intentionally poison the mutex by panicking while holding the lock
+		let gwc = gw.clone();
+		let handle = std::thread::spawn(move || {
+			let _g = gwc.limiter.lock().expect("lock before poison");
+			panic!("intentional poison");
+		});
+		let _ = handle.join();
+
+		// After poisoning, send should not panic and should return either true/false cleanly
+		let r = gw.send("t", "a", "b").await;
+		assert!(r.is_ok());
 	}
 }

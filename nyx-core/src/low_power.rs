@@ -9,9 +9,11 @@ pub enum ScreenState { On, Off }
 /// Compute the ratio of time the screen was Off within the observed interval.
 /// The input must be a non-empty, time-ordered slice of (timestamp, state).
 pub fn screen_off_ratio(events: &[(TimestampMs, ScreenState)]) -> f64 {
+	// Empty input => no observation window
 	if events.is_empty() { return 0.0; }
-	let start = events.first().unwrap().0 .0;
-	let end = events.last().unwrap().0 .0;
+	// Avoid unwrap; if first/last are missing (shouldn't happen since not empty), return 0
+	let Some(&(TimestampMs(start), _)) = events.first() else { return 0.0 };
+	let Some(&(TimestampMs(end), _)) = events.last() else { return 0.0 };
 	if end <= start { return 0.0; }
 	let mut off_ms: u64 = 0;
 	for w in events.windows(2) {
