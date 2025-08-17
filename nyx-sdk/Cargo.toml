@@ -16,7 +16,9 @@ nyx-crypto = { path = "../nyx-crypto" }
 tokio = { version = "1.37", features = ["full"] }
 tokio-stream = "0.1"
 
-# gRPC client for daemon communication - DISABLED: uses ring/openssl
+# gRPC client dependencies - INTENTIONALLY DISABLED
+# gRPC uses ring/openssl which introduces C dependencies and compilation complexity.
+# Nyx uses pure Rust JSON-RPC over Unix Domain Sockets/Named Pipes instead.
 # tonic = { version = "0.10", features = ["transport"] }
 prost = "0.12"
 prost-types = "0.12"
@@ -64,7 +66,9 @@ fastrand = "2.0"
 tracing-subscriber = "0.3.19"
 
 [build-dependencies]
-# tonic-build = "0.10" # DISABLED: uses ring/openssl
+# Build-time gRPC code generation - INTENTIONALLY DISABLED
+# tonic-build uses protoc and ring dependencies which conflict with pure Rust goals
+# tonic-build = "0.10"
 
 [features]
 default = []
@@ -74,7 +78,9 @@ reconnect = ["backoff"]
 error-propagation = []
 # Enable metrics collection
 metrics = ["nyx-core/telemetry"]
- # Legacy gRPC backup compatibility flag (to silence cfg in error.rs)
+ # Legacy gRPC backup compatibility flag
+ # Kept for backward compatibility with existing configurations
+ # but gRPC functionality remains disabled in favor of JSON-RPC
  grpc-backup = []
 
 [dev-dependencies]

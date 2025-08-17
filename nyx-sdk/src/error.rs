@@ -20,8 +20,10 @@ pub enum Error {
 	Disconnected,
 	#[error("not found: {0}")]
 	NotFound(&'static str),
+	/// Legacy gRPC error variant - kept for compatibility but gRPC is disabled
+	/// in favor of pure Rust JSON-RPC communication to avoid C dependencies.
 	#[cfg(feature = "grpc-backup")]
-	#[error("grpc error (disabled)")]
+	#[error("grpc functionality is disabled (use JSON-RPC instead)")]
 	GrpcDisabled,
 }
 
