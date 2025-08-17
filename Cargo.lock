@@ -3367,6 +3367,7 @@ name = "nyx-control"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "build-protoc",
  "chacha20poly1305 0.10.1",
  "chrono",
