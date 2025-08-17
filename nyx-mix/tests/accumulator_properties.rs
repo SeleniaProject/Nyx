@@ -41,12 +41,13 @@ proptest! {
     #[test]
     fn wrong_witnesses_fail_verification(
         element in arb_element(),
-        wrong_witness in arb_element()
+        wrong_witness_bytes in arb_element()
     ) {
         let mut acc = Accumulator::new();
         acc.add_element(&element).unwrap();
         
-        // Wrong witness should fail (with high probability)
+        // Create wrong witness from random bytes
+        let wrong_witness = nyx_mix::accumulator::convert_legacy_accumulator(&wrong_witness_bytes);
         let correct_witness = acc.generate_witness(&element).unwrap();
         
         if wrong_witness != correct_witness {
@@ -58,17 +59,21 @@ proptest! {
     #[test]
     fn batch_verification_consistency(elements in arb_elements()) {
         let mut acc = Accumulator::new();
-        let mut witnesses = Vec::new();
+        let mut unique_elements = Vec::new();
         
-        // Add all elements and collect witnesses
+        // Add elements, skipping duplicates
         for element in &elements {
-            let witness = acc.add_element(element).unwrap();
-            witnesses.push(witness);
+            if let Ok(_witness) = acc.add_element(element) {
+                unique_elements.push(element.clone());
+            }
+            // Skip duplicates silently (expected behavior)
         }
         
-        // Individual verification should work for all elements
-        for (element, witness) in elements.iter().zip(witnesses.iter()) {
-            assert!(acc.verify_element(element, witness), "Each element should verify individually");
+        // Individual verification should work for all added elements
+        // Use fresh witnesses generated after all elements are added
+        for element in &unique_elements {
+            let fresh_witness = acc.generate_witness(element).unwrap();
+            assert!(acc.verify_element(element, &fresh_witness), "Each element should verify individually");
         }
     }
 
@@ -166,11 +171,14 @@ mod unit_tests {
             modulus_bits: 1024,
             hash_function: "SHA256".to_string(),
             max_batch_size: 500,
+            crypto_optimizations: true,
+            security_level: nyx_mix::accumulator::SecurityLevel::Demo,
         };
         
         let acc = Accumulator::with_config(config.clone());
         assert_eq!(acc.config.modulus_bits, 1024);
         assert_eq!(acc.config.max_batch_size, 500);
+        assert_eq!(acc.config.security_level, nyx_mix::accumulator::SecurityLevel::Demo);
     }
 
     #[test]

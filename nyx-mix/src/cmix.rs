@@ -139,7 +139,7 @@ impl Batcher {
             return Err(error);
         }
 
-        // Verify RSA accumulator witness
+        // Verify RSA accumulator witness (simplified for this implementation)
         if !accumulator::verify_membership(
             &batch.accumulator_witness,
             &batch.id.to_le_bytes(),

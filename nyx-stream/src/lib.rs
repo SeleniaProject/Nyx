@@ -9,6 +9,8 @@ pub mod multipath;
 pub mod async_stream;
 pub mod frame_codec;
 pub mod congestion;
+pub mod capability;       // Capability negotiation
+pub mod management;       // Management frames and error codes
 pub mod plugin;            // Plugin core types
 pub mod plugin_registry;   // In-memory registry and permissions
 pub mod plugin_cbor;       // CBOR header parsing helpers
@@ -24,4 +26,6 @@ pub mod hpke_rekey;        // Rekey trigger helpers (tests/integration use)
 pub use errors::{Error, Result};
 pub use frame::{Frame, FrameHeader, FrameType};
 pub use frame_codec::FrameCodec;
+pub use capability::{Capability, CapabilityError, negotiate, get_local_capabilities};
+pub use management::{build_close_unsupported_cap, parse_close_unsupported_cap};
 

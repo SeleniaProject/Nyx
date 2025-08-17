@@ -1,4 +1,9 @@
 
+//! Plugin framework tests including capability validation
+//!
+//! Tests plugin frame types, ID ranges, and capability negotiation
+//! as specified in `spec/Capability_Negotiation_Policy.md`.
+
 #![allow(clippy::needless_collect)]
 
 use nyx_stream::plugin::{
@@ -6,6 +11,7 @@ use nyx_stream::plugin::{
 	FRAME_TYPE_PLUGIN_ERROR, FRAME_TYPE_PLUGIN_HANDSHAKE,
 };
 use nyx_stream::plugin_frame::PluginFrame;
+use nyx_stream::capability::{Capability, CAP_PLUGIN_FRAMEWORK, negotiate, get_local_capabilities};
 
 // 1) frame type validation
 #[test]
@@ -64,5 +70,67 @@ fn test_plugin_frame_size_limits() {
 	assert!(encoded.len() < 100 * 1024, "encoded size too large: {} bytes", encoded.len());
 	let decoded = PluginFrame::from_cbor(&encoded).expect("decode large frame");
 	assert_eq!(f, decoded);
+}
+
+// 5) Test capability negotiation for plugin framework
+#[test]
+fn test_plugin_framework_capability_negotiation() {
+	let local_caps = get_local_capabilities();
+	
+	// Should contain plugin framework capability
+	let plugin_cap = local_caps.iter()
+		.find(|cap| cap.id == CAP_PLUGIN_FRAMEWORK)
+		.expect("Plugin framework capability should be advertised");
+	
+	assert!(plugin_cap.is_optional(), "Plugin framework should be optional");
+}
+
+// 6) Test negotiation succeeds when peer supports plugin framework
+#[test]
+fn test_plugin_framework_negotiation_success() {
+	let local_supported = &[nyx_stream::capability::CAP_CORE, CAP_PLUGIN_FRAMEWORK];
+	let peer_caps = vec![
+		Capability::required(nyx_stream::capability::CAP_CORE, vec![]),
+		Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]),
+	];
+	
+	assert!(negotiate(local_supported, &peer_caps).is_ok());
+}
+
+// 7) Test negotiation succeeds when peer doesn't request plugin framework
+#[test]
+fn test_plugin_framework_negotiation_without_plugins() {
+	let local_supported = &[nyx_stream::capability::CAP_CORE]; // No plugin framework
+	let peer_caps = vec![
+		Capability::required(nyx_stream::capability::CAP_CORE, vec![]),
+		// No plugin framework requested
+	];
+	
+	assert!(negotiate(local_supported, &peer_caps).is_ok());
+}
+
+// 8) Test plugin ID range validation
+#[test]
+fn test_plugin_id_ranges() {
+	// Test valid plugin IDs
+	for id in [0u32, 1, 100, 65535, u32::MAX] {
+		let plugin_id = PluginId(id);
+		assert_eq!(plugin_id.0, id);
+	}
+}
+
+// 9) Test plugin frame type range corresponds to capability
+#[test]
+fn test_plugin_frame_types_and_capability() {
+	// Plugin frame types should be in reserved range
+	for frame_type in 0x50u8..=0x5F {
+		assert!(is_plugin_frame(frame_type));
+	}
+	
+	// Verify specific plugin frame types are in range
+	assert!(is_plugin_frame(FRAME_TYPE_PLUGIN_HANDSHAKE));
+	assert!(is_plugin_frame(FRAME_TYPE_PLUGIN_DATA));
+	assert!(is_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL));
+	assert!(is_plugin_frame(FRAME_TYPE_PLUGIN_ERROR));
 }
 
