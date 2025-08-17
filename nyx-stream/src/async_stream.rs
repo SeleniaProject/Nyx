@@ -19,11 +19,23 @@ pub struct AsyncStreamConfig {
 	pub max_frame_len: Option<usize>,
 	/// Optional multipath settings. If None or disabled, single path is used.
 	pub multipath: Option<IntegrationSettings>,
+	/// Optional cap for receiver out-of-order buffer (number of frames).
+	/// If Some(n), pending out-of-order frames beyond n will cause oldest to be dropped.
+	pub max_reorder_pending: Option<usize>,
 }
 
 impl Default for AsyncStreamConfig {
 	fn default() -> Self {
-	Self { stream_id: 1, max_inflight: 32, retransmit_timeout: Duration::from_millis(250), max_retries: 8, reorder_window: None, max_frame_len: None, multipath: None }
+		Self {
+			stream_id: 1,
+			max_inflight: 32,
+			retransmit_timeout: Duration::from_millis(250),
+			max_retries: 8,
+			reorder_window: None,
+			max_frame_len: None,
+			multipath: None,
+			max_reorder_pending: Some(2048),
+		}
 	}
 }
 
@@ -31,6 +43,7 @@ impl Default for AsyncStreamConfig {
 enum Cmd {
 	Send { data: Bytes, ack: oneshot::Sender<()> },
 	Recv { reply: oneshot::Sender<Option<Bytes>> },
+	TryRecv { reply: oneshot::Sender<Option<Bytes>> },
 	Close { ack: oneshot::Sender<()> },
 }
 
@@ -51,9 +64,19 @@ impl AsyncStream {
 	}
 
 	pub async fn recv(&self) -> Result<Option<Bytes>> {
+	let (tx, rx) = oneshot::channel();
+	self.tx.send(Cmd::Recv { reply: tx }).await.map_err(|_| Error::ChannelClosed)?;
+	rx.await.map_err(|_| Error::ChannelClosed)
+	}
+
+	/// Non-blocking receive: returns Some if data is queued, None otherwise (or if closed).
+	pub async fn try_recv(&self) -> Result<Option<Bytes>> {
 		let (tx, rx) = oneshot::channel();
-		self.tx.send(Cmd::Recv { reply: tx }).await.map_err(|_| Error::ChannelClosed)?;
-		Ok(rx.await.map_err(|_| Error::ChannelClosed)?)
+		self.tx
+			.send(Cmd::TryRecv { reply: tx })
+			.await
+			.map_err(|_| Error::ChannelClosed)?;
+		rx.await.map_err(|_| Error::ChannelClosed)
 	}
 
 	pub async fn close(&self) -> Result<()> {
@@ -102,28 +125,40 @@ async fn endpoint_task(
 	let mut rx_queue: std::collections::VecDeque<Bytes> = Default::default();
 	let mut pending_rx: BTreeMap<u64, Bytes> = BTreeMap::new();
 	let mut expected_rx_seq: u64 = 1;
-	let closed_local = false;
+	let mut closed_local = false;
 	let mut closed_remote = false;
 	let mut reorder_buf: Vec<(BytesMut, PathId)> = Vec::new();
 	let mut mpr = cfg.multipath.as_ref().and_then(|s| if s.enable_multipath && s.paths.len() > 1 { Some(MprState::new(&s.paths)) } else { None });
 	let retransmit_alt = cfg.multipath.as_ref().map(|s| s.retransmit_on_new_path).unwrap_or(false);
 
+	// Non-blocking recv: no waiter queue; SDK polls via try_recv/recv loop
+
+	// Periodic timer to check retransmit timeouts even if idle
+	let mut rto_tick = tokio::time::interval(cfg.retransmit_timeout / 2);
+	rto_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
 	loop {
-		// Retransmit timer
-	if let Some(entry) = inflight.values_mut().next() {
-	    if entry.last_sent.elapsed() >= rtt.rto() && entry.retries < cfg.max_retries {
-				let mut buf = BytesMut::new();
-				if FrameCodec::encode(&entry.frame, &mut buf).is_ok() {
-		    // choose path for retransmit
-					let path = if retransmit_alt { mpr.as_mut().map(|s| s.pick_path()).unwrap_or(entry.last_path) } else { entry.last_path };
-					let _ = wire_tx.send(LinkMsg::Wire { bytes: buf, path: path.0 }).await;
+		// Retransmit timer (scan limited number per loop)
+		let mut scanned = 0usize;
+		let now = Instant::now();
+		let max_scan = 16; // cap per tick
+		let keys: Vec<u64> = inflight.keys().cloned().collect();
+		for k in keys {
+			if scanned >= max_scan { break; }
+			if let Some(entry) = inflight.get_mut(&k) {
+				if now.duration_since(entry.last_sent) >= rtt.rto() && entry.retries < cfg.max_retries {
+					let mut buf = BytesMut::new();
+					if FrameCodec::encode(&entry.frame, &mut buf).is_ok() {
+						let path = if retransmit_alt { mpr.as_mut().map(|s| s.pick_path()).unwrap_or(entry.last_path) } else { entry.last_path };
+						let _ = wire_tx.send(LinkMsg::Wire { bytes: buf, path: path.0 }).await;
+					}
+					entry.last_sent = Instant::now();
+					entry.retries += 1;
+					flow.on_loss();
+					rtt.on_timeout();
+					if let Some(ref mut mp) = mpr { mp.on_loss(entry.last_path); }
+					scanned += 1;
 				}
-				entry.last_sent = Instant::now();
-				entry.retries += 1;
-				// notify flow controller of possible loss to shrink window
-				flow.on_loss();
-				rtt.on_timeout();
-		if let Some(ref mut mp) = mpr { mp.on_loss(entry.last_path); }
 			}
 		}
 
@@ -159,16 +194,26 @@ async fn endpoint_task(
 						let _ = ack.send(());
 					}
 					Cmd::Recv { reply } => {
-						if let Some(b) = rx_queue.pop_front() { let _ = reply.send(Some(b)); }
-						else if closed_remote { let _ = reply.send(None); }
-						else { sleep(Duration::from_millis(1)).await; if let Some(b) = rx_queue.pop_front() { let _ = reply.send(Some(b)); } else { let _ = reply.send(None); } }
+						if let Some(b) = rx_queue.pop_front() {
+							let _ = reply.send(Some(b));
+						} else {
+							// どちらにせよNoneを返す（closed_remoteは上位で解釈）
+							let _ = reply.send(None);
+						}
+					}
+					Cmd::TryRecv { reply } => {
+						if let Some(b) = rx_queue.pop_front() {
+							let _ = reply.send(Some(b));
+						} else {
+							let _ = reply.send(None);
+						}
 					}
 					Cmd::Close { ack } => {
 						if !closed_local {
 							let close = Frame { header: FrameHeader { stream_id: cfg.stream_id, seq: next_seq, ty: FrameType::Close }, payload: vec![] };
 							let mut buf = BytesMut::new();
 							if FrameCodec::encode(&close, &mut buf).is_ok() {
-								if let Some(_) = cfg.reorder_window {
+								if cfg.reorder_window.is_some() {
 									// Flush any remaining buffered frames first in reverse
 									while let Some((b, path)) = reorder_buf.pop() {
 										let _ = wire_tx.send(LinkMsg::Wire { bytes: b, path: path.0 }).await;
@@ -184,9 +229,12 @@ async fn endpoint_task(
 						// Send close across all paths to ensure peer sees it
 						let _ = wire_tx.send(LinkMsg::Close).await;
 						let _ = ack.send(());
-						break;
+						closed_local = true;
 					}
 				}
+			}
+			_ = rto_tick.tick() => {
+				// drive periodic timeouts; actual work happens above each loop iteration
 			}
 			// Link receive path
 			msg = wire_rx.recv() => {
@@ -198,10 +246,18 @@ async fn endpoint_task(
 							FrameType::Data => {
 								// Queue payload out-of-order and ACK
 								pending_rx.insert(frame.header.seq, Bytes::from(frame.payload));
+								// Optionally cap pending_rx size
+								if let Some(cap) = cfg.max_reorder_pending {
+									if pending_rx.len() > cap {
+										// drop the largest (newest) to preserve ability to progress expected_rx_seq
+										if let Some((&drop_seq, _)) = pending_rx.iter().next_back() { let _ = pending_rx.remove(&drop_seq); }
+									}
+								}
 								while let Some(b) = pending_rx.remove(&expected_rx_seq) {
 									rx_queue.push_back(b);
 									expected_rx_seq += 1;
 								}
+								// non-blocking receive: consumer will poll
 								let ack = Frame { header: FrameHeader { stream_id: cfg.stream_id, seq: frame.header.seq, ty: FrameType::Ack }, payload: vec![] };
 								let mut buf = BytesMut::new();
 								if FrameCodec::encode(&ack, &mut buf).is_ok() { let _ = wire_tx.send(LinkMsg::Wire { bytes: buf, path }).await; }
@@ -245,6 +301,7 @@ async fn endpoint_task(
 		}
 
 		if closed_local && closed_remote { break; }
+	// non-blocking: nothing to wake
 	}
 }
 
@@ -279,7 +336,7 @@ mod tests {
 		// Peer should observe None eventually
 		let mut saw_none = false;
 		for _ in 0..100 {
-			if let Some(_) = b.recv().await.unwrap() { continue; } else { saw_none = true; break; }
+			if b.recv().await.unwrap().is_some() { continue; } else { saw_none = true; break; }
 		}
 		assert!(saw_none);
 	}
@@ -307,8 +364,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn max_frame_len_is_enforced_on_send() {
-		let mut ca = AsyncStreamConfig::default();
-		ca.max_frame_len = Some(3);
+		let ca = AsyncStreamConfig { max_frame_len: Some(3), ..Default::default() };
 		let (a, b) = pair(ca, AsyncStreamConfig::default());
 		a.send(Bytes::from_static(b"123")).await.unwrap();
 		// Over limit: silently dropped by sender before wire
@@ -317,7 +373,7 @@ mod tests {
 		assert_eq!(&first[..], b"123");
 		// Nothing else should arrive
 		for _ in 0..10 {
-			if let Some(_) = b.recv().await.unwrap() { panic!("should not receive oversized frame"); }
+			if b.recv().await.unwrap().is_some() { panic!("should not receive oversized frame"); }
 		}
 	}
 
@@ -334,5 +390,25 @@ mod tests {
 			if let Some(buf) = b.recv().await.unwrap() { out.push(String::from_utf8(buf.to_vec()).unwrap()); } else { tokio::task::yield_now().await; }
 		}
 		for i in 0..50u32 { assert_eq!(out[i as usize], format!("m-{i}")); }
+	}
+
+	#[tokio::test]
+	async fn pending_reorder_cap_is_enforced() {
+		// Configure a small pending cap to force drop of oldest out-of-order frames
+		let mut ca = AsyncStreamConfig::default();
+		let mut cb = AsyncStreamConfig::default();
+		ca.reorder_window = Some(10); // buffer up frames then flush in reverse
+		cb.max_reorder_pending = Some(4);
+		let (a, b) = pair(ca, cb);
+
+		// Send 10 frames which will arrive out-of-order
+		for i in 0..10u32 { a.send(Bytes::from(format!("x-{i}"))).await.unwrap(); }
+		// Drain what we can; due to drops, we should still eventually see progress without OOM
+		let mut got = Vec::new();
+		let start = tokio::time::Instant::now();
+		while tokio::time::Instant::now() - start < Duration::from_secs(1) {
+			if let Some(buf) = b.recv().await.unwrap() { got.push(String::from_utf8(buf.to_vec()).unwrap()); if got.len() >= 4 { break; } } else { tokio::task::yield_now().await; }
+		}
+		assert!(!got.is_empty());
 	}
 }

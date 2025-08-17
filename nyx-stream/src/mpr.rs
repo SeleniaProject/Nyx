@@ -2,13 +2,9 @@
 
 use crate::multipath::scheduler::{PathId, WeightedScheduler, PathMetric};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MprConfig {
 	pub enabled: bool,
-}
-
-impl Default for MprConfig {
-	fn default() -> Self { Self { enabled: false } }
 }
 
 #[derive(Debug)]

@@ -39,9 +39,9 @@ impl RttEstimator {
 			self.rto = self.clamp(sample + self.mul_k(rttvar));
 			return;
 		}
-		let srtt = self.srtt.unwrap();
-		let rttvar = self.rttvar.unwrap_or(sample / 2);
-		let err = if srtt > sample { srtt - sample } else { sample - srtt };
+	let Some(srtt) = self.srtt else { return; };
+	let rttvar = self.rttvar.unwrap_or(sample / 2);
+		let err = srtt.abs_diff(sample);
 		// RTTVAR = (1 - beta) * RTTVAR + beta * |SRTT - sample|
 		let new_rttvar = self.mix_dur(rttvar, err, self.beta);
 		// SRTT = (1 - alpha) * SRTT + alpha * sample

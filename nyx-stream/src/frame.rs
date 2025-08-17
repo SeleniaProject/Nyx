@@ -27,13 +27,13 @@ impl Frame {
 
 	pub fn to_cbor(&self) -> Result<Vec<u8>> {
 		let mut out = Vec::with_capacity(self.payload.len() + 32);
-		ciborium::ser::into_writer(self, &mut out).map_err(|e| Error::CborSer(e))?;
+		ciborium::ser::into_writer(self, &mut out).map_err(Error::CborSer)?;
 		Ok(out)
 	}
 
 	pub fn from_cbor(bytes: &[u8]) -> Result<Self> {
 		let reader = std::io::Cursor::new(bytes);
-		let v: Self = ciborium::de::from_reader(reader).map_err(|e| Error::Cbor(e))?;
+		let v: Self = ciborium::de::from_reader(reader).map_err(Error::Cbor)?;
 		Ok(v)
 	}
 

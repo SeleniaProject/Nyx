@@ -3,16 +3,54 @@
 use crate::{errors::{Error, Result}, frame::Frame};
 use bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
+use std::sync::{Once, atomic::{AtomicUsize, Ordering}};
 
 /// Length-prefixed (u32 big-endian) + CBOR(Frame)
 pub struct FrameCodec;
 /// Safety cap to avoid pathological allocations/DoS via oversized frames
 pub const DEFAULT_MAX_FRAME_LEN: usize = 8 * 1024 * 1024; // 8 MiB
+// Global, runtime-adjustable default limit. Initialized to DEFAULT_MAX_FRAME_LEN and can be
+// updated via env (once) or programmatically via set_default_limit().
+static DEFAULT_LIMIT: AtomicUsize = AtomicUsize::new(DEFAULT_MAX_FRAME_LEN);
+static ENV_INIT: Once = Once::new();
+
+fn clamp_limit(n: usize) -> usize {
+    n.clamp(1024, 64 * 1024 * 1024)
+}
+
+fn default_max_frame_len() -> usize {
+    // On first use, read env if present, then stick to the atomic value afterwards.
+    ENV_INIT.call_once(|| {
+        if let Ok(v) = std::env::var("NYX_FRAME_MAX_LEN") {
+            if let Ok(n) = v.trim().parse::<usize>() {
+                DEFAULT_LIMIT.store(clamp_limit(n), Ordering::Relaxed);
+            }
+        }
+    });
+    DEFAULT_LIMIT.load(Ordering::Relaxed)
+}
 
 impl FrameCodec {
+    /// Set the global default safety cap (bytes). Clamped to [1024, 64MiB].
+    pub fn set_default_limit(n: usize) {
+        DEFAULT_LIMIT.store(clamp_limit(n), Ordering::Relaxed);
+    }
+    /// Get the current global default safety cap (bytes).
+    pub fn default_limit() -> usize { default_max_frame_len() }
+    /// Encode using the default safety cap (DEFAULT_MAX_FRAME_LEN).
     pub fn encode(frame: &Frame, dst: &mut BytesMut) -> Result<()> {
+    Self::encode_with_limit(frame, dst, default_max_frame_len())
+    }
+
+    /// Decode using the default safety cap (DEFAULT_MAX_FRAME_LEN).
+    pub fn decode(src: &mut BytesMut) -> Result<Option<Frame>> {
+    Self::decode_with_limit(src, default_max_frame_len())
+    }
+
+    /// Encode with a custom maximum payload length.
+    pub fn encode_with_limit(frame: &Frame, dst: &mut BytesMut, max_len: usize) -> Result<()> {
         let payload = frame.to_cbor()?;
-        if payload.len() > DEFAULT_MAX_FRAME_LEN { return Err(Error::protocol("frame too large")); }
+        if payload.len() > max_len { return Err(Error::protocol("frame too large")); }
         if payload.len() > u32::MAX as usize { return Err(Error::protocol("frame too large")); }
         dst.reserve(4 + payload.len());
         dst.put_u32(payload.len() as u32);
@@ -20,11 +58,12 @@ impl FrameCodec {
         Ok(())
     }
 
-    pub fn decode(src: &mut BytesMut) -> Result<Option<Frame>> {
+    /// Decode with a custom maximum payload length.
+    pub fn decode_with_limit(src: &mut BytesMut, max_len: usize) -> Result<Option<Frame>> {
         if src.len() < 4 { return Ok(None); }
-    let mut len_bytes = &src[..4];
-    let len = len_bytes.get_u32() as usize;
-    if len > DEFAULT_MAX_FRAME_LEN { return Err(Error::protocol("frame too large")); }
+        let mut len_bytes = &src[..4];
+        let len = len_bytes.get_u32() as usize;
+        if len > max_len { return Err(Error::protocol("frame too large")); }
         if src.len() < 4 + len { return Ok(None); }
         src.advance(4);
         let data = src.split_to(len);
@@ -120,5 +159,19 @@ mod tests {
             prop_assert_eq!(got.header.seq, seq);
             prop_assert_eq!(got.payload, data);
         }
+    }
+
+    #[test]
+    fn custom_limit_is_respected() {
+        // Small payload with very small limit should be rejected
+        let f = Frame::data(1, 1, b"abcd".as_ref());
+        let mut buf = BytesMut::new();
+        let err = FrameCodec::encode_with_limit(&f, &mut buf, 3).unwrap_err();
+        match err { Error::Protocol(msg) => assert!(msg.contains("too large")), _ => panic!("unexpected error: {err:?}") }
+
+        // Larger limit should accept
+        FrameCodec::encode_with_limit(&f, &mut buf, DEFAULT_MAX_FRAME_LEN).unwrap();
+        let got = FrameCodec::decode_with_limit(&mut buf, DEFAULT_MAX_FRAME_LEN).unwrap().unwrap();
+        assert_eq!(got.payload, b"abcd");
     }
 }

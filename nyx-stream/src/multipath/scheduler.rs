@@ -121,7 +121,7 @@ impl WeightedScheduler {
 			if !any { break; }
 			if self.ring.len() >= MAX_SLOTS { break; }
 		}
-		self.idx = self.idx % self.ring.len();
+		self.idx %= self.ring.len();
 	}
 }
 
@@ -135,6 +135,10 @@ impl RetransmitQueue {
 	pub fn push(&mut self, seq: u64, from: PathId) { self.q.push_back((seq, from)); }
 	pub fn pop(&mut self) -> Option<(u64, PathId)> { self.q.pop_front() }
 	pub fn is_empty(&self) -> bool { self.q.is_empty() }
+}
+
+impl Default for RetransmitQueue {
+	fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]
