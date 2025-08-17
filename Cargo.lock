@@ -3554,14 +3554,7 @@ name = "nyx-fec"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "nyx-core",
- "rand 0.8.5",
- "rand_distr",
- "raptorq",
- "rayon",
  "reed-solomon-erasure",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4796,12 +4789,6 @@ checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.3",
 ]
-
-[[package]]
-name = "raptorq"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2ef8c6eb4d954b5d725025bf8143265ee0978ef960d887f93cb05f3d4fd0bfd"
 
 [[package]]
 name = "raw-cpuid"
