@@ -19,9 +19,6 @@
     "10. Compliance Levels": [
       "nyx-conformance/tests/core.rs::nyx_config_parse_defaults"
     ],
-    "6. Low Power Mode (Mobile) (redundant placeholder)": [
-      "nyx-core/tests/low_power_screen_off_ratio.rs::low_power_screen_off_cover_ratio_applied"
-    ],
     "3. Hybrid Post-Quantum Handshake": [
       "nyx-crypto/tests/kyber.rs::kyber_kem_session_key_matches",
       "nyx-stream/src/tests/hpke_rekey_integration_tests.rs::hpke_rekey_triggers_on_packet_threshold",

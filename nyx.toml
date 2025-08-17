@@ -42,3 +42,7 @@ prometheus_addr = "127.0.0.1:9090"
 [cli]
 # Maximum reconnect attempts for stream establishment / monitor logic
 max_reconnect_attempts = 5
+
+# Static safety limits
+# Max codec frame length (bytes). Valid range: 1024..=67108864
+max_frame_len_bytes = 8388608
