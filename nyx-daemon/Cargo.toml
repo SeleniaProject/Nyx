@@ -104,7 +104,8 @@ config = "0.14"
 # libp2p-identity = "0.2"
 # libp2p-kad = "0.45"
 
-# Pure Rust cryptography to replace libp2p (temporarily disabled due to ring dependency)
+# Pure Rust cryptography (enabled) - using pure Rust crypto instead of libp2p
+# TLS dependencies still disabled to avoid ring/openssl
 # rustls = { version = "0.21", default-features = false, features = ["logging", "tls12"] }
 # tokio-rustls = "0.24"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
