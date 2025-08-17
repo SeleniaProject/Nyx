@@ -3,7 +3,9 @@
 
 #[cfg(feature = "hybrid")]
 mod tests {
-    use nyx_crypto::noise::ik_demo::{StaticKeypair, initiator_handshake, responder_handshake, initiator_verify_msg2};
+    use nyx_crypto::noise::ik_demo::{
+        initiator_handshake, initiator_verify_msg2, responder_handshake, StaticKeypair,
+    };
 
     #[test]
     fn test_hybrid_handshake_round_trip() {
@@ -17,8 +19,9 @@ mod tests {
             .expect("Alice handshake failed");
 
         // Bob (responder) processes Alice's message
-        let bob_result = responder_handshake(&bob_static, &alice_static.pk, &alice_result.msg1, prologue)
-            .expect("Bob handshake failed");
+        let bob_result =
+            responder_handshake(&bob_static, &alice_static.pk, &alice_result.msg1, prologue)
+                .expect("Bob handshake failed");
 
         // Alice verifies Bob's response
         let mut alice_final = alice_result;
@@ -27,16 +30,28 @@ mod tests {
 
         // Verify session keys are properly established (Alice TX = Bob RX, Alice RX = Bob TX)
         let test_message = b"Hello, hybrid post-quantum world!";
-        
+
         // Alice encrypts with her TX, Bob decrypts with his RX
         let mut bob_final = bob_result;
-        let (_, alice_encrypted) = alice_final.tx.seal_next(&[], test_message).expect("Alice encryption failed");
-        let bob_decrypted = bob_final.rx.open_at(0, &[], &alice_encrypted).expect("Bob decryption failed");
+        let (_, alice_encrypted) = alice_final
+            .tx
+            .seal_next(&[], test_message)
+            .expect("Alice encryption failed");
+        let bob_decrypted = bob_final
+            .rx
+            .open_at(0, &[], &alice_encrypted)
+            .expect("Bob decryption failed");
         assert_eq!(bob_decrypted, test_message);
 
         // Bob encrypts with his TX, Alice decrypts with her RX
-        let (_, bob_encrypted) = bob_final.tx.seal_next(&[], test_message).expect("Bob encryption failed");
-        let alice_decrypted = alice_final.rx.open_at(0, &[], &bob_encrypted).expect("Alice decryption failed");
+        let (_, bob_encrypted) = bob_final
+            .tx
+            .seal_next(&[], test_message)
+            .expect("Bob encryption failed");
+        let alice_decrypted = alice_final
+            .rx
+            .open_at(0, &[], &bob_encrypted)
+            .expect("Alice decryption failed");
         assert_eq!(alice_decrypted, test_message);
     }
 
@@ -51,7 +66,12 @@ mod tests {
             .expect("Alice handshake succeeded");
 
         // Bob tries to process with wrong expected static key
-        let bob_result = responder_handshake(&bob_static, &charlie_static.pk, &alice_result.msg1, prologue);
+        let bob_result = responder_handshake(
+            &bob_static,
+            &charlie_static.pk,
+            &alice_result.msg1,
+            prologue,
+        );
 
         assert!(bob_result.is_err(), "Bob should reject invalid static key");
     }
@@ -71,7 +91,8 @@ mod tests {
             corrupted_msg[50] ^= 0xFF; // Flip bits in the message
         }
 
-        let bob_result = responder_handshake(&bob_static, &alice_static.pk, &corrupted_msg, prologue);
+        let bob_result =
+            responder_handshake(&bob_static, &alice_static.pk, &corrupted_msg, prologue);
 
         assert!(bob_result.is_err(), "Bob should reject corrupted message");
     }
@@ -94,8 +115,9 @@ mod tests {
         let alice_result = initiator_handshake(&alice_static, &bob_static.pk, prologue)
             .expect("Alice handshake succeeded");
 
-        let bob_result = responder_handshake(&bob_static, &alice_static.pk, &alice_result.msg1, prologue)
-            .expect("Bob handshake succeeded");
+        let bob_result =
+            responder_handshake(&bob_static, &alice_static.pk, &alice_result.msg1, prologue)
+                .expect("Bob handshake succeeded");
 
         // Note: In a full implementation, telemetry would be updated during these operations
         // For now, we just test that the telemetry API is available
@@ -104,9 +126,18 @@ mod tests {
         let post_failures = HybridHandshake::failures();
 
         // Telemetry API should be accessible
-        assert!(post_attempts >= initial_attempts, "Telemetry should be accessible");
-        assert!(post_success >= initial_success, "Success counter should be accessible");
-        assert!(post_failures >= initial_failures, "Failure counter should be accessible");
+        assert!(
+            post_attempts >= initial_attempts,
+            "Telemetry should be accessible"
+        );
+        assert!(
+            post_success >= initial_success,
+            "Success counter should be accessible"
+        );
+        assert!(
+            post_failures >= initial_failures,
+            "Failure counter should be accessible"
+        );
     }
 
     #[test]
@@ -119,10 +150,13 @@ mod tests {
             .expect("Alice handshake succeeded");
 
         let msg1 = &alice_result.msg1;
-        
+
         // Basic message structure validation
-        assert!(msg1.len() > 64, "Message should contain cryptographic material");
-        
+        assert!(
+            msg1.len() > 64,
+            "Message should contain cryptographic material"
+        );
+
         // In a full implementation, we would validate hybrid-specific headers here
         // For now, just ensure we have a valid message structure
         assert!(!msg1.is_empty(), "Message should not be empty");

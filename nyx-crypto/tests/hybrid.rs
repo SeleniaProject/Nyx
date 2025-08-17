@@ -1,13 +1,13 @@
 #![cfg(feature = "hybrid")]
 
-use nyx_crypto::hybrid::{handshake, X25519StaticKeypair, KyberStaticKeypair};
+use nyx_crypto::hybrid::{handshake, KyberStaticKeypair, X25519StaticKeypair};
 use nyx_crypto::kyber;
 
 #[test]
 pub fn hybrid_demo_handshake_roundtrip() {
     // Deterministic X25519 static keys
-    let i_x = X25519StaticKeypair::from_seed([1u8;32]);
-    let r_x = X25519StaticKeypair::from_seed([2u8;32]);
+    let i_x = X25519StaticKeypair::from_seed([1u8; 32]);
+    let r_x = X25519StaticKeypair::from_seed([2u8; 32]);
     // Kyber keypair for responder
     let mut rng = rand::thread_rng();
     let (r_sk, r_pk) = kyber::keypair(&mut rng).expect("kyber keypair");
@@ -37,8 +37,8 @@ pub fn hybrid_demo_handshake_roundtrip() {
 
 #[test]
 pub fn hybrid_demo_rejects_static_mismatch() {
-    let i_x = X25519StaticKeypair::from_seed([3u8;32]);
-    let r_x = X25519StaticKeypair::from_seed([4u8;32]);
+    let i_x = X25519StaticKeypair::from_seed([3u8; 32]);
+    let r_x = X25519StaticKeypair::from_seed([4u8; 32]);
     let mut rng = rand::thread_rng();
     let (r_sk, r_pk) = kyber::keypair(&mut rng).expect("kyber keypair");
     let r_pq = KyberStaticKeypair { sk: r_sk, pk: r_pk };
@@ -48,9 +48,9 @@ pub fn hybrid_demo_rejects_static_mismatch() {
         .expect("initiator handshake");
 
     // Use wrong expected initiator static pk
-    let wrong_pk = X25519StaticKeypair::from_seed([9u8;32]).pk;
-    let err = handshake::responder_handshake(&r_x, &r_pq, &wrong_pk, &init.msg1, prologue)
-        .unwrap_err();
+    let wrong_pk = X25519StaticKeypair::from_seed([9u8; 32]).pk;
+    let err =
+        handshake::responder_handshake(&r_x, &r_pq, &wrong_pk, &init.msg1, prologue).unwrap_err();
     let msg = format!("{}", err);
     assert!(msg.contains("initiator static mismatch") || msg.contains("hybrid init"));
 }
