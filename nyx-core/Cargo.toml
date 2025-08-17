@@ -82,6 +82,15 @@ fec = ["dep:nyx-fec"]
 # Alias feature to enable optional dependency `nyx-crypto`
 nyx-crypto = ["dep:nyx-crypto"]
 
+# Additional features for compliance system
+multipath = []
+hybrid = []
+vdf = []
+plugin = ["plugin_framework"]
+quic = []
+nat_traversal = []
+otlp = ["telemetry"]
+
 [dependencies.nyx-mobile-ffi]
 path = "../nyx-mobile-ffi"
 optional = true

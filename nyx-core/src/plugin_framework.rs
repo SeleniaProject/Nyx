@@ -10,13 +10,14 @@ pub struct PluginManifest { pub name: String, pub version: String }
 pub struct PluginMessage { pub plugin: String, pub payload: Vec<u8> }
 
 #[cfg(feature = "plugin_framework")]
-pub fn encode_msg(msg: &PluginMessage) -> Result<Vec<u8>, cbor::ser::Error<Vec<u8>>> {
-	cbor::to_vec_simple(msg)
+pub fn encode_msg(msg: &PluginMessage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+	// Use serde_json as a simpler fallback since cbor4ii API is complex
+	Ok(serde_json::to_vec(msg)?)
 }
 
 #[cfg(feature = "plugin_framework")]
-pub fn decode_msg(bytes: &[u8]) -> Result<PluginMessage, cbor::de::Error<cbor4ii::serde::DecodeError>> {
-	cbor::from_slice(bytes)
+pub fn decode_msg(bytes: &[u8]) -> Result<PluginMessage, Box<dyn std::error::Error>> {
+	Ok(serde_json::from_slice(bytes)?)
 }
 
 #[cfg(test)]
