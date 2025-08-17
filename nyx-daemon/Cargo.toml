@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-# Minimal default: core daemon path builder only
+# Minimal default: core daemon path builder + Windows API bindings where applicable
  default = ["path-builder", "windows"]
 # Path builder no longer pulls in metrics by default; metrics optional
 path-builder = []
@@ -35,6 +35,9 @@ experimental-all = [
  # Enable OpenTelemetry OTLP integration in dependency crate
  otlp = ["nyx-telemetry/otlp"]
  otlp_exporter = ["nyx-telemetry/otlp_exporter", "otlp"]
+ # Enable SIMD-accelerated JSON via simd-json (optional)
+ simd = ["dep:simd-json"]
+ telemetry = []
 
 [dependencies]
 async-trait = "0.1"
@@ -46,6 +49,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # tonic = { version = "0.10", default-features = false, features = ["transport", "prost", "codegen"] } # DISABLED: uses ring/openssl
 tokio-stream = { version = "0.1", features = ["net"] }
 clap = { version = "4.0", features = ["derive"] }
+memchr = "2"
 
 # Core Nyx components
 nyx-core = { path = "../nyx-core" }
@@ -64,6 +68,8 @@ sysinfo = { version = "0.30", default-features = true }
 # Additional dependencies for comprehensive implementation
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# Optional SIMD JSON backend (used when feature "simd" is enabled)
+simd-json = { version = "0.13", optional = true, features = ["serde_impl"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dashmap = "5.5"
@@ -82,9 +88,10 @@ once_cell = "1.19"
 url = "2.5"
 gethostname = "0.4"
 windows = { version = "0.57", features = [
-    "Win32_System_Threading",
-    "Win32_Storage_FileSystem",
-    "Win32_Foundation"
+	"Win32_System_Threading",
+	"Win32_Storage_FileSystem",
+	"Win32_Foundation",
+	"Win32_Security"
 ], optional = true }
 
 # Configuration and serialization
@@ -166,6 +173,7 @@ ciborium = "0.2"
 # Keeping it in dev-deps avoids impacting runtime deps (Axum uses Hyper 1.x internally).
 hyper = { version = "0.14", features = ["full"] }
 criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3.10"
 
 [[bench]]
 name = "path_builder_advanced"

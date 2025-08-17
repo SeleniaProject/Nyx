@@ -6,9 +6,13 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::{fs, sync::RwLock};
 use tracing::{debug, info, warn};
+use nyx_stream::FrameCodec;
 
-/// Static configuration structure loaded from TOML (kept minimal here to avoid coupling).
-/// Extend this as the daemon grows; unknown fields are ignored via serde defaults.
+/// Static configuration structure loaded from TOML.
+/// - Start with a minimal set of fields and extend progressively
+/// - Ensure forward-compatibility: unknown fields are ignored via serde defaults
+/// - Combine with `DynamicConfig` to apply runtime overrides
+///   Extend this as the daemon grows; unknown fields are ignored via serde defaults.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct NyxConfig {
     /// Daemon listen port for transport (kept for compatibility; not used by IPC).
@@ -20,6 +24,9 @@ pub struct NyxConfig {
     /// Optional hex-encoded 32-byte node id; generated when absent.
     #[serde(default)]
     pub node_id: Option<String>,
+    /// Optional static max frame length (bytes) applied on reload/startup
+    #[serde(default)]
+    pub max_frame_len_bytes: Option<u64>,
 }
 
 /// Dynamic settings that can be changed at runtime via IPC.
@@ -29,6 +36,9 @@ pub struct DynamicConfig {
     pub log_level: Option<String>,
     #[serde(default)]
     pub metrics_interval_secs: Option<u64>,
+    /// Optional max frame length in bytes for codec safety cap (applies process-wide via env)
+    #[serde(default)]
+    pub max_frame_len_bytes: Option<u64>,
 }
 
 /// Single snapshot of configuration for rudimentary versioning and rollback.
@@ -119,6 +129,18 @@ impl ConfigManager {
                         _ => errors.push("metrics_interval_secs must be 1..=3600".into()),
                     }
                 }
+                "max_frame_len_bytes" => {
+                    match v.as_u64() {
+                        Some(n) if (1024..=64 * 1024 * 1024).contains(&n) => {
+                            dyn_cfg.max_frame_len_bytes = Some(n);
+                            // Apply immediately via API and also set env for child processes if any
+                            FrameCodec::set_default_limit(n as usize);
+                            std::env::set_var("NYX_FRAME_MAX_LEN", n.to_string());
+                            changed.push(k);
+                        }
+                        _ => errors.push("max_frame_len_bytes must be 1024..=67108864".into()),
+                    }
+                }
                 other => {
                     errors.push(format!("unknown setting: {other}"));
                 }
@@ -163,6 +185,11 @@ impl ConfigManager {
         // version snapshot before apply
         self.snapshot("reload_from_file").await?;
         *self.config.write().await = parsed.clone();
+        // Apply static settings with side effects
+        if let Some(n) = parsed.max_frame_len_bytes {
+            FrameCodec::set_default_limit(n as usize);
+            std::env::set_var("NYX_FRAME_MAX_LEN", n.to_string());
+        }
         info!("config reloaded from {:?}", path);
         Ok(ConfigResponse { success: true, message: "reloaded".into(), validation_errors: vec![] })
     }
