@@ -1,3 +1,4 @@
+#![cfg(feature = "raptorq")]
 
 use nyx_fec::raptorq::{adaptive_raptorq_redundancy, Redundancy};
 

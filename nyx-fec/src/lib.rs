@@ -1,12 +1,14 @@
 //! Nyx FEC utilities.
 //! - Fixed-size (1280B) shard packing helpers.
 //! - Reed-Solomon (GF(2^8)) erasure coding wrappers specialized for 1280B shards.
-//! - Lightweight timing and adaptive redundancy helpers.
+//! - Lightweight timing helpers.
+//! - Optional adaptive redundancy helper behind the `raptorq` feature.
 //!
 //! This crate avoids unsafe code and external C/C++ backends by default.
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "raptorq")]
 pub mod raptorq;
 pub mod timing;
 pub mod padding;
