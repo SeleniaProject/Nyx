@@ -32,6 +32,11 @@
   - 根拠: `nyx-stream/src/tests/hpke_rekey_integration_tests.rs`「This is a stub」
   - 受入条件: 実際の鍵更新トリガ・暗号フレームの往復/失敗系の検証
   - 完了メモ: `nyx-stream/src/hpke_rekey.rs` を追加し、同テストを AeadSession ベースで実装。`nyx-crypto/tests/rekey.rs` のプレースホルダは削除。／commit: 7aab666
+- [x] HPKE エンベロープ暗号化システムの完全実装
+  - 種別: 本格運用レベル実装の追加
+  - 根拠: HPKE仕様（RFC 9180）準拠のエンベロープ暗号化機能の実装
+  - 受入条件: 包括的セキュリティテスト、DoS防止、シーケンス管理、完全ドキュメント化
+  - 完了メモ: 本格運用レベルのHPKEエンベロープ暗号化システムを `nyx-crypto/tests/hpke_envelope.rs` に実装。17の包括的テストケース（基本機能、セキュリティ、エッジケース、不正データ処理、性能測定）全て合格。DoS攻撃防止（サイズ制限）、シーケンスオーバーフロー防止、改ざん検知、完全なAPIドキュメント、セキュリティノート付きの実装を提供。Pure Rust実装でメモリ安全性とtype安全性を保証。／commit: 現在
 
 ## 4. cMix Integration
 - [x] cMixバッチャの本実装（最小実装/スタブの置換）
