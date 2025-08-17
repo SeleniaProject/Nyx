@@ -22,3 +22,7 @@ telemetry = []
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "adaptive_raptorq_bench"
+harness = false
