@@ -129,7 +129,7 @@ fn test_power_policy_adaptation() {
         let power_level = determine_power_level(state);
         
         // Verify power level is in valid range
-        assert!(power_level >= 0 && power_level <= 3, "Invalid power level: {}", power_level);
+        assert!(power_level <= 3, "Invalid power level: {}", power_level);
         
         println!("Scenario {}: battery={:.1}%, screen_off={:.1}%, charging={}, power_save={} -> level={}",
                  i + 1, state.battery_level, state.screen_off_ratio * 100.0,
