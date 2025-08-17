@@ -12,8 +12,11 @@ pub struct NyxStream {
 
 impl NyxStream {
 	/// 開発/テスト向け：プロセス内で相互接続されたストリームペアを生成。
-	pub fn pair(_stream_id: u32) -> (Self, Self) {
-		let (a, b) = nyx_stream::async_stream::pair(AsyncStreamConfig::default(), AsyncStreamConfig::default());
+	pub fn pair(stream_id: u32) -> (Self, Self) {
+		let mut ca = AsyncStreamConfig::default();
+		ca.stream_id = stream_id;
+		let cb = AsyncStreamConfig::default();
+		let (a, b) = nyx_stream::async_stream::pair(ca, cb);
 		(Self { inner: a }, Self { inner: b })
 	}
 
