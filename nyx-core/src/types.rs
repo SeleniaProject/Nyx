@@ -1,13 +1,37 @@
 ﻿use serde::{Deserialize, Serialize};
-use std::{fmt, str::FromStr, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{
+	convert::TryFrom,
+	fmt,
+	num::{NonZeroU32, NonZeroU64},
+	str::FromStr,
+	time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 /// Logical identifier for a stream. Constrained to non-zero in most contexts.
+///
+/// ```
+/// use nyx_core::types::StreamId;
+/// assert!(StreamId::new_nonzero(1).is_some());
+/// assert!(StreamId::new_nonzero(0).is_none());
+/// let s: StreamId = 42u32.into();
+/// assert_eq!(u32::from(s), 42);
+/// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StreamId(pub u32);
 
 impl StreamId {
 	/// Create a `StreamId` ensuring it is non-zero.
 	pub fn new_nonzero(id: u32) -> Option<Self> { if id != 0 { Some(Self(id)) } else { None } }
+}
+
+impl TryFrom<NonZeroU32> for StreamId {
+	type Error = core::convert::Infallible;
+	fn try_from(v: NonZeroU32) -> Result<Self, Self::Error> { Ok(StreamId(v.get())) }
+}
+
+impl TryFrom<StreamId> for NonZeroU32 {
+	type Error = &'static str;
+	fn try_from(v: StreamId) -> Result<Self, Self::Error> { NonZeroU32::new(v.0).ok_or("StreamId must be non-zero") }
 }
 
 impl fmt::Display for StreamId {
@@ -23,6 +47,13 @@ impl FromStr for StreamId {
 }
 
 /// Protocol version encoded as an integer.
+///
+/// ```
+/// use nyx_core::types::Version;
+/// let v = Version::V1_0;
+/// assert_eq!(v.to_string(), "1.0");
+/// assert_eq!(v.major_minor(), (1,0));
+/// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Version(pub u32);
 
@@ -48,6 +79,12 @@ impl FromStr for Version {
 }
 
 /// Millisecond-precision timestamp since UNIX_EPOCH.
+///
+/// ```
+/// use nyx_core::types::TimestampMs;
+/// let now = TimestampMs::now();
+/// assert!(now.0 > 0);
+/// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TimestampMs(pub u64);
 
@@ -59,6 +96,16 @@ impl TimestampMs {
 	}
 	/// Convert to `Duration` offset since UNIX_EPOCH.
 	pub fn as_duration(self) -> Duration { Duration::from_millis(self.0) }
+}
+
+impl TryFrom<NonZeroU64> for TimestampMs {
+	type Error = core::convert::Infallible;
+	fn try_from(v: NonZeroU64) -> Result<Self, Self::Error> { Ok(TimestampMs(v.get())) }
+}
+
+impl TryFrom<TimestampMs> for NonZeroU64 {
+	type Error = &'static str;
+	fn try_from(v: TimestampMs) -> Result<Self, Self::Error> { NonZeroU64::new(v.0).ok_or("Timestamp must be non-zero") }
 }
 
 impl fmt::Display for TimestampMs {
