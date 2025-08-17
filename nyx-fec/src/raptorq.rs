@@ -23,3 +23,14 @@ pub fn adaptive_raptorq_redundancy(rtt_ms: u32, loss: f32, prev: Redundancy) -> 
 	if rtt_ms > 100 { rx += 0.05; }
 	Redundancy { tx, rx }.clamp()
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	#[test]
+	fn redundancy_clamped() {
+		let prev = Redundancy { tx: 0.9, rx: 0.9 };
+		let next = adaptive_raptorq_redundancy(1000, 1.0, prev);
+		assert!(next.tx <= 0.9 && next.rx <= 0.9);
+	}
+}
