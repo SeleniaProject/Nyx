@@ -16,7 +16,7 @@ Key modules
 - plugin_handshake.rs: Minimal handshake payload helpers
 - plugin_manifest.rs: TOML manifest + schema validation
 - plugin_settings.rs: Runtime settings defaults
-- plugin_ipc.rs / plugin_sandbox*.rs: Stubs for transport/sandbox
+- plugin_ipc.rs: Pure-Rust in-proc IPC reference (bounded + backpressure); plugin_sandbox*.rs: placeholders
 
 Run tests
 
