@@ -74,6 +74,12 @@ pub fn dump_prometheus() -> String {
 	metrics::dump_prometheus()
 }
 
+/// Gracefully shutdown OTLP exporters and flush spans. No-op without feature = "otlp".
+#[cfg(feature = "otlp")]
+pub fn shutdown() {
+	opentelemetry_integration::shutdown();
+}
+
 /// Build a Warp filter that serves Prometheus metrics at path "/metrics".
 /// Enabled only with feature = "prometheus". Useful for embedding into an
 /// existing HTTP server.

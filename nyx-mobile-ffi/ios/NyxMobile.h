@@ -8,6 +8,8 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <Network/Network.h>
+// Use the generated pure C-ABI header from the Rust crate
+#import "../include/nyx_mobile_ffi.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -76,51 +78,8 @@ typedef NS_ENUM(NSInteger, NyxPlatform) {
 
 @end
 
-// MARK: - C Bridge Functions
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// FFI Bridge Functions (implemented in Rust)
-int nyx_mobile_init(void);
-void nyx_mobile_cleanup(void);
-int nyx_mobile_get_platform(void);
-// Error utilities
-const char* nyx_mobile_get_error_message(int error_code);
-void nyx_mobile_free_string(char* ptr);
-
-// Close code conversion API
-typedef struct {
-    int code;
-    const char* message;
-} MobileError;
-MobileError nyx_mobile_convert_close_code(unsigned short close_code);
-
-// iOS-specific functions (implemented in Rust iOS module)
-float ios_get_battery_level(void);
-int ios_is_charging(void);
-int ios_is_screen_on(void);
-int ios_is_low_power_mode(void);
-int ios_get_app_state(void);
-int ios_get_network_state(void);
-int ios_register_battery_notifications(void);
-int ios_register_app_notifications(void);
-
-// High-level FFI functions
-int nyx_mobile_get_battery_level(void);
-int nyx_mobile_is_charging(void);
-int nyx_mobile_is_screen_on(void);
-int nyx_mobile_is_low_power_mode(void);
-int nyx_mobile_get_app_state(void);
-int nyx_mobile_get_network_state(void);
-int nyx_mobile_start_monitoring(void);
-// Optional telemetry control FFI (no-op if telemetry feature disabled)
-void nyx_mobile_telemetry_init(void);
-void nyx_mobile_telemetry_shutdown(void);
-
-#ifdef __cplusplus
-}
-#endif
+// No additional C bridge declarations are needed; we directly call
+// the C-ABI functions declared in nyx_mobile_ffi.h from the Objective-C
+// implementation where appropriate.
 
 NS_ASSUME_NONNULL_END

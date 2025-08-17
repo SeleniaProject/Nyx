@@ -45,3 +45,35 @@ impl Frame {
 		Ok(serde_json::from_slice(bytes)?)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn cbor_roundtrip_frame() {
+		let f = Frame::data(10, 99, b"hello-cbor".as_ref());
+		let enc = f.to_cbor().expect("encode cbor");
+		let dec = Frame::from_cbor(&enc).expect("decode cbor");
+		assert_eq!(dec.header.stream_id, 10);
+		assert_eq!(dec.header.seq, 99);
+		assert_eq!(&dec.payload[..], b"hello-cbor");
+	}
+
+	#[test]
+	fn json_roundtrip_frame() {
+		let f = Frame::data(2, 3, Bytes::from_static(b""));
+		let enc = f.to_json().expect("encode json");
+		let dec = Frame::from_json(&enc).expect("decode json");
+		assert_eq!(dec.header.stream_id, 2);
+		assert_eq!(dec.header.seq, 3);
+		assert!(dec.payload.is_empty());
+	}
+
+	#[test]
+	fn invalid_cbor_is_error() {
+		let bogus = [0xFF, 0x00, 0xAA];
+		let err = Frame::from_cbor(&bogus).unwrap_err();
+		match err { Error::Cbor(_) => {}, e => panic!("unexpected error: {e:?}") }
+	}
+}

@@ -36,6 +36,10 @@ impl Rs1280 {
 
     /// Reconstruct missing shards; None entries will be recovered in-place.
     pub fn reconstruct(&self, shards: &mut [Option<[u8; SHARD_SIZE]>]) -> Result<()> {
+        // Validate number of shards first to catch misuse early.
+        if shards.len() != self.rs.total_shard_count() {
+            return Err(Error::Protocol("shard count does not match RS config".into()));
+        }
         // Convert to Option<Vec<u8>> which the crate supports for reconstruction
         let mut tmp: Vec<Option<Vec<u8>>> = shards
             .iter()
@@ -136,5 +140,39 @@ mod tests {
         let err = rs.reconstruct(&mut mix).unwrap_err();
         let msg = format!("{}", err);
         assert!(msg.contains("RS reconstruct failed") || msg.contains("reconstruct failed"));
+    }
+
+    #[test]
+    fn rs_reconstruct_preserves_present_shards() {
+        let cfg = RsConfig { data_shards: 3, parity_shards: 2 };
+        let rs = Rs1280::new(cfg).unwrap();
+        let mut shards: Vec<[u8; SHARD_SIZE]> = (0..cfg.total_shards())
+            .map(|i| {
+                let mut a = [0u8; SHARD_SIZE];
+                a[0] = (i as u8).wrapping_mul(13); a
+            }).collect();
+
+        let (data, parity) = shards.split_at_mut(cfg.data_shards);
+        let data_refs: Vec<&[u8; SHARD_SIZE]> = data.iter().collect();
+        let mut parity_refs: Vec<&mut [u8; SHARD_SIZE]> = parity.iter_mut().collect();
+        rs.encode_parity(&data_refs, &mut parity_refs).unwrap();
+
+        let before = shards.clone();
+        let mut mix: Vec<Option<[u8; SHARD_SIZE]>> = shards.into_iter().map(Some).collect();
+        mix[4] = None; // lose one
+        rs.reconstruct(&mut mix).unwrap();
+        for (i, o) in mix.into_iter().enumerate() {
+            let a = o.unwrap();
+            if i != 4 { assert_eq!(a, before[i]); }
+        }
+    }
+
+    #[test]
+    fn rs_reconstruct_rejects_wrong_count() {
+        let cfg = RsConfig { data_shards: 2, parity_shards: 1 };
+        let rs = Rs1280::new(cfg).unwrap();
+        let mut shards: Vec<Option<[u8; SHARD_SIZE]>> = vec![None; 2]; // should be 3
+        let err = rs.reconstruct(&mut shards).unwrap_err();
+        assert!(format!("{}", err).contains("shard count"));
     }
 }

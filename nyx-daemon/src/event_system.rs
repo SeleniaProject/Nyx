@@ -22,7 +22,7 @@ pub struct EventSystem {
 impl EventSystem {
     pub fn new(buffer: usize) -> Self {
         let (tx, _rx) = broadcast::channel(buffer);
-        Self { tx, default_types: Arc::new(RwLock::new(vec!["system".into(), "metrics".into()])) }
+    Self { tx, default_types: Arc::new(RwLock::new(vec!["system".into(), "metrics".into(), "power".into()])) }
     }
 
     pub fn sender(&self) -> broadcast::Sender<Event> { self.tx.clone() }

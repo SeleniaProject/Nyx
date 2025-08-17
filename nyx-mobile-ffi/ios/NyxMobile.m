@@ -6,8 +6,7 @@
 #import "NyxMobile.h"
 #import <UIKit/UIKit.h>
 #import <Network/Network.h>
-#import <CoreTelephony/CTTelephonyNetworkInfo.h>
-#import <CoreTelephony/CTCarrier.h>
+// Telephony imports were unused; remove to keep the bridge minimal and pure
 
 @interface NyxMobileBridge ()
 
@@ -239,9 +238,8 @@
         UIDevice *device = [UIDevice currentDevice];
         NSString *model = device.model ?: @"unknown";
         NSString *os = [NSString stringWithFormat:@"iOS-%@", [device systemVersion]];
-        extern void nyx_mobile_set_telemetry_label(const char* key, const char* value);
-        nyx_mobile_set_telemetry_label("device_model", [model UTF8String]);
-        nyx_mobile_set_telemetry_label("os_version", [os UTF8String]);
+    nyx_mobile_set_telemetry_label("device_model", [model UTF8String]);
+    nyx_mobile_set_telemetry_label("os_version", [os UTF8String]);
     } @catch (NSException *ex) {
         NSLog(@"Failed to inject telemetry labels: %@", ex.reason);
     }
@@ -286,8 +284,7 @@
 
 - (void)onBatteryLevelChanged:(NSInteger)level {
     NSLog(@"Battery level callback: %ld%%", (long)level);
-    extern void nyx_mobile_notify_event(int event, int value);
-    nyx_mobile_notify_event(2, (int)level);
+    // No direct C-ABI for battery; keep for app-side UI only.
 }
 
 - (void)onChargingStateChanged:(BOOL)charging {
@@ -297,20 +294,30 @@
 
 - (void)onLowPowerModeChanged:(BOOL)lowPowerMode {
     NSLog(@"Low power mode callback: %@", lowPowerMode ? @"YES" : @"NO");
-    extern void nyx_mobile_notify_event(int event, int value);
-    nyx_mobile_notify_event(1, lowPowerMode ? 1 : 0);
+    // If Low Power Mode kicks in, reflect to Background or Inactive as needed
+    nyx_power_set_state(lowPowerMode ? 1u : 0u);
 }
 
 - (void)onAppStateChanged:(NyxAppState)state {
     NSLog(@"App state callback: %ld", (long)state);
-    extern void nyx_mobile_notify_event(int event, int value);
-    nyx_mobile_notify_event(3, (int)state);
+    switch (state) {
+        case NyxAppStateActive:
+            nyx_power_set_state(0u); // Active
+            nyx_resume_low_power_session();
+            break;
+        case NyxAppStateBackground:
+            nyx_power_set_state(1u); // Background
+            break;
+        case NyxAppStateInactive:
+        default:
+            nyx_power_set_state(2u); // Inactive
+            break;
+    }
 }
 
 - (void)onNetworkStateChanged:(NyxNetworkState)state {
     NSLog(@"Network state callback: %ld", (long)state);
-    extern void nyx_mobile_notify_event(int event, int value);
-    nyx_mobile_notify_event(4, (int)state);
+    // Network is not part of the current C-ABI; keep for app logic only.
 }
 
 @end
@@ -319,56 +326,14 @@
 
 // These functions bridge between Objective-C and the Rust FFI
 
-float nyx_ios_get_battery_level_objc(void) {
-    return [[NyxMobileBridge sharedInstance] batteryLevel];
-}
-
-int nyx_ios_is_charging_objc(void) {
-    return [[NyxMobileBridge sharedInstance] isCharging] ? 1 : 0;
-}
-
-int nyx_ios_is_screen_on_objc(void) {
-    return [[NyxMobileBridge sharedInstance] isScreenOn] ? 1 : 0;
-}
-
-int nyx_ios_is_low_power_mode_objc(void) {
-    return [[NyxMobileBridge sharedInstance] isLowPowerModeEnabled] ? 1 : 0;
-}
-
-int nyx_ios_get_app_state_objc(void) {
-    return (int)[[NyxMobileBridge sharedInstance] appState];
-}
-
-int nyx_ios_get_network_state_objc(void) {
-    return (int)[[NyxMobileBridge sharedInstance] networkState];
-}
-
-int nyx_ios_initialize_monitoring_objc(void) {
-    BOOL success = [[NyxMobileBridge sharedInstance] initializeMonitoring];
-    return success ? 0 : -1;
-}
-
-void nyx_ios_cleanup_monitoring_objc(void) {
-    [[NyxMobileBridge sharedInstance] cleanup];
-}
+// Remove legacy C bridge shims; Objective-C will call Rust C-ABI directly where needed.
 
 // MARK: - Telemetry control
 
 - (void)startTelemetryIfAvailable {
-    @try {
-        extern int nyx_mobile_telemetry_init(void);
-        int r = nyx_mobile_telemetry_init();
-        NSLog(@"nyx_mobile_telemetry_init result: %d", r);
-    } @catch (NSException *ex) {
-        NSLog(@"Telemetry not initialized (feature off or unavailable): %@", ex.reason);
-    }
+    // No-op: Telemetry collector is controlled from Rust daemon side.
 }
 
 - (void)stopTelemetryIfAvailable {
-    @try {
-        extern void nyx_mobile_telemetry_shutdown(void);
-        nyx_mobile_telemetry_shutdown();
-    } @catch (NSException *ex) {
-        NSLog(@"Telemetry shutdown skipped: %@", ex.reason);
-    }
+    // No-op
 }

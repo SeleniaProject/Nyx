@@ -39,5 +39,13 @@ mod tests {
 		let v2 = ema.observe(0.0);
 		assert_eq!(v2, 0.0);
 	}
+
+	#[test]
+	fn ema_converges_to_constant_signal() {
+		let mut ema = Ema::new(0.2);
+		for _ in 0..50 { ema.observe(5.0); }
+		let v = ema.get().unwrap();
+		assert!((v - 5.0).abs() < 1e-3);
+	}
 }
 

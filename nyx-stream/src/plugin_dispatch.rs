@@ -215,6 +215,20 @@ impl PluginDispatcher {
 	pub async fn load_plugin_with_capacity(&self, plugin_info: PluginInfo, capacity: usize) -> Result<(), DispatchError> {
 		let plugin_id = plugin_info.id;
 
+		// If runtime already exists for this plugin, treat as idempotent and return early.
+		// This must occur BEFORE capacity checks to avoid false CapacityExceeded on re-loads.
+		{
+			let runtimes = self.runtimes.lock().await;
+			if runtimes.contains_key(&plugin_id) {
+				// Keep stats in sync (registered count may have changed elsewhere)
+				self
+					.stats
+					.registered_plugins
+					.store(self.registry.count().await as u32, Ordering::Relaxed);
+				return Ok(());
+			}
+		}
+
 		// Capacity check
 		{
 			let runtimes = self.runtimes.lock().await;
@@ -223,7 +237,7 @@ impl PluginDispatcher {
 			}
 		}
 
-		// Clone for runtime before moving
+		// Clone for runtime before moving (safe now that we know there is no existing runtime)
 		let plugin_name = plugin_info.name.clone();
 
 		// Register plugin if not already present
@@ -675,6 +689,47 @@ mod tests {
 		tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 		// Now send should succeed
 		dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_DATA, bytes).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn legacy_dispatch_message_routes_data() {
+		let registry = Arc::new(PluginRegistry::new());
+		let dispatcher = PluginDispatcher::new(registry.clone());
+		let pid = PluginId(77);
+		let info = PluginInfo::new(pid, "legacy", [Permission::DataAccess]);
+		// Register and start runtime
+		registry.register(info.clone()).await.unwrap();
+		dispatcher.load_plugin(info).await.unwrap();
+
+		// Build a minimal CBOR header bytes for the plugin id
+		let bytes = header_bytes(pid);
+		// Should succeed (legacy path assumes DATA frame)
+		dispatcher.dispatch_message(pid, bytes).await.unwrap();
+	}
+
+	#[tokio::test]
+	async fn loading_beyond_capacity_is_rejected() {
+		let registry = Arc::new(PluginRegistry::new());
+		let dispatcher = PluginDispatcher::new(registry.clone());
+
+		// Load exactly capacity (32) runtimes
+		for i in 1..=32u32 {
+			let pid = PluginId(i);
+			let info = PluginInfo::new(pid, format!("cap-{i}"), [Permission::Handshake]);
+			dispatcher.load_plugin(info).await.unwrap();
+		}
+
+		// 33rd should fail with CapacityExceeded(32)
+		let extra = PluginInfo::new(PluginId(33), "cap-33", [Permission::Handshake]);
+		let err = dispatcher.load_plugin(extra).await.unwrap_err();
+		match err {
+			DispatchError::CapacityExceeded(n) => assert_eq!(n, 32),
+			e => panic!("unexpected error: {e:?}"),
+		}
+
+	// Re-loading an existing plugin (e.g., id=1) at capacity should be OK (idempotent)
+	let again = PluginInfo::new(PluginId(1), "cap-1", [Permission::Handshake]);
+	dispatcher.load_plugin(again).await.unwrap();
 	}
 }
 

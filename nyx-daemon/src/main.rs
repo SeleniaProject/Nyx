@@ -13,6 +13,8 @@ use nyx_telemetry as telemetry;
 use nyx_daemon::nyx_daemon_config::{ConfigManager, ConfigResponse, NyxConfig, VersionSummary};
 use nyx_daemon::nyx_daemon_events::{Event, EventSystem};
 use nyx_daemon::metrics::MetricsCollector;
+#[cfg(feature = "low_power")]
+use nyx_daemon::nyx_daemon_low_power::LowPowerBridge;
 use nyx_daemon::prometheus_exporter::maybe_start_from_env;
 
 #[cfg(unix)]
@@ -46,6 +48,8 @@ enum Request {
 	ListConfigVersions,
 	RollbackConfig { version: u64 },
 	CreateConfigSnapshot { description: Option<String> },
+	#[cfg(feature = "low_power")]
+	SetPowerState { state: u32 },
 }
 
 /// RPC request envelope carrying optional request id and auth token.
@@ -113,6 +117,17 @@ async fn main() -> io::Result<()> {
 	let events = EventSystem::new(1024);
 	let token = ensure_token_from_env_or_cookie();
 	let state = Arc::new(DaemonState { start_time: Instant::now(), node_id, cfg: cfg_mgr, events, token });
+
+	// Start low-power bridge (mobile FFI) if enabled, keep handle alive in a detached task holder.
+	#[cfg(feature = "low_power")]
+	let _lp_guard: Option<LowPowerBridge> = {
+		// clone events for the bridge
+		let ev = state.events.clone();
+		match LowPowerBridge::start(ev) {
+			Ok(h) => Some(h),
+			Err(e) => { warn!("failed to start LowPowerBridge: {e}"); None }
+		}
+	};
 
 	info!("starting nyx-daemon (plain IPC) at {}", DEFAULT_ENDPOINT);
 
@@ -412,6 +427,16 @@ async fn process_request(req_line: &str, state: &DaemonState) -> (Response<serde
 				},
 			}
 		}
+		#[cfg(feature = "low_power")]
+	Ok(RpcRequest { id, auth, req: Request::SetPowerState { state: s } }) => {
+			if !is_authorized(state, auth.as_deref()) { return (Response::err_with_id(id, 401, "unauthorized"), None, None); }
+			let rc = nyx_mobile_ffi::nyx_power_set_state(s);
+			if rc == nyx_mobile_ffi::NyxStatus::Ok as i32 {
+				(Response::ok_with_id(id, serde_json::json!({"set": true, "state": s})), None, None)
+			} else {
+		(Response::err_with_id(id, 400, format!("ffi_error:{rc}")), None, None)
+			}
+		}
 		Err(e) => {
 			#[cfg(feature = "telemetry")]
 			telemetry::record_counter("nyx_daemon_bad_request", 1);
@@ -590,10 +615,17 @@ mod tests {
 
 	#[tokio::test]
 	async fn empty_env_token_is_treated_as_disabled() {
-		with_env_lock(|| {
+		// Serialize env-dependent behavior across tests
+		let _ = with_env_lock(|| {
 			// Ensure strict mode is not enabled (tests may run in parallel)
 			std::env::remove_var("NYX_DAEMON_STRICT_AUTH");
 		});
+		// Keep the rest under the same lock by immediately reacquiring
+		let _guard = {
+			use std::sync::{Mutex, OnceLock};
+			static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+			LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+		};
 		// Simulate daemon started with empty token ("   ") which should disable auth
 		let state = make_state_with_token(Some("   "));
 		// ensure internal state reflects token provided but authorization treats it as None
