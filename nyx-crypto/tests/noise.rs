@@ -1,3 +1,4 @@
+#![cfg(feature = "classic")]
 
 #[test]
 fn test_hybrid_message_too_short() {

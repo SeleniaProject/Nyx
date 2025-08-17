@@ -10,6 +10,7 @@
 //!   - Anti-downgrade: legacy (no header) must not carry 0-RTT; responder enforces
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "classic")]
 pub mod noise;
 pub mod hpke;
 pub mod aead;
@@ -27,15 +28,7 @@ pub enum Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-// Feature-gated Kyber demo: stub before swapping in a real KEM implementation.
+// Feature-gated Kyber KEM wrapper (pure Rust implementation via pqc_kyber)
 #[cfg(feature = "kyber")]
-pub mod kyber_stub {
-	/// Pseudo KEM session: derive same key from same seed, check only consistency
-	pub fn kem_session_key_matches() -> bool {
-		let seed = b"nyx-kyber-stub-seed-v1";
-		let k1: [u8; 32] = *blake3::hash(seed).as_bytes();
-		let k2: [u8; 32] = *blake3::hash(seed).as_bytes();
-		k1 == k2
-	}
-}
+pub mod kyber;
 
