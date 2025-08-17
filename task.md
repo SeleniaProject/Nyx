@@ -53,10 +53,9 @@
   - 完了メモ: 数学的基盤を含む包括的な設計仕様書 `docs/adaptive_cover_traffic_spec.md` を作成。λ(u) = λ_base × (1 + u) × power_factor の詳細な数学的証明（単調性、有界応答、安定性解析）、パラメータ選定根拠、SLO定義、セキュリティ分析を含む。プロパティテスト `nyx-mix/tests/adaptive_cover_feedback.rs` で数学的特性を検証（単調性、電力モード、入力検証、フォーミュラ準拠性、性能ベンチマーク）。実装 `nyx-mix/src/cover_adaptive.rs` の apply_utilization() 関数が仕様通りに動作し、anonymity set推定とネットワーク適応機能を提供。／commit: 現在
 
 ## 6. Low Power Mode (Mobile)
-- [ ] Android 側の JNI プレースホルダー整理（NDK 薄いフォワーダの最小実装/削除）
+- [x] Android 側の JNI プレースホルダー整理（NDK 薄いフォワーダの最小実装/削除）
   - 種別: プレースホルダー整理
-  - 根拠: `nyx-mobile-ffi/android/NyxMobileJNI.java`「minimal placeholder」, `examples/mobile/android`「thin stubs」
-  - 受入条件: C ABI に一本化しサンプル更新、画面OFF比率ポリシーのE2E確認
+  - 完了メモ: レガシー `NyxMobileJNI.java` を削除し、`NyxMobileBridge.java` を安定したC ABI経由のJNI実装に更新。Android統合ガイド `examples/mobile/android_integration.md` で包括的なCMakeセットアップ、ネイティブJNI実装例、電力ポリシー統合（画面オフ比率追跡）、完全なMainActivityサンプルを提供。E2Eテスト `nyx-mobile-ffi/tests/mobile_integration.rs` と `power_policy_e2e.rs` で電力状態ライフサイクル、画面オフ比率計算、テレメトリ統合、同時操作を検証。C ABI統合による型安全性とメモリ安全性を確保。／commit: 現在
 
 ## 7. Extended Packet Format / FEC
 - [ ] アダプティブ RaptorQ のチューニングロジック実装
