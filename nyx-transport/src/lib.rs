@@ -415,3 +415,23 @@ mod tests {
     }
 }
 
+// Re-export key types for convenience
+pub use teredo::{
+    TeredoAddress,
+    perform_nat_traversal, validate_address, AddressType
+};
+
+pub use stun_server::{
+    // Enhanced NAT traversal types
+    AdvancedNatTraversal, EnhancedStunServer,
+    ConnectivityStrategy, CandidateType,
+    IceCandidate, ConnectivitySession, ConnectivityState,
+    RelaySession, RelayStatistics,
+    
+    // Classic STUN types
+    StunServer, NatTraversal, DetectedNatType, NatDetectionResult,
+    BindingRequest, BindingResponse, HolePunchSession, HolePunchState,
+    
+    // Utility functions
+    run_echo_once,
+};
