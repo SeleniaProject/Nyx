@@ -1,6 +1,6 @@
 ﻿use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fs, path::Path, net::SocketAddr};
 
 /// Core configuration shared across Nyx components.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -75,4 +75,47 @@ impl CoreConfigBuilder {
 		cfg.validate()?;
 		Ok(cfg)
 	}
+}
+
+/// QUIC transport configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuicConfig {
+    /// Local bind address for QUIC endpoint
+    pub bind_addr: SocketAddr,
+    /// Connection idle timeout in seconds
+    pub idle_timeout_secs: u64,
+    /// Keep-alive interval in seconds
+    pub keep_alive_interval_secs: u64,
+    /// Maximum concurrent streams per connection
+    pub max_concurrent_streams: u64,
+}
+
+impl Default for QuicConfig {
+    fn default() -> Self {
+        Self {
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            idle_timeout_secs: 300,
+            keep_alive_interval_secs: 30,
+            max_concurrent_streams: 100,
+        }
+    }
+}
+
+impl QuicConfig {
+    /// Validate QUIC configuration parameters
+    pub fn validate(&self) -> Result<()> {
+        if self.idle_timeout_secs == 0 {
+            return Err(Error::config("idle_timeout_secs must be greater than 0".to_string()));
+        }
+        if self.keep_alive_interval_secs == 0 {
+            return Err(Error::config("keep_alive_interval_secs must be greater than 0".to_string()));
+        }
+        if self.keep_alive_interval_secs >= self.idle_timeout_secs {
+            return Err(Error::config("keep_alive_interval_secs must be less than idle_timeout_secs".to_string()));
+        }
+        if self.max_concurrent_streams == 0 {
+            return Err(Error::config("max_concurrent_streams must be greater than 0".to_string()));
+        }
+        Ok(())
+    }
 }
