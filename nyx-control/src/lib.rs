@@ -1,18 +1,18 @@
 #![forbid(unsafe_code)]
 
-//! nyx-control: Control plane utilities for Nyx.
-//! This crate provides:
-//! - Lightweight HTTP health/readiness probe without extra deps (tokio TCP + manual HTTP framing)
-//! - Settings validation against JSON Schema and a sync orchestration trait
+//! nyx-control: Control plane utilitie_s for Nyx.
+//! Thi_s crate provide_s:
+//! - Lightweight HTTP health/readines_s probe without extra dep_s (tokio TCP + manual HTTP framing)
+//! - Setting_s validation against JSON Schema and a sync orchestration trait
 //! - Push token issue/verification using PASETO v4.local (pure Rust)
-//! - Rendezvous registration payload signing using Ed25519
+//! - Rendezvou_s registration payload signing using Ed25519
 
 use serde::{Deserialize, Serialize};
 
 pub mod probe;
 pub mod push;
-pub mod rendezvous;
-pub mod settings;
+pub mod rendezvou_s;
+pub mod setting_s;
 pub mod settings_sync;
 
 #[derive(thiserror::Error, Debug)]
@@ -24,61 +24,61 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ControlConfig {
-	/// Enable built-in HTTP health probes on a TCP listener speaking HTTP/1.1
-	#[serde(default = "default_true")] pub enable_http: bool,
-	/// Listening port for probes. 0 = auto-assign ephemeral port.
-	#[serde(default)] pub port: u16,
+	/// Enable built-in HTTP health probe_s on a TCP listener speaking HTTP/1.1
+	#[serde(default = "default_true")] pub __enable_http: bool,
+	/// Listening port for probe_s. 0 = auto-assign ephemeral port.
+	#[serde(default)] pub __port: u16,
 }
 
 fn default_true() -> bool { true }
 
 impl Default for ControlConfig {
-	fn default() -> Self { Self { enable_http: true, port: 0 } }
+	fn default() -> Self { Self { __enable_http: true, port: 0 } }
 }
 
-/// Parse TOML config and fill missing fields with defaults.
-pub fn parse_config(s: &str) -> Result<ControlConfig> {
-	let s = s.trim();
-	if s.is_empty() { return Ok(ControlConfig::default()); }
-	toml::from_str::<ControlConfig>(s).map_err(|e| Error::Invalid(e.to_string()))
+/// Parse TOML config and fill missing field_s with default_s.
+pub fn parse_config(_s: &str) -> Result<ControlConfig> {
+	let __s = _s.trim();
+	if _s.is_empty() { return Ok(ControlConfig::default()); }
+	toml::from_str::<ControlConfig>(_s).map_err(|e| Error::Invalid(e.to_string()))
 }
 
-/// Handle to a running control plane tasks set.
+/// Handle to a running control plane task_s set.
 pub struct ControlHandle {
 	pub probe: Option<probe::ProbeHandle>,
 }
 
 impl ControlHandle {
-	/// Gracefully shutdown all tasks and wait for them to finish.
+	/// Gracefully shutdown all task_s and wait for them to finish.
 	pub async fn shutdown(self) {
 		if let Some(h) = self.probe { h.shutdown().await; }
 	}
 }
 
-/// Start control plane tasks according to config.
+/// Start control plane task_s according to config.
 pub async fn start_control(cfg: ControlConfig) -> Result<ControlHandle> {
 	let mut handle = ControlHandle { probe: None };
 	if cfg.enable_http {
-		let ph = probe::start_probe(cfg.port).await?;
+		let __ph = probe::start_probe(cfg.port).await?;
 		handle.probe = Some(ph);
 	}
 	Ok(handle)
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
 	use super::*;
 
 	#[test]
 	fn parse_defaults_on_empty() {
-		let c = parse_config("").unwrap();
+		let __c = parse_config("")?;
 		assert!(c.enable_http);
 		assert_eq!(c.port, 0);
 	}
 
 	#[test]
 	fn parse_toml_partial() {
-		let c = parse_config("port = 8080").unwrap();
+		let __c = parse_config("port = 8080")?;
 		assert!(c.enable_http);
 		assert_eq!(c.port, 8080);
 	}

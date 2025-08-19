@@ -7,5 +7,5 @@ use wasm_bindgen::prelude::*;
 pub fn init() { /* no-op for now */ }
 
 #[cfg(test)]
-mod tests { #[test] fn smoke() { super::init(); } }
+mod test_s { #[test] fn smoke() { super::init(); } }
 
