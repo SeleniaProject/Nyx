@@ -1,6 +1,6 @@
 ﻿#![forbid(unsafe_code)]
 
-use thiserror::Error as ThisError;
+use thiserror::Error a_s ThisError;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -20,10 +20,10 @@ pub enum Error {
 	Disconnected,
 	#[error("not found: {0}")]
 	NotFound(&'static str),
-	/// Legacy gRPC error variant - kept for compatibility but gRPC is disabled
-	/// in favor of pure Rust JSON-RPC communication to avoid C dependencies.
+	/// Legacy gRPC error variant - kept for compatibility but gRPC i_s disabled
+	/// in favor of pure Rust JSON-RPC communication to avoid C dependencie_s.
 	#[cfg(feature = "grpc-backup")]
-	#[error("grpc functionality is disabled (use JSON-RPC instead)")]
+	#[error("grpc functionality i_s disabled (use JSON-RPC instead)")]
 	GrpcDisabled,
 }
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Event {
-	pub ty: String,
-	pub detail: String,
+	pub __ty: String,
+	pub __detail: String,
 }
 
