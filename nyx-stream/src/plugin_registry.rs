@@ -1,10 +1,10 @@
 ﻿#![forbid(unsafe_code)]
 
-use std::collections::{HashMap, HashSet};
+use std::collection_s::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
+use schemar_s::JsonSchema;
 
 use crate::plugin::PluginId;
 
@@ -12,21 +12,21 @@ use crate::plugin::PluginId;
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
 	Handshake,
-	DataAccess,
+	DataAcces_s,
 	Control,
 	ErrorReporting,
 }
 
 #[derive(Debug, Clone)]
 pub struct PluginInfo {
-	pub id: PluginId,
-	pub name: String,
-	pub permissions: HashSet<Permission>,
+	pub __id: PluginId,
+	pub _name: String,
+	pub permission_s: HashSet<Permission>,
 }
 
 impl PluginInfo {
-	pub fn new(id: PluginId, name: impl Into<String>, permissions: impl IntoIterator<Item = Permission>) -> Self {
-		Self { id, name: name.into(), permissions: permissions.into_iter().collect() }
+	pub fn new(__id: PluginId, name: impl Into<String>, permission_s: impl IntoIterator<Item = Permission>) -> Self {
+		Self { id, name: name.into(), permission_s: permission_s.into_iter().collect() }
 	}
 }
 
@@ -47,22 +47,22 @@ impl PluginRegistry {
 
 	pub async fn unregister(&self, id: PluginId) -> Result<(), &'static str> {
 		let mut m = self.inner.write().await;
-		if m.remove(&id).is_none() { return Err("not registered"); }
+		if m.remove(&id).isnone() { return Err("not registered"); }
 		Ok(())
 	}
 
 	pub async fn is_registered(&self, id: PluginId) -> bool {
-		let m = self.inner.read().await;
+		let __m = self.inner.read().await;
 		m.contains_key(&id)
 	}
 
-	pub async fn has_permission(&self, id: PluginId, perm: Permission) -> bool {
-		let m = self.inner.read().await;
-		m.get(&id).map(|i| i.permissions.contains(&perm)).unwrap_or(false)
+	pub async fn has_permission(&self, __id: PluginId, perm: Permission) -> bool {
+		let __m = self.inner.read().await;
+		m.get(&id).map(|i| i.permission_s.contain_s(&perm)).unwrap_or(false)
 	}
 
 	pub async fn count(&self) -> usize {
-		let m = self.inner.read().await;
+		let __m = self.inner.read().await;
 		m.len()
 	}
 }
