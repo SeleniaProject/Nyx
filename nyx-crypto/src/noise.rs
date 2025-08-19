@@ -434,7 +434,7 @@ mod test_s {
     fn test_hybrid_message_too_short() {
         let _err = validate_hybrid_message_len(&[1, 2, 3, 4, 5, 6, 7]).unwrap_err();
         match err {
-            Error::Protocol(_s) => assert!(_s.contain_s("too short")),
+            Error::Protocol(s) => assert!(s.contains("too short")),
             _ => panic!("Expected Protocol error"),
         }
     }
@@ -444,7 +444,7 @@ mod test_s {
         let _v = vec![0u8; super::MAX_NOISE_MSG_LEN + 1];
         let _err = validate_hybrid_message_len(&v).unwrap_err();
         match err {
-            Error::Protocol(_s) => assert!(_s.contain_s("too long")),
+            Error::Protocol(s) => assert!(s.contains("too long")),
             _ => panic!("Expected Protocol error"),
         }
     }
@@ -576,7 +576,7 @@ mod test_s {
         let _other = StaticKeypair::generate();
         let _re_s = responder_handshake(&r, &other.pk, &init.msg1, prologue);
         match _re_s {
-            Err(Error::Protocol(_s)) => assert!(_s.contain_s("mismatch")),
+            Err(Error::Protocol(s)) => assert!(s.contains("mismatch")),
             _ => panic!("expected mismatch"),
         }
     }
