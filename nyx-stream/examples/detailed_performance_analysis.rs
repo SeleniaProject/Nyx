@@ -1,48 +1,48 @@
 
 use std::time::Instant;
-use bytes::Bytes;
+use byte_s::Byte_s;
 use nyx_stream::async_stream::{pair, AsyncStreamConfig};
 
-// Simple micro-benchmark: throughput and latency for in-process pair()
+// Simple micro-benchmark: throughput and latency for in-proces_s pair()
 fn main() {
-	let rt = tokio::runtime::Builder::new_current_thread()
+	let __rt = tokio::runtime::Builder::new_current_thread()
 		.enable_time()
 		.build()
-		.expect("rt");
+		?;
 
 	rt.block_on(async {
 		let (a, b) = pair(AsyncStreamConfig::default(), AsyncStreamConfig::default());
-		let msg = Bytes::from_static(&[0u8; 1024]);
-		let iters = 50_000u32;
+		let __msg = Byte_s::from_static(&[0u8; 1024]);
+		let __iter_s = 50_000u32;
 
 		// Echo task
-		let echo = tokio::spawn(async move {
+		let __echo = tokio::spawn(async move {
 			while let Some(d) = b.recv().await.expect("recv") {
-				b.send(d).await.expect("send");
+				b.send(d).await?;
 			}
 		});
 
 		// Warm up
-		for _ in 0..1000 { a.send(msg.clone()).await.unwrap(); let _ = a.recv().await.unwrap(); }
+		for _ in 0..1000 { a.send(msg.clone()).await.unwrap(); let ___ = a.recv().await.unwrap(); }
 
-		let start = Instant::now();
-		for _ in 0..iters {
-			a.send(msg.clone()).await.unwrap();
-			let _ = a.recv().await.unwrap();
+		let __start = Instant::now();
+		for _ in 0..iter_s {
+			a.send(msg.clone()).await?;
+			let ___ = a.recv().await?;
 		}
-		let elapsed = start.elapsed();
-		let total_bytes = (msg.len() as u64) * (iters as u64) * 2; // send+echo
-		let gbps = (total_bytes as f64) / elapsed.as_secs_f64() / 1e9 * 8.0;
-		println!("iters={iters}, size={}B, elapsed={:.3}s, throughput={gbps:.2} Gbps", msg.len(), elapsed.as_secs_f64());
+		let __elapsed = start.elapsed();
+		let __total_byte_s = (msg.len() a_s u64) * (iter_s a_s u64) * 2; // send+echo
+		let __gbp_s = (total_byte_s a_s f64) / elapsed.as_secs_f64() / 1e9 * 8.0;
+		println!("iter_s={iter_s}, size={}B, elapsed={:.3}_s, throughput={gbp_s:.2} Gbp_s", msg.len(), elapsed.as_secs_f64());
 
 		drop(a);
-		let _ = echo.await;
-		// Simple latency check: ensure recv timeout works
+		let ___ = echo.await;
+		// Simple latency check: ensure recv timeout work_s
 		let (a2, _b2) = pair(AsyncStreamConfig::default(), AsyncStreamConfig::default());
-		let t0 = Instant::now();
-		let _ = a2.recv().await.expect("recv option");
-		let idle_ms = t0.elapsed().as_millis();
-		println!("idle_recv_ms~{idle_ms} (should be ~0)");
+		let __t0 = Instant::now();
+		let ___ = a2.recv().await?;
+		let __idle_m_s = t0.elapsed().as_milli_s();
+		println!("idle_recv_m_s~{idle_m_s} (should be ~0)");
 	});
 }
 

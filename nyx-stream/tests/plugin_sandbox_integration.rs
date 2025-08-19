@@ -4,120 +4,120 @@ use nyx_stream::plugin_dispatch::PluginDispatcher;
 use nyx_stream::plugin_registry::{PluginInfo, PluginRegistry, Permission};
 use nyx_stream::plugin::{PluginHeader, PluginId, FRAME_TYPE_PLUGIN_CONTROL};
 use nyx_stream::plugin_sandbox::{SandboxPolicy, SandboxGuard, SandboxError};
-use nyx_core::sandbox::{apply_policy, SandboxPolicy as CorePolicy, SandboxStatus};
+use nyx_core::sandbox::{apply_policy, SandboxPolicy a_s CorePolicy, SandboxStatu_s};
 use std::sync::Arc;
 
-fn header_bytes(id: PluginId, data: &[u8]) -> Vec<u8> {
-    let h = PluginHeader { id, flags: 0, data: data.to_vec() };
+fn header_byte_s(__id: PluginId, _data: &[u8]) -> Vec<u8> {
+    let __h = PluginHeader { id, __flag_s: 0, _data: _data.to_vec() };
     let mut out = Vec::new();
-    ciborium::ser::into_writer(&h, &mut out).expect("serialize header");
+    ciborium::ser::into_writer(&h, &mut out)?;
     out
 }
 
 #[tokio::test]
-async fn sandbox_allowlist_blocks_and_allows() {
-    let registry = Arc::new(PluginRegistry::new());
-    let policy = SandboxPolicy::locked_down()
+async fn sandbox_allowlist_blocks_and_allow_s() {
+    let __registry = Arc::new(PluginRegistry::new());
+    let __policy = SandboxPolicy::locked_down()
         .allow_connect_host("example.org")
         .allow_path_prefix(std::path::Path::new("/var/lib/nyx"));
-    let dispatcher = PluginDispatcher::new_with_sandbox(registry.clone(), SandboxPolicy { allow_network: true, allow_fs: true, ..policy });
+    let __dispatcher = PluginDispatcher::new_with_sandbox(registry.clone(), SandboxPolicy { __allownetwork: true, __allow_f_s: true, ..policy });
 
-    let pid = PluginId(120);
-    let info = PluginInfo::new(pid, "sbx-int", [Permission::Control]);
-    registry.register(info.clone()).await.unwrap();
-    dispatcher.load_plugin(info).await.unwrap();
+    let __pid = PluginId(120);
+    let __info = PluginInfo::new(pid, "sbx-int", [Permission::Control]);
+    registry.register(info.clone()).await?;
+    dispatcher.load_plugin(info).await?;
 
     // Allowed connect to example.org:443
-    let bytes_ok = header_bytes(pid, b"SBX:CONNECT example.org:443");
-    dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytes_ok).await.unwrap();
+    let __bytes_ok = header_byte_s(pid, b"SBX:CONNECT example.org:443");
+    dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytes_ok).await?;
 
     // Denied connect to 127.0.0.1
-    let bytes_ng = header_bytes(pid, b"SBX:CONNECT 127.0.0.1:80");
-    let err = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytes_ng).await.unwrap_err();
-    match err { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contains("denied")); }, e => panic!("{e:?}") }
+    let __bytesng = header_byte_s(pid, b"SBX:CONNECT 127.0.0.1:80");
+    let __err = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytesng).await.unwrap_err();
+    match err { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contain_s("denied")); }, e => panic!("{e:?}") }
 
     // Allowed open under /var/lib/nyx
-    let bytes_ok2 = header_bytes(pid, b"SBX:OPEN /var/lib/nyx/file");
-    dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytes_ok2).await.unwrap();
+    let __bytes_ok2 = header_byte_s(pid, b"SBX:OPEN /var/lib/nyx/file");
+    dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytes_ok2).await?;
 
     // Denied open elsewhere
-    let bytes_ng2 = header_bytes(pid, b"SBX:OPEN /etc/passwd");
-    let err2 = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytes_ng2).await.unwrap_err();
-    match err2 { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contains("denied")); }, e => panic!("{e:?}") }
+    let __bytesng2 = header_byte_s(pid, b"SBX:OPEN /etc/passwd");
+    let __err2 = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytesng2).await.unwrap_err();
+    match err2 { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contain_s("denied")); }, e => panic!("{e:?}") }
 }
 
-/// Test cross-platform OS-level sandbox functionality
+/// Test cros_s-platform OS-level sandbox functionality
 #[test]
 fn test_cross_platform_os_sandbox() {
     // Test that OS-level sandbox can be applied
-    let minimal_status = apply_policy(CorePolicy::Minimal);
-    let strict_status = apply_policy(CorePolicy::Strict);
+    let __minimal_statu_s = apply_policy(CorePolicy::Minimal);
+    let __strict_statu_s = apply_policy(CorePolicy::Strict);
     
     // Verify platform-appropriate behavior
     #[cfg(any(
-        all(windows, feature = "os_sandbox"),
-        all(target_os = "linux", feature = "os_sandbox"),
-        all(target_os = "macos", feature = "os_sandbox"),
-        all(target_os = "openbsd", feature = "os_sandbox")
+        all(window_s, feature = "os_sandbox"),
+        all(target_o_s = "linux", feature = "os_sandbox"),
+        all(target_o_s = "maco_s", feature = "os_sandbox"),
+        all(target_o_s = "openbsd", feature = "os_sandbox")
     ))]
     {
-        assert_eq!(minimal_status, SandboxStatus::Applied);
-        assert_eq!(strict_status, SandboxStatus::Applied);
-        println!("OS-level sandbox successfully applied on this platform");
+        assert_eq!(minimal_statu_s, SandboxStatu_s::Applied);
+        assert_eq!(strict_statu_s, SandboxStatu_s::Applied);
+        println!("OS-level sandbox successfully applied on thi_s platform");
     }
     
     #[cfg(not(any(
-        all(windows, feature = "os_sandbox"),
-        all(target_os = "linux", feature = "os_sandbox"),
-        all(target_os = "macos", feature = "os_sandbox"),
-        all(target_os = "openbsd", feature = "os_sandbox")
+        all(window_s, feature = "os_sandbox"),
+        all(target_o_s = "linux", feature = "os_sandbox"),
+        all(target_o_s = "maco_s", feature = "os_sandbox"),
+        all(target_o_s = "openbsd", feature = "os_sandbox")
     )))]
     {
-        assert_eq!(minimal_status, SandboxStatus::Unsupported);
-        assert_eq!(strict_status, SandboxStatus::Unsupported);
-        println!("OS-level sandbox not supported on this platform/configuration");
+        assert_eq!(minimal_statu_s, SandboxStatu_s::Unsupported);
+        assert_eq!(strict_statu_s, SandboxStatu_s::Unsupported);
+        println!("OS-level sandbox not supported on thi_s platform/configuration");
     }
 }
 
-/// Test application-level policy guards with various scenarios
+/// Test application-level policy guard_s with variou_s scenario_s
 #[test]
 fn test_application_level_policy_enforcement() {
-    // Test network restrictions with allowlist
-    let network_policy = SandboxPolicy::default()
+    // Test network restriction_s with allowlist
+    let _network_policy = SandboxPolicy::default()
         .allow_connect_host("trusted.example.com")
         .allow_connect_host("api.nyx.local");
     
-    let guard = SandboxGuard::new(SandboxPolicy { 
-        allow_network: true, 
+    let __guard = SandboxGuard::new(SandboxPolicy { 
+        __allownetwork: true, 
         ..network_policy 
     });
     
-    // Allowed connections
+    // Allowed connection_s
     assert!(guard.check_connect("trusted.example.com:443").is_ok());
     assert!(guard.check_connect("api.nyx.local:8080").is_ok());
     assert!(guard.check_connect("api.nyx.local").is_ok()); // without port
     
-    // Blocked connections
+    // Blocked connection_s
     assert_eq!(
-        guard.check_connect("malicious.example.com:443").unwrap_err(),
+        guard.check_connect("maliciou_s.example.com:443").unwrap_err(),
         SandboxError::NetworkDenied
     );
     
-    // Test filesystem restrictions with allowlist
-    let fs_policy = SandboxPolicy::default()
+    // Test filesystem restriction_s with allowlist
+    let __fs_policy = SandboxPolicy::default()
         .allow_path_prefix("/var/lib/nyx")
-        .allow_path_prefix("/tmp/nyx-plugins");
+        .allow_path_prefix("/tmp/nyx-plugin_s");
     
-    let fs_guard = SandboxGuard::new(SandboxPolicy { 
-        allow_fs: true, 
+    let __fs_guard = SandboxGuard::new(SandboxPolicy { 
+        __allow_f_s: true, 
         ..fs_policy 
     });
     
-    // Allowed paths
-    assert!(fs_guard.check_open_path("/var/lib/nyx/config.toml").is_ok());
-    assert!(fs_guard.check_open_path("/tmp/nyx-plugins/state.json").is_ok());
+    // Allowed path_s
+    assert!(fs_guard.check_open_path("/var/lib/nyx/config._toml").is_ok());
+    assert!(fs_guard.check_open_path("/tmp/nyx-plugin_s/state.json").is_ok());
     
-    // Blocked paths
+    // Blocked path_s
     assert_eq!(
         fs_guard.check_open_path("/etc/passwd").unwrap_err(),
         SandboxError::FsDenied
@@ -128,43 +128,43 @@ fn test_application_level_policy_enforcement() {
     );
 }
 
-/// Test edge cases and special address formats
+/// Test edge case_s and special addres_s format_s
 #[test]
-fn test_address_parsing_edge_cases() {
-    let policy = SandboxPolicy::default()
+fn test_address_parsing_edge_case_s() {
+    let __policy = SandboxPolicy::default()
         .allow_connect_host("::1")
         .allow_connect_host("localhost")
         .allow_connect_host("192.168.1.1");
     
-    let guard = SandboxGuard::new(SandboxPolicy { 
-        allow_network: true, 
+    let __guard = SandboxGuard::new(SandboxPolicy { 
+        __allownetwork: true, 
         ..policy 
     });
     
-    // IPv6 addresses
+    // IPv6 addresse_s
     assert!(guard.check_connect("[::1]:8080").is_ok());
     assert!(guard.check_connect("::1").is_ok());
     
-    // IPv4 addresses
+    // IPv4 addresse_s
     assert!(guard.check_connect("192.168.1.1:80").is_ok());
     assert!(guard.check_connect("192.168.1.1").is_ok());
     
-    // Hostnames
+    // Hostname_s
     assert!(guard.check_connect("localhost:3000").is_ok());
     assert!(guard.check_connect("localhost").is_ok());
     
-    // Blocked addresses
+    // Blocked addresse_s
     assert_eq!(
         guard.check_connect("8.8.8.8:53").unwrap_err(),
         SandboxError::NetworkDenied
     );
 }
 
-/// Test policy combinations
+/// Test policy combination_s
 #[test]
-fn test_policy_combinations() {
+fn test_policy_combination_s() {
     // Completely locked down
-    let locked_guard = SandboxGuard::new(SandboxPolicy::locked_down());
+    let __locked_guard = SandboxGuard::new(SandboxPolicy::locked_down());
     assert_eq!(
         locked_guard.check_connect("localhost:8080").unwrap_err(),
         SandboxError::NetworkDenied
@@ -175,19 +175,19 @@ fn test_policy_combinations() {
     );
     
     // Completely permissive
-    let permissive_guard = SandboxGuard::new(SandboxPolicy::permissive());
+    let __permissive_guard = SandboxGuard::new(SandboxPolicy::permissive());
     assert!(permissive_guard.check_connect("any.host.com:443").is_ok());
     assert!(permissive_guard.check_open_path("/any/path/file.txt").is_ok());
     
-    // Mixed policy: network allowed with restrictions, FS completely blocked
-    let mixed_policy = SandboxPolicy {
-        allow_network: true,
-        allow_fs: false,
-        allowed_connect_hosts: vec!["api.example.com".to_string()],
-        allowed_path_prefixes: vec![], // Empty = no allowlist, but FS is off anyway
+    // Mixed policy: network _allowed with restriction_s, FS completely blocked
+    let __mixed_policy = SandboxPolicy {
+        __allownetwork: true,
+        __allow_f_s: false,
+        allowed_connect_host_s: vec!["api.example.com".to_string()],
+        allowed_path_prefixe_s: vec![], // Empty = no allowlist, but FS i_s off anyway
     };
     
-    let mixed_guard = SandboxGuard::new(mixed_policy);
+    let __mixed_guard = SandboxGuard::new(mixed_policy);
     assert!(mixed_guard.check_connect("api.example.com:443").is_ok());
     assert_eq!(
         mixed_guard.check_connect("other.example.com:443").unwrap_err(),
@@ -199,27 +199,27 @@ fn test_policy_combinations() {
     );
 }
 
-/// Platform-specific path handling tests
-#[cfg(windows)]
+/// Platform-specific path handling test_s
+#[cfg(window_s)]
 #[test]
-fn test_windows_path_normalization() {
-    let policy = SandboxPolicy::default()
-        .allow_path_prefix("C:\\Program Files\\Nyx")
-        .allow_path_prefix("C:\\Users\\TestUser\\AppData\\Local\\Nyx");
+fn test_windows_pathnormalization() {
+    let __policy = SandboxPolicy::default()
+        .allow_path_prefix("C:\\Program File_s\\Nyx")
+        .allow_path_prefix("C:\\User_s\\TestUser\\AppData\\Local\\Nyx");
     
-    let guard = SandboxGuard::new(SandboxPolicy { 
-        allow_fs: true, 
+    let __guard = SandboxGuard::new(SandboxPolicy { 
+        __allow_f_s: true, 
         ..policy 
     });
     
-    // Test case-insensitive matching (Windows behavior)
-    assert!(guard.check_open_path("c:\\program files\\nyx\\config.toml").is_ok());
-    assert!(guard.check_open_path("C:\\PROGRAM FILES\\NYX\\data.db").is_ok());
-    assert!(guard.check_open_path("c:\\users\\testuser\\appdata\\local\\nyx\\cache.bin").is_ok());
+    // Test case-insensitive matching (Window_s behavior)
+    assert!(guard.check_open_path("c:\\program file_s\\nyx\\config._toml").is_ok());
+    assert!(guard.check_open_path("C:\\PROGRAM FILES\\NYX\\_data.db").is_ok());
+    assert!(guard.check_open_path("c:\\user_s\\testuser\\app_data\\local\\nyx\\cache.bin").is_ok());
     
-    // Ensure blocked paths still work
+    // Ensure blocked path_s still work
     assert_eq!(
-        guard.check_open_path("C:\\Windows\\System32\\kernel32.dll").unwrap_err(),
+        guard.check_open_path("C:\\Window_s\\System32\\kernel32.dll").unwrap_err(),
         SandboxError::FsDenied
     );
     assert_eq!(
@@ -228,28 +228,28 @@ fn test_windows_path_normalization() {
     );
 }
 
-/// Unix-specific path handling tests
+/// Unix-specific path handling test_s
 #[cfg(unix)]
 #[test]
 fn test_unix_path_handling() {
-    let policy = SandboxPolicy::default()
+    let __policy = SandboxPolicy::default()
         .allow_path_prefix("/usr/local/nyx")
         .allow_path_prefix("/var/lib/nyx")
         .allow_path_prefix("/home/user/.nyx");
     
-    let guard = SandboxGuard::new(SandboxPolicy { 
-        allow_fs: true, 
+    let __guard = SandboxGuard::new(SandboxPolicy { 
+        __allow_f_s: true, 
         ..policy 
     });
     
     // Test case-sensitive matching (Unix behavior)
-    assert!(guard.check_open_path("/usr/local/nyx/config.toml").is_ok());
+    assert!(guard.check_open_path("/usr/local/nyx/config._toml").is_ok());
     assert!(guard.check_open_path("/var/lib/nyx/state.json").is_ok());
     assert!(guard.check_open_path("/home/user/.nyx/cache").is_ok());
     
     // Case sensitivity must be enforced
     assert_eq!(
-        guard.check_open_path("/USR/LOCAL/NYX/config.toml").unwrap_err(),
+        guard.check_open_path("/USR/LOCAL/NYX/config._toml").unwrap_err(),
         SandboxError::FsDenied
     );
     assert_eq!(
@@ -257,7 +257,7 @@ fn test_unix_path_handling() {
         SandboxError::FsDenied
     );
     
-    // Blocked paths
+    // Blocked path_s
     assert_eq!(
         guard.check_open_path("/etc/passwd").unwrap_err(),
         SandboxError::FsDenied
