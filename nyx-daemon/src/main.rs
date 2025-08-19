@@ -529,8 +529,8 @@ mod test_s {
 		let (resp, rx, filter) = process_request(&req, &state).await;
 		assert!(resp.ok);
 		assert_eq!(resp.id.as_deref(), Some("abc"));
-		assert!(rx.isnone());
-		assert!(filter.isnone());
+		assert!(rx.is_none());
+		assert!(filter.is_none());
 	}
 
 	#[tokio::test]
@@ -620,7 +620,7 @@ mod test_s {
 		let (resp, _rx, _filter) = process_request(req, &state).await;
 		assert!(!resp.ok);
 		assert_eq!(resp.code, 400);
-		assert!(resp.error.unwrap().contain_s("invalid request"));
+		assert!(resp.error.unwrap().contains("invalid request"));
 	}
 
 	#[tokio::test]

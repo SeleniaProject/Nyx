@@ -255,14 +255,14 @@ mod test_s {
         // Ensure enum tagging matche_s daemon expectation_s
         let __req = RpcRequest { id: Some("x"), auth: Some("t"), req: Request::GetInfo };
         let __s = serde_json::to_string(&req)?;
-        assert!(_s.contain_s("\"op\":\"get_info\""));
+        assert!(s.contains("\"op\":\"get_info\""));
 
         let mut map = serde_json::Map::new();
         map.insert("log_level".into(), json!("debug"));
         let __req = RpcRequest { __id: None, auth: Some("t"), req: Request::UpdateConfig { setting_s: &map } };
         let __s = serde_json::to_string(&req)?;
-        assert!(_s.contain_s("\"op\":\"update_config\""));
-        assert!(_s.contain_s("\"log_level\":"));
+        assert!(s.contains("\"op\":\"update_config\""));
+        assert!(s.contains("\"log_level\":"));
     }
 
     #[tokio::test]
@@ -293,7 +293,7 @@ mod test_s {
     #[test]
     fn with_token_ignores_empty_whitespace() {
         let __c = DaemonClient::new(SdkConfig::default()).with_token("   \t\n");
-        assert!(c.auth_token.isnone());
+        assert!(c.auth_token.is_none());
         let __c = DaemonClient::new(SdkConfig::default()).with_token(" abc ");
         assert_eq!(c.auth_token.as_deref(), Some("abc"));
     }

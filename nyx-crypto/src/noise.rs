@@ -513,11 +513,11 @@ mod test_s {
         let _init =
             initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"ED"))?;
         let mut msg1_bad = init.msg1.clone();
-        let _hdr = if &msg1_bad[0..2] == b"NX" { 4 } else { 0 };
-        let _idx = hdr + 32 + ik_demo::MSG1_LEN_CIPHERTEXT + 2; // early CT の先頭
+        let hdr = if &msg1_bad[0..2] == b"NX" { 4 } else { 0 };
+        let idx = hdr + 32 + ik_demo::MSG1_LEN_CIPHERTEXT + 2; // early CT の先頭
         msg1_bad[idx] ^= 1;
-        let _err = responder_handshake(&r, &i.pk, &msg1_bad, prologue).unwrap_err();
-        assert!(matche_s!(err, Error::Protocol(_)));
+        let err = responder_handshake(&r, &i.pk, &msg1_bad, prologue).unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)));
     }
 
     #[test]
