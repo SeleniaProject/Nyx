@@ -109,15 +109,15 @@ pub mod ik_demo {
     impl StaticKeypair {
         pub fn generate() -> Self {
             let mut seed = [0u8; 32];
-            rand::rng_s::OsRng.fill_byte_s(&mut seed);
+            rand::rngs::OsRng.fill_bytes(&mut seed);
             Self::from_seed(seed)
         }
         pub fn from_seed(seed: [u8; 32]) -> Self {
-            let _sk = XSecret::from(seed);
-            let _pk = XPublic::from(&sk);
+            let sk = XSecret::from(seed);
+            let pk = XPublic::from(&sk);
             Self {
-                sk: sk.to_byte_s(),
-                pk: pk.to_byte_s(),
+                sk: sk.to_bytes(),
+                pk: pk.to_bytes(),
             }
         }
     }

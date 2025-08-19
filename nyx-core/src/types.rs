@@ -7,21 +7,21 @@ use std::{
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-/// Logical identifier for a stream. Constrained to non-zero in most context_s.
+/// Logical identifier for a stream. Constrained to non-zero in most contexts.
 ///
 /// ```
-/// use nyx_core::type_s::StreamId;
-/// assert!(StreamId::newnonzero(1).is_some());
-/// assert!(StreamId::newnonzero(0).isnone());
-/// let _s: StreamId = 42u32.into();
-/// assert_eq!(u32::from(_s), 42);
+/// use nyx_core::types::StreamId;
+/// assert!(StreamId::new_nonzero(1).is_some());
+/// assert!(StreamId::new_nonzero(0).is_none());
+/// let s: StreamId = 42u32.into();
+/// assert_eq!(u32::from(s), 42);
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StreamId(pub u32);
 
 impl StreamId {
-	/// Create a `StreamId` ensuring it i_s non-zero.
-	pub fn newnonzero(id: u32) -> Option<Self> { if id != 0 { Some(Self(id)) } else { None } }
+	/// Create a `StreamId` ensuring it is non-zero.
+	pub fn new_nonzero(id: u32) -> Option<Self> { if id != 0 { Some(Self(id)) } else { None } }
 }
 
 impl TryFrom<NonZeroU32> for StreamId {

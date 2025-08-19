@@ -538,11 +538,11 @@ impl QuicEndpoint {
     }
 
     /// Connection ID生成
-    fn generate_connection_id(&self) -> Byte_s {
+    fn generate_connection_id(&self) -> Bytes {
         use rand::RngCore;
         let mut cid = [0u8; 8];
-        rand::rng_s::OsRng.fill_byte_s(&mut cid);
-        Byte_s::copy_from_slice(&cid)
+        rand::rngs::OsRng.fill_bytes(&mut cid);
+        Bytes::copy_from_slice(&cid)
     }
 }
 

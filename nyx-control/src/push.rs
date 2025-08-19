@@ -9,11 +9,11 @@ pub enum PushError {
 
 pub type Result<T> = std::result::Result<T, PushError>;
 
-/// Create a new random symmetric key suitable for PASETO v4.local (32 byte_s).
+/// Create a new random symmetric key suitable for PASETO v4.local (32 bytes).
 pub fn generate_key() -> SymmetricKey<V4> {
-	let mut byte_s = [0u8; 32];
-	rand::thread_rng().fill_byte_s(&mut byte_s);
-	SymmetricKey::<V4>::from(&byte_s)?
+	let mut bytes = [0u8; 32];
+	rand::thread_rng().fill_bytes(&mut bytes);
+	SymmetricKey::<V4>::from(&bytes)?
 }
 
 /// Issue_s a short-lived opaque token encoding device id and audience.

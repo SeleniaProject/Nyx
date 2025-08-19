@@ -81,24 +81,26 @@ mod test_s {
     use proptest::prelude::*;
 
     #[test]
-    fn chacha20_roundtrip() {
-        let _key = AeadKey([7u8; 32]);
+    fn chacha20_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([7u8; 32]);
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
         let nonce = AeadNonce([1u8; 12]);
-        let _aad = b"nyx-aad";
-        let _pt = b"hello nyx";
+        let aad = b"nyx-aad";
+        let pt = b"hello nyx";
         let ct = cipher.seal(nonce, aad, pt)?;
-        let _rt = cipher.open(nonce, aad, &ct)?;
+        let rt = cipher.open(nonce, aad, &ct)?;
         assert_eq!(rt, pt);
+        Ok(())
     }
 
     #[test]
-    fn open_fails_with_wrong_aad() {
-        let _key = AeadKey([3u8; 32]);
+    fn open_fails_with_wrong_aad() -> Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([3u8; 32]);
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
         let nonce = AeadNonce([2u8; 12]);
         let ct = cipher.seal(nonce, b"A", b"m")?;
         assert!(cipher.open(nonce, b"B", &ct).is_err());
+        Ok(())
     }
 
     proptest! {

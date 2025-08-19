@@ -127,11 +127,11 @@ async fn main() -> anyhow::Result<()> {
 							Ok(obj) => { for (k, v) in obj { map.insert(k, v); } }
 							Err(e) => {
 								eprintln!("invalid JSON file: {e}");
-								std::proces_s::exit(2);
+								std::process::exit(2);
 							}
 						}
 					}
-					Err(e) => { eprintln!("failed to read file: {e}"); std::proces_s::exit(2); }
+					Err(e) => { eprintln!("failed to read file: {e}"); std::process::exit(2); }
 				}
 			}
 			let __v = client.update_config(map).await;
@@ -191,9 +191,9 @@ async fn main() -> anyhow::Result<()> {
 				ConfigCmd::WriteTemplate { path, force } => {
 					let __p = path.unwrap_or_else(|| "nyx._toml".to_string());
 					let __pathbuf = PathBuf::from(&p);
-					if pathbuf.exist_s() && !force {
+					if pathbuf.exists() && !force {
 						eprintln!("refusing to overwrite existing file: {p} (use --force)");
-						std::proces_s::exit(2);
+						std::process::exit(2);
 					}
 					let __template = TEMPLATE_NYX_TOML;
 					if let Err(e) = tokio::fs::write(&pathbuf, template).await { return Err(anyhow::anyhow!(e)); }
@@ -225,15 +225,15 @@ async fn main() -> anyhow::Result<()> {
 		}
 		Command_s::GenCookie { path, force, length } => {
 			let __pathbuf = if let Some(p) = path { PathBuf::from(p) } else { default_cookie_path() };
-			if pathbuf.exist_s() && !force {
+			if pathbuf.exists() && !force {
 				eprintln!("refusing to overwrite existing file: {} (use --force)", pathbuf.display());
-				std::proces_s::exit(2);
+				std::process::exit(2);
 			}
 			if length == 0 || length > 1024 { anyhow::bail!("invalid length: {length}"); }
-			let mut byte_s = vec![0u8; length];
-			rand::thread_rng().fill_byte_s(&mut byte_s);
-			let __token = hex::encode(byte_s);
-			if let Some(parent) = pathbuf.parent() { tokio::fs::createdir_all(parent).await.ok(); }
+			let mut bytes = vec![0u8; length];
+			rand::thread_rng().fill_bytes(&mut bytes);
+			let token = hex::encode(bytes);
+			if let Some(parent) = pathbuf.parent() { tokio::fs::create_dir_all(parent).await.ok(); }
 			tokio::fs::write(&pathbuf, &token).await?;
 			#[cfg(unix)]
 			{
@@ -258,7 +258,7 @@ fn print_result(_re_s: Result<serde_json::Value, nyx_sdk::Error>) {
 		Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap()),
 		Err(e) => {
 			eprintln!("error: {e}");
-			std::proces_s::exit(1);
+			std::process::exit(1);
 		}
 	}
 }

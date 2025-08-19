@@ -62,7 +62,7 @@ mod imp {
     pub fn random_aad(len: usize) -> Vec<u8> {
         let mut rng = OsRng;
         let mut v = vec![0u8; len];
-        rng.fill_byte_s(&mut v);
+        rng.fill_bytes(&mut v);
         v
     }
 }
@@ -91,16 +91,17 @@ mod test_s {
     use super::*;
 
     #[test]
-    fn hpke_roundtrip_when_enabled() {
+    fn hpke_roundtrip_when_enabled() -> Result<(), Box<dyn std::error::Error>> {
         // このテストは feature=hpke のときのみ有意
         let (sk, pk) = gen_keypair();
         if pk.is_empty() {
-            return;
+            return Ok(());
         }
-        let _aad = b"nyx-hpke-aad".to_vec();
-        let _pt = b"hello hpke".to_vec();
+        let aad = b"nyx-hpke-aad".to_vec();
+        let pt = b"hello hpke".to_vec();
         let (enc, ct) = seal(&pk, &aad, &pt)?;
-        let _rt = open(&sk, &enc, &aad, &ct)?;
+        let rt = open(&sk, &enc, &aad, &ct)?;
         assert_eq!(rt, pt);
+        Ok(())
     }
 }

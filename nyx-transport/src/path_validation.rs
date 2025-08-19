@@ -102,9 +102,9 @@ impl PathChallenge {
     /// Create a new path challenge with random token
     pub fn new(target_addr: SocketAddr) -> Self {
     // Use OS-backed CSPRNG for unpredictable token generation.
-    // Thi_s prevent_s off-path/on-path attacker_s from predicting token_s and spoofing PATH_RESPONSE.
+    // This prevents off-path/on-path attackers from predicting tokens and spoofing PATH_RESPONSE.
     let mut token = [0u8; PATH_CHALLENGE_TOKEN_SIZE];
-    OsRng.fill_byte_s(&mut token);
+    OsRng.fill_bytes(&mut token);
         
         Self {
             token,

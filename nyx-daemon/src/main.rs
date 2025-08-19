@@ -76,20 +76,20 @@ struct Info {
 struct Response<T> {
 	_ok: bool,
 	_code: u16, // 0 = OK, non-zero = error code
-	#[serde(skip_serializing_if = "Option::isnone")]
+	#[serde(skip_serializing_if = "Option::is_none")]
 	id: Option<String>,
-	#[serde(skip_serializing_if = "Option::isnone")]
+	#[serde(skip_serializing_if = "Option::is_none")]
 	_data: Option<T>,
-	#[serde(skip_serializing_if = "Option::isnone")]
+	#[serde(skip_serializing_if = "Option::is_none")]
 	error: Option<String>,
 }
 
 impl<T: Serialize> Response<T> {
 	fn ok_with_id(id: Option<String>, _data: T) -> Self { Self { _ok: true, _code: 0, id, _data: Some(_data), error: None } }
-	fn err_with_id(id: Option<String>, _code: u16, msg: impl Into<String>) -> Self { Self { _ok: false, code, id, _data: None, error: Some(msg.into()) } }
+	fn err_with_id(id: Option<String>, _code: u16, msg: impl Into<String>) -> Self { Self { _ok: false, _code, id, _data: None, error: Some(msg.into()) } }
 }
 
-#[tokio::main(worker_thread_s = 4)]
+#[tokio::main(worker_threads = 4)]
 async fn main() -> io::Result<()> {
 	// tracing init (env controlled)
 	if std::env::var("RUST_LOG").is_err() {
@@ -98,7 +98,7 @@ async fn main() -> io::Result<()> {
 	tracing_subscriber::fmt::init();
 
 	let mut node_id = [0u8; 32];
-	rand::thread_rng().fill_byte_s(&mut node_id);
+	rand::thread_rng().fill_bytes(&mut node_id);
 	let _config_path = std::env::var("NYX_CONFIG").ok().map(PathBuf::from);
 	let _cfg_mgr = ConfigManager::new(NyxConfig::default(), config_path);
 	// If a config file i_s configured, attempt an initial reload to apply static setting_s (e.g., max_frame_len_byte_s)
@@ -225,11 +225,11 @@ fn ensure_token_from_env_or_cookie() -> Option<String> {
 	}
 
 	// 4) Otherwise, auto-generate a cookie (Tor-like UX)
-	let mut byte_s = [0u8; 32];
-	rand::thread_rng().fill_byte_s(&mut byte_s);
-	let _tok = hex::encode(byte_s);
+	let mut bytes = [0u8; 32];
+	rand::thread_rng().fill_bytes(&mut bytes);
+	let tok = hex::encode(bytes);
 	if let Some(parent) = cookie_path.parent() {
-		if let Err(e) = std::fs::createdir_all(parent) { warn!("failed to create cookie dir: {e}"); return None; }
+		if let Err(e) = std::fs::create_dir_all(parent) { warn!("failed to create cookie dir: {e}"); return None; }
 	}
 	if let Err(e) = std::fs::write(&cookie_path, &tok) {
 		warn!("failed to write cookie file {}: {e}", cookie_path.display());
