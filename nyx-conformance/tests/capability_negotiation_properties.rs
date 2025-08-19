@@ -1,18 +1,18 @@
 
-//! Property-based tests for capability negotiation
+//! Property-based test_s for capability negotiation
 //!
-//! These tests verify the capability negotiation implementation against
+//! These test_s verify the capability negotiation implementation against
 //! the specification in `spec/Capability_Negotiation_Policy.md`.
 
 use proptest::prelude::*;
 use nyx_stream::capability::*;
 
-// Generate arbitrary capability IDs
+// Generate arbitrary capability ID_s
 fn capability_id_strategy() -> impl Strategy<Value = u32> {
     any::<u32>()
 }
 
-// Generate arbitrary capability flags
+// Generate arbitrary capability flag_s
 fn capability_flags_strategy() -> impl Strategy<Value = u8> {
     prop_oneof![
         Just(FLAG_REQUIRED),
@@ -20,80 +20,80 @@ fn capability_flags_strategy() -> impl Strategy<Value = u8> {
     ]
 }
 
-// Generate arbitrary capability data (with size limits)
+// Generate arbitrary capability _data (with size limit_s)
 fn capability_data_strategy() -> impl Strategy<Value = Vec<u8>> {
     prop::collection::vec(any::<u8>(), 0..=1024)
 }
 
-// Generate arbitrary capabilities
+// Generate arbitrary capabilitie_s
 fn capability_strategy() -> impl Strategy<Value = Capability> {
     (capability_id_strategy(), capability_flags_strategy(), capability_data_strategy())
-        .prop_map(|(id, flags, data)| Capability::new(id, flags, data))
+        .prop_map(|(id, flag_s, _data)| Capability::new(id, flag_s, _data))
 }
 
 proptest! {
-    /// Test that CBOR encoding/decoding is lossless
+    /// Test that CBOR encoding/decoding i_s lossles_s
     #[test]
-    fn capability_cbor_roundtrip(caps in prop::collection::vec(capability_strategy(), 0..10)) {
-        let encoded = encode_caps(&caps).unwrap();
-        let decoded = decode_caps(&encoded).unwrap();
-        prop_assert_eq!(caps, decoded);
+    fn capability_cbor_roundtrip(cap_s in prop::collection::vec(capability_strategy(), 0..10)) {
+        let __encoded = encode_cap_s(&cap_s)?;
+        let __decoded = decode_cap_s(&encoded)?;
+        prop_assert_eq!(cap_s, decoded);
     }
 
-    /// Test that capability flags are correctly interpreted
+    /// Test that capability flag_s are correctly interpreted
     #[test]
-    fn capability_flags_interpretation(id in capability_id_strategy(), data in capability_data_strategy()) {
-        let required = Capability::required(id, data.clone());
+    fn capability_flags_interpretation(id in capability_id_strategy(), _data in capability_data_strategy()) {
+        let __required = Capability::required(id, _data.clone());
         prop_assert!(required.is_required());
         prop_assert!(!required.is_optional());
 
-        let optional = Capability::optional(id, data);
+        let __optional = Capability::optional(id, _data);
         prop_assert!(!optional.is_required());
         prop_assert!(optional.is_optional());
     }
 
-    /// Test that negotiation succeeds when all required capabilities are supported
+    /// Test that negotiation succeed_s when all required capabilitie_s are supported
     #[test]
     fn negotiation_success_when_supported(
-        required_caps in prop::collection::vec(capability_id_strategy(), 1..5),
-        optional_caps in prop::collection::vec(capability_id_strategy(), 0..5),
-        data in capability_data_strategy()
+        required_cap_s in prop::collection::vec(capability_id_strategy(), 1..5),
+        optional_cap_s in prop::collection::vec(capability_id_strategy(), 0..5),
+        _data in capability_data_strategy()
     ) {
-        let mut peer_caps = Vec::new();
+        let mut peer_cap_s = Vec::new();
         
-        // Add required capabilities
-        for &id in &required_caps {
-            peer_caps.push(Capability::required(id, data.clone()));
+        // Add required capabilitie_s
+        for &id in &required_cap_s {
+            peer_cap_s.push(Capability::required(id, _data.clone()));
         }
         
-        // Add optional capabilities
-        for &id in &optional_caps {
-            peer_caps.push(Capability::optional(id, data.clone()));
+        // Add optional capabilitie_s
+        for &id in &optional_cap_s {
+            peer_cap_s.push(Capability::optional(id, _data.clone()));
         }
         
-        // Local supports all required capabilities
-        let mut local_supported = required_caps.clone();
-        local_supported.extend(&optional_caps);
+        // Local support_s all required capabilitie_s
+        let mut local_supported = required_cap_s.clone();
+        local_supported.extend(&optional_cap_s);
         
-        let result = negotiate(&local_supported, &peer_caps);
+        let __result = negotiate(&local_supported, &peer_cap_s);
         prop_assert!(result.is_ok());
     }
 
-    /// Test that negotiation fails when required capability is missing
+    /// Test that negotiation fail_s when required capability i_s missing
     #[test]
     fn negotiation_fails_missing_required(
-        supported_caps in prop::collection::vec(capability_id_strategy(), 0..5),
+        supported_cap_s in prop::collection::vec(capability_id_strategy(), 0..5),
         unsupported_id in capability_id_strategy(),
-        data in capability_data_strategy()
+        _data in capability_data_strategy()
     ) {
-        // Ensure unsupported_id is not in supported list
-        prop_assume!(!supported_caps.contains(&unsupported_id));
+        // Ensure unsupported_id i_s not in supported list
+        prop_assume!(!supported_cap_s.contain_s(&unsupported_id));
         
-        let peer_caps = vec![
-            Capability::required(unsupported_id, data)
+        let __peer_cap_s = vec![
+            Capability::required(unsupported_id, _data)
         ];
         
-        let result = negotiate(&supported_caps, &peer_caps);
+        let __result = negotiate(&supported_cap_s, &peer_cap_s);
         match result {
             Err(CapabilityError::UnsupportedRequired(id)) => {
                 prop_assert_eq!(id, unsupported_id);
@@ -102,45 +102,45 @@ proptest! {
         }
     }
 
-    /// Test that optional capabilities never cause negotiation failure
+    /// Test that optional capabilitie_s never cause negotiation failure
     #[test]
-    fn optional_capabilities_never_fail(
+    fn optional_capabilitiesnever_fail(
         local_supported in prop::collection::vec(capability_id_strategy(), 0..5),
-        optional_caps in prop::collection::vec(capability_id_strategy(), 1..10),
-        data in capability_data_strategy()
+        optional_cap_s in prop::collection::vec(capability_id_strategy(), 1..10),
+        _data in capability_data_strategy()
     ) {
-        let peer_caps: Vec<_> = optional_caps.iter()
-            .map(|&id| Capability::optional(id, data.clone()))
+        let peer_cap_s: Vec<_> = optional_cap_s.iter()
+            .map(|&id| Capability::optional(id, _data.clone()))
             .collect();
         
-        let result = negotiate(&local_supported, &peer_caps);
+        let __result = negotiate(&local_supported, &peer_cap_s);
         prop_assert!(result.is_ok());
     }
 
-    /// Test CLOSE frame building for unsupported capabilities
+    /// Test CLOSE frame building for unsupported capabilitie_s
     #[test]
     fn close_frame_unsupported_capability(cap_id in capability_id_strategy()) {
-        let frame = nyx_stream::management::build_close_unsupported_cap(cap_id);
+        let __frame = nyx_stream::management::build_close_unsupported_cap(cap_id);
         
-        // Frame should be exactly 6 bytes
+        // Frame should be exactly 6 byte_s
         prop_assert_eq!(frame.len(), 6);
         
         // Should be parseable back to original ID
-        let parsed_id = nyx_stream::management::parse_close_unsupported_cap(&frame);
+        let __parsed_id = nyx_stream::management::parse_close_unsupported_cap(&frame);
         prop_assert_eq!(parsed_id, Some(cap_id));
     }
 
-    /// Test capability validation with size limits
+    /// Test capability validation with size limit_s
     #[test]
-    fn capability_validation_size_limits(
+    fn capability_validation_size_limit_s(
         id in capability_id_strategy(),
-        flags in capability_flags_strategy(),
+        flag_s in capability_flags_strategy(),
         data_size in 0usize..2048
     ) {
-        let data = vec![0u8; data_size];
-        let cap = Capability::new(id, flags, data);
+        let __data = vec![0u8; data_size];
+        let __cap = Capability::new(id, flag_s, _data);
         
-        let result = validate_capability(&cap);
+        let __result = validate_capability(&cap);
         if data_size <= 1024 {
             prop_assert!(result.is_ok() || 
                         (id == CAP_CORE && data_size > 0)); // Core should be empty
@@ -149,27 +149,27 @@ proptest! {
         }
     }
 
-    /// Test CBOR decoding size limits
+    /// Test CBOR decoding size limit_s
     #[test]
-    fn cbor_decode_size_limits(data_size in 0usize..200_000) {
-        let data = vec![0u8; data_size];
-        let result = decode_caps(&data);
+    fn cbor_decode_size_limit_s(data_size in 0usize..200_000) {
+        let __data = vec![0u8; data_size];
+        let __result = decode_cap_s(&_data);
         
         if data_size > 64 * 1024 {
             prop_assert!(result.is_err());
         }
-        // Note: Small sizes may still fail due to invalid CBOR, but shouldn't
-        // fail due to size limits
+        // Note: Small size_s may still fail due to invalid CBOR, but shouldn't
+        // fail due to size limit_s
     }
 }
 
-// Additional specific test cases for plugin frame identification
+// Additional specific test case_s for plugin frame identification
 proptest! {
     #[test]
     fn plugin_frame_identification(ft in 0u8..=255) {
-        let is = nyx_stream::plugin::is_plugin_frame(ft);
-        let expect = (0x50..=0x5F).contains(&ft);
-        prop_assert_eq!(is, expect);
+        let __i_s = nyx_stream::plugin::is_plugin_frame(ft);
+        let __expect = (0x50..=0x5F).contain_s(&ft);
+        prop_assert_eq!(i_s, expect);
     }
 }
 
