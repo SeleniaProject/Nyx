@@ -1,13 +1,8 @@
 #![forbid(unsafe_code)]
 
-u        Self {
-            __suite: _suite,
-            __key: _key,
-            basenonce: nonce,
-            seq: 0,
-            __maxseq: u64::MAX,
-            __rekey_interval: 1 << 20,e::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
+use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
 use crate::kdf::{aeadnonce_xor, hkdf_expand};
+use crate::{Error, Result};
 use crate::{Error, Result};
 
 /// AEAD session (unidirectional): derive per-record nonce from base nonce + sequence,
@@ -31,14 +26,14 @@ impl AeadSession {
     const MAX_PLAINTEXT_LEN: usize = 1024 * 1024; // 1 MiB
     const MAX_AAD_LEN: usize = 16 * 1024; // 16 KiB
     const MAX_TAG_OVERHEAD: usize = 16; // Tag length for ChaCha20-Poly1305/AES-GCM
-    pub fn new(__suite: AeadSuite, __key: AeadKey, basenonce: [u8; 12]) -> Self {
+    pub fn new(_suite: AeadSuite, _key: AeadKey, nonce: [u8; 12]) -> Self {
         Self {
-            suite,
-            key,
-            basenonce,
+            __suite: _suite,
+            __key: _key,
+            basenonce: nonce,
             seq: 0,
-            _maxseq: u64::MAX,
-            _rekey_interval: 1 << 20,
+            __maxseq: u64::MAX,
+            __rekey_interval: 1 << 20,
             _bytes_sent: 0,
             _rekey_bytes_interval: 0,
             dir_id: 0,
@@ -46,14 +41,14 @@ impl AeadSession {
     }
 
     /// Set an explicit upper bound for sequence (DoS avoidance, key update policy)
-    pub fn with_maxseq(mut self, _maxseq: u64) -> Self {
-        self._maxseq = maxseq;
+    pub fn with_maxseq(mut self, maxseq: u64) -> Self {
+        self.__maxseq = maxseq;
         self
     }
 
     /// Set rekey interval by record count (default: 2^20 record_s)
     pub fn with_rekey_interval(mut self, interval: u64) -> Self {
-        self._rekey_interval = interval.max(1);
+        self.__rekey_interval = interval.max(1);
         self
     }
 
@@ -76,7 +71,7 @@ impl AeadSession {
 
     /// Whether rekey criteria by record_s/byte_s are met
     pub fn needs_rekey(&self) -> bool {
-        if self.seq >= self._rekey_interval {
+        if self.seq >= self.__rekey_interval {
             return true;
         }
         if self._rekey_bytes_interval > 0 && self._bytes_sent >= self._rekey_bytes_interval {
@@ -87,7 +82,7 @@ impl AeadSession {
 
     /// Rekey using HKDF; refresh key and base nonce, reset counter_s
     pub fn rekey(&mut self) {
-        let old_key = self._key.0; // copy
+        let old_key = self.__key.0; // copy
         // 新しい鍵
         let mut new_key = [0u8; 32];
         hkdf_expand(&old_key, b"nyx/aead/rekey/v1", &mut new_key);
@@ -95,8 +90,8 @@ impl AeadSession {
         let mut newnonce = [0u8; 12];
         hkdf_expand(&old_key, b"nyx/aead/rekey/nonce/v1", &mut newnonce);
         // 置換
-        self._key = AeadKey(new_key);
-        self._basenonce = newnonce;
+        self.__key = AeadKey(new_key);
+        self.basenonce = newnonce;
         self.seq = 0;
         self._bytes_sent = 0;
     }
@@ -104,7 +99,7 @@ impl AeadSession {
     /// Encrypt next packet. Return_s (sequence, ciphertext). Enforce_s limit_s.
     pub fn sealnext(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<(u64, Vec<u8>)> {
         // seq が maxseq に到達したら以降の送信を拒否（nonce再利用防止）
-        if self.seq >= self._maxseq {
+        if self.seq >= self.__maxseq {
             return Err(Error::Protocol("aead sequence exhausted".into()));
         }
         if plaintext.len() > Self::MAX_PLAINTEXT_LEN {
@@ -120,12 +115,12 @@ impl AeadSession {
             base[i] ^= dir[i];
         }
         let n = AeadNonce(aeadnonce_xor(&base, self.seq));
-        let cipher = AeadCipher::new(self._suite, AeadKey(self._key.0));
+        let cipher = AeadCipher::new(self.__suite, AeadKey(self.__key.0));
         let ct = cipher.seal(n, aad, plaintext)?;
         let used = self.seq;
         self.seq = self.seq.saturating_add(1);
         // タグも含む暗号文長を加算（おおよその上限としてDoS耐性に寄与）
-        self._bytes_sent = self._bytes_sent.saturating_add(ct.len() a_s u64);
+        self._bytes_sent = self._bytes_sent.saturating_add(ct.len() as u64);
         Ok((used, ct))
     }
 
@@ -140,13 +135,13 @@ impl AeadSession {
         if ciphertext.len() < Self::MAX_TAG_OVERHEAD {
             return Err(Error::Protocol("ciphertext too short".into()));
         }
-        let mut base = self._basenonce;
-        let dir = self.dir_id.to_be_byte_s();
+        let mut base = self.basenonce;
+        let dir = self.dir_id.to_be_bytes();
         for i in 0..4 {
             base[i] ^= dir[i];
         }
         let n = AeadNonce(aeadnonce_xor(&base, seq));
-        let cipher = AeadCipher::new(self._suite, AeadKey(self._key.0));
+        let cipher = AeadCipher::new(self.__suite, AeadKey(self.__key.0));
         cipher.open(n, aad, ciphertext)
     }
 
