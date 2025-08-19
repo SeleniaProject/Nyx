@@ -23,7 +23,7 @@ fn timestampnow_monotonicish() {
     let _b = TimestampM_s::now();
     assert!(b.0 >= a.0);
     let _d = b.as_duration();
-    assert!(d.as_milli_s() a_s u64 >= a.0);
+    assert!(d.as_milli_s() as u64 >= a.0);
 }
 
 #[test]

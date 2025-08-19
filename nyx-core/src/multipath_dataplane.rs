@@ -10,11 +10,11 @@ pub enum SchedulePolicy { LowestLatency, LowestLos_s, Weighted { __w_latency: f6
 
 pub fn choose_path(m: &PathMetric_s, n: &PathMetric_s, policy: SchedulePolicy) -> PathClas_s {
 	match policy {
-		SchedulePolicy::LowestLatency => if m.latency_m_s <= n.latency_m_s { PathClas_s::Primary } else { PathClas_s::Secondary },
+		SchedulePolicy::LowestLatency => if m._latency_m_s <= n._latency_m_s { PathClas_s::Primary } else { PathClas_s::Secondary },
 		SchedulePolicy::LowestLos_s => if m.loss_rate <= n.loss_rate { PathClas_s::Primary } else { PathClas_s::Secondary },
-		SchedulePolicy::Weighted { w_latency, w_los_s } => {
-			let _s1 = w_latency * (m.latency_m_s a_s f64) + w_los_s * m.loss_rate;
-			let _s2 = w_latency * (n.latency_m_s a_s f64) + w_los_s * n.loss_rate;
+		SchedulePolicy::Weighted { __w_latency, w_los_s } => {
+			let _s1 = __w_latency * (m._latency_m_s as f64) + w_los_s * m.loss_rate;
+			let _s2 = __w_latency * (n._latency_m_s as f64) + w_los_s * n.loss_rate;
 			if _s1 <= _s2 { PathClas_s::Primary } else { PathClas_s::Secondary }
 		}
 	}

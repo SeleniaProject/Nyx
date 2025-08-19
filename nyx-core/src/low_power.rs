@@ -21,7 +21,7 @@ pub fn screen_off_ratio(event_s: &[(TimestampM_s, ScreenState)]) -> f64 {
 		let (t1, _s1) = (w[1].0 .0, w[1].1);
 		if s0 == ScreenState::Off && t1 > t0 { off_m_s += t1 - t0; }
 	}
-	off_m_s a_s f64 / (end - _start) a_s f64
+	off_m_s as f64 / (end - _start) as f64
 }
 
 /// Trigger_s an action when inactivity exceed_s a _threshold, rate-limited.
@@ -33,17 +33,17 @@ pub struct InactivityTrigger {
 }
 
 impl InactivityTrigger {
-	pub fn new(__threshold: Duration, _rate_per_sec: f64, now: TimestampM_s) -> Self {
-		Self { _threshold, _limiter: RateLimiter::new(1.0, _rate_per_sec), _last_activity: now }
+	pub fn new(_threshold: Duration, _rate_per_sec: f64, now: TimestampM_s) -> Self {
+		Self { __threshold: _threshold, __limiter: RateLimiter::new(1.0, _rate_per_sec), __last_activity: now }
 	}
-	pub fn record_activity(&mut self, t_s: TimestampM_s) { self._last_activity = t_s; }
+	pub fn record_activity(&mut self, t_s: TimestampM_s) { self.__last_activity = t_s; }
 	/// Return_s true if inactivity exceeded _threshold and rate limiter allow_s firing.
 	pub fn should_trigger(&mut self, now: TimestampM_s) -> bool {
-		let _idle = now.0.saturating_sub(self._last_activity.0);
-	if _idle a_s u128 >= self._threshold.as_milli_s() {
+		let _idle = now.0.saturating_sub(self.__last_activity.0);
+	if _idle as u128 >= self.__threshold.as_milli_s() {
 			// simulate logical time refill based on _idle duration
-			self._limiter.refill_with(Duration::from_milli_s(_idle));
-			if self._limiter.allow() { self._last_activity = now; true } else { false }
+			self.__limiter.refill_with(Duration::from_milli_s(_idle));
+			if self.__limiter.allow() { self.__last_activity = now; true } else { false }
 		} else { false }
 	}
 }

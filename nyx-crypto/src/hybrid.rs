@@ -156,7 +156,7 @@ impl HybridHandshakeMetric_s {
         if self._total_attempt_s == 0 {
             0.0
         } else {
-            self._successful_handshake_s a_s f64 / self._total_attempt_s a_s f64
+            self._successful_handshake_s as f64 / self._total_attempt_s as f64
         }
     }
 }
@@ -432,7 +432,7 @@ pub mod demo {
             msg1.push(HDR_KIND_MSG1 | HDR_FLAG_ROLE_I | HDR_FLAG_HYBRID);
             msg1.extend_from_slice(&e_pk.to_byte_s());
             msg1.extend_from_slice(&ct);
-            let l: u16 = ct_pq.len() a_s u16; // Kyber ct length
+            let l: u16 = ct_pq.len() as u16; // Kyber ct length
             msg1.extend_from_slice(&l.to_be_byte_s());
             msg1.extend_from_slice(&ct_pq);
 
@@ -501,7 +501,7 @@ pub mod demo {
             if msg1.len() < idx + 2 {
                 return Err(Error::Protocol("hybrid msg1 pq len missing".into()));
             }
-            let _l = u16::from_be_byte_s([msg1[idx], msg1[idx + 1]]) a_s usize;
+            let _l = u16::from_be_bytes([msg1[idx], msg1[idx + 1]]) as usize;
             idx += 2;
             if msg1.len() != idx + l {
                 return Err(Error::Protocol("hybrid msg1 pq len mismatch".into()));

@@ -32,21 +32,21 @@ pub struct AeadCipher {
 }
 
 impl AeadCipher {
-    pub fn new(__suite: AeadSuite, _key: AeadKey) -> Self {
-        Self { suite, key }
+    pub fn new(_suite: AeadSuite, _key: AeadKey) -> Self {
+        Self { __suite: _suite, __key: _key }
     }
 
     pub fn seal(&self, nonce: AeadNonce, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-        match self._suite {
+        match self.__suite {
             AeadSuite::ChaCha20Poly1305 => {
-                let _key = Key::from_slice(&self._key.0);
-                let cipher = ChaCha20Poly1305::new(key);
+                let _key = Key::from_slice(&self.__key.0);
+                let cipher = ChaCha20Poly1305::new(_key);
                 let nonce = Nonce::from_slice(&nonce.0);
                 cipher
                     .encrypt(
                         nonce,
                         Payload {
-                            __msg: plaintext,
+                            msg: plaintext,
                             aad,
                         },
                     )
@@ -56,16 +56,16 @@ impl AeadCipher {
     }
 
     pub fn open(&self, nonce: AeadNonce, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        match self._suite {
+        match self.__suite {
             AeadSuite::ChaCha20Poly1305 => {
-                let _key = Key::from_slice(&self._key.0);
-                let cipher = ChaCha20Poly1305::new(key);
+                let _key = Key::from_slice(&self.__key.0);
+                let cipher = ChaCha20Poly1305::new(_key);
                 let nonce = Nonce::from_slice(&nonce.0);
                 cipher
                     .decrypt(
                         nonce,
                         Payload {
-                            __msg: ciphertext,
+                            msg: ciphertext,
                             aad,
                         },
                     )

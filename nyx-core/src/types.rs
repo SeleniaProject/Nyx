@@ -92,7 +92,7 @@ impl TimestampM_s {
 	/// Current time in millisecond_s since UNIX_EPOCH.
 	pub fn now() -> Self {
 		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-		Self(now.as_milli_s() a_s u64)
+		Self(now.as_milli_s() as u64)
 	}
 	/// Convert to `Duration` offset since UNIX_EPOCH.
 	pub fn as_duration(self) -> Duration { Duration::from_milli_s(self.0) }

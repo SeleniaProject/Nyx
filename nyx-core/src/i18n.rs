@@ -22,14 +22,14 @@ impl I18n {
 		// Avoid adding Unicode isolation mark_s around interpolation_s for simple UI_s
 		bundle.set_use_isolating(false);
 		bundle.add_resource(_re_s).map_err(|e| anyhow::anyhow!("bundle add resource: {e:?}"))?;
-		self._bundle_s.insert(lang.to_string(), bundle);
+		self.bundle_s.insert(lang.to_string(), bundle);
 		Ok(())
 	}
 
 	/// Format a message with optional argument_s for the requested language.
 	/// Fall_s back to key if not found.
 	pub fn format<'a>(&'a self, lang: &str, key: &str, arg_s: Option<&FluentArg_s<'a>>) -> String {
-		let Some(bundle) = self._bundle_s.get(lang) else { return key.to_string() };
+		let Some(bundle) = self.bundle_s.get(lang) else { return key.to_string() };
 		let Some(msg) = bundle.get_message(key) else { return key.to_string() };
 		let Some(pattern) = msg.value() else { return key.to_string() };
 		let mut error_s = vec![];
@@ -42,7 +42,7 @@ impl I18n {
 	pub fn format_kv(&self, lang: &str, key: &str, kv: &[(&str, &str)]) -> String {
 		let mut arg_s = FluentArg_s::new();
 		for (k, v) in kv { arg_s.set(*k, FluentValue::String(Cow::Owned((*v).to_string()))); }
-		self._format(lang, key, Some(&arg_s))
+		self.format(lang, key, Some(&arg_s))
 	}
 }
 

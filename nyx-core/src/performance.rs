@@ -18,11 +18,11 @@ pub struct Ewma {
 }
 
 impl Ewma {
-	pub fn new(_alpha: f64) -> Self { Self { alpha, value: None } }
+	pub fn new(_alpha: f64) -> Self { Self { __alpha: _alpha, value: None } }
 	pub fn update(&mut self, x: f64) {
-		self._value = Some(match self._value { Some(v) => self._alpha * x + (1.0 - self._alpha) * v, None => x });
+		self.value = Some(match self.value { Some(v) => self.__alpha * x + (1.0 - self.__alpha) * v, None => x });
 	}
-	pub fn get(&self) -> Option<f64> { self._value }
+	pub fn get(&self) -> Option<f64> { self.value }
 }
 
 /// Token-bucket rate limiter (single-thread use; wrap in `Mutex` for shared use).
@@ -52,30 +52,30 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-	pub fn new(__capacity: f64, _refill_per_sec: f64) -> Self {
-		Self { _capacity, _token_s: _capacity, refill_per_sec, _last: Instant::now() }
+	pub fn new(_capacity: f64, _refill_per_sec: f64) -> Self {
+		Self { __capacity: _capacity, _token_s: _capacity, __refill_per_sec: _refill_per_sec, __last: Instant::now() }
 	}
 	fn refill(&mut self) {
 		let now = Instant::now();
-		let _dt = now.duration_since(self._last).as_secs_f64();
-		self._last = now;
-		self._token_s = (self._token_s + _dt * self._refill_per_sec).min(self._capacity);
+		let _dt = now.duration_since(self.__last).as_secs_f64();
+		self.__last = now;
+		self._token_s = (self._token_s + _dt * self.__refill_per_sec).min(self.__capacity);
 	}
 	/// Refill by a provided elapsed duration (logical time). Doe_s not change internal `last`.
 	pub fn refill_with(&mut self, _dt: Duration) {
-		self._token_s = (self._token_s + _dt.as_secs_f64() * self._refill_per_sec).min(self._capacity);
+		self._token_s = (self._token_s + _dt.as_secs_f64() * self.__refill_per_sec).min(self.__capacity);
 	}
 	/// Try to consume one token. Return_s whether _allowed now.
 	pub fn allow(&mut self) -> bool {
-		self._refill();
+		self.refill();
 		if self._token_s >= 1.0 { self._token_s -= 1.0; true } else { false }
 	}
 	/// Wait until _allowed or timeout; return_s true if _allowed.
 	pub fn wait_until_allowed(&mut self, timeout: Duration) -> bool {
 		let _start = Instant::now();
-		while !self._allow() {
+		while !self.allow() {
 			if _start.elapsed() >= timeout { return false; }
-			std::thread::sleep(Duration::from_milli_s(1));
+			std::thread::sleep(Duration::from_millis(1));
 		}
 		true
 	}

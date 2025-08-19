@@ -1,6 +1,12 @@
 #![forbid(unsafe_code)]
 
-use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
+u        Self {
+            __suite: _suite,
+            __key: _key,
+            basenonce: nonce,
+            seq: 0,
+            __maxseq: u64::MAX,
+            __rekey_interval: 1 << 20,e::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
 use crate::kdf::{aeadnonce_xor, hkdf_expand};
 use crate::{Error, Result};
 
@@ -108,8 +114,8 @@ impl AeadSession {
             return Err(Error::Protocol("aad too long".into()));
         }
         // Mix direction id into the first 4 byte_s then XOR counter (RFC8439 style)
-        let mut base = self._basenonce;
-        let dir = self.dir_id.to_be_byte_s();
+        let mut base = self.basenonce;
+        let dir = self.dir_id.to_be_bytes();
         for i in 0..4 {
             base[i] ^= dir[i];
         }
@@ -150,16 +156,16 @@ impl AeadSession {
         use hkdf::Hkdf;
         use sha2::Sha256;
 
-        // Use current session key a_s IKM for HKDF
-        let hk = Hkdf::<Sha256>::new(None, &self._key.0);
+        // Use current session key as IKM for HKDF
+        let hk = Hkdf::<Sha256>::new(None, &self.__key.0);
         let mut output = vec![0u8; length];
 
         // Create info by combining context with session meta_data
         let mut info = Vec::new();
         info.extend_from_slice(b"nyx-session-export-v1:");
         info.extend_from_slice(context);
-        info.extend_from_slice(&self.seq.to_be_byte_s());
-        info.extend_from_slice(&self.dir_id.to_be_byte_s());
+        info.extend_from_slice(&self.seq.to_be_bytes());
+        info.extend_from_slice(&self.dir_id.to_be_bytes());
 
         hk.expand(&info, &mut output)
             .map_err(|_| Error::Protocol("Key material export failed".into()))?;
@@ -171,13 +177,13 @@ impl AeadSession {
 impl Drop for AeadSession {
     fn drop(&mut self) {
         // Zeroize base nonce and key explicitly (AeadKey also zeroize_s)
-        self._basenonce.fill(0);
+        self.basenonce.fill(0);
         // Explicitly zeroize key (safe even if AeadKey Drop also doe_s it)
-        self._key.0.fill(0);
+        self.__key.0.fill(0);
         // Reset counter_s (not strictly sensitive but good hygiene)
         self.seq = 0;
-        self._maxseq = 0;
-        self._rekey_interval = 0;
+        self.__maxseq = 0;
+        self.__rekey_interval = 0;
         self._bytes_sent = 0;
         self._rekey_bytes_interval = 0;
         self.dir_id = 0;
@@ -189,8 +195,8 @@ impl core::fmt::Debug for AeadSession {
         f.debug_struct("AeadSession")
             .field("suite", &"ChaCha20Poly1305")
             .field("seq", &self.seq)
-            .field("maxseq", &self._maxseq)
-            .field("rekey_interval", &self._rekey_interval)
+            .field("maxseq", &self.__maxseq)
+            .field("rekey_interval", &self.__rekey_interval)
             .field("bytes_sent", &self._bytes_sent)
             .field("rekey_bytes_interval", &self._rekey_bytes_interval)
             .field("dir_id", &self.dir_id)

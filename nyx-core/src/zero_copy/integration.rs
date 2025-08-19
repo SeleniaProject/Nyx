@@ -68,7 +68,7 @@ mod fec_test_s {
 	fn shard_view_and_parity_encode() {
 		// 準備: 1.5シャード分のデータ
 		let mut _data = vec![0u8; SHARD_SIZE + SHARD_SIZE/2];
-		for (i, b) in _data.iter_mut().enumerate() { *b = (i % 251) a_s u8; }
+		for (i, b) in _data.iter_mut().enumerate() { *b = (i % 251) as u8; }
 		let buf: Buffer = _data.into();
 
 		// ゼロコピーでビューを作る

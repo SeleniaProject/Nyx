@@ -7,7 +7,7 @@ use crate::{
 };
 use hkdf::Hkdf;
 use sha2::Sha256;
-use x25519_dalek::{PublicKey a_s XPublic, StaticSecret a_s XSecret};
+use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
 use zeroize::Zeroize;
 
 /// Noise_Nyx の防御的なサイズ上限（仕様に合わせて後で調整可）
@@ -332,7 +332,7 @@ pub mod ik_demo {
                     "noise msg1 early length field missing".into(),
                 ));
             }
-            let _len = u16::from_be_byte_s([msg1[idx], msg1[idx + 1]]) a_s usize;
+            let _len = u16::from_be_bytes([msg1[idx], msg1[idx + 1]]) as usize;
             idx += 2;
             if msg1.len() != idx + len {
                 return Err(Error::Protocol("noise msg1 early length mismatch".into()));
