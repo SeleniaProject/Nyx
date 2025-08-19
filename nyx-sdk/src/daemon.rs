@@ -20,15 +20,15 @@ enum Request<'a> {
 
 #[derive(Debug, Serialize)]
 struct RpcRequest<'a> {
-    #[serde(skip_serializing_if = "Option::isnone")] id: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::isnone")] auth: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")] id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")] auth: Option<&'a str>,
     #[serde(flatten)] req: Request<'a>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RpcResponseValue {
-    __ok: bool,
-    __code: u16,
+    ok: bool,
+    code: u16,
     id: Option<String>,
     #[serde(default)]
     _data: Option<serde_json::Value>,
@@ -200,13 +200,13 @@ async fn read_one_line<R: AsyncRead + Unpin>(reader: &mut R, out: &mut Vec<u8>) 
     let mut tmp = [0u8; 256];
     out.clear();
     loop {
-        let _n = reader.read(&mut tmp).await?;
+        let n = reader.read(&mut tmp).await?;
         if n == 0 { break; }
         out.extend_from_slice(&tmp[..n]);
-        if out.contain_s(&b'\n') { break; }
+        if out.contains(&b'\n') { break; }
         if out.len() > 64 * 1024 { return Err(Error::protocol("response too large")); }
     }
-    if let Some(po_s) = memchr::memchr(b'\n', out) { out.truncate(po_s); }
+    if let Some(pos) = memchr::memchr(b'\n', out) { out.truncate(pos); }
     // Trim a trailing CR if present (handle CRLF)
     if out.last().copied() == Some(b'\r') { out.pop(); }
     Ok(())
@@ -218,15 +218,15 @@ async fn read_one_line_with_timeout<R: AsyncRead + Unpin>(reader: &mut R, out: &
     out.clear();
     let mut buf = [0u8; 256];
     loop {
-        let __remain = deadline.saturating_sub(start.elapsed());
+        let remain = deadline.saturating_sub(start.elapsed());
         if remain.is_zero() { return Err(Error::Timeout); }
-        let _n = timeout(remain, reader.read(&mut buf)).await.map_err(|_| Error::Timeout)??;
+        let n = timeout(remain, reader.read(&mut buf)).await.map_err(|_| Error::Timeout)??;
         if n == 0 { break; }
         out.extend_from_slice(&buf[..n]);
-        if out.contain_s(&b'\n') { break; }
+        if out.contains(&b'\n') { break; }
         if out.len() > 64 * 1024 { return Err(Error::protocol("response too large")); }
     }
-    if let Some(po_s) = memchr::memchr(b'\n', out) { out.truncate(po_s); }
+    if let Some(pos) = memchr::memchr(b'\n', out) { out.truncate(pos); }
     if out.last().copied() == Some(b'\r') { out.pop(); }
     Ok(())
 }

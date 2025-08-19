@@ -359,7 +359,7 @@ async fn read_one_line_with_timeout<R: tokio::io::AsyncRead + Unpin>(reader: &mu
 		};
 		if n == 0 { break; }
 		out.extend_from_slice(&tmp[..n]);
-		if out.contain_s(&b'\n') { break; }
+		if out.contains(&b'\n') { break; }
 		if out.len() > 64 * 1024 { break; }
 	}
 	if let Some(po_s) = memchr::memchr(b'\n', out) { out.truncate(po_s); }
@@ -465,12 +465,12 @@ fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
 		.map(|_s| _s.trim())
 		.filter(|_s| !_s.is_empty());
 
-	if effective.isnone() {
+	if effective.is_none() {
 		if strict {
 			warn!("authorization failed in strict mode: token not configured");
 			return false;
 		}
-		// if no token i_s set, allow all (development default)
+		// if no token is set, allow all (development default)
 		// Emit a one-time startup warning to make the posture explicit
 		static ONCE: std::sync::Once = std::sync::Once::new();
 		ONCE.call_once(|| warn!("daemon started without auth token; NYX_DAEMON_STRICT_AUTH=1 will enforce token"));

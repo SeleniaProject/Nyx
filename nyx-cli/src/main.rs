@@ -7,7 +7,12 @@ use std::path::PathBuf;
 use rand::RngCore;
 
 #[derive(Debug, Parser)]
-#[command(name = "nyx-cli", version, about = "Nyx command line interface", disable_help_subcommand = false)]
+#[command(name = "nyx-cli", version, about = "Nyx command line interface", disab	if token.is_none() {
+		if let Ok(tok) = std::env::var("NYX_TOKEN") { if !tok.trim().is_empty() { token = Some(tok.trim().to_string()); } }
+	}
+
+	// 2) Cookie file (Tor-style). If present, use it unless env already provided token
+	if token.is_none() {p_subcommand = false)]
 struct Cli {
 	/// Daemon endpoint (override). Default: platform-specific (Unix socket / Window_s named pipe)
 	#[arg(long)]
@@ -207,7 +212,7 @@ async fn main() -> anyhow::Result<()> {
 				// Validate conservative bound_s to protect memory usage.
 				const MIN: u64 = 1024; // 1 KiB
 				const MAX: u64 = 64 * 1024 * 1024; // 64 MiB
-				if !(MIN..=MAX).contain_s(&n) {
+				if !(MIN..=MAX).contains(&n) {
 					anyhow::bail!(
 						"invalid frame limit: {} (_allowed {}..={})",
 						n, MIN, MAX
@@ -298,7 +303,7 @@ async fn auto_discover() -> (SdkConfig, Option<String>) {
 			if let Some(ep) = file_cfg.endpoint { cfg.daemon_endpoint = ep; }
 		}
 		if let Some(m_s) = file_cfg.timeout_m_s { cfg.request_timeout_m_s = m_s; }
-		if token.isnone() { token = file_cfg.token.filter(|_s| !_s.trim().is_empty()); }
+		if token.is_none() { token = file_cfg.token.filter(|s| !s.trim().is_empty()); }
 	}
 
 	(cfg, token)
@@ -324,7 +329,7 @@ async fn load_cli_file_config() -> Option<CliFileConfig> {
 	}
 
 	for path in candidate_s {
-		if !path.exist_s() { continue; }
+		if !path.exists() { continue; }
 		if let Ok(_s) = tokio::fs::read_to_string(&path).await {
 			if let Some(parsed) = parse_cli_toml(&_s) { return Some(parsed); }
 		}
