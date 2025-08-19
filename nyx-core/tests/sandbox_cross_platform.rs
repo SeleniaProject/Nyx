@@ -1,22 +1,22 @@
 #![forbid(unsafe_code)]
 
-use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatus};
+use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatu_s};
 use std::env;
-use std::fs;
+use std::f_s;
 use std::path::PathBuf;
-use std::process;
+use std::proces_s;
 
-/// Test that sandbox application is idempotent
+/// Test that sandbox application i_s idempotent
 #[test]
 fn sandbox_idempotent_application() {
-    let status1 = apply_policy(SandboxPolicy::Minimal);
-    let status2 = apply_policy(SandboxPolicy::Minimal);
+    let _status1 = apply_policy(SandboxPolicy::Minimal);
+    let _status2 = apply_policy(SandboxPolicy::Minimal);
     
-    // Both calls should succeed (or both fail consistently)
+    // Both call_s should succeed (or both fail consistently)
     assert_eq!(status1, status2);
 }
 
-/// Test that environment variables are set correctly for minimal policy
+/// Test that environment variable_s are set correctly for minimal policy
 #[test]
 fn minimal_policy_environment_setup() {
     // Clear any existing sandbox environment
@@ -24,10 +24,10 @@ fn minimal_policy_environment_setup() {
     env::remove_var("NO_SUBPROCESS");
     env::remove_var("NO_NETWORK");
     
-    let status = apply_policy(SandboxPolicy::Minimal);
+    let _statu_s = apply_policy(SandboxPolicy::Minimal);
     
-    // On platforms where sandbox is supported, check environment
-    if status == SandboxStatus::Applied {
+    // On platform_s where sandbox i_s supported, check environment
+    if statu_s == SandboxStatu_s::Applied {
         assert_eq!(env::var("SANDBOX_POLICY").unwrap(), "minimal");
         assert_eq!(env::var("NO_SUBPROCESS").unwrap(), "1");
         
@@ -36,7 +36,7 @@ fn minimal_policy_environment_setup() {
     }
 }
 
-/// Test that environment variables are set correctly for strict policy
+/// Test that environment variable_s are set correctly for strict policy
 #[test]
 fn strict_policy_environment_setup() {
     // Clear any existing sandbox environment
@@ -44,133 +44,133 @@ fn strict_policy_environment_setup() {
     env::remove_var("NO_SUBPROCESS");
     env::remove_var("NO_NETWORK");
     
-    let status = apply_policy(SandboxPolicy::Strict);
+    let _statu_s = apply_policy(SandboxPolicy::Strict);
     
-    // On platforms where sandbox is supported, check environment
-    if status == SandboxStatus::Applied {
+    // On platform_s where sandbox i_s supported, check environment
+    if statu_s == SandboxStatu_s::Applied {
         assert_eq!(env::var("SANDBOX_POLICY").unwrap(), "strict");
         assert_eq!(env::var("NO_SUBPROCESS").unwrap(), "1");
         assert_eq!(env::var("NO_NETWORK").unwrap(), "1");
     }
 }
 
-/// Test that sandbox marker files are created appropriately
+/// Test that sandbox marker file_s are created appropriately
 #[test]
 fn sandbox_marker_file_creation() {
-    let tmp_dir = env::temp_dir();
-    let process_id = process::id();
+    let _tmpdir = env::tempdir();
+    let _process_id = proces_s::id();
     
     // Apply sandbox policy
-    let status = apply_policy(SandboxPolicy::Minimal);
+    let _statu_s = apply_policy(SandboxPolicy::Minimal);
     
-    if status == SandboxStatus::Applied {
-        // Check for platform-specific marker files
-        let possible_markers = vec![
-            tmp_dir.join(format!("nyx_sandbox_{}", process_id)),
-            tmp_dir.join(format!("nyx_sandbox_macos_{}", process_id)),
+    if statu_s == SandboxStatu_s::Applied {
+        // Check for platform-specific marker file_s
+        let _possible_marker_s = vec![
+            tmpdir.join(format!("nyx_sandbox_{}", process_id)),
+            tmpdir.join(format!("nyx_sandbox_macos_{}", process_id)),
         ];
         
         let mut found_marker = false;
-        for marker_path in possible_markers {
-            if marker_path.exists() {
-                let contents = fs::read_to_string(&marker_path).unwrap();
-                assert_eq!(contents, "minimal");
+        for marker_path in possible_marker_s {
+            if marker_path.exist_s() {
+                let _content_s = fs::read_to_string(&marker_path)?;
+                assert_eq!(content_s, "minimal");
                 found_marker = true;
                 
                 // Clean up
-                let _ = fs::remove_file(&marker_path);
+                let __ = fs::remove_file(&marker_path);
                 break;
             }
         }
         
-        // On supported platforms, we should find a marker
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        // On supported platform_s, we should find a marker
+        #[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
         assert!(found_marker, "Expected to find sandbox marker file");
     }
 }
 
-/// Test that strict policy creates appropriate marker
+/// Test that strict policy create_s appropriate marker
 #[test]
 fn strict_policy_marker_file() {
-    let tmp_dir = env::temp_dir();
-    let process_id = process::id();
+    let _tmpdir = env::tempdir();
+    let _process_id = proces_s::id();
     
     // Apply strict sandbox policy
-    let status = apply_policy(SandboxPolicy::Strict);
+    let _statu_s = apply_policy(SandboxPolicy::Strict);
     
-    if status == SandboxStatus::Applied {
-        // Check for platform-specific strict marker files
-        let possible_markers = vec![
-            tmp_dir.join(format!("nyx_sandbox_strict_{}", process_id)),
-            tmp_dir.join(format!("nyx_sandbox_macos_strict_{}", process_id)),
+    if statu_s == SandboxStatu_s::Applied {
+        // Check for platform-specific strict marker file_s
+        let _possible_marker_s = vec![
+            tmpdir.join(format!("nyx_sandbox_strict_{}", process_id)),
+            tmpdir.join(format!("nyx_sandbox_macos_strict_{}", process_id)),
         ];
         
         let mut found_marker = false;
-        for marker_path in possible_markers {
-            if marker_path.exists() {
-                let contents = fs::read_to_string(&marker_path).unwrap();
-                assert_eq!(contents, "strict");
+        for marker_path in possible_marker_s {
+            if marker_path.exist_s() {
+                let _content_s = fs::read_to_string(&marker_path)?;
+                assert_eq!(content_s, "strict");
                 found_marker = true;
                 
                 // Clean up
-                let _ = fs::remove_file(&marker_path);
+                let __ = fs::remove_file(&marker_path);
                 break;
             }
         }
         
-        // On supported platforms, we should find a marker
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        // On supported platform_s, we should find a marker
+        #[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
         assert!(found_marker, "Expected to find strict sandbox marker file");
     }
 }
 
-/// Test sandbox behavior consistency across policy types
+/// Test sandbox behavior consistency acros_s policy type_s
 #[test]
 fn policy_type_consistency() {
-    let minimal_status = apply_policy(SandboxPolicy::Minimal);
-    let strict_status = apply_policy(SandboxPolicy::Strict);
+    let _minimal_statu_s = apply_policy(SandboxPolicy::Minimal);
+    let _strict_statu_s = apply_policy(SandboxPolicy::Strict);
     
-    // Both policies should behave consistently (both applied or both unsupported)
+    // Both policie_s should behave consistently (both applied or both unsupported)
     // on the same platform
     assert_eq!(
-        minimal_status == SandboxStatus::Applied,
-        strict_status == SandboxStatus::Applied,
-        "Policy application should be consistent across policy types"
+        minimal_statu_s == SandboxStatu_s::Applied,
+        strict_statu_s == SandboxStatu_s::Applied,
+        "Policy application should be consistent acros_s policy type_s"
     );
 }
 
-/// Test that multiple sandbox applications don't interfere
+/// Test that multiple sandbox application_s don't interfere
 #[test]
 fn multiple_applications_safe() {
-    // Apply different policies multiple times
-    let results: Vec<SandboxStatus> = vec![
+    // Apply different policie_s multiple time_s
+    let result_s: Vec<SandboxStatu_s> = vec![
         apply_policy(SandboxPolicy::Minimal),
         apply_policy(SandboxPolicy::Strict), 
         apply_policy(SandboxPolicy::Minimal),
         apply_policy(SandboxPolicy::Strict),
     ];
     
-    // All should return the same status (idempotent behavior)
-    let first_result = results[0];
-    for result in &results[1..] {
-        assert_eq!(*result, first_result, "Multiple sandbox applications should be idempotent");
+    // All should return the same statu_s (idempotent behavior)
+    let _first_result = result_s[0];
+    for result in &result_s[1..] {
+        assert_eq!(*result, first_result, "Multiple sandbox application_s should be idempotent");
     }
 }
 
-/// Integration test for resource limits (if applicable)
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// Integration test for resource limit_s (if applicable)
+#[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
 #[test]
 fn resource_limits_applied() {
-    use nix::sys::resource::{getrlimit, Resource};
+    use nix::sy_s::resource::{getrlimit, Resource};
     
-    let status = apply_policy(SandboxPolicy::Minimal);
+    let _statu_s = apply_policy(SandboxPolicy::Minimal);
     
-    if status == SandboxStatus::Applied {
-        // Check that resource limits were applied
+    if statu_s == SandboxStatu_s::Applied {
+        // Check that resource limit_s were applied
         if let Ok(process_limit) = getrlimit(Resource::RLIMIT_NPROC) {
             // Should have some reasonable limit set
             assert!(process_limit.soft().unwrap_or(u64::MAX) <= 50, 
-                    "Process limit should be restricted");
+                    "Proces_s limit should be restricted");
         }
         
         if let Ok(fd_limit) = getrlimit(Resource::RLIMIT_NOFILE) {
@@ -184,20 +184,20 @@ fn resource_limits_applied() {
 /// Test platform detection and feature availability
 #[test]
 fn platform_feature_detection() {
-    let status = apply_policy(SandboxPolicy::Minimal);
+    let _statu_s = apply_policy(SandboxPolicy::Minimal);
     
-    // Check that status aligns with platform expectations
-    #[cfg(all(windows, feature = "os_sandbox"))]
-    assert_eq!(status, SandboxStatus::Applied, "Windows with os_sandbox feature should support sandbox");
+    // Check that statu_s align_s with platform expectation_s
+    #[cfg(all(window_s, feature = "os_sandbox"))]
+    assert_eq!(statu_s, SandboxStatu_s::Applied, "Window_s with os_sandbox feature should support sandbox");
     
-    #[cfg(all(target_os = "linux", feature = "os_sandbox"))]
-    assert_eq!(status, SandboxStatus::Applied, "Linux with os_sandbox feature should support sandbox");
+    #[cfg(all(target_o_s = "linux", feature = "os_sandbox"))]
+    assert_eq!(statu_s, SandboxStatu_s::Applied, "Linux with os_sandbox feature should support sandbox");
     
-    #[cfg(all(target_os = "macos", feature = "os_sandbox"))]
-    assert_eq!(status, SandboxStatus::Applied, "macOS with os_sandbox feature should support sandbox");
+    #[cfg(all(target_o_s = "maco_s", feature = "os_sandbox"))]
+    assert_eq!(statu_s, SandboxStatu_s::Applied, "macOS with os_sandbox feature should support sandbox");
     
     #[cfg(not(feature = "os_sandbox"))]
-    assert_eq!(status, SandboxStatus::Unsupported, "Without os_sandbox feature, sandbox should be unsupported");
+    assert_eq!(statu_s, SandboxStatu_s::Unsupported, "Without os_sandbox feature, sandbox should be unsupported");
 }
 
 /// Performance test - sandbox application should be fast
@@ -205,11 +205,11 @@ fn platform_feature_detection() {
 fn sandbox_application_performance() {
     use std::time::Instant;
     
-    let start = Instant::now();
-    let _status = apply_policy(SandboxPolicy::Minimal);
-    let duration = start.elapsed();
+    let _start = Instant::now();
+    let __statu_s = apply_policy(SandboxPolicy::Minimal);
+    let _duration = start.elapsed();
     
-    // Sandbox application should complete quickly (under 100ms)
-    assert!(duration.as_millis() < 100, 
+    // Sandbox application should complete quickly (under 100m_s)
+    assert!(duration.as_milli_s() < 100, 
             "Sandbox application took too long: {:?}", duration);
 }
