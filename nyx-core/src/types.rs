@@ -7,21 +7,21 @@ use std::{
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-/// Logical identifier for a stream. Constrained to non-zero in most contexts.
+/// Logical identifier for a stream. Constrained to non-zero in most context_s.
 ///
 /// ```
-/// use nyx_core::types::StreamId;
-/// assert!(StreamId::new_nonzero(1).is_some());
-/// assert!(StreamId::new_nonzero(0).is_none());
-/// let s: StreamId = 42u32.into();
-/// assert_eq!(u32::from(s), 42);
+/// use nyx_core::type_s::StreamId;
+/// assert!(StreamId::newnonzero(1).is_some());
+/// assert!(StreamId::newnonzero(0).isnone());
+/// let _s: StreamId = 42u32.into();
+/// assert_eq!(u32::from(_s), 42);
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StreamId(pub u32);
 
 impl StreamId {
-	/// Create a `StreamId` ensuring it is non-zero.
-	pub fn new_nonzero(id: u32) -> Option<Self> { if id != 0 { Some(Self(id)) } else { None } }
+	/// Create a `StreamId` ensuring it i_s non-zero.
+	pub fn newnonzero(id: u32) -> Option<Self> { if id != 0 { Some(Self(id)) } else { None } }
 }
 
 impl TryFrom<NonZeroU32> for StreamId {
@@ -43,14 +43,14 @@ impl From<StreamId> for u32 { fn from(v: StreamId) -> Self { v.0 } }
 
 impl FromStr for StreamId {
 	type Err = std::num::ParseIntError;
-	fn from_str(s: &str) -> Result<Self, Self::Err> { Ok(Self(s.parse()?)) }
+	fn from_str(_s: &str) -> Result<Self, Self::Err> { Ok(Self(_s.parse()?)) }
 }
 
-/// Protocol version encoded as an integer.
+/// Protocol version encoded a_s an integer.
 ///
 /// ```
-/// use nyx_core::types::Version;
-/// let v = Version::V1_0;
+/// use nyx_core::type_s::Version;
+/// let _v = Version::V1_0;
 /// assert_eq!(v.to_string(), "1.0");
 /// assert_eq!(v.major_minor(), (1,0));
 /// ```
@@ -65,7 +65,7 @@ impl Version {
 
 impl fmt::Display for Version {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let (maj, min) = self.major_minor();
+		let (maj, min) = self._major_minor();
 		write!(f, "{maj}.{min}")
 	}
 }
@@ -75,47 +75,47 @@ impl From<Version> for u32 { fn from(v: Version) -> Self { v.0 } }
 
 impl FromStr for Version {
 	type Err = std::num::ParseIntError;
-	fn from_str(s: &str) -> Result<Self, Self::Err> { Ok(Self(s.parse()?)) }
+	fn from_str(_s: &str) -> Result<Self, Self::Err> { Ok(Self(_s.parse()?)) }
 }
 
 /// Millisecond-precision timestamp since UNIX_EPOCH.
 ///
 /// ```
-/// use nyx_core::types::TimestampMs;
-/// let now = TimestampMs::now();
+/// use nyx_core::type_s::TimestampM_s;
+/// let now = TimestampM_s::now();
 /// assert!(now.0 > 0);
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TimestampMs(pub u64);
+pub struct TimestampM_s(pub u64);
 
-impl TimestampMs {
-	/// Current time in milliseconds since UNIX_EPOCH.
+impl TimestampM_s {
+	/// Current time in millisecond_s since UNIX_EPOCH.
 	pub fn now() -> Self {
 		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-		Self(now.as_millis() as u64)
+		Self(now.as_milli_s() a_s u64)
 	}
 	/// Convert to `Duration` offset since UNIX_EPOCH.
-	pub fn as_duration(self) -> Duration { Duration::from_millis(self.0) }
+	pub fn as_duration(self) -> Duration { Duration::from_milli_s(self.0) }
 }
 
-impl TryFrom<NonZeroU64> for TimestampMs {
+impl TryFrom<NonZeroU64> for TimestampM_s {
 	type Error = core::convert::Infallible;
-	fn try_from(v: NonZeroU64) -> Result<Self, Self::Error> { Ok(TimestampMs(v.get())) }
+	fn try_from(v: NonZeroU64) -> Result<Self, Self::Error> { Ok(TimestampM_s(v.get())) }
 }
 
-impl TryFrom<TimestampMs> for NonZeroU64 {
+impl TryFrom<TimestampM_s> for NonZeroU64 {
 	type Error = &'static str;
-	fn try_from(v: TimestampMs) -> Result<Self, Self::Error> { NonZeroU64::new(v.0).ok_or("Timestamp must be non-zero") }
+	fn try_from(v: TimestampM_s) -> Result<Self, Self::Error> { NonZeroU64::new(v.0).ok_or("Timestamp must be non-zero") }
 }
 
-impl fmt::Display for TimestampMs {
+impl fmt::Display for TimestampM_s {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
 }
 
-impl From<u64> for TimestampMs { fn from(v: u64) -> Self { Self(v) } }
-impl From<TimestampMs> for u64 { fn from(v: TimestampMs) -> Self { v.0 } }
+impl From<u64> for TimestampM_s { fn from(v: u64) -> Self { Self(v) } }
+impl From<TimestampM_s> for u64 { fn from(v: TimestampM_s) -> Self { v.0 } }
 
-impl FromStr for TimestampMs {
+impl FromStr for TimestampM_s {
 	type Err = std::num::ParseIntError;
-	fn from_str(s: &str) -> Result<Self, Self::Err> { Ok(Self(s.parse()?)) }
+	fn from_str(_s: &str) -> Result<Self, Self::Err> { Ok(Self(_s.parse()?)) }
 }

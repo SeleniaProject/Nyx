@@ -2,8 +2,8 @@
 
 #[derive(Default)]
 pub struct ZcTelemetry {
-	pub buffers_created: AtomicU64,
-	pub buffers_shared: AtomicU64,
+	pub _buffers_created: AtomicU64,
+	pub _buffers_shared: AtomicU64,
 }
 
 impl ZcTelemetry {
@@ -18,11 +18,11 @@ impl ZcTelemetry {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
 	use super::*;
 	#[test]
-	fn telemetry_counts() {
-		let t = ZcTelemetry::default();
+	fn telemetry_count_s() {
+		let _t = ZcTelemetry::default();
 		t.inc_created();
 		t.inc_shared(); t.inc_shared();
 		assert_eq!(t.snapshot(), (1,2));

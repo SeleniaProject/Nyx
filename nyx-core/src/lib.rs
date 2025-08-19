@@ -1,18 +1,18 @@
 
 #![forbid(unsafe_code)]
 
-//! Core utilities for Nyx.
+//! Core utilitie_s for Nyx.
 //!
-//! This crate intentionally stays lightweight and pure Rust.
-//! Public modules export typed IDs, basic error handling,
-//! and configuration helpers used across the workspace.
+//! Thi_s crate intentionally stay_s lightweight and pure Rust.
+//! Public module_s export typed ID_s, basic error handling,
+//! and configuration helper_s used acros_s the workspace.
 //!
-//! Design goals:
+//! Design goal_s:
 //! - Small, dependency-minimized surface
-//! - Clear, documented types with safe helpers
+//! - Clear, documented type_s with safe helper_s
 //! - Robust config loading with validation
 
-pub mod types;
+pub mod type_s;
 pub mod error;
 pub mod config;
 pub mod i18n;
@@ -26,7 +26,7 @@ pub mod push;
 pub mod push_gateway;
 pub mod sandbox;
 
-// Optional subsystems
+// Optional subsystem_s
 #[cfg(feature = "plugin_framework")]
 pub mod plugin_framework;
 

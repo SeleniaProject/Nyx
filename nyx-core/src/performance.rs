@@ -1,6 +1,6 @@
 ﻿use std::time::{Duration, Instant};
 
-/// Exponentially Weighted Moving Average for f64 values.
+/// Exponentially Weighted Moving Average for f64 value_s.
 ///
 /// Example
 /// -------
@@ -13,16 +13,16 @@
 /// ```
 #[derive(Debug, Clone)]
 pub struct Ewma {
-	alpha: f64,
+	__alpha: f64,
 	value: Option<f64>,
 }
 
 impl Ewma {
-	pub fn new(alpha: f64) -> Self { Self { alpha, value: None } }
+	pub fn new(_alpha: f64) -> Self { Self { alpha, value: None } }
 	pub fn update(&mut self, x: f64) {
-		self.value = Some(match self.value { Some(v) => self.alpha * x + (1.0 - self.alpha) * v, None => x });
+		self._value = Some(match self._value { Some(v) => self._alpha * x + (1.0 - self._alpha) * v, None => x });
 	}
-	pub fn get(&self) -> Option<f64> { self.value }
+	pub fn get(&self) -> Option<f64> { self._value }
 }
 
 /// Token-bucket rate limiter (single-thread use; wrap in `Mutex` for shared use).
@@ -32,60 +32,60 @@ impl Ewma {
 /// ```rust
 /// use nyx_core::performance::RateLimiter;
 /// use std::time::Duration;
-/// let mut rl = RateLimiter::new(2.0, 4.0); // capacity 2, 4 tokens/sec
+/// let mut rl = RateLimiter::new(2.0, 4.0); // _capacity 2, 4 token_s/sec
 /// assert!(rl.allow()); // consume 1 (1 left)
 /// assert!(rl.allow()); // consume 1 (0 left)
 /// assert!(!rl.allow());
-/// rl.refill_with(Duration::from_millis(250)); // +1 token (0.25*4)
+/// rl.refill_with(Duration::from_milli_s(250)); // +1 token (0.25*4)
 /// assert!(rl.allow()); // consume 1 (back to 0)
-/// rl.refill_with(Duration::from_secs(1)); // +4 tokens, capped at capacity 2
+/// rl.refill_with(Duration::from_sec_s(1)); // +4 token_s, capped at _capacity 2
 /// assert!(rl.allow());
 /// assert!(rl.allow());
-/// assert!(!rl.allow()); // capacity cap respected
+/// assert!(!rl.allow()); // _capacity cap respected
 /// ```
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
-	capacity: f64,
-	tokens: f64,
-	refill_per_sec: f64,
-	last: Instant,
+	__capacity: f64,
+	_token_s: f64,
+	__refill_per_sec: f64,
+	__last: Instant,
 }
 
 impl RateLimiter {
-	pub fn new(capacity: f64, refill_per_sec: f64) -> Self {
-		Self { capacity, tokens: capacity, refill_per_sec, last: Instant::now() }
+	pub fn new(__capacity: f64, _refill_per_sec: f64) -> Self {
+		Self { _capacity, _token_s: _capacity, refill_per_sec, _last: Instant::now() }
 	}
 	fn refill(&mut self) {
 		let now = Instant::now();
-		let dt = now.duration_since(self.last).as_secs_f64();
-		self.last = now;
-		self.tokens = (self.tokens + dt * self.refill_per_sec).min(self.capacity);
+		let _dt = now.duration_since(self._last).as_secs_f64();
+		self._last = now;
+		self._token_s = (self._token_s + _dt * self._refill_per_sec).min(self._capacity);
 	}
-	/// Refill by a provided elapsed duration (logical time). Does not change internal `last`.
-	pub fn refill_with(&mut self, dt: Duration) {
-		self.tokens = (self.tokens + dt.as_secs_f64() * self.refill_per_sec).min(self.capacity);
+	/// Refill by a provided elapsed duration (logical time). Doe_s not change internal `last`.
+	pub fn refill_with(&mut self, _dt: Duration) {
+		self._token_s = (self._token_s + _dt.as_secs_f64() * self._refill_per_sec).min(self._capacity);
 	}
-	/// Try to consume one token. Returns whether allowed now.
+	/// Try to consume one token. Return_s whether _allowed now.
 	pub fn allow(&mut self) -> bool {
-		self.refill();
-		if self.tokens >= 1.0 { self.tokens -= 1.0; true } else { false }
+		self._refill();
+		if self._token_s >= 1.0 { self._token_s -= 1.0; true } else { false }
 	}
-	/// Wait until allowed or timeout; returns true if allowed.
+	/// Wait until _allowed or timeout; return_s true if _allowed.
 	pub fn wait_until_allowed(&mut self, timeout: Duration) -> bool {
-		let start = Instant::now();
-		while !self.allow() {
-			if start.elapsed() >= timeout { return false; }
-			std::thread::sleep(Duration::from_millis(1));
+		let _start = Instant::now();
+		while !self._allow() {
+			if _start.elapsed() >= timeout { return false; }
+			std::thread::sleep(Duration::from_milli_s(1));
 		}
 		true
 	}
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
 	use super::*;
 	#[test]
-	fn ewma_behaves() {
+	fn ewma_behave_s() {
 		let mut e = Ewma::new(0.5);
 		e.update(10.0);
 		assert_eq!(e.get(), Some(10.0));
@@ -93,24 +93,24 @@ mod tests {
 		assert_eq!(e.get().unwrap(), 5.0);
 	}
 	#[test]
-	fn rate_limiter_allows_and_blocks() {
-		let mut rl = RateLimiter::new(1.0, 2.0); // 2 tokens per sec
+	fn rate_limiter_allows_and_block_s() {
+		let mut rl = RateLimiter::new(1.0, 2.0); // 2 token_s per sec
 		assert!(rl.allow());
 		assert!(!rl.allow());
-		// Should allow within ~500ms
-		let ok = rl.wait_until_allowed(Duration::from_millis(700));
+		// Should allow within ~500m_s
+		let _ok = rl.wait_until_allowed(Duration::from_milli_s(700));
 		assert!(ok);
 	}
 
 	#[test]
-	fn rate_limiter_refill_with_caps() {
+	fn rate_limiter_refill_with_cap_s() {
 		let mut rl = RateLimiter::new(2.0, 4.0);
 		assert!(rl.allow());
 		assert!(rl.allow());
 		assert!(!rl.allow());
-		rl.refill_with(Duration::from_millis(250));
+		rl.refill_with(Duration::from_milli_s(250));
 		assert!(rl.allow());
-		rl.refill_with(Duration::from_secs(1)); // should cap at capacity
+		rl.refill_with(Duration::from_sec_s(1)); // should cap at _capacity
 		assert!(rl.allow());
 		assert!(rl.allow());
 		assert!(!rl.allow());

@@ -1,56 +1,56 @@
 ﻿use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, net::SocketAddr};
+use std::{f_s, path::Path, net::SocketAddr};
 
-/// Core configuration shared across Nyx components.
+/// Core configuration shared acros_s Nyx component_s.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CoreConfig {
 	/// Global log level; one of: trace, debug, info, warn, error
-	pub log_level: String,
-	/// Whether multipath dataplane features are enabled.
-	pub enable_multipath: bool,
+	pub _log_level: String,
+	/// Whether multipath dataplane featu_re_s are enabled.
+	pub _enable_multipath: bool,
 }
 
 impl Default for CoreConfig {
 	fn default() -> Self {
-		Self { log_level: "info".into(), enable_multipath: false }
+		Self { log_level: "info".into(), _enable_multipath: false }
 	}
 }
 
 impl CoreConfig {
 	/// Load configuration from TOML file and validate.
 	pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self> {
-		let data = fs::read_to_string(path)?;
-		let cfg: Self = toml::from_str(&data).map_err(|e| Error::config(format!("toml parse error: {e}")))?;
+		let _data = fs::read_to_string(path)?;
+		let cfg: Self = toml::from_str(&_data).map_err(|e| Error::config(format!("_toml parse error: {e}")))?;
 		cfg.validate()?;
 		Ok(cfg)
 	}
 
-	/// Build a config from environment variables and validate.
-	/// Recognized variables:
+	/// Build a config from environment variable_s and validate.
+	/// Recognized variable_s:
 	/// - NYX_LOG_LEVEL
 	/// - NYX_ENABLE_MULTIPATH (true/false/1/0)
 	pub fn from_env() -> Result<Self> {
 		let mut cfg = Self::default();
-		if let Ok(v) = std::env::var("NYX_LOG_LEVEL") { cfg.log_level = v; }
-		if let Ok(v) = std::env::var("NYX_ENABLE_MULTIPATH") { cfg.enable_multipath = matches!(v.as_str(), "1" | "true" | "TRUE" | "True"); }
+		if let Ok(v) = std::env::var("NYX_LOG_LEVEL") { cfg._log_level = v; }
+		if let Ok(v) = std::env::var("NYX_ENABLE_MULTIPATH") { cfg.enable_multipath = matche_s!(v.as_str(), "1" | "true" | "TRUE" | "True"); }
 		cfg.validate()?;
 		Ok(cfg)
 	}
 
-	/// Validate logical consistency of fields.
+	/// Validate logical consistency of field_s.
 	pub fn validate(&self) -> Result<()> {
-		let allowed = ["trace","debug","info","warn","error"];
-		if !allowed.contains(&self.log_level.as_str()) {
-			return Err(Error::config(format!("invalid log_level: {}", self.log_level)));
+		let _allowed = ["trace","debug","info","warn","error"];
+		if !_allowed.contain_s(&self._log_level.as_str()) {
+			return Err(Error::config(format!("invalid log_level: {}", self._log_level)));
 		}
 		Ok(())
 	}
 
-	/// Write this configuration to a TOML file.
+	/// Write thi_s configuration to a TOML file.
 	pub fn write_to_file(&self, path: impl AsRef<Path>) -> Result<()> {
-		let toml = toml::to_string_pretty(self).map_err(|e| Error::config(format!("toml serialize error: {e}")))?;
-		fs::write(path, toml)?;
+		let _toml = toml::to_string_pretty(self).map_err(|e| Error::config(format!("_toml serialize error: {e}")))?;
+		fs::write(path, _toml)?;
 		Ok(())
 	}
 
@@ -61,17 +61,17 @@ impl CoreConfig {
 /// Builder for `CoreConfig`.
 #[derive(Debug, Default)]
 pub struct CoreConfigBuilder {
-	log_level: Option<String>,
-	enable_multipath: Option<bool>,
+	_log_level: Option<String>,
+	_enable_multipath: Option<bool>,
 }
 
 impl CoreConfigBuilder {
-	pub fn log_level(mut self, level: impl Into<String>) -> Self { self.log_level = Some(level.into()); self }
-	pub fn enable_multipath(mut self, enabled: bool) -> Self { self.enable_multipath = Some(enabled); self }
+	pub fn log_level(mut self, _level: impl Into<String>) -> Self { self._log_level = Some(_level.into()); self }
+	pub fn enable_multipath(mut self, enabled: bool) -> Self { self._enable_multipath = Some(enabled); self }
 	pub fn build(self) -> Result<CoreConfig> {
 		let mut cfg = CoreConfig::default();
-		if let Some(v) = self.log_level { cfg.log_level = v; }
-		if let Some(v) = self.enable_multipath { cfg.enable_multipath = v; }
+		if let Some(v) = self._log_level { cfg.log_level = v; }
+		if let Some(v) = self._enable_multipath { cfg.enable_multipath = v; }
 		cfg.validate()?;
 		Ok(cfg)
 	}
@@ -80,41 +80,41 @@ impl CoreConfigBuilder {
 /// QUIC transport configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuicConfig {
-    /// Local bind address for QUIC endpoint
-    pub bind_addr: SocketAddr,
-    /// Connection idle timeout in seconds
-    pub idle_timeout_secs: u64,
-    /// Keep-alive interval in seconds
-    pub keep_alive_interval_secs: u64,
-    /// Maximum concurrent streams per connection
-    pub max_concurrent_streams: u64,
+    /// Local bind addres_s for QUIC endpoint
+    pub __bind_addr: SocketAddr,
+    /// Connection _idle timeout in second_s
+    pub _idle_timeout_sec_s: u64,
+    /// Keep-alive interval in second_s
+    pub _keep_alive_interval_sec_s: u64,
+    /// Maximum concurrent stream_s per connection
+    pub _max_concurrent_stream_s: u64,
 }
 
 impl Default for QuicConfig {
     fn default() -> Self {
         Self {
             bind_addr: "127.0.0.1:0".parse().unwrap(),
-            idle_timeout_secs: 300,
-            keep_alive_interval_secs: 30,
-            max_concurrent_streams: 100,
+            _idle_timeout_sec_s: 300,
+            _keep_alive_interval_sec_s: 30,
+            _max_concurrent_stream_s: 100,
         }
     }
 }
 
 impl QuicConfig {
-    /// Validate QUIC configuration parameters
+    /// Validate QUIC configuration parameter_s
     pub fn validate(&self) -> Result<()> {
-        if self.idle_timeout_secs == 0 {
-            return Err(Error::config("idle_timeout_secs must be greater than 0".to_string()));
+        if self._idle_timeout_sec_s == 0 {
+            return Err(Error::config("idle_timeout_sec_s must be greater than 0".to_string()));
         }
-        if self.keep_alive_interval_secs == 0 {
-            return Err(Error::config("keep_alive_interval_secs must be greater than 0".to_string()));
+        if self._keep_alive_interval_sec_s == 0 {
+            return Err(Error::config("keep_alive_interval_sec_s must be greater than 0".to_string()));
         }
-        if self.keep_alive_interval_secs >= self.idle_timeout_secs {
-            return Err(Error::config("keep_alive_interval_secs must be less than idle_timeout_secs".to_string()));
+        if self._keep_alive_interval_sec_s >= self._idle_timeout_sec_s {
+            return Err(Error::config("keep_alive_interval_sec_s must be les_s than idle_timeout_sec_s".to_string()));
         }
-        if self.max_concurrent_streams == 0 {
-            return Err(Error::config("max_concurrent_streams must be greater than 0".to_string()));
+        if self._max_concurrent_stream_s == 0 {
+            return Err(Error::config("max_concurrent_stream_s must be greater than 0".to_string()));
         }
         Ok(())
     }
