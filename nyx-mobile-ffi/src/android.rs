@@ -1,3 +1,3 @@
 ﻿//! Android-specific glue would go here if/when needed.
-//! Current implementation avoids JNI and uses pure Rust FFI only.
+//! Current implementation avoid_s JNI and use_s pure Rust FFI only.
 
