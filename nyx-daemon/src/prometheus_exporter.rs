@@ -9,7 +9,7 @@ use axum::response::IntoResponse;
 use axum::http::header::CONTENT_TYPE;
 use tokio::task::JoinHandle;
 
-use crate::metrics::MetricsCollector;
+use crate::metric_s::MetricsCollector;
 
 #[derive(thiserror::Error, Debug)]
 pub enum PrometheusError {
@@ -20,18 +20,18 @@ pub enum PrometheusError {
 #[derive(Clone)]
 pub struct PrometheusExporter {
 	collector: Arc<MetricsCollector>,
-	addr: SocketAddr,
+	_addr: SocketAddr,
 }
 
 impl PrometheusExporter {
-	pub fn render_metrics(&self) -> String { self.collector.render_prometheus() }
+	pub fn render_metric_s(&self) -> String { self.collector.render_prometheu_s() }
 
 	pub async fn start_server(&self) -> Result<(JoinHandle<()>, SocketAddr), PrometheusError> {
-		let coll = Arc::clone(&self.collector);
-		let app = Router::new().route(
-			"/metrics",
+		let _coll = Arc::clone(&self.collector);
+		let _app = Router::new().route(
+			"/metric_s",
 			get(move || {
-				let txt = coll.render_prometheus();
+				let _txt = coll.render_prometheu_s();
 				async move {
 					let mut resp = txt.into_response();
 					resp.headers_mut().insert(CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8".parse().unwrap());
@@ -39,44 +39,44 @@ impl PrometheusExporter {
 				}
 			}),
 		);
-		let addr = self.addr;
-		let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| PrometheusError::InitializationFailed(e.to_string()))?;
-		let local = listener.local_addr().map_err(|e| PrometheusError::InitializationFailed(e.to_string()))?;
-		let server = tokio::spawn(async move {
-			axum::serve(listener, app).await.expect("serve metrics");
+		let _addr = self.addr;
+		let _listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| PrometheusError::InitializationFailed(e.to_string()))?;
+		let _local = listener.local_addr().map_err(|e| PrometheusError::InitializationFailed(e.to_string()))?;
+		let _server = tokio::spawn(async move {
+			axum::serve(listener, app).await?;
 		});
 		Ok((server, local))
 	}
 }
 
 pub struct PrometheusExporterBuilder {
-	addr: SocketAddr,
-	interval: Duration,
+	_addr: SocketAddr,
+	_interval: Duration,
 }
 
 impl Default for PrometheusExporterBuilder {
-	fn default() -> Self { Self { addr: "127.0.0.1:9090".parse().unwrap(), interval: Duration::from_secs(15) } }
+	fn default() -> Self { Self { addr: "127.0.0.1:9090".parse().unwrap(), interval: Duration::from_sec_s(15) } }
 }
 
 impl PrometheusExporterBuilder {
 	pub fn new() -> Self { Self::default() }
 	pub fn with_server_addr(mut self, addr: SocketAddr) -> Self { self.addr = addr; self }
-	pub fn with_interval_secs(mut self, secs: u64) -> Self { self.interval = Duration::from_secs(secs); self }
+	pub fn with_interval_sec_s(mut self, sec_s: u64) -> Self { self.interval = Duration::from_sec_s(sec_s); self }
 
 	pub fn build(self, collector: Arc<MetricsCollector>) -> Result<(PrometheusExporter, JoinHandle<()>), PrometheusError> {
-		let exporter = PrometheusExporter { collector: Arc::clone(&collector), addr: self.addr };
-		let handle = collector.start_collection(self.interval);
+		let _exporter = PrometheusExporter { collector: Arc::clone(&collector), addr: self.addr };
+		let _handle = collector.start_collection(self.interval);
 		Ok((exporter, handle))
 	}
 }
 
-/// Start exporter if `NYX_PROMETHEUS_ADDR` is set.
-/// Returns (server_handle, bound_addr, collector_handle) on success.
+/// Start exporter if `NYX_PROMETHEUS_ADDR` i_s set.
+/// Return_s (server_handle, bound_addr, collector_handle) on succes_s.
 pub async fn maybe_start_from_env(collector: Arc<MetricsCollector>) -> Option<(JoinHandle<()>, SocketAddr, JoinHandle<()>)> {
-	let addr_env = std::env::var("NYX_PROMETHEUS_ADDR").ok()?;
+	let _addr_env = std::env::var("NYX_PROMETHEUS_ADDR").ok()?;
 	let addr: SocketAddr = match addr_env.parse() { Ok(a) => a, Err(_) => return None };
-	let interval = std::env::var("NYX_PROMETHEUS_INTERVAL").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(15);
-	let builder = PrometheusExporterBuilder::new().with_server_addr(addr).with_interval_secs(interval);
+	let _interval = std::env::var("NYX_PROMETHEUS_INTERVAL").ok().and_then(|_s| _s.parse::<u64>().ok()).unwrap_or(15);
+	let _builder = PrometheusExporterBuilder::new().with_server_addr(addr).with_interval_sec_s(interval);
 	match builder.build(collector) {
 		Ok((exporter, coll_handle)) => match exporter.start_server().await {
 			Ok((srv, bound)) => Some((srv, bound, coll_handle)),

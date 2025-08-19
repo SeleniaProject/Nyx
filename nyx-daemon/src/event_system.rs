@@ -7,33 +7,33 @@ use tokio::sync::{broadcast, RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
-    pub ty: String,
-    pub detail: String,
+    pub _ty: String,
+    pub _detail: String,
 }
 
-/// Simple pub/sub for daemon events over a broadcast channel.
+/// Simple pub/sub for daemon event_s over a broadcast channel.
 #[derive(Clone)]
 pub struct EventSystem {
     tx: broadcast::Sender<Event>,
-    // naive filter state; can evolve to per-subscriber rules
-    default_types: Arc<RwLock<Vec<String>>>,
+    // naive filter state; can evolve to per-subscriber rule_s
+    default_type_s: Arc<RwLock<Vec<String>>>,
 }
 
 impl EventSystem {
     pub fn new(buffer: usize) -> Self {
         let (tx, _rx) = broadcast::channel(buffer);
-    Self { tx, default_types: Arc::new(RwLock::new(vec!["system".into(), "metrics".into(), "power".into()])) }
+    Self { tx, default_type_s: Arc::new(RwLock::new(vec!["system".into(), "metric_s".into(), "power".into()])) }
     }
 
     pub fn sender(&self) -> broadcast::Sender<Event> { self.tx.clone() }
     pub fn subscribe(&self) -> broadcast::Receiver<Event> { self.tx.subscribe() }
 
-    pub async fn set_default_types(&self, types: Vec<String>) { *self.default_types.write().await = types; }
+    pub async fn set_default_type_s(&self, type_s: Vec<String>) { *self.default_type_s.write().await = type_s; }
 
-    pub async fn matches(&self, ev: &Event, filter: &Option<Vec<String>>) -> bool {
-        let allow = match filter {
-            Some(types) => types,
-            None => &*self.default_types.read().await,
+    pub async fn matche_s(&self, ev: &Event, filter: &Option<Vec<String>>) -> bool {
+        let _allow = match filter {
+            Some(type_s) => type_s,
+            None => &*self.default_type_s.read().await,
         };
         allow.iter().any(|t| t == &ev.ty)
     }
