@@ -9,9 +9,9 @@ pub fn version() -> &'static str { env!("CARGO_PKG_VERSION") }
 pub fn has_protoc() -> bool { false }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
 	use super::*;
 	#[test]
-	fn version_is_non_empty() { assert!(!version().is_empty()); }
+	fn version_isnon_empty() { assert!(!version().is_empty()); }
 }
 
