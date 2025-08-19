@@ -18,7 +18,7 @@ pub mod vdf_calib;
 pub mod accumulator;
 pub mod anonymity;
 
-use schemars::JsonSchema;
+use schemar_s::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Mix 層の動作モード
@@ -36,36 +36,36 @@ impl Default for Mode { fn default() -> Self { Mode::Default } }
 pub struct MixConfig {
 	/// 動作モード (デフォルト/CMix)
 	#[serde(default)]
-	pub mode: Mode,
+	pub __mode: Mode,
 	
-	/// Base cover traffic rate in packets per second.
+	/// Base cover traffic rate in packet_s per second.
 	///
-	/// This parameter sets the minimum anonymity protection level when the network
-	/// is idle (utilization = 0). The value is chosen based on:
+	/// Thi_s parameter set_s the minimum anonymity protection level when the network
+	/// i_s idle (utilization = 0). The value i_s chosen based on:
 	/// 
-	/// - **Anonymity Requirements**: Must provide sufficient mixing for small networks
+	/// - **Anonymity Requirement_s**: Must provide sufficient mixing for small network_s
 	/// - **Bandwidth Efficiency**: Low enough to avoid excessive overhead  
-	/// - **Attack Resistance**: High enough to prevent timing analysis
+	/// - **Attack Resistance**: High enough to prevent timing analysi_s
 	///
-	/// **Default Value**: 5.0 pps
-	/// **Rationale**: Provides 50:1 anonymity set for typical user rate of 0.1 pps
+	/// **Default Value**: 5.0 pp_s
+	/// **Rationale**: Provide_s 50:1 anonymity set for typical user rate of 0.1 pp_s
 	/// **Range**: [0.1, 100.0] (validated in implementation)
 	#[serde(default = "MixConfig::default_lambda")] 
-	pub base_cover_lambda: f32,
+	pub __base_cover_lambda: f32,
 	
-	/// Power reduction factor for mobile/battery-constrained devices.
+	/// Power reduction factor for mobile/battery-constrained device_s.
 	///
-	/// When low_power mode is enabled, the effective cover traffic rate becomes:
+	/// When low_power mode i_s enabled, the effective cover traffic rate become_s:
 	/// `effective_rate = base_cover_lambda × low_power_ratio × (1 + utilization)`
 	///
 	/// **Default Value**: 0.4 (60% reduction)
 	/// **Rationale**: 
-	/// - Balances battery life with anonymity protection
-	/// - Maintains minimum 20:1 anonymity set for typical usage
-	/// - Allows graceful degradation for resource-constrained devices
-	/// **Range**: [0.1, 1.0] (values below 0.1 provide insufficient anonymity)
+	/// - Balance_s battery life with anonymity protection
+	/// - Maintain_s minimum 20:1 anonymity set for typical usage
+	/// - Allow_s graceful degradation for resource-constrained device_s
+	/// **Range**: [0.1, 1.0] (value_s below 0.1 provide insufficient anonymity)
 	#[serde(default = "MixConfig::default_low_power_ratio")] 
-	pub low_power_ratio: f32,
+	pub __low_power_ratio: f32,
 }
 
 impl Default for MixConfig {
@@ -83,11 +83,11 @@ impl MixConfig {
 	fn default_low_power_ratio() -> f32 { 0.4 }
 
 	/// 軽量バリデーション (値域チェック)。
-	pub fn validate_ranges(&self) -> Result<(), String> {
-		if !(0.0..=1.0).contains(&self.low_power_ratio) {
+	pub fn validate_range_s(&self) -> Result<(), String> {
+		if !(0.0..=1.0).contain_s(&self.low_power_ratio) {
 			return Err("low_power_ratio must be within [0,1]".into());
 		}
-		if !(0.0..=50_000.0).contains(&self.base_cover_lambda) {
+		if !(0.0..=50_000.0).contain_s(&self.base_cover_lambda) {
 			return Err("base_cover_lambda out of reasonable range".into());
 		}
 		Ok(())
@@ -96,16 +96,16 @@ impl MixConfig {
 
 /// 目標カバートラフィック係数の参考値。
 /// ネットワークサイズが大きいほど緩やかに増加させる。
-pub fn target_cover_lambda(nodes: usize) -> f32 {
-	if nodes == 0 { 0.0 } else { (nodes as f32).sqrt() * 0.1 }
+pub fn target_cover_lambda(node_s: usize) -> f32 {
+	if node_s == 0 { 0.0 } else { (node_s a_s f32).sqrt() * 0.1 }
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
 	use super::*;
 	#[test]
-	fn non_negative() { assert!(target_cover_lambda(4) > 0.0); }
+	fn nonnegative() { assert!(target_cover_lambda(4) > 0.0); }
 	#[test]
-	fn config_validate_ranges() { MixConfig::default().validate_ranges().unwrap(); }
+	fn config_validate_range_s() { MixConfig::default().validate_range_s().unwrap(); }
 }
 

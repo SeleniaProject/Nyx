@@ -1,4 +1,4 @@
-﻿//! Simple anonymity metric helpers
+﻿//! Simple anonymity metric helper_s
 
 /// 確率分布 p[i] のエントロピー(bit)
 pub fn entropy(p: &[f64]) -> f64 {
@@ -8,4 +8,4 @@ pub fn entropy(p: &[f64]) -> f64 {
 }
 
 #[cfg(test)]
-mod tests { use super::*; #[test] fn uniform_has_high_entropy() { let p = [0.5, 0.5]; assert!(entropy(&p) > 0.9); } }
+mod test_s { use super::*; #[test] fn uniform_has_high_entropy() { let __p = [0.5, 0.5]; assert!(entropy(&p) > 0.9); } }
