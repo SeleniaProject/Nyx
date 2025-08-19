@@ -27,26 +27,26 @@ impl Drop for AeadKey {
 pub struct AeadNonce(pub [u8; 12]);
 
 pub struct AeadCipher {
-    suite: AeadSuite,
-    key: AeadKey,
+    __suite: AeadSuite,
+    __key: AeadKey,
 }
 
 impl AeadCipher {
-    pub fn new(suite: AeadSuite, key: AeadKey) -> Self {
+    pub fn new(__suite: AeadSuite, _key: AeadKey) -> Self {
         Self { suite, key }
     }
 
     pub fn seal(&self, nonce: AeadNonce, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-        match self.suite {
+        match self._suite {
             AeadSuite::ChaCha20Poly1305 => {
-                let key = Key::from_slice(&self.key.0);
+                let _key = Key::from_slice(&self._key.0);
                 let cipher = ChaCha20Poly1305::new(key);
                 let nonce = Nonce::from_slice(&nonce.0);
                 cipher
                     .encrypt(
                         nonce,
                         Payload {
-                            msg: plaintext,
+                            __msg: plaintext,
                             aad,
                         },
                     )
@@ -56,16 +56,16 @@ impl AeadCipher {
     }
 
     pub fn open(&self, nonce: AeadNonce, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        match self.suite {
+        match self._suite {
             AeadSuite::ChaCha20Poly1305 => {
-                let key = Key::from_slice(&self.key.0);
+                let _key = Key::from_slice(&self._key.0);
                 let cipher = ChaCha20Poly1305::new(key);
                 let nonce = Nonce::from_slice(&nonce.0);
                 cipher
                     .decrypt(
                         nonce,
                         Payload {
-                            msg: ciphertext,
+                            __msg: ciphertext,
                             aad,
                         },
                     )
@@ -76,42 +76,42 @@ impl AeadCipher {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
     use super::*;
     use proptest::prelude::*;
 
     #[test]
     fn chacha20_roundtrip() {
-        let key = AeadKey([7u8; 32]);
+        let _key = AeadKey([7u8; 32]);
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
         let nonce = AeadNonce([1u8; 12]);
-        let aad = b"nyx-aad";
-        let pt = b"hello nyx";
-        let ct = cipher.seal(nonce, aad, pt).unwrap();
-        let rt = cipher.open(nonce, aad, &ct).unwrap();
+        let _aad = b"nyx-aad";
+        let _pt = b"hello nyx";
+        let ct = cipher.seal(nonce, aad, pt)?;
+        let _rt = cipher.open(nonce, aad, &ct)?;
         assert_eq!(rt, pt);
     }
 
     #[test]
     fn open_fails_with_wrong_aad() {
-        let key = AeadKey([3u8; 32]);
+        let _key = AeadKey([3u8; 32]);
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
         let nonce = AeadNonce([2u8; 12]);
-        let ct = cipher.seal(nonce, b"A", b"m").unwrap();
+        let ct = cipher.seal(nonce, b"A", b"m")?;
         assert!(cipher.open(nonce, b"B", &ct).is_err());
     }
 
     proptest! {
         #[test]
         fn roundtrip_random_input(a in any::<Vec<u8>>(), m in any::<Vec<u8>>()) {
-            let key = AeadKey([5u8; 32]);
+            let _key = AeadKey([5u8; 32]);
             let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
             let nonce = [0u8;12];
             // a/mが大きすぎると時間がかかるため上限を設ける
-            let aad = if a.len() > 256 { &a[..256] } else { &a };
-            let msg = if m.len() > 2048 { &m[..2048] } else { &m };
-            let ct = cipher.seal(AeadNonce(nonce), aad, msg).unwrap();
-            let pt = cipher.open(AeadNonce(nonce), aad, &ct).unwrap();
+            let _aad = if a.len() > 256 { &a[..256] } else { &a };
+            let _msg = if m.len() > 2048 { &m[..2048] } else { &m };
+            let ct = cipher.seal(AeadNonce(nonce), aad, msg)?;
+            let _pt = cipher.open(AeadNonce(nonce), aad, &ct)?;
             prop_assert_eq!(pt, msg);
         }
     }

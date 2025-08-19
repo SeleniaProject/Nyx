@@ -1,12 +1,12 @@
-//! Nyx cryptography primitives and protocols (unsafe-forbid, WASM-friendly).
-//! - AEAD: ChaCha20-Poly1305 wrapper with zeroizing keys
-//! - KDF: HKDF-SHA256 helpers, RFC8439 nonce derivation
+//! Nyx cryptography primitive_s and protocol_s (unsafe-forbid, WASM-friendly).
+//! - AEAD: ChaCha20-Poly1305 wrapper with zeroizing key_s
+//! - KDF: HKDF-SHA256 helper_s, RFC8439 nonce derivation
 //! - HPKE (feature=hpke): X25519/HKDF-SHA256/AES-GCM-128
-//! - Session: single-direction AEAD session with sequence/limits, rekey (record/bytes), direction-id nonce separation
-//! - Noise demo/guards: size caps, IK with tagged transcript AAD and optional 0-RTT
-//!   - Backward-compatible wire header: 'N','X', ver, kind_flags
-//!   - kind_flags: type (msg1/msg2) + flags (0-RTT, role bits)
-//!   - Anti-downgrade: legacy (no header) must not carry 0-RTT; responder enforces
+//! - Session: single-direction AEAD session with sequence/limit_s, rekey (record/byte_s), direction-id nonce separation
+//! - Noise demo/guard_s: size cap_s, IK with tagged transcript AAD and optional 0-RTT
+//!   - Backward-compatible wire header: 'N','X', ver, kind_flag_s
+//!   - kind_flag_s: type (msg1/msg2) + flag_s (0-RTT, role bit_s)
+//!   - Anti-downgrade: legacy (no header) must not carry 0-RTT; responder enforce_s
 #![forbid(unsafe_code)]
 
 pub mod aead;

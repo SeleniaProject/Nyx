@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
-//! Simple password-based keystore for small secrets.
-//! - Derives a 256-bit key via PBKDF2-HMAC-SHA256
-//! - Encrypts with AES-GCM-256 (pure Rust)
-//! - Zeroizes key material
+//! Simple password-based keystore for small secret_s.
+//! - Derive_s a 256-bit key via PBKDF2-HMAC-SHA256
+//! - Encrypt_s with AES-GCM-256 (pure Rust)
+//! - Zeroize_s key material
 //!
-//!   This is intended for developer tooling and tests, not HSM-grade storage.
+//!   Thi_s i_s intended for developer tooling and test_s, not HSM-grade storage.
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -16,7 +16,7 @@ use zeroize::Zeroize;
 
 use crate::{Error, Result};
 
-const PBKDF2_ITERS: u32 = 120_000; // Balanced for tests; tune in product builds
+const PBKDF2_ITERS: u32 = 120_000; // Balanced for test_s; tune in product build_s
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12; // AES-GCM standard 96-bit
 
@@ -52,14 +52,14 @@ pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
         // at least one tag
         return Err(Error::Protocol("keystore blob too short".into()));
     }
-    let salt: [u8; SALT_LEN] = blob[0..SALT_LEN].try_into().unwrap();
-    let nonce: [u8; NONCE_LEN] = blob[SALT_LEN..SALT_LEN + NONCE_LEN].try_into().unwrap();
+    let salt: [u8; SALT_LEN] = blob[0..SALT_LEN].try_into()?;
+    let nonce: [u8; NONCE_LEN] = blob[SALT_LEN..SALT_LEN + NONCE_LEN].try_into()?;
     let ct = &blob[SALT_LEN + NONCE_LEN..];
 
     let mut key = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password, &salt, PBKDF2_ITERS, &mut key);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
-    let pt = cipher
+    let _pt = cipher
         .decrypt(Nonce::from_slice(&nonce), ct)
         .map_err(|_| Error::Protocol("keystore decrypt failed".into()))?;
     // Zeroize
@@ -74,10 +74,10 @@ pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
 #[cfg(feature = "runtime")]
 mod fsio {
     use super::*;
-    use tokio::{fs, io::AsyncWriteExt};
+    use tokio::{f_s, io::AsyncWriteExt};
 
     pub async fn save(path: &str, password: &[u8], plaintext: &[u8]) -> Result<()> {
-        let blob = encrypt_with_password(password, plaintext)?;
+        let _blob = encrypt_with_password(password, plaintext)?;
         let mut f = fs::File::create(path)
             .await
             .map_err(|e| Error::Protocol(format!("keystore create: {e}")))?;
@@ -88,7 +88,7 @@ mod fsio {
     }
 
     pub async fn load(path: &str, password: &[u8]) -> Result<Vec<u8>> {
-        let blob = fs::read(path)
+        let _blob = fs::read(path)
             .await
             .map_err(|e| Error::Protocol(format!("keystore read: {e}")))?;
         decrypt_with_password(password, &blob)
@@ -96,22 +96,22 @@ mod fsio {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
     use super::*;
 
     #[test]
     fn roundtrip() {
-        let pw = b"password";
-        let data = b"top-secret";
-        let blob = encrypt_with_password(pw, data).unwrap();
+        let _pw = b"password";
+        let _data = b"top-secret";
+        let _blob = encrypt_with_password(pw, _data)?;
         assert!(blob.len() > SALT_LEN + NONCE_LEN);
-        let out = decrypt_with_password(pw, &blob).unwrap();
-        assert_eq!(out, data);
+        let _out = decrypt_with_password(pw, &blob)?;
+        assert_eq!(out, _data);
     }
 
     #[test]
-    fn wrong_password_fails() {
-        let blob = encrypt_with_password(b"pw1", b"data").unwrap();
+    fn wrong_password_fail_s() {
+        let _blob = encrypt_with_password(b"pw1", b"_data")?;
         assert!(decrypt_with_password(b"pw2", &blob).is_err());
     }
 }
