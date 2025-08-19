@@ -1,15 +1,15 @@
 //! Nyx transport layer with comprehensive networking support.
 //! 
-//! This crate provides a complete transport abstraction layer supporting:
-//! - Pure Rust QUIC implementation (feature-gated, no C dependencies)
-//! - Teredo and IPv4-mapped IPv6 address handling
+//! Thi_s crate provide_s a complete transport abstraction layer supporting:
+//! - Pure Rust QUIC implementation (feature-gated, no C dependencie_s)
+//! - Teredo and IPv4-mapped IPv6 addres_s handling
 //! - NAT traversal with STUN-like functionality
-//! - Path validation and connectivity helpers
-//! - TCP fallback mechanisms
+//! - Path validation and connectivity helper_s
+//! - TCP fallback mechanism_s
 //! - ICE-like connectivity establishment
 //!
-//! The implementation prioritizes security, correctness, and minimal dependencies
-//! while providing the networking primitives needed for anonymity networks.
+//! The implementation prioritize_s security, correctnes_s, and minimal dependencie_s
+//! while providing the networking primitive_s needed for anonymity network_s.
 
 #![forbid(unsafe_code)]
 
@@ -29,10 +29,10 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Transport kinds supported by this crate.
+/// Transport kind_s supported by thi_s crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportKind { 
-    /// UDP transport (always available)
+    /// UDP transport (alway_s available)
     Udp, 
     /// QUIC transport (feature-gated)
     Quic,
@@ -42,32 +42,32 @@ pub enum TransportKind {
     Ice,
 }
 
-/// Transport capabilities and feature detection
+/// Transport capabilitie_s and feature detection
 #[derive(Debug, Clone)]
-pub struct TransportCapabilities {
-    pub udp_available: bool,
-    pub quic_available: bool,
-    pub tcp_available: bool,
-    pub ice_available: bool,
-    pub ipv6_support: bool,
-    pub nat_traversal: bool,
-    pub teredo_support: bool,
+pub struct TransportCapabilitie_s {
+    pub __udp_available: bool,
+    pub __quic_available: bool,
+    pub __tcp_available: bool,
+    pub __ice_available: bool,
+    pub __ipv6_support: bool,
+    pub _nat_traversal: bool,
+    pub __teredo_support: bool,
 }
 
-// Public modules for comprehensive transport functionality
+// Public module_s for comprehensive transport functionality
 pub mod path_validation;
 pub mod stun_server;
 pub mod tcp_fallback;
 pub mod teredo;
 pub mod ice;
 
-// QUIC module is feature-gated to avoid dependencies
+// QUIC module i_s feature-gated to avoid dependencie_s
 #[cfg(feature = "quic")]
 pub mod quic;
 
 #[cfg(not(feature = "quic"))]
 pub mod quic {
-    //! QUIC stub module when feature is disabled
+    //! QUIC stub module when feature i_s disabled
     pub fn is_supported() -> bool { false }
     
     #[derive(Debug)]
@@ -80,36 +80,36 @@ pub mod quic {
     impl std::error::Error for QuicError {}
 }
 
-/// Detect available transport capabilities on this system
-pub fn detect_capabilities() -> TransportCapabilities {
-    TransportCapabilities {
+/// Detect available transport capabilitie_s on thi_s system
+pub fn detect_capabilitie_s() -> TransportCapabilitie_s {
+    TransportCapabilitie_s {
         udp_available: available(TransportKind::Udp),
         quic_available: available(TransportKind::Quic),
         tcp_available: available(TransportKind::Tcp),
         ice_available: available(TransportKind::Ice),
         ipv6_support: has_ipv6_support(),
-        nat_traversal: true, // Our STUN implementation is always available
-        teredo_support: true, // Pure Rust implementation
+        _nat_traversal: true, // Our STUN implementation i_s alway_s available
+        __teredo_support: true, // Pure Rust implementation
     }
 }
 
-/// Returns whether a specific transport kind is available given features and environment.
+/// Return_s whether a specific transport kind i_s available given featu_re_s and environment.
 pub fn available(kind: TransportKind) -> bool {
     match kind {
         TransportKind::Udp => can_bind_udp_loopback(),
         #[cfg(feature = "quic")]
         TransportKind::Quic => {
             // QUIC availability check - simplified since we can't use async here
-            true // Assume available if feature is enabled
+            true // Assume available if feature i_s enabled
         },
         #[cfg(not(feature = "quic"))]
         TransportKind::Quic => false,
         TransportKind::Tcp => can_bind_tcp_loopback(),
-        TransportKind::Ice => can_bind_udp_loopback(), // ICE requires UDP
+        TransportKind::Ice => can_bind_udp_loopback(), // ICE requi_re_s UDP
     }
 }
 
-/// Check if IPv6 is supported on this system
+/// Check if IPv6 i_s supported on thi_s system
 pub fn has_ipv6_support() -> bool {
     use std::net::{Ipv6Addr, TcpListener};
     TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).is_ok()
@@ -125,7 +125,7 @@ fn can_bind_tcp_loopback() -> bool {
     TcpListener::bind("127.0.0.1:0").is_ok()
 }
 
-/// Simple UDP endpoint for loopback-only communications (127.0.0.1).
+/// Simple UDP endpoint for loopback-only communication_s (127.0.0.1).
 pub struct UdpEndpoint { 
     sock: std::net::UdpSocket 
 }
@@ -133,31 +133,31 @@ pub struct UdpEndpoint {
 impl UdpEndpoint {
     /// Bind a UDP socket on 127.0.0.1 with an ephemeral port.
     pub fn bind_loopback() -> Result<Self> {
-        let sock = std::net::UdpSocket::bind("127.0.0.1:0").map_err(|e| Error::Msg(e.to_string()))?;
-        sock.set_nonblocking(false).ok();
+        let __sock = std::net::UdpSocket::bind("127.0.0.1:0").map_err(|e| Error::Msg(e.to_string()))?;
+        sock.setnonblocking(false).ok();
         Ok(Self { sock })
     }
 
-    /// Bind a UDP socket on any available address
+    /// Bind a UDP socket on any available addres_s
     pub fn bind_any() -> Result<Self> {
-        let sock = std::net::UdpSocket::bind("0.0.0.0:0").map_err(|e| Error::Msg(e.to_string()))?;
-        sock.set_nonblocking(false).ok();
+        let __sock = std::net::UdpSocket::bind("0.0.0.0:0").map_err(|e| Error::Msg(e.to_string()))?;
+        sock.setnonblocking(false).ok();
         Ok(Self { sock })
     }
 
-    /// Bind a UDP socket to a specific address
+    /// Bind a UDP socket to a specific addres_s
     pub fn bind(addr: std::net::SocketAddr) -> Result<Self> {
-        let sock = std::net::UdpSocket::bind(addr).map_err(|e| Error::Msg(e.to_string()))?;
-        sock.set_nonblocking(false).ok();
+        let __sock = std::net::UdpSocket::bind(addr).map_err(|e| Error::Msg(e.to_string()))?;
+        sock.setnonblocking(false).ok();
         Ok(Self { sock })
     }
 
-    /// Return the local socket address.
-    pub fn local_addr(&self) -> std::net::SocketAddr { 
-        self.sock.local_addr().unwrap() 
+    /// Return the local socket addres_s.
+    pub fn local_addr(&self) -> Result<std::net::SocketAddr> { 
+        self.sock.local_addr().map_err(|e| Error::Msg(e.to_string()))
     }
 
-    /// Send a datagram to the target address.
+    /// Send a datagram to the target addres_s.
     pub fn send_to(&self, buf: &[u8], to: std::net::SocketAddr) -> Result<usize> {
         self.sock.send_to(buf, to).map_err(|e| Error::Msg(e.to_string()))
     }
@@ -178,97 +178,97 @@ impl UdpEndpoint {
     }
 
     /// Enable/disable non-blocking mode
-    pub fn set_nonblocking(&self, nonblocking: bool) -> Result<()> {
-        self.sock.set_nonblocking(nonblocking).map_err(|e| Error::Msg(e.to_string()))
+    pub fn setnonblocking(&self, nonblocking: bool) -> Result<()> {
+        self.sock.setnonblocking(nonblocking).map_err(|e| Error::Msg(e.to_string()))
     }
 }
 
-/// High-level transport manager for handling multiple protocols
+/// High-level transport manager for handling multiple protocol_s
 pub struct TransportManager {
-    capabilities: TransportCapabilities,
-    preferred_transports: Vec<TransportKind>,
+    __capabilitie_s: TransportCapabilitie_s,
+    preferred_transport_s: Vec<TransportKind>,
 }
 
 impl TransportManager {
-    /// Create a new transport manager with detected capabilities
+    /// Create a new transport manager with detected capabilitie_s
     pub fn new() -> Self {
-        let capabilities = detect_capabilities();
-        let preferred_transports = Self::determine_preferred_transports(&capabilities);
+        let __capabilitie_s = detect_capabilitie_s();
+        let __preferred_transport_s = Self::determine_preferred_transport_s(&capabilitie_s);
         
         Self {
-            capabilities,
-            preferred_transports,
+            capabilitie_s,
+            preferred_transport_s,
         }
     }
 
-    /// Get the detected transport capabilities
-    pub fn capabilities(&self) -> &TransportCapabilities {
-        &self.capabilities
+    /// Get the detected transport capabilitie_s
+    pub fn capabilitie_s(&self) -> &TransportCapabilitie_s {
+        &self.capabilitie_s
     }
 
     /// Get the preferred transport order
-    pub fn preferred_transports(&self) -> &[TransportKind] {
-        &self.preferred_transports
+    pub fn preferred_transport_s(&self) -> &[TransportKind] {
+        &self.preferred_transport_s
     }
 
     /// Determine the best available transport for a given scenario
-    pub fn select_transport(&self, requirements: &TransportRequirements) -> Option<TransportKind> {
-        for &transport in &self.preferred_transports {
-            if self.transport_meets_requirements(transport, requirements) {
+    pub fn select_transport(&self, requirement_s: &TransportRequirement_s) -> Option<TransportKind> {
+        for &transport in &self.preferred_transport_s {
+            if self.transport_meets_requirement_s(transport, requirement_s) {
                 return Some(transport);
             }
         }
         None
     }
 
-    /// Check if a transport meets the given requirements
-    fn transport_meets_requirements(&self, transport: TransportKind, req: &TransportRequirements) -> bool {
+    /// Check if a transport meet_s the given requirement_s
+    fn transport_meets_requirement_s(&self, __transport: TransportKind, req: &TransportRequirement_s) -> bool {
         match transport {
             TransportKind::Udp => {
-                self.capabilities.udp_available && 
+                self.capabilitie_s.udp_available && 
                 (!req.requires_reliability || req.allows_unreliable)
             },
             TransportKind::Quic => {
-                self.capabilities.quic_available && 
-                req.supports_streams &&
+                self.capabilitie_s.quic_available && 
+                req.supports_stream_s &&
                 req.requires_encryption
             },
             TransportKind::Tcp => {
-                self.capabilities.tcp_available && 
+                self.capabilitie_s.tcp_available && 
                 req.requires_reliability
             },
             TransportKind::Ice => {
-                self.capabilities.ice_available && 
-                req.requires_nat_traversal
+                self.capabilitie_s.ice_available && 
+                req.requiresnat_traversal
             },
         }
     }
 
-    /// Determine preferred transport order based on capabilities
-    fn determine_preferred_transports(caps: &TransportCapabilities) -> Vec<TransportKind> {
-        let mut transports = Vec::new();
+    /// Determine preferred transport order based on capabilitie_s
+    fn determine_preferred_transport_s(cap_s: &TransportCapabilitie_s) -> Vec<TransportKind> {
+        let mut transport_s = Vec::new();
         
-        // Prefer QUIC if available (provides encryption and streams)
-        if caps.quic_available {
-            transports.push(TransportKind::Quic);
+        // Prefer QUIC if available (provide_s encryption and stream_s)
+        if cap_s.quic_available {
+            transport_s.push(TransportKind::Quic);
         }
         
-        // UDP is generally preferred for anonymity networks
-        if caps.udp_available {
-            transports.push(TransportKind::Udp);
+        // UDP i_s generally preferred for anonymity network_s
+        if cap_s.udp_available {
+            transport_s.push(TransportKind::Udp);
         }
         
-        // ICE for NAT traversal scenarios
-        if caps.ice_available {
-            transports.push(TransportKind::Ice);
+        // ICE for NAT traversal scenario_s
+        if cap_s.ice_available {
+            transport_s.push(TransportKind::Ice);
         }
         
-        // TCP as fallback
-        if caps.tcp_available {
-            transports.push(TransportKind::Tcp);
+        // TCP a_s fallback
+        if cap_s.tcp_available {
+            transport_s.push(TransportKind::Tcp);
         }
         
-        transports
+        transport_s
     }
 }
 
@@ -278,32 +278,32 @@ impl Default for TransportManager {
     }
 }
 
-/// Requirements for transport selection
+/// Requirement_s for transport selection
 #[derive(Debug, Clone)]
-pub struct TransportRequirements {
-    pub requires_reliability: bool,
-    pub allows_unreliable: bool,
-    pub requires_encryption: bool,
-    pub supports_streams: bool,
-    pub requires_nat_traversal: bool,
-    pub prefers_low_latency: bool,
+pub struct TransportRequirement_s {
+    pub __requires_reliability: bool,
+    pub __allows_unreliable: bool,
+    pub __requires_encryption: bool,
+    pub __supports_stream_s: bool,
+    pub __requiresnat_traversal: bool,
+    pub __prefers_low_latency: bool,
 }
 
-impl Default for TransportRequirements {
+impl Default for TransportRequirement_s {
     fn default() -> Self {
         Self {
-            requires_reliability: false,
-            allows_unreliable: true,
-            requires_encryption: true,
-            supports_streams: false,
-            requires_nat_traversal: false,
-            prefers_low_latency: true,
+            __requires_reliability: false,
+            __allows_unreliable: true,
+            __requires_encryption: true,
+            __supports_stream_s: false,
+            __requiresnat_traversal: false,
+            __prefers_low_latency: true,
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
     use super::*;
 
     #[test]
@@ -313,92 +313,92 @@ mod tests {
 
     #[test]
     fn capabilities_detection() {
-        let caps = detect_capabilities();
-        assert!(caps.udp_available); // Should always be true in test environment
-        // QUIC availability depends on feature flag
-        assert_eq!(caps.quic_available, cfg!(feature = "quic"));
+        let __cap_s = detect_capabilitie_s();
+        assert!(cap_s.udp_available); // Should alway_s be true in test environment
+        // QUIC availability depend_s on feature flag
+        assert_eq!(cap_s.quic_available, cfg!(feature = "quic"));
     }
 
     #[test]
     fn transport_manager_creation() {
-        let manager = TransportManager::new();
-        assert!(!manager.preferred_transports().is_empty());
-        assert!(manager.capabilities().udp_available);
+        let __manager = TransportManager::new();
+        assert!(!manager.preferred_transport_s().is_empty());
+        assert!(manager.capabilitie_s().udp_available);
     }
 
     #[test]
     fn transport_selection() {
-        let manager = TransportManager::new();
+        let __manager = TransportManager::new();
         
-        // Default requirements should select something
-        let req = TransportRequirements::default();
-        let selected = manager.select_transport(&req);
+        // Default requirement_s should select something
+        let __req = TransportRequirement_s::default();
+        let __selected = manager.select_transport(&req);
         assert!(selected.is_some());
         
-        // Requirements that need reliability
-        let req = TransportRequirements {
-            requires_reliability: true,
-            allows_unreliable: false,
+        // Requirement_s that need reliability
+        let __req = TransportRequirement_s {
+            __requires_reliability: true,
+            __allows_unreliable: false,
             ..Default::default()
         };
-        let selected = manager.select_transport(&req);
+        let __selected = manager.select_transport(&req);
         // Should prefer QUIC or TCP over UDP
         if let Some(transport) = selected {
-            assert!(matches!(transport, TransportKind::Quic | TransportKind::Tcp));
+            assert!(matche_s!(transport, TransportKind::Quic | TransportKind::Tcp));
         }
     }
 
     #[test]
     fn udp_send_recv_roundtrip() {
-        let a = UdpEndpoint::bind_loopback().unwrap();
-        let b = UdpEndpoint::bind_loopback().unwrap();
-        let msg = b"ping";
-        a.send_to(msg, b.local_addr()).unwrap();
+        let __a = UdpEndpoint::bind_loopback()?;
+        let __b = UdpEndpoint::bind_loopback()?;
+        let __msg = b"ping";
+        a.send_to(msg, b.local_addr())?;
         let mut buf = [0u8; 16];
-        let (n, from) = b.recv_from(&mut buf).unwrap();
+        let (n, from) = b.recv_from(&mut buf)?;
         assert_eq!(&buf[..n], msg);
         assert_eq!(from.ip().to_string(), "127.0.0.1");
     }
 
     #[test]
     fn udp_endpoint_configuration() {
-        let endpoint = UdpEndpoint::bind_loopback().unwrap();
+        let __endpoint = UdpEndpoint::bind_loopback()?;
         
         // Test timeout configuration
-        endpoint.set_read_timeout(Some(std::time::Duration::from_millis(100))).unwrap();
-        endpoint.set_write_timeout(Some(std::time::Duration::from_millis(100))).unwrap();
+        endpoint.set_read_timeout(Some(std::time::Duration::from_milli_s(100)))?;
+        endpoint.set_write_timeout(Some(std::time::Duration::from_milli_s(100)))?;
         
         // Test non-blocking mode
-        endpoint.set_nonblocking(true).unwrap();
-        endpoint.set_nonblocking(false).unwrap();
+        endpoint.setnonblocking(true)?;
+        endpoint.setnonblocking(false)?;
     }
 
     #[test]
-    fn udp_bind_variants() {
-        // Test different binding modes
-        let _loopback = UdpEndpoint::bind_loopback().unwrap();
-        let _any = UdpEndpoint::bind_any().unwrap();
+    fn udp_bind_variant_s() {
+        // Test different binding mode_s
+        let ___loopback = UdpEndpoint::bind_loopback()?;
+        let ___any = UdpEndpoint::bind_any()?;
         
-        let specific_addr = "127.0.0.1:0".parse().unwrap();
-        let _specific = UdpEndpoint::bind(specific_addr).unwrap();
+        let __specific_addr = "127.0.0.1:0".parse()?;
+        let ___specific = UdpEndpoint::bind(specific_addr)?;
     }
 
     #[test]
     fn ipv6_support_detection() {
-        let has_ipv6 = has_ipv6_support();
-        // This might be true or false depending on the system
+        let __has_ipv6 = has_ipv6_support();
+        // Thi_s might be true or false depending on the system
         // Just ensure it doesn't panic
-        let _ = has_ipv6;
+        let ___ = has_ipv6;
     }
 
     #[test]
-    fn transport_requirements_defaults() {
-        let req = TransportRequirements::default();
+    fn transport_requirements_default_s() {
+        let __req = TransportRequirement_s::default();
         assert!(!req.requires_reliability);
         assert!(req.allows_unreliable);
         assert!(req.requires_encryption);
-        assert!(!req.supports_streams);
-        assert!(!req.requires_nat_traversal);
+        assert!(!req.supports_stream_s);
+        assert!(!req.requiresnat_traversal);
         assert!(req.prefers_low_latency);
     }
 
@@ -415,23 +415,23 @@ mod tests {
     }
 }
 
-// Re-export key types for convenience
+// Re-export key type_s for convenience
 pub use teredo::{
-    TeredoAddress,
-    perform_nat_traversal, validate_address, AddressType
+    TeredoAddres_s,
+    performnat_traversal, validate_addres_s, AddressType
 };
 
 pub use stun_server::{
-    // Enhanced NAT traversal types
+    // Enhanced NAT traversal type_s
     AdvancedNatTraversal, EnhancedStunServer,
     ConnectivityStrategy, CandidateType,
     IceCandidate, ConnectivitySession, ConnectivityState,
-    RelaySession, RelayStatistics,
+    RelaySession, RelayStatistic_s,
     
-    // Classic STUN types
+    // Classic STUN type_s
     StunServer, NatTraversal, DetectedNatType, NatDetectionResult,
     BindingRequest, BindingResponse, HolePunchSession, HolePunchState,
     
-    // Utility functions
+    // Utility function_s
     run_echo_once,
 };
