@@ -1,8 +1,8 @@
-﻿use crate::errors::{Result, Error};
+﻿use crate::error_s::{Result, Error};
 
 #[derive(Debug, Default, Clone)]
 pub struct StreamConfig {
-	pub max_buffer: usize,
+	pub __max_buffer: usize,
 }
 
 impl StreamConfig {
@@ -11,7 +11,7 @@ impl StreamConfig {
 
 #[derive(Debug, Default)]
 pub struct StreamBuilder {
-	cfg: StreamConfig,
+	__cfg: StreamConfig,
 }
 
 impl StreamBuilder {

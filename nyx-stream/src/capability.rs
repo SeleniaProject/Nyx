@@ -1,83 +1,83 @@
 ﻿//! Capability negotiation implementation for Nyx Protocol v1.0
 //!
-//! This module implements the capability negotiation system as defined in
-//! `spec/Capability_Negotiation_Policy.md`. It provides CBOR-based capability
-//! exchange, negotiation algorithms, and error handling for unsupported required capabilities.
+//! Thi_s module implement_s the capability negotiation system a_s defined in
+//! `spec/Capability_Negotiation_Policy.md`. It provide_s CBOR-based capability
+//! exchange, negotiation algorithm_s, and error handling for unsupported required capabilitie_s.
 //!
 //! # Wire Format
-//! Capabilities are exchanged as CBOR arrays containing maps with:
+//! Capabilitie_s are exchanged a_s CBOR array_s containing map_s with:
 //! - `id`: u32 capability identifier
-//! - `flags`: u8 flags (bit 0: 1=Required, 0=Optional)
-//! - `data`: bytes for version/parameters/sub-features
+//! - `flag_s`: u8 flag_s (bit 0: 1=Required, 0=Optional)
+//! - `data`: byte_s for version/parameter_s/sub-featu_re_s
 //!
 //! # Error Handling
-//! Unsupported required capabilities trigger session termination with
+//! Unsupported required capabilitie_s trigger session termination with
 //! `ERR_UNSUPPORTED_CAP = 0x07` and the unsupported capability ID in CLOSE reason.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collection_s::HashSet;
 
-/// Error codes for capability negotiation failures
+/// Error code_s for capability negotiation failu_re_s
 pub const ERR_UNSUPPORTED_CAP: u16 = 0x07;
 
-/// Predefined capability IDs as per specification
+/// Predefined capability ID_s a_s per specification
 pub const CAP_CORE: u32 = 0x0001;
 pub const CAP_PLUGIN_FRAMEWORK: u32 = 0x0002;
 
-/// Local supported capability IDs
+/// Local supported capability ID_s
 pub const LOCAL_CAP_IDS: &[u32] = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
 
-/// Capability flags
+/// Capability flag_s
 pub const FLAG_REQUIRED: u8 = 0x01;
 pub const FLAG_OPTIONAL: u8 = 0x00;
 
-/// A single capability with ID, flags, and optional data
+/// A single capability with ID, flag_s, and optional _data
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Capability {
     /// Capability identifier (32-bit)
-    pub id: u32,
-    /// Flags byte (bit 0: Required=1, Optional=0)
-    pub flags: u8,
-    /// Optional data for versioning/parameters
-    #[serde(with = "serde_bytes")]
-    pub data: Vec<u8>,
+    pub __id: u32,
+    /// Flag_s byte (bit 0: Required=1, Optional=0)
+    pub __flag_s: u8,
+    /// Optional _data for versioning/parameter_s
+    #[serde(with = "serde_byte_s")]
+    pub _data: Vec<u8>,
 }
 
 impl Capability {
     /// Create a new capability
-    pub fn new(id: u32, flags: u8, data: Vec<u8>) -> Self {
-        Self { id, flags, data }
+    pub fn new(__id: u32, __flag_s: u8, _data: Vec<u8>) -> Self {
+        Self { id, flag_s, _data }
     }
 
     /// Create a required capability
-    pub fn required(id: u32, data: Vec<u8>) -> Self {
-        Self::new(id, FLAG_REQUIRED, data)
+    pub fn required(__id: u32, _data: Vec<u8>) -> Self {
+        Self::new(id, FLAG_REQUIRED, _data)
     }
 
     /// Create an optional capability
-    pub fn optional(id: u32, data: Vec<u8>) -> Self {
-        Self::new(id, FLAG_OPTIONAL, data)
+    pub fn optional(__id: u32, _data: Vec<u8>) -> Self {
+        Self::new(id, FLAG_OPTIONAL, _data)
     }
 
-    /// Check if this capability is required
+    /// Check if thi_s capability i_s required
     pub fn is_required(&self) -> bool {
-        (self.flags & FLAG_REQUIRED) != 0
+        (self.flag_s & FLAG_REQUIRED) != 0
     }
 
-    /// Check if this capability is optional
+    /// Check if thi_s capability i_s optional
     pub fn is_optional(&self) -> bool {
         !self.is_required()
     }
 }
 
-/// Error type for capability negotiation failures
+/// Error type for capability negotiation failu_re_s
 #[derive(Debug, Clone, PartialEq)]
 pub enum CapabilityError {
     /// Unsupported required capability with ID
     UnsupportedRequired(u32),
     /// CBOR encoding/decoding error
     CborError(String),
-    /// Invalid capability data
+    /// Invalid capability _data
     InvalidData(String),
 }
 
@@ -85,55 +85,55 @@ impl std::fmt::Display for CapabilityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CapabilityError::UnsupportedRequired(id) => {
-                write!(f, "Unsupported required capability: 0x{:08x}", id)
+                write!(f, "Unsupported required capability: 0x{id:08x}")
             }
-            CapabilityError::CborError(msg) => write!(f, "CBOR error: {}", msg),
-            CapabilityError::InvalidData(msg) => write!(f, "Invalid capability data: {}", msg),
+            CapabilityError::CborError(msg) => write!(f, "CBOR error: {msg}"),
+            CapabilityError::InvalidData(msg) => write!(f, "Invalid capability _data: {msg}"),
         }
     }
 }
 
 impl std::error::Error for CapabilityError {}
 
-/// Encode capabilities list to CBOR bytes
-pub fn encode_caps(capabilities: &[Capability]) -> Result<Vec<u8>, CapabilityError> {
+/// Encode capabilitie_s list to CBOR byte_s
+pub fn encode_cap_s(capabilitie_s: &[Capability]) -> Result<Vec<u8>, CapabilityError> {
     let mut buffer = Vec::new();
-    ciborium::ser::into_writer(capabilities, &mut buffer)
+    ciborium::ser::into_writer(capabilitie_s, &mut buffer)
         .map_err(|e| CapabilityError::CborError(e.to_string()))?;
     Ok(buffer)
 }
 
-/// Decode capabilities list from CBOR bytes
-pub fn decode_caps(data: &[u8]) -> Result<Vec<Capability>, CapabilityError> {
-    // Enforce size limits to prevent DoS attacks
-    if data.len() > 64 * 1024 {
+/// Decode capabilitie_s list from CBOR byte_s
+pub fn decode_cap_s(_data: &[u8]) -> Result<Vec<Capability>, CapabilityError> {
+    // Enforce size limit_s to prevent DoS attack_s
+    if _data.len() > 64 * 1024 {
         return Err(CapabilityError::InvalidData(
-            "Capability data too large".to_string(),
+            "Capability _data too large".to_string(),
         ));
     }
 
-    ciborium::de::from_reader(std::io::Cursor::new(data))
+    ciborium::de::from_reader(std::io::Cursor::new(_data))
         .map_err(|e| CapabilityError::CborError(e.to_string()))
 }
 
-/// Negotiate capabilities between local and peer
+/// Negotiate capabilitie_s between local and peer
 ///
-/// Returns Ok(()) if negotiation succeeds, or Err with the first
-/// unsupported required capability ID if negotiation fails.
+/// Return_s Ok(()) if negotiation succeed_s, or Err with the first
+/// unsupported required capability ID if negotiation fail_s.
 ///
 /// # Algorithm
-/// 1. For each peer capability marked as required
-/// 2. Check if local implementation supports it
+/// 1. For each peer capability marked a_s required
+/// 2. Check if local implementation support_s it
 /// 3. Return error on first unsupported required capability
-/// 4. Optional capabilities are always accepted (may be ignored)
+/// 4. Optional capabilitie_s are alway_s accepted (may be ignored)
 pub fn negotiate(
     local_supported: &[u32],
-    peer_caps: &[Capability],
+    peer_cap_s: &[Capability],
 ) -> Result<(), CapabilityError> {
     let local_set: HashSet<u32> = local_supported.iter().copied().collect();
 
-    for cap in peer_caps {
-        if cap.is_required() && !local_set.contains(&cap.id) {
+    for cap in peer_cap_s {
+        if cap.is_required() && !local_set.contain_s(&cap.id) {
             return Err(CapabilityError::UnsupportedRequired(cap.id));
         }
     }
@@ -141,39 +141,39 @@ pub fn negotiate(
     Ok(())
 }
 
-/// Get local capabilities that should be advertised to peers
-pub fn get_local_capabilities() -> Vec<Capability> {
+/// Get local capabilitie_s that should be advertised to peer_s
+pub fn get_local_capabilitie_s() -> Vec<Capability> {
     vec![
-        Capability::required(CAP_CORE, vec![]), // Core protocol is always required
-        Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]), // Plugin framework is optional
+        Capability::required(CAP_CORE, vec![]), // Core protocol i_s alway_s required
+        Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]), // Plugin framework i_s optional
     ]
 }
 
-/// Validate capability structure and data bounds
+/// Validate capability structure and _data bound_s
 pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
-    // Check data size limits (prevent DoS)
-    if cap.data.len() > 1024 {
+    // Check _data size limit_s (prevent DoS)
+    if cap._data.len() > 1024 {
         return Err(CapabilityError::InvalidData(
-            "Capability data too large".to_string(),
+            "Capability _data too large".to_string(),
         ));
     }
 
-    // Validate known capability IDs have expected formats
+    // Validate known capability ID_s have expected format_s
     match cap.id {
         CAP_CORE => {
-            // Core capability should have empty data for v1.0
-            if !cap.data.is_empty() {
+            // Core capability should have empty _data for v1.0
+            if !cap._data.is_empty() {
                 return Err(CapabilityError::InvalidData(
-                    "Core capability should have empty data".to_string(),
+                    "Core capability should have empty _data".to_string(),
                 ));
             }
         }
         CAP_PLUGIN_FRAMEWORK => {
-            // Plugin framework can have version data
+            // Plugin framework can have version _data
             // No specific validation for now - future extension point
         }
         _ => {
-            // Unknown capabilities are allowed (forward compatibility)
+            // Unknown capabilitie_s are _allowed (forward compatibility)
         }
     }
 
@@ -181,37 +181,37 @@ pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
     use super::*;
 
     #[test]
-    fn test_capability_flags() {
-        let required = Capability::required(CAP_CORE, vec![]);
+    fn test_capability_flag_s() {
+        let __required = Capability::required(CAP_CORE, vec![]);
         assert!(required.is_required());
         assert!(!required.is_optional());
 
-        let optional = Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]);
+        let __optional = Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]);
         assert!(!optional.is_required());
         assert!(optional.is_optional());
     }
 
     #[test]
     fn test_cbor_roundtrip() {
-        let caps = vec![
+        let __cap_s = vec![
             Capability::required(CAP_CORE, vec![]),
             Capability::optional(CAP_PLUGIN_FRAMEWORK, b"v1.0".to_vec()),
         ];
 
-        let encoded = encode_caps(&caps).unwrap();
-        let decoded = decode_caps(&encoded).unwrap();
+        let __encoded = encode_cap_s(&cap_s)?;
+        let __decoded = decode_cap_s(&encoded)?;
 
-        assert_eq!(caps, decoded);
+        assert_eq!(cap_s, decoded);
     }
 
     #[test]
-    fn test_negotiate_success() {
-        let local = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
-        let peer = vec![
+    fn testnegotiate_succes_s() {
+        let __local = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
+        let __peer = vec![
             Capability::required(CAP_CORE, vec![]),
             Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]),
         ];
@@ -220,11 +220,11 @@ mod tests {
     }
 
     #[test]
-    fn test_negotiate_unsupported_required() {
-        let local = &[CAP_CORE]; // Missing plugin framework
-        let peer = vec![
+    fn testnegotiate_unsupported_required() {
+        let __local = &[CAP_CORE]; // Missing plugin framework
+        let __peer = vec![
             Capability::required(CAP_CORE, vec![]),
-            Capability::required(CAP_PLUGIN_FRAMEWORK, vec![]), // This will fail
+            Capability::required(CAP_PLUGIN_FRAMEWORK, vec![]), // Thi_s will fail
         ];
 
         match negotiate(local, &peer) {
@@ -236,40 +236,40 @@ mod tests {
     }
 
     #[test]
-    fn test_negotiate_optional_unknown() {
-        let local = &[CAP_CORE];
-        let peer = vec![
+    fn testnegotiate_optional_unknown() {
+        let __local = &[CAP_CORE];
+        let __peer = vec![
             Capability::required(CAP_CORE, vec![]),
             Capability::optional(0x9999, vec![]), // Unknown but optional
         ];
 
-        // Should succeed - optional capabilities are always accepted
+        // Should succeed - optional capabilitie_s are alway_s accepted
         assert!(negotiate(local, &peer).is_ok());
     }
 
     #[test]
-    fn test_validate_capability_size_limits() {
-        let oversized = Capability::new(CAP_CORE, FLAG_OPTIONAL, vec![0u8; 2048]);
+    fn test_validate_capability_size_limit_s() {
+        let __oversized = Capability::new(CAP_CORE, FLAG_OPTIONAL, vec![0u8; 2048]);
         assert!(validate_capability(&oversized).is_err());
 
-        // Test normal size with non-core capability (core has special validation)
-        let normal = Capability::new(CAP_PLUGIN_FRAMEWORK, FLAG_OPTIONAL, vec![0u8; 100]);
+        // Test normal size with non-core capability (core ha_s special validation)
+        let _normal = Capability::new(CAP_PLUGIN_FRAMEWORK, FLAG_OPTIONAL, vec![0u8; 100]);
         assert!(validate_capability(&normal).is_ok());
     }
 
     #[test]
-    fn test_decode_size_limits() {
-        let oversized_data = vec![0u8; 128 * 1024]; // 128KB
-        assert!(decode_caps(&oversized_data).is_err());
+    fn test_decode_size_limit_s() {
+        let __oversized_data = vec![0u8; 128 * 1024]; // 128KB
+        assert!(decode_cap_s(&oversized_data).is_err());
     }
 
     #[test]
     fn test_core_capability_validation() {
-        // Core capability should have empty data
-        let valid_core = Capability::required(CAP_CORE, vec![]);
+        // Core capability should have empty _data
+        let __valid_core = Capability::required(CAP_CORE, vec![]);
         assert!(validate_capability(&valid_core).is_ok());
 
-        let invalid_core = Capability::required(CAP_CORE, b"unexpected".to_vec());
+        let __invalid_core = Capability::required(CAP_CORE, b"unexpected".to_vec());
         assert!(validate_capability(&invalid_core).is_err());
     }
 }
