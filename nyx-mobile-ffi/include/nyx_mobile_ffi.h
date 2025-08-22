@@ -20,8 +20,13 @@ int nyx_mobile_shutdown(void);
 int nyx_mobile_set____log_level(int level);
 
 /**
- * Set a telemetry label key/value. Passing a null value remove_s the key. Passing a null key i_s invalid.
- * Return_s 0 on succes_s.
+ * Set a telemetry label key/value. Passing a null value removes the key. Passing a null key is invalid.
+ * Returns 0 on success.
+ *
+ * # Safety
+ * - `key` and `value` must be valid C strings (null-terminated) or null pointers
+ * - If not null, the pointers must remain valid for the duration of the call
+ * - The caller must ensure proper memory management for the strings
  */
 int nyx_mobile_set_telemetry_label(const char *key,
                                    const char *value);
@@ -32,13 +37,23 @@ int nyx_mobile_set_telemetry_label(const char *key,
 int nyx_mobile_clear_telemetry_label_s(void);
 
 /**
- * Get crate version string. Return_s length excluding NUL.
- * Write_s up to `buf_len-1` byte_s and NUL-terminate_s. If buf_len==0, return_s needed length.
+ * Get crate version string. Returns length excluding NUL.
+ * Writes up to `buf_len-1` bytes and NUL-terminates. If buf_len==0, returns needed length.
+ *
+ * # Safety
+ * - If `buf` is not null, it must point to valid, writable memory of at least `buf_len` bytes
+ * - The caller must ensure the buffer remains valid for the duration of the call
+ * - If `buf_len` is 0, `buf` can be null (used for size query)
  */
 int nyx_mobile_version(char *buf, uintptr_t buf_len);
 
 /**
- * Return last error message length (excluding NUL). If a buffer i_s provided, copy it.
+ * Return last error message length (excluding NUL). If a buffer is provided, copy it.
+ *
+ * # Safety
+ * - If `buf` is not null, it must point to valid, writable memory of at least `buf_len` bytes
+ * - The caller must ensure the buffer remains valid for the duration of the call
+ * - If `buf_len` is 0, `buf` can be null (used for size query)
  */
 int nyx_mobile_last_error(char *buf, uintptr_t buf_len);
 
@@ -48,7 +63,11 @@ int nyx_mobile_last_error(char *buf, uintptr_t buf_len);
 int nyx_power_set_state(uint32_t state);
 
 /**
- * Return current power state value as u32 (Active=0,...). Return_s InvalidArgument on null ptr.
+ * Return current power state value as u32 (Active=0,...). Returns InvalidArgument on null ptr.
+ *
+ * # Safety
+ * - `out_state` must be a valid, non-null pointer to writable memory
+ * - The caller must ensure the pointer remains valid for the duration of the call
  */
 int nyx_power_get_state(uint32_t *out_state);
 
