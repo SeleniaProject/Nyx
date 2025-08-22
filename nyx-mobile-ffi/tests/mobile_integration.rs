@@ -50,7 +50,7 @@ fn test_screen_off_ratio_calculation() {
         let _ratio = if session.total_time_m_s == 0 {
             0.0
         } else {
-            (session.screen_off_time_m_s a_s f32) / (session.total_time_m_s a_s f32)
+            (session.screen_off_time_m_s as f32) / (session.total_time_m_s as f32)
         };
         
         // Verify ratio i_s in valid range [0.0, 1.0]
@@ -72,10 +72,10 @@ fn test_screen_off_ratio_calculation() {
 
 /// Test telemetry label handling
 #[test]
-fn test_telemetry_label_s() {
+fn test_telemetry_label_s() -> Result<(), Box<dyn std::error::Error>> {
     // Test the telemetry label logic that would be used via FFI
     
-    let _test_label_s = vec![
+    let test_label_s = vec![
         ("platform", "android"),
         ("api_level", "31"),
         ("battery_level", "75.5"),
@@ -92,8 +92,8 @@ fn test_telemetry_label_s() {
         let _key_cstr = CString::new(key)?;
         let _value_cstr = CString::new(value)?;
         
-        assert!(!key_cstr.as_byte_s().is_empty());
-        assert!(!value_cstr.as_byte_s().is_empty());
+        assert!(!key_cstr.as_bytes().is_empty());
+        assert!(!value_cstr.as_bytes().is_empty());
         
         println!("Telemetry label: {} = {}", key, value);
     }
@@ -132,25 +132,25 @@ fn test_power_policy_adaptation() {
         assert!(power_level <= 3, "Invalid power level: {}", power_level);
         
         println!("Scenario {}: battery={:.1}%, screen_off={:.1}%, charging={}, power_save={} -> level={}",
-                 i + 1, state.battery_level, state.screen_off_ratio * 100.0,
-                 state.is_charging, state.power_save_mode, power_level);
+                 i + 1, state._battery_level, state._screen_off_ratio * 100.0,
+                 state._is_charging, state._power_save_mode, power_level);
     }
 }
 
-// Helper function that implement_s power policy logic
+// Helper function that implements power policy logic
 fn determine_power_level(state: &DeviceState) -> u32 {
-    // Critical condition_s
-    if state.battery_level < 15.0 || state.power_save_mode {
+    // Critical conditions
+    if state._battery_level < 15.0 || state._power_save_mode {
         return 3; // Critical
     }
     
-    // Inactive condition_s (high screen off ratio)
-    if state.screen_off_ratio > 0.7 && !state.is_charging {
+    // Inactive conditions (high screen off ratio)
+    if state._screen_off_ratio > 0.7 && !state._is_charging {
         return 2; // Inactive
     }
     
-    // Background condition_s (moderate battery/usage)
-    if state.battery_level < 50.0 || state.screen_off_ratio > 0.5 {
+    // Background conditions (moderate battery/usage)
+    if state._battery_level < 50.0 || state._screen_off_ratio > 0.5 {
         return 1; // Background
     }
     
@@ -158,27 +158,28 @@ fn determine_power_level(state: &DeviceState) -> u32 {
     0 // Active
 }
 
-/// Test error handling scenario_s
+/// Test error handling scenarios
 #[test]
-fn test_error_condition_s() {
-    // Test variou_s error condition_s that the mobile bridge should handle
+fn test_error_conditions() -> Result<(), Box<dyn std::error::Error>> {
+    // Test various error conditions that the mobile bridge should handle
     
-    // Test invalid power state_s
-    let _invalid_state_s = vec![99, 255, u32::MAX];
-    for invalid_state in invalid_state_s {
+    // Test invalid power states
+    let invalid_states = vec![99, 255, u32::MAX];
+    for invalid_state in invalid_states {
         assert!(invalid_state > 3, "State {} should be invalid", invalid_state);
     }
     
     // Test null/empty string handling
-    let _empty_key = CString::new("")?;
-    assert_eq!(empty_key.as_byte_s().len(), 0);
+    let empty_key = CString::new("")?;
+    assert_eq!(empty_key.as_bytes().len(), 0);
     
-    // Test boundary condition_s for ratio_s
-    let ratio_s: Vec<f32> = vec![-0.1, 0.0, 0.5, 1.0, 1.1];
-    for ratio in ratio_s {
-        let _clamped = ratio.clamp(0.0, 1.0);
+    // Test boundary conditions for ratios
+    let ratios: Vec<f32> = vec![-0.1, 0.0, 0.5, 1.0, 1.1];
+    for ratio in ratios {
+        let clamped = ratio.clamp(0.0, 1.0);
         assert!(clamped >= 0.0 && clamped <= 1.0, "Ratio should be clamped: {} -> {}", ratio, clamped);
     }
     
-    println!("Error condition test_s passed");
+    println!("Error condition tests passed");
+    Ok(())
 }
