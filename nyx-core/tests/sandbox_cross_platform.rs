@@ -212,9 +212,9 @@ fn sandbox_cross_platform_behavior() {
 #[test]
 fn sandbox_performance_impact() {
     // Measure performance impact of sandbox application
-    let start_local = Instant::now();
+    let start = Instant::now();
     let status = apply_policy(SandboxPolicy::Minimal);
-    let duration_local = start.elapsed();
+    let duration = start.elapsed();
 
     // Sandbox application should be fast
     assert!(

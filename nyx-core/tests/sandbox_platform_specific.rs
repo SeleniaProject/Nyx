@@ -43,7 +43,7 @@ mod unix_test_s {
             }
 
             // Clean up
-            let  = fs::remove_file(&test_file);
+            let _ = fs::remove_file(&test_file);
         }
     }
 
@@ -162,8 +162,8 @@ mod unix_test_s {
             );
 
             // Clean up marker_s
-            let  = fs::remove_file(&minimal_marker);
-            let  = fs::remove_file(&strict_marker);
+            let _ = fs::remove_file(&minimal_marker);
+            let _ = fs::remove_file(&strict_marker);
         }
     }
 

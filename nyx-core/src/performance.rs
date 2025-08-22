@@ -13,20 +13,22 @@ use std::time::{Duration, Instant};
 /// ```
 #[derive(Debug, Clone)]
 pub struct Ewma {
-    __alpha: f64,
+    alpha: f64,
     value: Option<f64>,
 }
 
 impl Ewma {
-    pub fn new(_alpha: f64) -> Self {
+    pub fn new(alpha: f64) -> Self {
         Self {
-            __alpha: _alpha,
+            alpha,
             value: None,
         }
     }
+
+    #[inline(always)]
     pub fn update(&mut self, x: f64) {
         self.value = Some(match self.value {
-            Some(v) => self.__alpha * x + (1.0 - self.__alpha) * v,
+            Some(v) => self.alpha * x + (1.0 - self.alpha) * v,
             None => x,
         });
     }
@@ -55,52 +57,74 @@ impl Ewma {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
-    __capacity: f64,
-    _token_s: f64,
-    __refill_per_sec: f64,
-    __last: Instant,
+    capacity: f64,
+    tokens: f64,
+    refill_per_sec: f64,
+    last_refill: Instant,
 }
 
 impl RateLimiter {
-    pub fn new(_capacity: f64, _refill_per_sec: f64) -> Self {
+    pub fn new(capacity: f64, refill_per_sec: f64) -> Self {
         Self {
-            __capacity: _capacity,
-            _token_s: _capacity,
-            __refill_per_sec: _refill_per_sec,
-            __last: Instant::now(),
+            capacity,
+            tokens: capacity,
+            refill_per_sec,
+            last_refill: Instant::now(),
         }
     }
     fn refill(&mut self) {
         let now = Instant::now();
-        let _dt = now.duration_since(self.__last).as_secs_f64();
-        self.__last = now;
-        self._token_s = (self._token_s + _dt * self.__refill_per_sec).min(self.__capacity);
+        let dt = now.duration_since(self.last_refill).as_secs_f64();
+        self.last_refill = now;
+        self.tokens = (self.tokens + dt * self.refill_per_sec).min(self.capacity);
     }
-    /// Refill by a provided elapsed duration (logical time). Doe_s not change internal `last`.
-    pub fn refill_with(&mut self, _dt: Duration) {
-        self._token_s =
-            (self._token_s + _dt.as_secs_f64() * self.__refill_per_sec).min(self.__capacity);
+    /// Refill by a provided elapsed duration (logical time). Does not change internal `last`.
+    pub fn refill_with(&mut self, dt: Duration) {
+        self.tokens =
+            (self.tokens + dt.as_secs_f64() * self.refill_per_sec).min(self.capacity);
     }
-    /// Try to consume one token. Return_s whether _allowed now.
+    /// Try to consume one token. Returns whether allowed now.
     pub fn allow(&mut self) -> bool {
         self.refill();
-        if self._token_s >= 1.0 {
-            self._token_s -= 1.0;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
             true
         } else {
             false
         }
     }
-    /// Wait until _allowed or timeout; return_s true if _allowed.
+    /// Wait until allowed or timeout; returns true if allowed.
+    /// Uses exponential backoff instead of busy waiting for better performance
     pub fn wait_until_allowed(&mut self, timeout: Duration) -> bool {
-        let _start = Instant::now();
+        let start = Instant::now();
+        let mut sleep_duration = Duration::from_millis(1);
+
         while !self.allow() {
-            if _start.elapsed() >= timeout {
+            if start.elapsed() >= timeout {
                 return false;
             }
-            std::thread::sleep(Duration::from_millis(1));
+
+            // Exponential backoff with maximum sleep time to prevent excessive waiting
+            std::thread::sleep(sleep_duration.min(Duration::from_millis(10)));
+            sleep_duration = (sleep_duration * 2).min(Duration::from_millis(10));
         }
         true
+    }
+
+    /// More efficient version that avoids repeated refill calls
+    #[inline(always)]
+    pub fn allow_optimized(&mut self) -> bool {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_refill).as_secs_f64();
+        self.last_refill = now;
+        self.tokens = (self.tokens + dt * self.refill_per_sec).min(self.capacity);
+
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -138,3 +162,4 @@ mod test_s {
         assert!(!rl.allow());
     }
 }
+

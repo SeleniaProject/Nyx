@@ -1,7 +1,8 @@
 use nyx_core::{
     config::CoreConfig,
-    types::{StreamId, Version},
+    types::{StreamId},
 };
+use std::num::NonZeroU32;
 
 fn main() {
     let cfg = CoreConfig::default();
@@ -9,7 +10,6 @@ fn main() {
         "log_level={} multipath={}",
         cfg.log_level, cfg.enable_multipath
     );
-    let s: StreamId = 42u32.into();
-    let v: Version = 10u32.into();
-    println!("stream_id={s} version={v}");
+    let s = StreamId::new(NonZeroU32::new(42).unwrap());
+    println!("stream_id={s}");
 }
