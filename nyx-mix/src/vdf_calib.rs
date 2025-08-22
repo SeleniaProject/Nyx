@@ -27,12 +27,12 @@ impl Default for VdfCalibParams {
 /// This is a simplified version - production should use proper VDF schemes
 pub fn compute_vdf(input: &[u8], difficulty: u64) -> Vec<u8> {
     let mut hash = input.to_vec();
-    
+
     // Iterative hashing as a simple delay function
     for _ in 0..difficulty {
         hash = simple_hash(&hash);
     }
-    
+
     hash
 }
 
@@ -50,10 +50,10 @@ fn simple_hash(input: &[u8]) -> Vec<u8> {
 pub fn calibrate_vdf_difficulty(params: &VdfCalibParams) -> u64 {
     let input = b"calibration_input";
     let target_duration = Duration::from_millis(params.target_delay_ms);
-    
+
     let mut difficulty = params.difficulty;
     let mut measurements = Vec::new();
-    
+
     // Take multiple samples
     for _ in 0..params.samples {
         let start = Instant::now();
@@ -61,11 +61,11 @@ pub fn calibrate_vdf_difficulty(params: &VdfCalibParams) -> u64 {
         let elapsed = start.elapsed();
         measurements.push(elapsed);
     }
-    
+
     // Calculate average duration
     let total_nanos: u128 = measurements.iter().map(|d| d.as_nanos()).sum();
     let avg_duration = Duration::from_nanos((total_nanos / measurements.len() as u128) as u64);
-    
+
     // Adjust difficulty based on ratio
     if avg_duration < target_duration {
         // Too fast, increase difficulty
@@ -76,7 +76,7 @@ pub fn calibrate_vdf_difficulty(params: &VdfCalibParams) -> u64 {
         let ratio = avg_duration.as_nanos() as f64 / target_duration.as_nanos() as f64;
         difficulty = (difficulty as f64 / ratio) as u64;
     }
-    
+
     difficulty.max(1) // Ensure difficulty is at least 1
 }
 
@@ -84,13 +84,13 @@ pub fn calibrate_vdf_difficulty(params: &VdfCalibParams) -> u64 {
 pub fn measure_vdf_time(difficulty: u64, samples: usize) -> Duration {
     let input = b"timing_measurement";
     let mut total_time = Duration::ZERO;
-    
+
     for _ in 0..samples {
         let start = Instant::now();
         let _result = compute_vdf(input, difficulty);
         total_time += start.elapsed();
     }
-    
+
     total_time / samples as u32
 }
 
@@ -105,17 +105,17 @@ impl VdfMixTimer {
         let difficulty = calibrate_vdf_difficulty(&params);
         Self { difficulty, params }
     }
-    
+
     /// Apply mix delay using VDF
     pub fn apply_mix_delay(&self, packet_id: &[u8]) -> Vec<u8> {
         compute_vdf(packet_id, self.difficulty)
     }
-    
+
     /// Get current calibrated difficulty
     pub fn current_difficulty(&self) -> u64 {
         self.difficulty
     }
-    
+
     /// Recalibrate if needed
     pub fn recalibrate(&mut self) {
         self.difficulty = calibrate_vdf_difficulty(&self.params);
@@ -131,7 +131,7 @@ mod tests {
         let input = b"test_input";
         let result1 = compute_vdf(input, 100);
         let result2 = compute_vdf(input, 100);
-        
+
         // Same input and difficulty should produce same result
         assert_eq!(result1, result2);
         assert_eq!(result1.len(), 32);
@@ -140,15 +140,15 @@ mod tests {
     #[test]
     fn test_vdf_difficulty_affects_time() {
         let input = b"timing_test";
-        
+
         let start1 = Instant::now();
         let _result1 = compute_vdf(input, 1000);
         let time1 = start1.elapsed();
-        
+
         let start2 = Instant::now();
         let _result2 = compute_vdf(input, 5000);
         let time2 = start2.elapsed();
-        
+
         // Higher difficulty should take longer (with some tolerance for variance)
         assert!(time2 >= time1);
     }
@@ -160,7 +160,7 @@ mod tests {
             difficulty: 1000,
             samples: 3,
         };
-        
+
         let calibrated_difficulty = calibrate_vdf_difficulty(&params);
         assert!(calibrated_difficulty > 0);
     }
@@ -172,10 +172,10 @@ mod tests {
             difficulty: 100,
             samples: 2,
         };
-        
+
         let timer = VdfMixTimer::new(params);
         let packet_id = b"packet123";
-        
+
         let result = timer.apply_mix_delay(packet_id);
         assert_eq!(result.len(), 32);
         assert!(timer.current_difficulty() > 0);

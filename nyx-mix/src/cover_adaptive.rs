@@ -1,5 +1,5 @@
 //! Adaptive cover traffic system
-//! 
+//!
 //! This module implements intelligent cover traffic generation that adapts
 //! to network conditions and traffic patterns to provide optimal privacy
 //! protection while minimizing bandwidth overhead.
@@ -15,7 +15,7 @@
 //!
 //! ```rust
 //! use nyx_mix::cover_adaptive::{AdaptiveCoverManager, CoverConfig};
-//! 
+//!
 //! let config = CoverConfig::new()
 //!     .min_rate(1.0)
 //!     .max_rate(10.0)
@@ -25,9 +25,9 @@
 //! manager.start_adaptive_cover();
 //! ```
 
-use std::time::{Duration, Instant};
-use rand::Rng;
 use crate::cover::poisson_rate;
+use rand::Rng;
+use std::time::{Duration, Instant};
 
 /// Configuration for adaptive cover traffic
 #[derive(Debug, Clone)]
@@ -124,7 +124,7 @@ impl AdaptiveCoverManager {
     /// Update network metrics and potentially adjust cover traffic rate
     pub fn update_metrics(&mut self, metrics: NetworkMetrics) {
         self.metrics_history.push(metrics.clone());
-        
+
         // Keep only recent history (last 10 measurements)
         if self.metrics_history.len() > 10 {
             self.metrics_history.remove(0);
@@ -142,7 +142,7 @@ impl AdaptiveCoverManager {
     /// Generate cover traffic for the current time period
     pub fn generate_cover_traffic(&self, rng: &mut impl Rng) -> u32 {
         let base_count = poisson_rate(self.current_rate, rng);
-        
+
         // Apply burst protection if enabled
         if self.config.burst_protection && self.burst_detector.is_burst_detected() {
             // Increase cover traffic during bursts to maintain anonymity
@@ -187,7 +187,9 @@ impl AdaptiveCoverManager {
         self.current_rate += rate_change;
 
         // Clamp to configured bounds
-        self.current_rate = self.current_rate.clamp(self.config.min_rate, self.config.max_rate);
+        self.current_rate = self
+            .current_rate
+            .clamp(self.config.min_rate, self.config.max_rate);
     }
 }
 
@@ -236,7 +238,7 @@ mod tests {
             .min_rate(1.0)
             .max_rate(8.0)
             .load_sensitivity(0.5);
-        
+
         assert_eq!(config.min_rate, 1.0);
         assert_eq!(config.max_rate, 8.0);
         assert_eq!(config.load_sensitivity, 0.5);
@@ -250,7 +252,7 @@ mod tests {
 
         let initial_rate = manager.current_rate();
         let traffic = manager.generate_cover_traffic(&mut rng);
-        
+
         assert!(initial_rate > 0.0);
         assert!(traffic <= 50); // Reasonable upper bound
     }

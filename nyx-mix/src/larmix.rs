@@ -2,10 +2,13 @@
 //! Low-latency anonymous routing with mix network design.
 
 use rand::Rng;
-use rand_distr::{Exp, Distribution};
+use rand_distr::{Distribution, Exp};
 
 #[derive(Debug, Clone)]
-pub struct Candidate { pub id: String, pub rtt_ms: u32 }
+pub struct Candidate {
+    pub id: String,
+    pub rtt_ms: u32,
+}
 
 impl Candidate {
     pub fn new(id: String, rtt_ms: u32) -> Self {
@@ -15,7 +18,10 @@ impl Candidate {
 
 /// Select mix node using exponential distribution (Loopix-style)
 /// Lower RTT nodes have higher probability of selection
-pub fn select_mix_node<'a>(candidates: &'a [Candidate], rng: &'a mut impl Rng) -> Option<&'a Candidate> {
+pub fn select_mix_node<'a>(
+    candidates: &'a [Candidate],
+    rng: &'a mut impl Rng,
+) -> Option<&'a Candidate> {
     if candidates.is_empty() {
         return None;
     }
@@ -25,7 +31,9 @@ pub fn select_mix_node<'a>(candidates: &'a [Candidate], rng: &'a mut impl Rng) -
         .iter()
         .map(|c| {
             let rate = 1.0 / (c.rtt_ms as f64 + 1.0); // +1 to avoid division by zero
-            Exp::new(rate).unwrap_or_else(|_| Exp::new(1.0).unwrap()).sample(rng)
+            Exp::new(rate)
+                .unwrap_or_else(|_| Exp::new(1.0).unwrap())
+                .sample(rng)
         })
         .collect();
 
@@ -40,11 +48,7 @@ pub fn select_mix_node<'a>(candidates: &'a [Candidate], rng: &'a mut impl Rng) -
 }
 
 /// Build multi-hop path through mix network
-pub fn build_mix_path(
-    candidates: &[Candidate], 
-    hops: usize, 
-    rng: &mut impl Rng
-) -> Vec<String> {
+pub fn build_mix_path(candidates: &[Candidate], hops: usize, rng: &mut impl Rng) -> Vec<String> {
     let mut path = Vec::new();
     let mut remaining: Vec<Candidate> = candidates.to_vec();
 
@@ -99,10 +103,10 @@ mod tests {
 
         let mut rng = thread_rng();
         let path = build_mix_path(&candidates, 3, &mut rng);
-        
+
         assert!(path.len() <= 3);
         assert!(path.len() <= candidates.len());
-        
+
         // Ensure no duplicates in path
         let mut unique_path = path.clone();
         unique_path.sort();
@@ -112,9 +116,7 @@ mod tests {
 
     #[test]
     fn test_path_longer_than_candidates() {
-        let candidates = vec![
-            Candidate::new("only".to_string(), 20),
-        ];
+        let candidates = vec![Candidate::new("only".to_string(), 20)];
 
         let mut rng = thread_rng();
         let path = build_mix_path(&candidates, 5, &mut rng);
