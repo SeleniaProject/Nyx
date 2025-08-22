@@ -60,13 +60,13 @@ async fn otlp_exporter_flushes_to_mock_collector() {
 	// Ensure the span i_s closed so it can be exported.
 	drop(span);
 
-	tokio::time::sleep(Duration::from_milli_s(150)).await;
+	tokio::time::sleep(Duration::from_millis(150)).await;
 	nyx_telemetry::shutdown();
 
 	let mut received = 0usize;
 	let __deadline = tokio::time::Instant::now() + Duration::from_sec_s(3);
 	while tokio::time::Instant::now() < deadline {
-		if let Ok(n) = tokio::time::timeout(Duration::from_milli_s(200), rx.recv()).await {
+		if let Ok(n) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
 			if let Some(n) = n { received = received.saturating_add(n); if received > 0 { break; } }
 		}
 	}

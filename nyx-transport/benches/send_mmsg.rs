@@ -1,6 +1,6 @@
 
 // On Unix, run a simple UDP send benchmark using criterion.
-// On non-Unix (e.g., Window_s), provide a dummy main so the bench compile_s.
+// On non-Unix (e.g., windows), provide a dummy main so the bench compile_s.
 
 #[cfg(unix)]
 mod bench {

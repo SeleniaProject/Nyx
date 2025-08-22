@@ -1,4 +1,4 @@
-﻿//! Comprehensive STUN/TURN-like NAT traversal system with ICE connectivity.
+//! Comprehensive STUN/TURN-like NAT traversal system with ICE connectivity.
 //! 
 //! Thi_s module provide_s:
 //! - Complete STUN/TURN server and client implementation_s
@@ -8,11 +8,11 @@
 //! - Multi-strategy NAT traversal with automatic fallback_s
 
 use crate::{Error, Result};
-use std::collection_s::HashMap;
+use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::net::{UdpSocket a_s TokioUdpSocket, TcpListener a_s TokioTcpListener, TcpStream a_s TokioTcpStream};
+use tokio::net::{UdpSocket as TokioUdpSocket, TcpListener as TokioTcpListener, TcpStream as TokioTcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task::JoinHandle;
 
@@ -31,13 +31,13 @@ const MSG_CONNECTIVITY_RESPONSE_PREFIX: &str = "CONNECTIVITY_RESPONSE:";
 const MSG_RELAY_PREFIX: &str = "RELAY:";
 
 /// Default network timeout_s used in thi_s module.
-const DEFAULT_TIMEOUT: Duration = Duration::from_sec_s(5);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Polling interval_s and backoff duration_s
-const UDP_RECV_POLL: Duration = Duration::from_milli_s(100);
-const UDP_TRANSIENT_SLEEP: Duration = Duration::from_milli_s(5);
-const TCP_ACCEPT_POLL: Duration = Duration::from_milli_s(150);
-const TCP_TRANSIENT_SLEEP: Duration = Duration::from_milli_s(20);
+const UDP_RECV_POLL: Duration = Duration::from_millis(100);
+const UDP_TRANSIENT_SLEEP: Duration = Duration::from_millis(5);
+const TCP_ACCEPT_POLL: Duration = Duration::from_millis(150);
+const TCP_TRANSIENT_SLEEP: Duration = Duration::from_millis(20);
 
 /// Parse an addres_s from a message given a known prefix like "STUN_RESPONSE:".
 /// Return_s a parsed SocketAddr or a StunError describing why parsing failed.
@@ -58,7 +58,7 @@ async fn recv_stun_response(socket: &TokioUdpSocket, timeout: Duration) -> StunR
     let mut buf = vec![0u8; 1024];
     match tokio::time::timeout(timeout, socket.recv_from(&mut buf)).await {
         Ok(Ok((len, _))) => {
-            let __response = String::from_utf8_lossy(&buf[..len]);
+            let response = String::from_utf8_lossy(&buf[..len]);
             parse_addr_from_prefixed_message(&response, MSG_STUN_RESPONSE_PREFIX)
         },
         Ok(Err(e)) => Err(StunError::Io(e)),
@@ -70,8 +70,8 @@ async fn recv_stun_response(socket: &TokioUdpSocket, timeout: Duration) -> StunR
 /// and external mapping, in a thread-safe manner with proper error handling.
 fn update_client_state(
     client_s: &Arc<Mutex<HashMap<SocketAddr, ClientState>>>,
-    __peer_addr: SocketAddr,
-    _now: Instant,
+    peer_addr: SocketAddr,
+    now: Instant,
 ) -> StunResult<()> {
     let mut client_s = safe_mutex_lock(client_s, "update_client_state")?;
     let __client = client_s.entry(peer_addr).or_insert_with(|| ClientState {
@@ -81,10 +81,10 @@ fn update_client_state(
         __transaction_count: 0,
     });
 
-    client.last_activity = now;
-    client.transaction_count += 1;
-    if !client.external_mapping_s.contain_s(&peer_addr) {
-        client.external_mapping_s.push(peer_addr);
+    __client.__last_activity = now;
+    __client.__transaction_count += 1;
+    if !__client.external_mapping_s.contains(&peer_addr) {
+        __client.external_mapping_s.push(peer_addr);
     }
     
     Ok(())
@@ -165,7 +165,7 @@ pub enum CandidateType {
 /// ICE connectivity candidate
 #[derive(Debug, Clone)]
 pub struct IceCandidate {
-    pub __candidate_type: CandidateType,
+    pub candidate_type: CandidateType,
     pub __transport: TransportProtocol,
     pub __addres_s: SocketAddr,
     pub __priority: u32,
@@ -176,12 +176,12 @@ pub struct IceCandidate {
 /// Connectivity establishment session
 #[derive(Debug)]
 pub struct ConnectivitySession {
-    pub __session_id: u64,
+    pub session_id: u64,
     pub local_candidate_s: Vec<IceCandidate>,
     pub remote_candidate_s: Vec<IceCandidate>,
     pub connectivity_check_s: HashMap<(SocketAddr, SocketAddr), ConnectivityCheckResult>,
     pub selected_pair: Option<(IceCandidate, IceCandidate)>,
-    pub __state: ConnectivityState,
+    pub state: ConnectivityState,
     pub strategie_s: Vec<ConnectivityStrategy>,
     pub __current_strategy: usize,
     pub __created_at: Instant,
@@ -202,7 +202,7 @@ pub enum ConnectivityState {
 #[derive(Debug, Clone)]
 pub struct ConnectivityCheckResult {
     pub __local_candidate: IceCandidate,
-    pub __remote_candidate: IceCandidate,
+    pub remote_candidate: IceCandidate,
     pub __succes_s: bool,
     pub __round_trip_time: Duration,
     pub error_reason: Option<String>,
@@ -212,7 +212,7 @@ pub struct ConnectivityCheckResult {
 /// TURN-like relay session for NAT traversal
 #[derive(Debug)]
 pub struct RelaySession {
-    pub __session_id: u64,
+    pub session_id: u64,
     pub __client_addr: SocketAddr,
     pub __relay_addr: SocketAddr,
     pub peer_permission_s: Vec<SocketAddr>,
@@ -247,9 +247,9 @@ pub struct EnhancedStunServer {
     join_handle_s: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
-/// Statistic_s for relay operation_s
+/// Statistics for relay operations
 #[derive(Debug, Clone)]
-pub struct RelayStatistic_s {
+pub struct RelayStatistics {
     pub __active_session_s: usize,
     pub __total_bytes_relayed: u64,
     pub __successful_allocation_s: u64,
@@ -257,7 +257,7 @@ pub struct RelayStatistic_s {
     pub __average_session_duration: Duration,
 }
 
-/// NAT type_s a_s detected by STUN-like procedu_re_s
+/// NAT type_s as detected by STUN-like procedu_re_s
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetectedNatType {
     /// No NAT detected
@@ -279,9 +279,9 @@ pub enum DetectedNatType {
 /// Result_s from NAT detection procedure
 #[derive(Debug, Clone)]
 pub struct NatDetectionResult {
-    pub _nat_type: DetectedNatType,
+    pub nat_type: DetectedNatType,
     pub external_addr: Option<SocketAddr>,
-    pub __local_addr: SocketAddr,
+    pub local_addr: SocketAddr,
     pub __detection_time: Duration,
     pub __can_hole_punch: bool,
     pub __supports_upnp: bool,
@@ -299,7 +299,7 @@ pub struct BindingRequest {
 #[derive(Debug, Clone)]
 pub struct BindingResponse {
     pub __transaction_id: u32,
-    pub __external_addr: SocketAddr,
+    pub external_addr: SocketAddr,
     pub __server_addr: SocketAddr,
     pub __round_trip_time: Duration,
 }
@@ -309,10 +309,10 @@ pub struct BindingResponse {
 pub struct HolePunchSession {
     #[allow(dead_code)] // Future feature: direct socket acces_s
     local_socket: Arc<TokioUdpSocket>,
-    __peer_addr: SocketAddr,
+    peer_addr: SocketAddr,
     #[allow(dead_code)] // Future feature: session tracking
-    __session_id: u64,
-    __state: HolePunchState,
+    session_id: u64,
+    state: HolePunchState,
     __attempt_s: u32,
     __max_attempt_s: u32,
     __last_attempt: Instant,
@@ -354,15 +354,15 @@ pub struct NatTraversal {
 impl AdvancedNatTraversal {
     /// Create a new advanced NAT traversal coordinator with comprehensive strategy support
     pub async fn new(
-        __local_addr: SocketAddr,
+        local_addr: SocketAddr,
         stun_server_s: Vec<SocketAddr>,
         turn_server_s: Vec<SocketAddr>,
         fallback_strategie_s: Vec<ConnectivityStrategy>,
     ) -> StunResult<Self> {
-        let __udp_socket = TokioUdpSocket::bind(local_addr).await?;
+        let udp_socket = TokioUdpSocket::bind(local_addr).await?;
         
         // Optionally bind TCP listener for fallback
-        let __tcp_listener = if fallback_strategie_s.contain_s(&ConnectivityStrategy::TcpFallback) {
+        let tcp_listener = if fallback_strategie_s.contains(&ConnectivityStrategy::TcpFallback) {
             match TokioTcpListener::bind(local_addr).await {
                 Ok(listener) => Some(Arc::new(listener)),
                 Err(_) => None, // TCP fallback unavailable
@@ -373,7 +373,7 @@ impl AdvancedNatTraversal {
         
         Ok(Self {
             udp_socket: Arc::new(udp_socket),
-            tcp_listener,
+            tcp_listener: tcp_listener,
             stun_server_s,
             turn_server_s,
             connectivity_session_s: Arc::new(Mutex::new(HashMap::new())),
@@ -385,10 +385,10 @@ impl AdvancedNatTraversal {
 
     /// Establish connectivity using ICE-like multi-candidate approach
     pub async fn establish_connectivity(&self, remote_addr: SocketAddr) -> StunResult<u64> {
-        let __session_id = self.generate_session_id()?;
+        let session_id = self.generate_session_id()?;
         
         // Phase 1: Gather local candidate_s
-        let __local_candidate_s = self.gather_local_candidate_s().await?;
+        let local_candidate_s = self.gather_local_candidate_s().await?;
         
         // Phase 2: Perform STUN discovery for server reflexive candidate_s
         let mut all_candidate_s = local_candidate_s;
@@ -402,17 +402,17 @@ impl AdvancedNatTraversal {
         }
 
         // Phase 4: Create connectivity session
-        let __session = ConnectivitySession {
+        let session = ConnectivitySession {
             session_id,
-            __local_candidate_s: all_candidate_s,
+            local_candidate_s: all_candidate_s,
             remote_candidate_s: vec![], // Will be populated by remote peer
             connectivity_check_s: HashMap::new(),
-            __selected_pair: None,
+            selected_pair: None,
             state: ConnectivityState::Gathering,
             strategie_s: self.fallback_strategie_s.clone(),
             __current_strategy: 0,
-            created_at: Instant::now(),
-            last_activity: Instant::now(),
+            __created_at: Instant::now(),
+            __last_activity: Instant::now(),
         };
 
         {
@@ -429,15 +429,15 @@ impl AdvancedNatTraversal {
     /// Gather local candidate_s (host candidate_s)
     async fn gather_local_candidate_s(&self) -> StunResult<Vec<IceCandidate>> {
         let mut candidate_s = Vec::new();
-        let __local_addr = self.udp_socket.local_addr()?;
+        let local_addr = self.udp_socket.local_addr()?;
         
         // Host candidate for UDP
         candidate_s.push(IceCandidate {
             candidate_type: CandidateType::Host,
-            transport: TransportProtocol::Udp,
+            __transport: TransportProtocol::Udp,
             __addres_s: local_addr,
-            priority: self.calculate_candidate_priority(CandidateType::Host, TransportProtocol::Udp),
-            foundation: format!("host_udp_{}", local_addr.port()),
+            __priority: self.calculate_candidate_priority(CandidateType::Host, TransportProtocol::Udp),
+            __foundation: format!("host_udp_{}", local_addr.port()),
             __component_id: 1,
         });
 
@@ -446,10 +446,10 @@ impl AdvancedNatTraversal {
             if let Ok(tcp_addr) = tcp_listener.local_addr() {
                 candidate_s.push(IceCandidate {
                     candidate_type: CandidateType::Host,
-                    transport: TransportProtocol::Tcp,
+                    __transport: TransportProtocol::Tcp,
                     __addres_s: tcp_addr,
-                    priority: self.calculate_candidate_priority(CandidateType::Host, TransportProtocol::Tcp),
-                    foundation: format!("host_tcp_{}", tcp_addr.port()),
+                    __priority: self.calculate_candidate_priority(CandidateType::Host, TransportProtocol::Tcp),
+                    __foundation: format!("host_tcp_{}", tcp_addr.port()),
                     __component_id: 1,
                 });
             }
@@ -466,10 +466,10 @@ impl AdvancedNatTraversal {
             if let Ok(external_addr) = self.query_stun_server(stun_server).await {
                 candidate_s.push(IceCandidate {
                     candidate_type: CandidateType::ServerReflexive,
-                    transport: TransportProtocol::Udp,
+                    __transport: TransportProtocol::Udp,
                     __addres_s: external_addr,
-                    priority: self.calculate_candidate_priority(CandidateType::ServerReflexive, TransportProtocol::Udp),
-                    foundation: format!("srflx_udp_{}", external_addr.port()),
+                    __priority: self.calculate_candidate_priority(CandidateType::ServerReflexive, TransportProtocol::Udp),
+                    __foundation: format!("srflx_udp_{}", external_addr.port()),
                     __component_id: 1,
                 });
             }
@@ -485,45 +485,45 @@ impl AdvancedNatTraversal {
         }
 
         let __turn_server = self.turn_server_s[0]; // Use first available TURN server
-        let __session_id = self.generate_session_id()?;
+        let session_id = self.generate_session_id()?;
         
         // Simplified TURN allocation request
         let __allocation_request = b"TURN_ALLOCATE";
-        self.udp_socket.send_to(allocation_request, turn_server).await?;
+        self.udp_socket.send_to(__allocation_request, __turn_server).await?;
         
         // Wait for allocation response
         let mut buffer = [0u8; 1024];
-        let __timeout = Duration::from_sec_s(5);
+        let timeout = Duration::from_secs(5);
         
         match tokio::time::timeout(timeout, self.udp_socket.recv_from(&mut buffer)).await {
             Ok(Ok((len, _))) => {
-                let __response = String::from_utf8_lossy(&buffer[..len]);
+                let response = String::from_utf8_lossy(&buffer[..len]);
                 if let Some(relay_addr_str) = response.strip_prefix("TURN_ALLOCATED:") {
                     if let Ok(relay_addr) = relay_addr_str.parse::<SocketAddr>() {
                         // Create relay session
                         let __relay_session = RelaySession {
-                            session_id,
-                            client_addr: self.udp_socket.local_addr()?,
-                            relay_addr,
+                            session_id: session_id,
+                            __client_addr: self.udp_socket.local_addr()?,
+                            __relay_addr: relay_addr,
                             peer_permission_s: Vec::new(),
-                            __data_channel: None,
-                            allocated_at: Instant::now(),
-                            last_refresh: Instant::now(),
+                            data_channel: None,
+                            __allocated_at: Instant::now(),
+                            __last_refresh: Instant::now(),
                             __bytes_relayed: 0,
-                            expires_at: Instant::now() + Duration::from_sec_s(600), // 10 minute_s
+                            __expires_at: Instant::now() + Duration::from_secs(600), // 10 minutes
                         };
                         
                         {
                             let mut session_s = safe_mutex_lock(&self.relay_session_s, "allocate_turn_relay")?;
-                            session_s.insert(session_id, relay_session);
+                            session_s.insert(session_id, __relay_session);
                         }
                         
                         return Ok(IceCandidate {
                             candidate_type: CandidateType::Relay,
-                            transport: TransportProtocol::Udp,
+                            __transport: TransportProtocol::Udp,
                             __addres_s: relay_addr,
-                            priority: self.calculate_candidate_priority(CandidateType::Relay, TransportProtocol::Udp),
-                            foundation: format!("relay_udp_{}", relay_addr.port()),
+                            __priority: self.calculate_candidate_priority(CandidateType::Relay, TransportProtocol::Udp),
+                            __foundation: format!("relay_udp_{}", relay_addr.port()),
                             __component_id: 1,
                         });
                     }
@@ -536,19 +536,19 @@ impl AdvancedNatTraversal {
     }
 
     /// Perform connectivity check_s for all candidate pair_s
-    async fn perform_connectivity_check_s(&self, __session_id: u64, remote_addr: SocketAddr) -> StunResult<()> {
+    async fn perform_connectivity_check_s(&self, session_id: u64, remote_addr: SocketAddr) -> StunResult<()> {
         // Create a simple remote candidate for testing
-        let __remote_candidate = IceCandidate {
+        let remote_candidate = IceCandidate {
             candidate_type: CandidateType::Host,
-            transport: TransportProtocol::Udp,
+            __transport: TransportProtocol::Udp,
             __addres_s: remote_addr,
-            priority: self.calculate_candidate_priority(CandidateType::Host, TransportProtocol::Udp),
-            foundation: format!("remote_host_{}", remote_addr.port()),
+            __priority: self.calculate_candidate_priority(CandidateType::Host, TransportProtocol::Udp),
+            __foundation: format!("remote_host_{}", remote_addr.port()),
             __component_id: 1,
         };
 
-        let __local_candidate_s = {
-            let __session_s = safe_mutex_lock(&self.connectivity_session_s, "connectivity_sessions_operation")?;
+        let local_candidate_s = {
+            let session_s = safe_mutex_lock(&self.connectivity_session_s, "connectivity_sessions_operation")?;
             if let Some(session) = session_s.get(&session_id) {
                 session.local_candidate_s.clone()
             } else {
@@ -570,12 +570,12 @@ impl AdvancedNatTraversal {
             let __check_result = self.perform_connectivity_check(local_candidate, &remote_candidate).await;
             
             let __connectivity_check = ConnectivityCheckResult {
-                local_candidate: local_candidate.clone(),
+                __local_candidate: local_candidate.clone(),
                 remote_candidate: remote_candidate.clone(),
-                succes_s: check_result.is_ok(),
-                round_trip_time: check_result.as_ref().map(|d| *d).unwrap_or(Duration::from_sec_s(30)),
-                error_reason: check_result.err().map(|e| e.to_string()),
-                checked_at: Instant::now(),
+                __succes_s: __check_result.is_ok(),
+                __round_trip_time: __check_result.as_ref().map(|d| *d).unwrap_or(Duration::from_secs(30)),
+                error_reason: __check_result.err().map(|e| e.to_string()),
+                __checked_at: Instant::now(),
             };
 
             // Store check result
@@ -583,12 +583,12 @@ impl AdvancedNatTraversal {
                 let mut session_s = safe_mutex_lock(&self.connectivity_session_s, "connectivity_sessions_operation")?;
                 if let Some(session) = session_s.get_mut(&session_id) {
                     session.connectivity_check_s.insert(
-                        (local_candidate.addres_s, remote_candidate.addres_s),
-                        connectivity_check.clone()
+                        (local_candidate.__addres_s, remote_candidate.__addres_s),
+                        __connectivity_check.clone()
                     );
                     
                     // Select the first successful pair
-                    if connectivity_check.succes_s && session.selected_pair.isnone() {
+                    if __connectivity_check.__succes_s && session.selected_pair.is_none() {
                         session.selected_pair = Some((local_candidate.clone(), remote_candidate.clone()));
                         session.state = ConnectivityState::Connected;
                     }
@@ -605,19 +605,19 @@ impl AdvancedNatTraversal {
         local_candidate: &IceCandidate,
         remote_candidate: &IceCandidate,
     ) -> StunResult<Duration> {
-        let __start_time = Instant::now();
+        let start_time = Instant::now();
         
-        match (local_candidate.transport, remote_candidate.transport) {
+        match (local_candidate.__transport, remote_candidate.__transport) {
             (TransportProtocol::Udp, TransportProtocol::Udp) => {
                 // UDP connectivity check
-                let __message = format!("CONNECTIVITY_CHECK:{}:{}", 
-                    local_candidate.addres_s, remote_candidate.addres_s);
+                let message = format!("CONNECTIVITY_CHECK:{}:{}", 
+                    local_candidate.__addres_s, remote_candidate.__addres_s);
                 
-                self.udp_socket.send_to(message.as_byte_s(), remote_candidate.addres_s).await?;
+                self.udp_socket.send_to(message.as_bytes(), remote_candidate.__addres_s).await?;
                 
                 // Wait for any response (simplified)
                 let mut buffer = [0u8; 256];
-                let __timeout = Duration::from_sec_s(5);
+                let timeout = Duration::from_secs(5);
                 
                 match tokio::time::timeout(timeout, self.udp_socket.recv_from(&mut buffer)).await {
                     Ok(Ok(_)) => Ok(start_time.elapsed()),
@@ -626,11 +626,11 @@ impl AdvancedNatTraversal {
             },
             (TransportProtocol::Tcp, TransportProtocol::Tcp) => {
                 // TCP connectivity check
-                match TokioTcpStream::connect(remote_candidate.addres_s).await {
+                match TokioTcpStream::connect(remote_candidate.__addres_s).await {
                     Ok(mut stream) => {
-                        let __message = format!("CONNECTIVITY_CHECK:{}:{}\n", 
-                            local_candidate.addres_s, remote_candidate.addres_s);
-                        stream.write_all(message.as_byte_s()).await?;
+                        let message = format!("CONNECTIVITY_CHECK:{}:{}\n", 
+                            local_candidate.__addres_s, remote_candidate.__addres_s);
+                        stream.write_all(message.as_bytes()).await?;
                         
                         let mut buffer = [0u8; 256];
                         let ___ = stream.read(&mut buffer).await?;
@@ -650,21 +650,21 @@ impl AdvancedNatTraversal {
     /// Query STUN server for external addres_s mapping
     async fn query_stun_server(&self, stun_server: SocketAddr) -> StunResult<SocketAddr> {
         self.udp_socket
-            .send_to(MSG_STUN_BINDING_REQUEST.as_byte_s(), stun_server)
+            .send_to(MSG_STUN_BINDING_REQUEST.as_bytes(), stun_server)
             .await?;
         recv_stun_response(&self.udp_socket, DEFAULT_TIMEOUT).await
     }
 
     /// Calculate ICE candidate priority
-    fn calculate_candidate_priority(&self, __candidate_type: CandidateType, transport: TransportProtocol) -> u32 {
-        let __type_preference = match candidate_type {
+    fn calculate_candidate_priority(&self, candidate_type: CandidateType, transport: TransportProtocol) -> u32 {
+        let type_preference = match candidate_type {
             CandidateType::Host => 126,
             CandidateType::PeerReflexive => 110,
             CandidateType::ServerReflexive => 100,
             CandidateType::Relay => 0,
         };
         
-        let __local_preference = match transport {
+        let local_preference = match transport {
             TransportProtocol::Udp => 65535,
             TransportProtocol::Tcp => 32767,
             TransportProtocol::Both => 49151,
@@ -676,32 +676,32 @@ impl AdvancedNatTraversal {
     /// Generate unique session ID
     fn generate_session_id(&self) -> StunResult<u64> {
         let mut next_id = safe_mutex_lock(&self.next_session_id, "next_session_id_operation")?;
-        let __id = *next_id;
+        let id = *next_id;
         *next_id += 1;
         Ok(id)
     }
 
     /// Get connectivity session statu_s
     pub fn get_session_statu_s(&self, session_id: u64) -> Option<ConnectivityState> {
-        let __session_s = safe_mutex_lock(&self.connectivity_session_s, "connectivity_sessions_operation").ok()?;
+        let session_s = safe_mutex_lock(&self.connectivity_session_s, "connectivity_sessions_operation").ok()?;
         session_s.get(&session_id).map(|_s| _s.state)
     }
 
     /// Cleanup expired session_s
     pub fn cleanup_session_s(&self) -> StunResult<()> {
-        let _now = Instant::now();
-        let __session_timeout = Duration::from_sec_s(300); // 5 minute_s
+        let now = Instant::now();
+        let session_timeout = Duration::from_secs(300); // 5 minutes
         
         {
             let mut session_s = safe_mutex_lock(&self.connectivity_session_s, "connectivity_sessions_operation")?;
             session_s.retain(|_, session| {
-                now.duration_since(session.last_activity) < session_timeout
+                now.duration_since(session.__last_activity) < session_timeout
             });
         }
         
         {
             let mut relay_session_s = safe_mutex_lock(&self.relay_session_s, "relay_sessions_operation")?;
-            relay_session_s.retain(|_, session| now < session.expires_at);
+            relay_session_s.retain(|_, session| now < session.__expires_at);
         }
         Ok(())
     }
@@ -719,7 +719,7 @@ impl AdvancedNatTraversal {
 impl StunServer {
     /// Create a new STUN server bound to the given addres_s
     pub async fn new(bind_addr: SocketAddr) -> StunResult<Self> {
-        let __socket = TokioUdpSocket::bind(bind_addr).await?;
+        let socket = TokioUdpSocket::bind(bind_addr).await?;
         
         Ok(Self {
             socket: Arc::new(socket),
@@ -739,15 +739,15 @@ impl StunServer {
             *running = true;
         }
 
-        let __socket = Arc::clone(&self.socket);
-        let __client_s = Arc::clone(&self.client_s);
-        let __running = Arc::clone(&self.running);
+        let socket = Arc::clone(&self.socket);
+        let client_s = Arc::clone(&self.client_s);
+        let running = Arc::clone(&self.running);
 
-        let __handle = tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut buf = vec![0u8; 1024];
             
             loop {
-                let __should_continue = match safe_mutex_lock(&running, "running_operation") {
+                let should_continue = match safe_mutex_lock(&running, "running_operation") {
                     Ok(lock) => *lock,
                     Err(_) => break,
                 };
@@ -784,7 +784,7 @@ impl StunServer {
 
     /// Wait for background task_s to finish after stop() i_s called.
     pub async fn wait_terminated(&self, max_wait: Duration) -> StunResult<()> {
-        let __handle_s = {
+        let handle_s = {
             let mut v = safe_mutex_lock(&self.join_handle_s, "join_handles_operation")?;
             std::mem::take(&mut *v)
         };
@@ -804,14 +804,14 @@ impl StunServer {
         client_s: &Arc<Mutex<HashMap<SocketAddr, ClientState>>>,
         socket: &TokioUdpSocket,
         _data: &[u8],
-        __peer_addr: SocketAddr,
+        peer_addr: SocketAddr,
     ) -> StunResult<()> {
-        let _now = Instant::now();
+        let now = Instant::now();
         update_client_state(client_s, peer_addr, now)?;
         
         // Echo back the message with addres_s information
-        let __response = format!("{}{}", MSG_STUN_RESPONSE_PREFIX, peer_addr);
-        socket.send_to(response.as_byte_s(), peer_addr).await
+        let response = format!("{}{}", MSG_STUN_RESPONSE_PREFIX, peer_addr);
+        socket.send_to(response.as_bytes(), peer_addr).await
             .map_err(StunError::Io)?;
         
         Ok(())
@@ -819,23 +819,23 @@ impl StunServer {
 
     /// Get statistic_s for all client_s with proper error handling
     pub fn get_client_stat_s(&self) -> StunResult<Vec<(SocketAddr, ClientState)>> {
-        let __client_s = safe_mutex_lock(&self.client_s, "get_client_stat_s")?;
+        let client_s = safe_mutex_lock(&self.client_s, "get_client_stat_s")?;
         Ok(client_s.iter().map(|(addr, state)| (*addr, state.clone())).collect())
     }
 
     /// Cleanup old client entrie_s
     pub fn cleanup_client_s(&self, max_age: Duration) -> StunResult<()> {
         let mut client_s = safe_mutex_lock(&self.client_s, "clients_operation")?;
-        let _now = Instant::now();
-        client_s.retain(|_, state| now.duration_since(state.last_activity) < max_age);
+        let now = Instant::now();
+        client_s.retain(|_, state| now.duration_since(state.__last_activity) < max_age);
         Ok(())
     }
 }
 
 impl NatTraversal {
     /// Create a new NAT traversal coordinator
-    pub async fn new(__local_addr: SocketAddr, stun_server_s: Vec<SocketAddr>) -> StunResult<Self> {
-        let __socket = TokioUdpSocket::bind(local_addr).await?;
+    pub async fn new(local_addr: SocketAddr, stun_server_s: Vec<SocketAddr>) -> StunResult<Self> {
+        let socket = TokioUdpSocket::bind(local_addr).await?;
         
         Ok(Self {
             local_socket: Arc::new(socket),
@@ -847,15 +847,15 @@ impl NatTraversal {
 
     /// Detect NAT type using STUN-like procedu_re_s
     pub async fn detectnat_type(&self) -> StunResult<NatDetectionResult> {
-        let __start_time = Instant::now();
-        let __local_addr = self.local_socket.local_addr()?;
+        let start_time = Instant::now();
+        let local_addr = self.local_socket.local_addr()?;
         
         if self.stun_server_s.is_empty() {
             return Ok(NatDetectionResult {
                 nat_type: DetectedNatType::Unknown,
-                __external_addr: None,
+                external_addr: None,
                 local_addr,
-                detection_time: start_time.elapsed(),
+                __detection_time: start_time.elapsed(),
                 __can_hole_punch: false,
                 __supports_upnp: false,
             });
@@ -870,15 +870,15 @@ impl NatTraversal {
             }
         }
         
-        let _nat_type = self.analyze_mapping_s(&external_mapping_s, local_addr);
-        let __external_addr = external_mapping_s.first().copied();
+        let nat_type = self.analyze_mapping_s(&external_mapping_s, local_addr);
+        let external_addr = external_mapping_s.first().copied();
         
         Ok(NatDetectionResult {
             nat_type,
             external_addr,
             local_addr,
-            detection_time: start_time.elapsed(),
-            can_hole_punch: matche_s!(nat_type, DetectedNatType::FullCone | DetectedNatType::RestrictedCone),
+            __detection_time: start_time.elapsed(),
+            __can_hole_punch: matches!(nat_type, DetectedNatType::FullCone | DetectedNatType::RestrictedCone),
             __supports_upnp: false, // UPnP detection would go here
         })
     }
@@ -886,7 +886,7 @@ impl NatTraversal {
     /// Query a STUN server for external addres_s
     async fn query_stun_server(&self, stun_server: SocketAddr) -> StunResult<SocketAddr> {
         self.local_socket
-            .send_to(MSG_STUN_REQUEST.as_byte_s(), stun_server)
+            .send_to(MSG_STUN_REQUEST.as_bytes(), stun_server)
             .await?;
         recv_stun_response(&self.local_socket, DEFAULT_TIMEOUT).await
     }
@@ -897,13 +897,13 @@ impl NatTraversal {
             return DetectedNatType::Blocked;
         }
         
-        // Check if local addres_s matche_s external (no NAT)
+        // Check if local addres_s matches external (no NAT)
         if mapping_s.iter().any(|&addr| addr.ip() == local_addr.ip()) {
             return DetectedNatType::OpenInternet;
         }
         
         // Check consistency of mapping_s
-        let __first_mapping = mapping_s[0];
+        let first_mapping = mapping_s[0];
         if mapping_s.iter().all(|&addr| addr == first_mapping) {
             // Consistent mapping suggest_s cone NAT
             DetectedNatType::FullCone
@@ -915,21 +915,21 @@ impl NatTraversal {
 
     /// Initiate hole punching with a peer
     pub async fn initiate_hole_punch(&self, peer_addr: SocketAddr) -> StunResult<u64> {
-        let __session_id = {
+        let session_id = {
             let mut next_id = safe_mutex_lock(&self.next_session_id, "next_session_id_operation")?;
-            let __id = *next_id;
+            let id = *next_id;
             *next_id += 1;
             id
         };
 
-        let __session = HolePunchSession {
+        let session = HolePunchSession {
             local_socket: Arc::clone(&self.local_socket),
             peer_addr,
             session_id,
             state: HolePunchState::Initiating,
             __attempt_s: 0,
             __max_attempt_s: 10,
-            last_attempt: Instant::now(),
+            __last_attempt: Instant::now(),
         };
 
         {
@@ -944,16 +944,16 @@ impl NatTraversal {
     /// Perform the actual hole punching procedure
     async fn perform_hole_punch(&self, session_id: u64) -> StunResult<()> {
         let (peer_addr, max_attempt_s) = {
-            let __session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation")?;
-            let __session = session_s.get(&session_id)
+            let session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation")?;
+            let session = session_s.get(&session_id)
                 .ok_or_else(|| StunError::HolePunchingFailed("Session not found".to_string()))?;
-            (session.peer_addr, session.max_attempt_s)
+            (session.peer_addr, session.__max_attempt_s)
         };
 
         // Send multiple packet_s to create NAT mapping
         for attempt in 0..max_attempt_s {
-            let __message = format!("HOLE_PUNCH:{}", session_id);
-            if let Err(e) = self.local_socket.send_to(message.as_byte_s(), peer_addr).await {
+            let message = format!("HOLE_PUNCH:{}", session_id);
+            if let Err(e) = self.local_socket.send_to(message.as_bytes(), peer_addr).await {
                 return Err(StunError::HolePunchingFailed(format!("Send failed: {}", e)));
             }
             
@@ -961,17 +961,17 @@ impl NatTraversal {
             {
                 let mut session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation")?;
                 if let Some(session) = session_s.get_mut(&session_id) {
-                    session.attempt_s = attempt + 1;
+                    session.__attempt_s = attempt + 1;
                     session.state = HolePunchState::Punching;
-                    session.last_attempt = Instant::now();
+                    session.__last_attempt = Instant::now();
                 }
             }
             
             // Wait between attempt_s
-            tokio::time::sleep(Duration::from_milli_s(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        // Mark a_s established (simplified)
+        // Mark as established (simplified)
         {
             let mut session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation")?;
             if let Some(session) = session_s.get_mut(&session_id) {
@@ -984,17 +984,17 @@ impl NatTraversal {
 
     /// Get the state of a hole punching session
     pub fn get_session_state(&self, session_id: u64) -> Option<HolePunchState> {
-        let __session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation").ok()?;
+        let session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation").ok()?;
         session_s.get(&session_id).map(|_s| _s.state)
     }
 
     /// Cleanup completed or failed session_s
     pub fn cleanup_session_s(&self) -> StunResult<()> {
         let mut session_s = safe_mutex_lock(&self.hole_punch_session_s, "hole_punch_sessions_operation")?;
-        let _now = Instant::now();
+        let now = Instant::now();
         session_s.retain(|_, session| {
-            matche_s!(session.state, HolePunchState::Initiating | HolePunchState::Punching) &&
-            now.duration_since(session.last_attempt) < Duration::from_sec_s(30)
+            matches!(session.state, HolePunchState::Initiating | HolePunchState::Punching) &&
+            now.duration_since(session.__last_attempt) < Duration::from_secs(30)
         });
         Ok(())
     }
@@ -1003,14 +1003,14 @@ impl NatTraversal {
 /// Run a simple UDP echo loop for a bounded duration/iteration_s.
 /// Return_s the local socket addres_s used.
 pub fn run_echo_once(timeout: Duration) -> Result<SocketAddr> {
-    let __sock = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| Error::Msg(e.to_string()))?;
+    let sock = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| Error::Msg(e.to_string()))?;
     sock.set_read_timeout(Some(timeout)).ok();
-    let __local = sock.local_addr().map_err(|e| Error::Msg(e.to_string()))?;
+    let local = sock.local_addr().map_err(|e| Error::Msg(e.to_string()))?;
     // Send to ourselve_s and read back to validate reachability.
-    let __payload = b"echo";
+    let payload = b"echo";
     sock.send_to(payload, local).map_err(|e| Error::Msg(e.to_string()))?;
     let mut buf = [0u8; 16];
-    let __started = Instant::now();
+    let started = Instant::now();
     while started.elapsed() < timeout {
         if let Ok((n, from)) = sock.recv_from(&mut buf) {
             if &buf[..n] == payload && from == local {
@@ -1027,19 +1027,19 @@ mod test_s {
 
     #[test]
     fn echo_smoke() { 
-        let ___ = run_echo_once(Duration::from_milli_s(200))?; 
+        let ___ = run_echo_once(Duration::from_millis(200))?; 
     }
 
     #[tokio::test]
     async fn enhanced_stun_server_creation() {
-        let __udp_addr = "127.0.0.1:0".parse()?;
+        let udp_addr = "127.0.0.1:0".parse()?;
         let __server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await;
         assert!(server.is_ok());
     }
 
     #[tokio::test]
     async fn enhanced_stun_server_lifecycle() {
-        let __udp_addr = "127.0.0.1:0".parse()?;
+        let udp_addr = "127.0.0.1:0".parse()?;
         let __server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await?;
         let (udp_local, tcp_local) = server.get_local_addresse_s()?;
         
@@ -1073,7 +1073,7 @@ mod test_s {
     #[tokio::test]
     async fn hole_punch_session_management() {
         let __traversal = NatTraversal::new("127.0.0.1:0".parse().unwrap(), vec![]).await?;
-        let __peer_addr = "127.0.0.1:8080".parse()?;
+        let peer_addr = "127.0.0.1:8080".parse()?;
         
         // Thi_s may fail due to no actual peer, but should create session
         let ___result = traversal.initiate_hole_punch(peer_addr).await;
@@ -1091,7 +1091,7 @@ mod test_s {
 
     #[tokio::test]
     async fn enhanced_stun_server_client_handling() -> StunResult<()> {
-        let __udp_addr = "127.0.0.1:0".parse()?;
+        let udp_addr = "127.0.0.1:0".parse()?;
         let __server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await?;
         server.start().await?;
         
@@ -1126,28 +1126,28 @@ mod test_s {
 
     #[test]
     fn binding_response_creation() {
-        let __response = BindingResponse {
+        let response = BindingResponse {
             __transaction_id: 12345,
             external_addr: "203.0.113.1:8080".parse().unwrap(),
             server_addr: "127.0.0.1:3478".parse().unwrap(),
-            round_trip_time: Duration::from_milli_s(50),
+            round_trip_time: Duration::from_millis(50),
         };
         
         assert_eq!(response.transaction_id, 12345);
-        assert!(response.round_trip_time < Duration::from_milli_s(100));
+        assert!(response.round_trip_time < Duration::from_millis(100));
     }
 }
 
 impl EnhancedStunServer {
     /// Create a new enhanced STUN server with TURN-like relay capabilitie_s
     pub async fn new(
-        __udp_bind_addr: SocketAddr,
+        udp_bind_addr: SocketAddr,
         tcp_bind_addr: Option<SocketAddr>,
         supported_protocol_s: Vec<TransportProtocol>,
     ) -> StunResult<Self> {
-        let __udp_socket = TokioUdpSocket::bind(udp_bind_addr).await?;
+        let udp_socket = TokioUdpSocket::bind(udp_bind_addr).await?;
         
-        let __tcp_listener = if let Some(tcp_addr) = tcp_bind_addr {
+        let tcp_listener = if let Some(tcp_addr) = tcp_bind_addr {
             match TokioTcpListener::bind(tcp_addr).await {
                 Ok(listener) => Some(Arc::new(listener)),
                 Err(_) => None,
@@ -1178,16 +1178,16 @@ impl EnhancedStunServer {
         }
 
         // Start UDP server
-        let __udp_socket = Arc::clone(&self.udp_socket);
-        let __client_s = Arc::clone(&self.client_s);
-        let __relay_session_s = Arc::clone(&self.relay_session_s);
-        let __running = Arc::clone(&self.running);
+        let udp_socket = Arc::clone(&self.udp_socket);
+        let client_s = Arc::clone(&self.client_s);
+        let relay_session_s = Arc::clone(&self.relay_session_s);
+        let running = Arc::clone(&self.running);
 
-        let __udp_handle = tokio::spawn(async move {
+        let udp_handle = tokio::spawn(async move {
             let mut buf = vec![0u8; 4096];
             
             loop {
-                let __should_continue = match safe_mutex_lock(&running, "running_operation") {
+                let should_continue = match safe_mutex_lock(&running, "running_operation") {
                     Ok(lock) => *lock,
                     Err(_) => break,
                 };
@@ -1212,13 +1212,13 @@ impl EnhancedStunServer {
 
         // Start TCP server if configured
         if let Some(ref tcp_listener) = self.tcp_listener {
-            let __tcp_listener = Arc::clone(tcp_listener);
-            let __client_s = Arc::clone(&self.client_s);
-            let __running = Arc::clone(&self.running);
+            let tcp_listener = Arc::clone(tcp_listener);
+            let client_s = Arc::clone(&self.client_s);
+            let running = Arc::clone(&self.running);
 
-            let __tcp_handle = tokio::spawn(async move {
+            let tcp_handle = tokio::spawn(async move {
                 loop {
-                    let __should_continue = match safe_mutex_lock(&running, "running_operation") {
+                    let should_continue = match safe_mutex_lock(&running, "running_operation") {
                         Ok(lock) => *lock,
                         Err(_) => break,
                     };
@@ -1228,7 +1228,7 @@ impl EnhancedStunServer {
                     }
             match tokio::time::timeout(TCP_ACCEPT_POLL, tcp_listener.accept()).await {
                         Ok(Ok((stream, peer_addr))) => {
-                            let __client_s = Arc::clone(&client_s);
+                            let client_s = Arc::clone(&client_s);
                             tokio::spawn(async move {
                                 Self::handle_tcp_connection(client_s, stream, peer_addr).await;
                             });
@@ -1259,47 +1259,47 @@ impl EnhancedStunServer {
         relay_session_s: &Arc<Mutex<HashMap<u64, RelaySession>>>,
         socket: &TokioUdpSocket,
         _data: &[u8],
-        __peer_addr: SocketAddr,
+        peer_addr: SocketAddr,
     ) -> StunResult<()> {
-        let __message = String::from_utf8_lossy(_data);
-        let _now = Instant::now();
+        let message = String::from_utf8_lossy(_data);
+        let now = Instant::now();
         update_client_state(client_s, peer_addr, now)?;
 
         if message.starts_with(MSG_STUN_BINDING_REQUEST) {
             // Handle STUN binding request
-            let __response = format!("{}{}", MSG_STUN_RESPONSE_PREFIX, peer_addr);
-            socket.send_to(response.as_byte_s(), peer_addr).await
+            let response = format!("{}{}", MSG_STUN_RESPONSE_PREFIX, peer_addr);
+            socket.send_to(response.as_bytes(), peer_addr).await
                 .map_err(StunError::Io)?;
         } else if message.starts_with(MSG_TURN_ALLOCATE) {
             // Handle TURN allocation request
-            let __session_id = now.elapsed().asnano_s() a_s u64; // Simple session ID
+            let session_id = now.elapsed().as_nanos() as u64; // Simple session ID
             let __relay_addr = socket.local_addr()
                 .map_err(StunError::Io)?; // Proper error handling for socket addres_s
             
             let __relay_session = RelaySession {
                 session_id,
                 __client_addr: peer_addr,
-                relay_addr,
+                __relay_addr,
                 peer_permission_s: Vec::new(),
-                __data_channel: None,
+                data_channel: None,
                 __allocated_at: now,
                 __last_refresh: now,
                 __bytes_relayed: 0,
-                expires_at: now + Duration::from_sec_s(600),
+                __expires_at: now + Duration::from_secs(600),
             };
             
             {
                 let mut session_s = safe_mutex_lock(relay_session_s, "handle_udp_message_turn_allocate")?;
-                session_s.insert(session_id, relay_session);
+                session_s.insert(session_id, __relay_session);
             }
             
-            let __response = format!("{}{}", MSG_TURN_ALLOCATED_PREFIX, relay_addr);
-            socket.send_to(response.as_byte_s(), peer_addr).await
+            let response = format!("{}{}", MSG_TURN_ALLOCATED_PREFIX, __relay_addr);
+            socket.send_to(response.as_bytes(), peer_addr).await
                 .map_err(StunError::Io)?;
         } else if message.starts_with(MSG_CONNECTIVITY_CHECK_PREFIX) {
             // Handle ICE connectivity check
-            let __response = format!("{}{}", MSG_CONNECTIVITY_RESPONSE_PREFIX, peer_addr);
-            socket.send_to(response.as_byte_s(), peer_addr).await
+            let response = format!("{}{}", MSG_CONNECTIVITY_RESPONSE_PREFIX, peer_addr);
+            socket.send_to(response.as_bytes(), peer_addr).await
                 .map_err(StunError::Io)?;
         } else {
             // Handle relay _data
@@ -1314,8 +1314,8 @@ impl EnhancedStunServer {
     /// Handle TCP connection_s for STUN over TCP
     async fn handle_tcp_connection(
         _client_s: Arc<Mutex<HashMap<SocketAddr, ClientState>>>,
-        mut __stream: TokioTcpStream,
-        __peer_addr: SocketAddr,
+        mut stream: TokioTcpStream,
+        peer_addr: SocketAddr,
     ) {
         let mut buffer = [0u8; 1024];
         
@@ -1324,11 +1324,11 @@ impl EnhancedStunServer {
                 break;
             }
             
-            let __message = String::from_utf8_lossy(&buffer[..n]);
+            let message = String::from_utf8_lossy(&buffer[..n]);
             
             if message.starts_with(MSG_CONNECTIVITY_CHECK_PREFIX) {
-                let __response = format!("{}{}\n", MSG_CONNECTIVITY_RESPONSE_PREFIX, peer_addr);
-                let ___ = stream.write_all(response.as_byte_s()).await;
+                let response = format!("{}{}\n", MSG_CONNECTIVITY_RESPONSE_PREFIX, peer_addr);
+                let ___ = stream.write_all(response.as_bytes()).await;
             }
         }
     }
@@ -1337,15 +1337,15 @@ impl EnhancedStunServer {
     async fn handle_relay_data(
         relay_session_s: &Arc<Mutex<HashMap<u64, RelaySession>>>,
         socket: &TokioUdpSocket,
-        __session_id: u64,
+        session_id: u64,
         _data: &[u8],
-        ___peer_addr: SocketAddr,
+        _peer_addr: SocketAddr,
     ) -> StunResult<()> {
-        let __relay_target = {
+        let relay_target = {
             let mut session_s = safe_mutex_lock(relay_session_s, "handle_relay_data")?;
             if let Some(session) = session_s.get_mut(&session_id) {
-                session.bytes_relayed += _data.len() a_s u64;
-                session.last_refresh = Instant::now();
+                session.__bytes_relayed += _data.len() as u64;
+                session.__last_refresh = Instant::now();
                 session.data_channel
             } else {
                 None
@@ -1383,7 +1383,7 @@ impl EnhancedStunServer {
 
     /// Wait for background task_s to finish after stop() i_s called.
     pub async fn wait_terminated(&self, max_wait: Duration) -> StunResult<()> {
-        let __handle_s = {
+        let handle_s = {
             let mut v = safe_mutex_lock(&self.join_handle_s, "join_handles_operation")?;
             std::mem::take(&mut *v)
         };
@@ -1394,32 +1394,32 @@ impl EnhancedStunServer {
     }
 
     /// Get relay statistic_s
-    pub fn get_relay_statistic_s(&self) -> StunResult<RelayStatistic_s> {
-        let __session_s = safe_mutex_lock(&self.relay_session_s, "relay_sessions_operation")?;
+    pub fn get_relay_statistic_s(&self) -> StunResult<RelayStatistics> {
+        let session_s = safe_mutex_lock(&self.relay_session_s, "relay_sessions_operation")?;
         let __active_session_s = session_s.len();
-        let __total_bytes_relayed = session_s.value_s().map(|_s| _s.bytes_relayed).sum();
+        let total_bytes_relayed = session_s.values().map(|_s| _s.__bytes_relayed).sum();
         
-        Ok(RelayStatistic_s {
-            active_session_s,
-            total_bytes_relayed,
-            successful_allocation_s: session_s.len() a_s u64,
+        Ok(RelayStatistics {
+            __active_session_s,
+            __total_bytes_relayed: total_bytes_relayed,
+            __successful_allocation_s: session_s.len() as u64,
             __failed_allocation_s: 0, // Simplified
-            average_session_duration: Duration::from_sec_s(300), // Simplified
+            __average_session_duration: Duration::from_secs(300), // Simplified
         })
     }
 
     /// Cleanup expired relay session_s
     pub fn cleanup_relay_session_s(&self) -> StunResult<()> {
-        let _now = Instant::now();
+        let now = Instant::now();
         let mut session_s = safe_mutex_lock(&self.relay_session_s, "relay_sessions_operation")?;
-        session_s.retain(|_, session| now < session.expires_at);
+        session_s.retain(|_, session| now < session.__expires_at);
         Ok(())
     }
 
     /// Get server local addresse_s
     pub fn get_local_addresse_s(&self) -> StunResult<(SocketAddr, Option<SocketAddr>)> {
-        let __udp_addr = self.udp_socket.local_addr()?;
-        let __tcp_addr = if let Some(ref tcp_listener) = self.tcp_listener {
+        let udp_addr = self.udp_socket.local_addr()?;
+        let tcp_addr = if let Some(ref tcp_listener) = self.tcp_listener {
             tcp_listener.local_addr().ok()
         } else {
             None
@@ -1472,7 +1472,7 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_advancednat_traversal_creation() {
-        let __local_addr = "127.0.0.1:0".parse()?;
+        let local_addr = "127.0.0.1:0".parse()?;
         let __stun_server_s = vec!["127.0.0.1:3478".parse().unwrap()];
         let __turn_server_s = vec!["127.0.0.1:3479".parse().unwrap()];
         let __strategie_s = vec![
@@ -1487,7 +1487,7 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_ice_candidate_gathering() {
-        let __local_addr = "127.0.0.1:0".parse()?;
+        let local_addr = "127.0.0.1:0".parse()?;
         let __traversal = AdvancedNatTraversal::new(local_addr, vec![], vec![], vec![]).await?;
         
         let __candidate_s = traversal.gather_local_candidate_s().await?;
@@ -1497,7 +1497,7 @@ mod advanced_test_s {
 
     #[test]
     fn test_candidate_priority_calculation() {
-        let __local_addr = "127.0.0.1:0".parse()?;
+        let local_addr = "127.0.0.1:0".parse()?;
         let __strategie_s = vec![ConnectivityStrategy::DirectUdp];
         
         let __rt = tokio::runtime::Runtime::new()?;
@@ -1513,8 +1513,8 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_enhanced_stun_server_creation() {
-        let __udp_addr = "127.0.0.1:0".parse()?;
-        let __tcp_addr = Some("127.0.0.1:0".parse().unwrap());
+        let udp_addr = "127.0.0.1:0".parse()?;
+        let tcp_addr = Some("127.0.0.1:0".parse().unwrap());
         let __protocol_s = vec![TransportProtocol::Udp, TransportProtocol::Tcp];
         
         let __server = EnhancedStunServer::new(udp_addr, tcp_addr, protocol_s).await;
@@ -1545,7 +1545,7 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_tcp_fallback_mechanism() {
-        let __local_addr = "127.0.0.1:0".parse()?;
+        let local_addr = "127.0.0.1:0".parse()?;
         let __strategie_s = vec![ConnectivityStrategy::TcpFallback];
         let __traversal = AdvancedNatTraversal::new(local_addr, vec![], vec![], strategie_s).await?;
         
@@ -1557,7 +1557,7 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_relay_statistic_s() -> StunResult<()> {
-        let __udp_addr = "127.0.0.1:0".parse()?;
+        let udp_addr = "127.0.0.1:0".parse()?;
         let __server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await?;
         
         let __stat_s = server.get_relay_statistic_s()?;
@@ -1568,11 +1568,11 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_connectivity_session_management() {
-        let __local_addr = "127.0.0.1:0".parse()?;
+        let local_addr = "127.0.0.1:0".parse()?;
         let __traversal = AdvancedNatTraversal::new(local_addr, vec![], vec![], vec![]).await?;
         
         let __remote_addr = "127.0.0.1:8080".parse()?;
-        let __session_id = traversal.establish_connectivity(remote_addr).await?;
+        let session_id = traversal.establish_connectivity(remote_addr).await?;
         
         assert!(session_id > 0);
         
@@ -1598,7 +1598,7 @@ mod advanced_test_s {
 
     #[tokio::test]
     async fn test_connectivity_cleanup() {
-        let __local_addr = "127.0.0.1:0".parse()?;
+        let local_addr = "127.0.0.1:0".parse()?;
         let __traversal = AdvancedNatTraversal::new(local_addr, vec![], vec![], vec![]).await?;
         
         // Test cleanup doesn't panic

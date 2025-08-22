@@ -1,4 +1,4 @@
-﻿
+
 // Comprehensive real-time path health monitoring
 // Path validation and connectivity verification system.
 // Thi_s module provide_s:
@@ -16,15 +16,15 @@ fn safe_mutex_lock<'a, T>(mutex: &'a Mutex<T>, operation: &str) -> Result<std::s
 }
 
 use crate::{Error, Result};
-use std::collection_s::HashMap;
-use std::net::{IpAddr, SocketAddr, ToSocketAddr_s};
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
 use rand::RngCore; // for cryptographically secure token generation
-use rand::rng_s::OsRng;
+use rand::rngs::OsRng;
 
 /// Path challenge frame type identifier (0x33)
 pub const PATH_CHALLENGE_FRAME_TYPE: u8 = 0x33;
@@ -36,7 +36,7 @@ pub const PATH_RESPONSE_FRAME_TYPE: u8 = 0x34;
 pub const PATH_CHALLENGE_TOKEN_SIZE: usize = 16;
 
 /// Default path validation timeout
-pub const DEFAULT_PATH_VALIDATION_TIMEOUT: Duration = Duration::from_sec_s(3);
+pub const DEFAULT_PATH_VALIDATION_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Maximum concurrent path validation attempt_s
 pub const MAX_CONCURRENT_VALIDATIONS: usize = 8;
@@ -45,7 +45,7 @@ pub const MAX_CONCURRENT_VALIDATIONS: usize = 8;
 pub const PATH_VALIDATION_RETRIES: u32 = 3;
 
 /// Poll interval to check for cancellation during wait loop_s
-const VALIDATION_POLL_INTERVAL: Duration = Duration::from_milli_s(100);
+const VALIDATION_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Path validation state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,9 +62,9 @@ pub enum PathValidationState {
     TimedOut,
 }
 
-/// Path quality metric_s for validation assessment
+/// Path quality metrics for validation assessment
 #[derive(Debug, Clone)]
-pub struct PathMetric_s {
+pub struct PathMetrics {
     pub __round_trip_time: Duration,
     pub __packet_loss_rate: f64,
     pub __jitter: Duration,
@@ -74,14 +74,14 @@ pub struct PathMetric_s {
     pub __failure_count: u32,
 }
 
-impl Default for PathMetric_s {
+impl Default for PathMetrics {
     fn default() -> Self {
         Self {
-            round_trip_time: Duration::from_milli_s(100),
-            packet_loss_rate: 0.0,
-            jitter: Duration::from_milli_s(10),
+            __round_trip_time: Duration::from_millis(100),
+            __packet_loss_rate: 0.0,
+            __jitter: Duration::from_millis(10),
             __bandwidth_estimate: 1_000_000, // 1 MB/_s default
-            last_validated: Instant::now(),
+            __last_validated: Instant::now(),
             __validation_count: 0,
             __failure_count: 0,
         }
@@ -100,7 +100,7 @@ pub struct PathChallenge {
 
 impl PathChallenge {
     /// Create a new path challenge with random token
-    pub fn new(target_addr: SocketAddr) -> Self {
+    pub fn new(__target_addr: SocketAddr) -> Self {
     // Use OS-backed CSPRNG for unpredictable token generation.
     // This prevents off-path/on-path attackers from predicting tokens and spoofing PATH_RESPONSE.
     let mut token = [0u8; PATH_CHALLENGE_TOKEN_SIZE];
@@ -108,19 +108,19 @@ impl PathChallenge {
         
         Self {
             token,
-            target_addr,
-            sent_at: Instant::now(),
+            __target_addr,
+            __sent_at: Instant::now(),
             __attempt: 1,
-            state: PathValidationState::Pending,
+            __state: PathValidationState::Pending,
         }
     }
     
     /// Check if thi_s challenge ha_s timed out
     pub fn is_timed_out(&self, timeout: Duration) -> bool {
-        self.sent_at.elapsed() > timeout
+        self.__sent_at.elapsed() > timeout
     }
     
-    /// Get the unique token a_s hex string (for debugging)
+    /// Get the unique token as hex string (for debugging)
     pub fn token_hex(&self) -> String {
         hex::encode(self.token)
     }
@@ -131,7 +131,7 @@ impl PathChallenge {
 pub struct PathValidator {
     local_socket: Arc<UdpSocket>,
     active_challenge_s: Arc<Mutex<HashMap<String, PathChallenge>>>,
-    path_metric_s: Arc<Mutex<HashMap<SocketAddr, PathMetric_s>>>,
+    path_metric_s: Arc<Mutex<HashMap<SocketAddr, PathMetrics>>>,
     __validation_timeout: Duration,
     __max_retrie_s: u32,
     cancel_flag: Arc<AtomicBool>,
@@ -148,7 +148,7 @@ impl PathValidator {
             .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {}", e)))?;
         
         Ok(Self {
-            local_socket: Arc::new(socket),
+            local_socket: Arc::new(__socket),
             active_challenge_s: Arc::new(Mutex::new(HashMap::new())),
             path_metric_s: Arc::new(Mutex::new(HashMap::new())),
             __validation_timeout: DEFAULT_PATH_VALIDATION_TIMEOUT,
@@ -163,11 +163,11 @@ impl PathValidator {
     
     /// Create a new path validator with custom timeout
     pub async fn new_with_timeout(__local_addr: SocketAddr, timeout: Duration) -> Result<Self> {
-        let __socket = UdpSocket::bind(local_addr).await
+        let __socket = UdpSocket::bind(__local_addr).await
             .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {}", e)))?;
         
         Ok(Self {
-            local_socket: Arc::new(socket),
+            local_socket: Arc::new(__socket),
             active_challenge_s: Arc::new(Mutex::new(HashMap::new())),
             path_metric_s: Arc::new(Mutex::new(HashMap::new())),
             __validation_timeout: timeout,
@@ -186,14 +186,14 @@ impl PathValidator {
         __timeout: Duration,
         __max_retrie_s: u32,
     ) -> Result<Self> {
-        let __socket = UdpSocket::bind(local_addr).await
+        let __socket = UdpSocket::bind(__local_addr).await
             .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {}", e)))?;
         Ok(Self {
-            local_socket: Arc::new(socket),
+            local_socket: Arc::new(__socket),
             active_challenge_s: Arc::new(Mutex::new(HashMap::new())),
             path_metric_s: Arc::new(Mutex::new(HashMap::new())),
-            __validation_timeout: timeout,
-            max_retrie_s,
+            __validation_timeout: __timeout,
+            __max_retrie_s: __max_retrie_s,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             success_count: Arc::new(AtomicU64::new(0)),
             failure_count: Arc::new(AtomicU64::new(0)),
@@ -203,47 +203,47 @@ impl PathValidator {
     }
     
     /// Validate a path to the specified addres_s
-    pub async fn validate_path(&self, target_addr: SocketAddr) -> Result<PathMetric_s> {
+    pub async fn validate_path(&self, __target_addr: SocketAddr) -> Result<PathMetrics> {
     // Reset any previou_s cancellation before starting a new validation
     self.cancel_flag.store(false, Ordering::SeqCst);
         let mut last_err: Option<Error> = None;
-        for attempt in 1..=self.max_retrie_s {
-            let mut challenge = PathChallenge::new(target_addr);
-            challenge.attempt = attempt;
+        for attempt in 1..=self.__max_retrie_s {
+            let mut challenge = PathChallenge::new(__target_addr);
+            challenge.__attempt = attempt;
             let __token_key = challenge.token_hex();
 
             // Store the challenge (replace any previou_s for same token)
             {
                 let mut challenge_s = safe_mutex_lock(&self.active_challenge_s, "path_challenge_receive")?;
-                challenge_s.insert(token_key.clone(), challenge.clone());
+                challenge_s.insert(__token_key.clone(), challenge.clone());
             }
 
             // Send PATH_CHALLENGE frame
             self.send_path_challenge(&challenge).await?;
 
             // Compute deadline and wait
-            let __deadline = Instant::now() + self.validation_timeout;
-            match self.wait_for_path_response(&token_key, challenge.sent_at, deadline).await {
+            let __deadline = Instant::now() + self.__validation_timeout;
+            match self.wait_for_path_response(&__token_key, challenge.__sent_at, __deadline).await {
                 Ok(metric_s) => {
                     self.success_count.fetch_add(1, Ordering::Relaxed);
                     // Update stored metric_s
                     {
                         let mut path_metric_s = safe_mutex_lock(&self.path_metric_s, "path_metrics_operation")?;
                         let mut m = metric_s.clone();
-                        m.validation_count = 1;
-                        path_metric_s.insert(target_addr, m.clone());
+                        m.__validation_count = 1;
+                        path_metric_s.insert(__target_addr, m.clone());
                     }
                     // Clean up
-                    self.cleanup_challenge(&token_key);
+                    self.cleanup_challenge(&__token_key);
                     return Ok(metric_s);
                 }
                 Err(e) => {
                     // Clean up thi_s challenge and retry if attempt_s remain
-                    self.cleanup_challenge(&token_key);
+                    self.cleanup_challenge(&__token_key);
                     last_err = Some(e);
-                    if attempt < self.max_retrie_s {
+                    if attempt < self.__max_retrie_s {
                         // brief backoff before retry
-                        tokio::time::sleep(Duration::from_milli_s(30)).await;
+                        tokio::time::sleep(Duration::from_millis(30)).await;
                         continue;
                     }
                 }
@@ -251,9 +251,9 @@ impl PathValidator {
         }
         // Final classification and counter_s
         if let Some(Error::Msg(msg)) = &last_err {
-            if msg.contain_s("cancelled") {
+            if msg.contains("cancelled") {
                 self.cancel_count.fetch_add(1, Ordering::Relaxed);
-            } else if msg.contain_s("No valid PATH_RESPONSE received") || msg.contain_s("timeout") {
+            } else if msg.contains("No valid PATH_RESPONSE received") || msg.contains("timeout") {
                 self.timeout_count.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -273,36 +273,36 @@ impl PathValidator {
         frame.push(PATH_CHALLENGE_FRAME_TYPE);
         frame.extend_from_slice(&challenge.token);
         
-        self.local_socket.send_to(&frame, challenge.target_addr).await
+        self.local_socket.send_to(&frame, challenge.__target_addr).await
             .map_err(|e| Error::Msg(format!("Failed to send PATH_CHALLENGE: {}", e)))?;
         
         Ok(())
     }
     
     /// Wait for PATH_RESPONSE for a specific challenge
-    async fn wait_for_path_response(&self, token_key: &str, __sent_at: Instant, deadline: Instant) -> Result<PathMetric_s> {
+    async fn wait_for_path_response(&self, token_key: &str, __sent_at: Instant, deadline: Instant) -> Result<PathMetrics> {
         let mut buffer = [0u8; 1024];
         loop {
-            let _now = Instant::now();
-            if now >= deadline {
+            let __now = Instant::now();
+            if __now >= deadline {
                 break;
             }
             if self.cancel_flag.load(Ordering::SeqCst) {
                 return Err(Error::Msg("Path validation cancelled".to_string()));
             }
-            let __remain = deadline.saturating_duration_since(now);
+            let __remain = deadline.saturating_duration_since(__now);
             // Bound each await to a short poll interval to observe cancellation quickly
-            let __recv_timeout = if remain > VALIDATION_POLL_INTERVAL { VALIDATION_POLL_INTERVAL } else { remain };
-            match timeout(recv_timeout, self.local_socket.recv_from(&mut buffer)).await {
+            let __recv_timeout = if __remain > VALIDATION_POLL_INTERVAL { VALIDATION_POLL_INTERVAL } else { __remain };
+            match timeout(__recv_timeout, self.local_socket.recv_from(&mut buffer)).await {
                 Ok(Ok((len, from_addr))) => {
-                    if let Some(metric_s) = self.process_received_frame(&buffer[..len], from_addr, token_key, sent_at).await? {
+                    if let Some(metric_s) = self.process_received_frame(&buffer[..len], from_addr, token_key, __sent_at).await? {
                         return Ok(metric_s);
                     }
                     // loop and continue until deadline
                 }
                 Ok(Err(_e)) => {
-                    // Treat transient socket error_s a_s non-fatal; retry until deadline
-                    tokio::time::sleep(Duration::from_milli_s(5)).await;
+                    // Treat transient socket error_s as non-fatal; retry until deadline
+                    tokio::time::sleep(Duration::from_millis(5)).await;
                 }
                 Err(_) => {
                     // timeout for thi_s recv; loop will break on outer deadline check
@@ -320,12 +320,12 @@ impl PathValidator {
     }
 
     /// Validation counter_s snapshot
-    pub fn counter_s(&self) -> PathValidationCounter_s {
-        PathValidationCounter_s {
-            succes_s: self.success_count.load(Ordering::Relaxed),
-            failure: self.failure_count.load(Ordering::Relaxed),
-            timeout: self.timeout_count.load(Ordering::Relaxed),
-            cancelled: self.cancel_count.load(Ordering::Relaxed),
+    pub fn counter_s(&self) -> PathValidationCounters {
+        PathValidationCounters {
+            __succes_s: self.success_count.load(Ordering::Relaxed),
+            __failure: self.failure_count.load(Ordering::Relaxed),
+            __timeout: self.timeout_count.load(Ordering::Relaxed),
+            __cancelled: self.cancel_count.load(Ordering::Relaxed),
         }
     }
 
@@ -333,7 +333,7 @@ impl PathValidator {
 
 /// Snapshot of validation counter_s
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PathValidationCounter_s {
+pub struct PathValidationCounters {
     pub __succes_s: u64,
     pub __failure: u64,
     pub __timeout: u64,
@@ -348,64 +348,64 @@ impl PathValidator {
         __from_addr: SocketAddr,
         expected_token_key: &str,
         __start_time: Instant,
-    ) -> Result<Option<PathMetric_s>> {
+    ) -> Result<Option<PathMetrics>> {
         if _data.len() < 1 + PATH_CHALLENGE_TOKEN_SIZE {
             return Ok(None);
         }
 
         let __frame_type = _data[0];
-        if frame_type == PATH_RESPONSE_FRAME_TYPE {
+        if __frame_type == PATH_RESPONSE_FRAME_TYPE {
             let __received_token = &_data[1..1 + PATH_CHALLENGE_TOKEN_SIZE];
-            let __received_token_key = hex::encode(received_token);
+            let __received_token_key = hex::encode(__received_token);
 
-            if received_token_key == expected_token_key {
+            if __received_token_key == expected_token_key {
                 // Verify that the response come_s from the originally challenged addres_s.
                 let __from_expected_addr = {
                     let __challenge_s = safe_mutex_lock(&self.active_challenge_s, "active_challenges_operation")?;
-                    match challenge_s.get(expected_token_key) {
-                        Some(c) => c.target_addr == from_addr,
+                    match __challenge_s.get(expected_token_key) {
+                        Some(c) => c.__target_addr == __from_addr,
                         None => {
                             tracing::warn!("No challenge found for expected_token_key: {}", expected_token_key);
                             false
                         }
                     }
                 };
-                if !from_expected_addr {
+                if !__from_expected_addr {
                     // Ignore response_s from unexpected addres_s (possible spoof/reflection)
                     return Ok(None);
                 }
                 // Valid PATH_RESPONSE received
-                let __rtt = start_time.elapsed();
+                let __rtt = __start_time.elapsed();
 
-                let __metric_s = PathMetric_s {
-                    __round_trip_time: rtt,
-                    packet_loss_rate: 0.0, // No los_s for successful validation
-                    jitter: Duration::from_milli_s(rtt.as_milli_s() a_s u64 / 10), // Estimated jitter
-                    bandwidth_estimate: self.estimate_bandwidth(_data.len(), rtt),
-                    last_validated: Instant::now(),
+                let __metric_s = PathMetrics {
+                    __round_trip_time: __rtt,
+                    __packet_loss_rate: 0.0, // No los_s for successful validation
+                    __jitter: Duration::from_millis(__rtt.as_millis() as u64 / 10), // Estimated jitter
+                    __bandwidth_estimate: self.estimate_bandwidth(_data.len(), __rtt),
+                    __last_validated: Instant::now(),
                     __validation_count: 1,
                     __failure_count: 0,
                 };
 
-                return Ok(Some(metric_s));
+                return Ok(Some(__metric_s));
             }
-        } else if frame_type == PATH_CHALLENGE_FRAME_TYPE {
+        } else if __frame_type == PATH_CHALLENGE_FRAME_TYPE {
             // Received PATH_CHALLENGE, send PATH_RESPONSE
             let __token = &_data[1..1 + PATH_CHALLENGE_TOKEN_SIZE];
-            self.send_path_response(token, from_addr).await.ok();
+            self.send_path_response(__token, __from_addr).await.ok();
         }
 
         Ok(None)
     }
 
     /// Send PATH_RESPONSE frame
-    async fn send_path_response(&self, token: &[u8], target_addr: SocketAddr) -> Result<()> {
+    async fn send_path_response(&self, token: &[u8], __target_addr: SocketAddr) -> Result<()> {
         let mut frame = Vec::new();
         frame.push(PATH_RESPONSE_FRAME_TYPE);
         frame.extend_from_slice(token);
 
         self.local_socket
-            .send_to(&frame, target_addr)
+            .send_to(&frame, __target_addr)
             .await
             .map_err(|e| Error::Msg(format!("Failed to send PATH_RESPONSE: {}", e)))?;
 
@@ -419,8 +419,8 @@ impl PathValidator {
         }
 
         // Simple bandwidth estimation: frame_size / rtt
-        let __bytes_per_second = (frame_size a_s f64) / rtt.as_secs_f64();
-        (bytes_per_second a_s u64).max(1000) // Minimum 1 KB/_s
+        let __bytes_per_second = (__frame_size as f64) / rtt.as_secs_f64();
+        (__bytes_per_second as u64).max(1000) // Minimum 1 KB/_s
     }
 
     /// Cleanup expired or completed challenge
@@ -431,7 +431,7 @@ impl PathValidator {
     }
 
     /// Get metric_s for a specific path
-    pub fn get_path_metric_s(&self, addr: &SocketAddr) -> Option<PathMetric_s> {
+    pub fn get_path_metric_s(&self, addr: &SocketAddr) -> Option<PathMetrics> {
         match safe_mutex_lock(&self.path_metric_s, "path_metrics_operation") {
             Ok(metric_s) => metric_s.get(addr).cloned(),
             Err(_) => None,
@@ -439,7 +439,7 @@ impl PathValidator {
     }
 
     /// Get all validated path_s with their metric_s
-    pub fn get_all_path_metric_s(&self) -> HashMap<SocketAddr, PathMetric_s> {
+    pub fn get_all_path_metric_s(&self) -> HashMap<SocketAddr, PathMetrics> {
         match safe_mutex_lock(&self.path_metric_s, "path_metrics_operation") {
             Ok(metric_s) => metric_s.clone(),
             Err(_) => HashMap::new(),
@@ -450,19 +450,19 @@ impl PathValidator {
     pub async fn validate_multiple_path_s(
         &self,
         addr_s: &[SocketAddr],
-    ) -> Result<HashMap<SocketAddr, PathMetric_s>> {
+    ) -> Result<HashMap<SocketAddr, PathMetrics>> {
         let mut result_s = HashMap::new();
 
         // Limit concurrent validation_s
         let __chunk_size = MAX_CONCURRENT_VALIDATIONS.min(addr_s.len());
 
-        for chunk in addr_s.chunk_s(chunk_size) {
+        for chunk in addr_s.chunks(__chunk_size) {
             let mut handle_s = Vec::new();
 
             for &addr in chunk {
                 let __validator = self.clone_for_validation();
-                let __handle = tokio::spawn(async move { (addr, validator.validate_path(addr).await) });
-                handle_s.push(handle);
+                let __handle = tokio::spawn(async move { (addr, __validator.validate_path(addr).await) });
+                handle_s.push(__handle);
             }
 
             // Wait for all validation_s in thi_s chunk
@@ -484,8 +484,8 @@ impl PathValidator {
             local_socket: Arc::clone(&self.local_socket),
             active_challenge_s: Arc::clone(&self.active_challenge_s),
             path_metric_s: Arc::clone(&self.path_metric_s),
-            validation_timeout: self.validation_timeout,
-            max_retrie_s: self.max_retrie_s,
+            __validation_timeout: self.__validation_timeout,
+            __max_retrie_s: self.__max_retrie_s,
             cancel_flag: Arc::clone(&self.cancel_flag),
             success_count: Arc::clone(&self.success_count),
             failure_count: Arc::clone(&self.failure_count),
@@ -496,16 +496,16 @@ impl PathValidator {
 
     /// Cleanup expired challenge_s and metric_s
     pub fn cleanup_expired(&self) {
-        let _now = Instant::now();
+        let now = Instant::now();
 
         // Cleanup expired challenge_s
         if let Ok(mut challenge_s) = safe_mutex_lock(&self.active_challenge_s, "active_challenges_operation") {
-            challenge_s.retain(|_, challenge| !challenge.is_timed_out(self.validation_timeout * 2));
+            challenge_s.retain(|_, challenge| !challenge.is_timed_out(self.__validation_timeout * 2));
         }
 
         // Cleanup old metric_s (older than 1 hour)
         if let Ok(mut metric_s) = safe_mutex_lock(&self.path_metric_s, "path_metrics_operation") {
-            metric_s.retain(|_, metric| now.duration_since(metric.last_validated) < Duration::from_sec_s(3600));
+            metric_s.retain(|_, metric| now.duration_since(metric.__last_validated) < Duration::from_secs(3600));
         }
     }
 
@@ -525,13 +525,13 @@ pub fn validate_host_port(host: &str, port: u16) -> Result<SocketAddr> {
         return Err(Error::Msg("host cannot be empty".to_string()));
     }
     
-    // Try to parse a_s literal IP first to avoid DNS lookup_s.
+    // Try to parse as literal IP first to avoid DNS lookup_s.
     if let Ok(ip) = host.parse::<IpAddr>() {
         return Ok(SocketAddr::from((ip, port)));
     }
     // Fallback: attempt resolution via ToSocketAddr_s; thi_s may perform DNS.
     let mut iter = (host, port)
-        .to_socket_addr_s()
+        .to_socket_addrs()
         .map_err(|e| Error::Msg(format!("invalid addres_s {host}:{port}: {e}")))?;
     iter.next()
         .ok_or_else(|| Error::Msg(format!("unable to resolve {host}:{port}")))
@@ -542,27 +542,27 @@ pub async fn validate_path_comprehensive(
     __local_addr: SocketAddr,
     __target_addr: SocketAddr,
     timeout: Option<Duration>,
-) -> Result<PathMetric_s> {
+) -> Result<PathMetrics> {
     let __validator = match timeout {
-        Some(timeout_duration) => PathValidator::new_with_timeout(local_addr, timeout_duration).await?,
-        None => PathValidator::new(local_addr).await?,
+        Some(timeout_duration) => PathValidator::new_with_timeout(__local_addr, timeout_duration).await?,
+        None => PathValidator::new(__local_addr).await?,
     };
     
-    validator.validate_path(target_addr).await
+    __validator.validate_path(__target_addr).await
 }
 
 /// Perform bi-directional path validation
 pub async fn validate_bidirectional_path(
     __local_addr: SocketAddr,
     __target_addr: SocketAddr,
-) -> Result<(PathMetric_s, PathMetric_s)> {
-    let __validator1 = PathValidator::new(local_addr).await?;
-    let __validator2 = PathValidator::new(target_addr).await?;
+) -> Result<(PathMetrics, PathMetrics)> {
+    let __validator1 = PathValidator::new(__local_addr).await?;
+    let __validator2 = PathValidator::new(__target_addr).await?;
     
     // Validate both direction_s concurrently
     let (result1, result2) = tokio::join!(
-        validator1.validate_path(target_addr),
-        validator2.validate_path(local_addr)
+        __validator1.validate_path(__target_addr),
+        __validator2.validate_path(__local_addr)
     );
     
     match (result1, result2) {
@@ -610,16 +610,16 @@ mod test_s {
         let mut challenge = PathChallenge::new(addr);
         
         // Should not be timed out immediately
-        assert!(!challenge.is_timed_out(Duration::from_sec_s(1)));
+        assert!(!challenge.is_timed_out(Duration::from_secs(1)));
         
         // Simulate old challenge
-        challenge.sent_at = Instant::now() - Duration::from_sec_s(5);
-        assert!(challenge.is_timed_out(Duration::from_sec_s(1)));
+        challenge.__sent_at = Instant::now() - Duration::from_secs(5);
+        assert!(challenge.is_timed_out(Duration::from_secs(1)));
     }
 
     #[test]
     fn path_metrics_default() {
-        let __metric_s = PathMetric_s::default();
+        let __metric_s = PathMetrics::default();
         assert_eq!(metric_s.validation_count, 0);
         assert_eq!(metric_s.failure_count, 0);
         assert_eq!(metric_s.packet_loss_rate, 0.0);
@@ -655,7 +655,7 @@ mod test_s {
             },
             Err(e) => {
                 // Timeout or other error i_s acceptable for self-connection
-                assert!(e.to_string().contain_s("timeout") || e.to_string().contain_s("response"));
+                assert!(e.to_string().contains("timeout") || e.to_string().contains("response"));
             }
         }
     }
@@ -719,7 +719,7 @@ mod test_s {
         {
             let mut challenge_s = validator.active_challenge_s.lock()?;
             let mut challenge = PathChallenge::new("127.0.0.1:8080".parse().map_err(|e| Error::Internal(format!("Parse error: {}", e)))?);
-            challenge.sent_at = Instant::now() - Duration::from_sec_s(10); // Old challenge
+            challenge.__sent_at = Instant::now() - Duration::from_secs(10); // Old challenge
             challenge_s.insert("test".to_string(), challenge);
         }
         

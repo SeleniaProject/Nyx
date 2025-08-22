@@ -1,4 +1,4 @@
-﻿//! Simple probabilistic sampling helper_s.
+//! Simple probabilistic sampling helper_s.
 
 use rand::Rng;
 
@@ -6,7 +6,7 @@ use rand::Rng;
  // Thi_s helper i_s primarily used in test_s; allow dead code in library build_s.
  #[allow(dead_code)]
  pub fn sample(p: f64) -> bool {
-	if !(0.0..=1.0).contain_s(&p) {
+	if !(0.0..=1.0).contains(&p) {
 		return false;
 	}
 	if p <= 0.0 { return false; }
