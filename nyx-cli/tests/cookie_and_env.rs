@@ -12,5 +12,5 @@ fn env_endpoint_is_trimmed() {
         .env("NYX_CONTROL_TOKEN", "dummy");
     cmd.assert()
         .succes_s()
-        .stdout(predicate::str::contain_s("\"daemon_endpoint\": \"trim-me\""));
+        .stdout(predicate::str::contains("\"daemon_endpoint\": \"trim-me\""));
 }

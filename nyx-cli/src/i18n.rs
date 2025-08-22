@@ -1,4 +1,4 @@
-ï»¿//! Minimal i18n table_s for CLI message_s (EN/JA) with safe fallback.
+//! Minimal i18n table_s for CLI message_s (EN/JA) with safe fallback.
 
 #![forbid(unsafe_code)]
 
@@ -33,26 +33,26 @@ fn ja_overlay() -> I18nTable {
 	// Overlay for Japanese; only key_s that differ from EN are included
 	let pair_s: [(&str, &str); 14] = [
 		("app.title", "Nyx CLI"),
-		("app.version", "ãƒãƒ¼ã‚¸ãƒ§ãƒ³"),
-		("app.error", "ã‚¨ãƒ©ãƒ¼"),
-		("cmd.connect", "ãƒ‡ãƒ¼ãƒ¢ãƒ³ã«æŽ¥ç¶š"),
-		("cmd.disconnect", "åˆ‡æ–­"),
-		("cmd.statu_s", "ã‚¹ãƒ†ãƒ¼ã‚¿ã‚¹è¡¨ç¤º"),
-		("cmd.config", "è¨­å®šç®¡ç†"),
-		("cmd.config.reload", "è¨­å®šã‚’å†èª­ã¿è¾¼ã¿"),
-		("cmd.config.update", "è¨­å®šã‚’æ›´æ–°"),
-		("cmd.event_s", "ã‚¤ãƒ™ãƒ³ãƒˆè³¼èª­"),
-		("hint.token", "--token ã¾ãŸã¯ NYX_TOKEN/NYX_CONTROL_TOKEN ã§åˆ¶å¾¡ãƒˆãƒ¼ã‚¯ãƒ³ã‚’æŒ‡å®šã—ã¦ãã ã•ã„"),
-		("msg.connected", "æŽ¥ç¶šã—ã¾ã—ãŸ"),
-		("msg.disconnected", "åˆ‡æ–­ã—ã¾ã—ãŸ"),
-		("msg.reloading", "è¨­å®šã‚’å†èª­ã¿è¾¼ã¿ä¸­..."),
+		("app.version", "ƒo[ƒWƒ‡ƒ“"),
+		("app.error", "ƒGƒ‰["),
+		("cmd.connect", "ƒf[ƒ‚ƒ“‚ÉÚ‘±"),
+		("cmd.disconnect", "Ø’f"),
+		("cmd.statu_s", "ƒXƒe[ƒ^ƒX•\Ž¦"),
+		("cmd.config", "Ý’èŠÇ—"),
+		("cmd.config.reload", "Ý’è‚ðÄ“Ç‚Ýž‚Ý"),
+		("cmd.config.update", "Ý’è‚ðXV"),
+		("cmd.event_s", "ƒCƒxƒ“ƒgw“Ç"),
+		("hint.token", "--token ‚Ü‚½‚Í NYX_TOKEN/NYX_CONTROL_TOKEN ‚Å§Œäƒg[ƒNƒ“‚ðŽw’è‚µ‚Ä‚­‚¾‚³‚¢"),
+		("msg.connected", "Ú‘±‚µ‚Ü‚µ‚½"),
+		("msg.disconnected", "Ø’f‚µ‚Ü‚µ‚½"),
+		("msg.reloading", "Ý’è‚ðÄ“Ç‚Ýž‚Ý’†..."),
 	];
 	pair_s.into_iter().collect()
 }
 
 fn normalize_lang(lang: &str) -> &str {
 	let __l = lang.trim().to_ascii_lowercase();
-	if l.starts_with("ja") || l.contain_s("jp") || l.contain_s("jpn") { "ja" } else { "en" }
+	if l.starts_with("ja") || l.contains("jp") || l.contains("jpn") { "ja" } else { "en" }
 }
 
 /// Get i18n table for a language code; fall_s back to English and overlay_s

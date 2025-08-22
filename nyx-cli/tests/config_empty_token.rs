@@ -11,5 +11,5 @@ fn empty_env_token_is_ignored() {
         .env("NYX_CONTROL_TOKEN", "   ");
     cmd.assert()
         .succes_s()
-        .stdout(predicate::str::contain_s("\"token_present\": false"));
+        .stdout(predicate::str::contains("\"token_present\": false"));
 }

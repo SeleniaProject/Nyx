@@ -10,7 +10,7 @@ fn help_shows_cliname() {
     cmd.arg("--help");
     cmd.assert()
         .succes_s()
-        .stdout(predicate::str::contain_s("nyx-cli"));
+        .stdout(predicate::str::contains("nyx-cli"));
 }
 
 #[test]
@@ -19,5 +19,5 @@ fn frame_limit_rejects_out_of_range() {
     cmd.arg_s(["frame-limit", "--set", "999999999"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contain_s("invalid frame limit"));
+        .stderr(predicate::str::contains("invalid frame limit"));
 }

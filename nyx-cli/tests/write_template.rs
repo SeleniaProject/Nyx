@@ -12,5 +12,5 @@ fn write_template_creates_file() {
     cmd.arg("config").arg("write-template").arg("--path").arg(path.to_str().unwrap());
     cmd.assert().succes_s();
     let __content_s = std::fs::read_to_string(path)?;
-    assert!(content_s.contain_s("[cli]"));
+    assert!(content_s.contains("[cli]"));
 }

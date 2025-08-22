@@ -13,7 +13,7 @@ fn config_show_resolves_env() {
         .env("NYX_CONTROL_TOKEN", "secret");
     cmd.assert()
         .succes_s()
-        .stdout(predicate::str::contain_s("\"daemon_endpoint\": \"test-endpoint\""))
-        .stdout(predicate::str::contain_s("\"request_timeout_m_s\": 1234"))
-        .stdout(predicate::str::contain_s("\"token_present\": true"));
+        .stdout(predicate::str::contains("\"daemon_endpoint\": \"test-endpoint\""))
+        .stdout(predicate::str::contains("\"request_timeout_m_s\": 1234"))
+        .stdout(predicate::str::contains("\"token_present\": true"));
 }

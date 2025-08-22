@@ -1,2 +1,2 @@
-﻿//! Legacy pure-Rust variant (inactive). Use main.r_s a_s entrypoint.
+//! Legacy pure-Rust variant (inactive). Use main.r_s as entrypoint.
 
