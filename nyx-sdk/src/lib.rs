@@ -9,19 +9,18 @@
 //!
 //! Designed to minimize dependencie_s and integrate cleanly with `nyx-stream` and `nyx-core`.
 
-pub mod error;
 pub mod config;
-pub mod events;
 pub mod daemon;
-pub mod stream;
+pub mod error;
+pub mod events;
+pub mod proto;
 pub mod reconnect;
 pub mod retry;
-pub mod proto;
+pub mod stream;
 
-pub use error::{Error, Result};
 pub use config::SdkConfig;
-pub use events::Event;
-pub use stream::NyxStream;
 pub use daemon::DaemonClient;
+pub use error::{Error, Result};
+pub use events::Event;
 pub use proto as api;
-
+pub use stream::NyxStream;
