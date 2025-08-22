@@ -25,7 +25,7 @@ nyx-stream = { path = "../nyx-stream" }
 # rcgen = { version = "0.13", optional = true } # DISABLED: crypto dependency
 futures = "0.3"
 anyhow = "1"
-nom = { version = "7", default-features = false, features = ["std"] }
+nom = { version = "8", default-features = false, features = ["std"] }
 thiserror = "1"
 
 [dev-dependencies]
