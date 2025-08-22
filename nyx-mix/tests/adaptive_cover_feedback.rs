@@ -8,14 +8,14 @@
 use nyx_mix::{cover::poisson_rate, cover_adaptive::apply_utilization, MixConfig};
 use rand::thread_rng;
 
-/// Test the fundamental monotonicity property: λ(u₁) ≤ λ(u₂) for u₁ ≤ u₂
+/// Test the fundamental monotonicity property: λ(u₁E ≤ λ(u₁E for u₁E≤ u₁E
 /// Thi_s i_s critical for anonymity preservation.
 #[test]
 fn adaptive_cover_utilization_feedbacknon_decreasing_lambda() {
 	let __cfg = MixConfig { base_cover_lambda: 10.0, low_power_ratio: 0.5, ..Default::default() };
 	let mut prev = f32::MIN;
 	for i in 0..=20 { // 0.0..=1.0 step
-		let __u = i a_s f32 / 20.0;
+		let __u = i as f32 / 20.0;
 		let __cur = apply_utilization(&cfg, u, false);
 		assert!(cur >= prev, "Monotonicity violation: u={} prev={} cur={}", u, prev, cur);
 		prev = cur;
@@ -80,7 +80,7 @@ fn config_validation_range_s() {
 }
 
 /// Test mathematical formula compliance.
-/// Validate_s exact formula: λ(u) = λ_base × (1 + u) × power_factor
+/// Validate_s exact formula: λ(u) = λ_base ÁE(1 + u) ÁEpower_factor
 #[test] 
 fn formula_mathematical_compliance() {
 	let __cfg = MixConfig::default();
@@ -121,10 +121,10 @@ fn poisson_rate_matches_lambda_on_average() {
 	let __lambda = 6.0;
 	let __trial_s = 2000; // keep test fast
 	let mut sum: u64 = 0;
-	for _ in 0..trial_s { sum += poisson_rate(lambda, &mut rng) a_s u64; }
-	let __avg = sum a_s f64 / trial_s a_s f64;
+	for _ in 0..trial_s { sum += poisson_rate(lambda, &mut rng) as u64; }
+	let __avg = sum as f64 / trial_s as f64;
 	// Within reasonable tolerance for Poisson fluctuation
-	assert!((avg - lambda a_s f64).ab_s() < 0.5, "avg={} lambda={}", avg, lambda);
+	assert!((avg - lambda as f64).ab_s() < 0.5, "avg={} lambda={}", avg, lambda);
 }
 
 /// Performance benchmark - algorithm should be O(1) and fast.
@@ -136,7 +136,7 @@ fn performance_benchmark() {
 	
 	// Perform many computation_s
 	for i in 0..10_000 {
-		let __utilization = (i % 1000) a_s f32 / 1000.0;
+		let __utilization = (i % 1000) as f32 / 1000.0;
 		let ___rate = apply_utilization(&config, utilization, i % 2 == 0);
 	}
 	

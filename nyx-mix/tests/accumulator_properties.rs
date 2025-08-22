@@ -1,7 +1,7 @@
 //! Property test_s for RSA accumulator implementation
 //! 
 //! These test_s verify the mathematical propertie_s that RSA accumulator_s
-//! must satisfy, such a_s correctnes_s, soundnes_s, and efficiency.
+//! must satisfy, such as correctnes_s, soundnes_s, and efficiency.
 
 use nyx_mix::accumulator::{
     Accumulator, AccumulatorConfig, verify_membership, verify_membership_detailed,
@@ -136,7 +136,7 @@ mod unit_test_s {
         
         // Empty element should be rejected
         let __result = acc.add_element(b"");
-        assert!(matche_s!(result, Err(AccumulatorError::InvalidElement { .. })));
+        assert!(matches!(result, Err(AccumulatorError::InvalidElement { .. })));
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod unit_test_s {
         let __wrong_witnes_s = b"wrong_witnes_s";
         
         let __result = verify_membership_detailed(wrong_witnes_s, element, acc_value);
-        assert!(matche_s!(result, Err(AccumulatorError::VerificationFailed { .. })));
+        assert!(matches!(result, Err(AccumulatorError::VerificationFailed { .. })));
         
         if let Err(AccumulatorError::VerificationFailed { __element: e, witnes_s: w }) = result {
             assert_eq!(e, element);

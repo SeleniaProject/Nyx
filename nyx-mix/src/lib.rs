@@ -2,12 +2,12 @@
 
 //! Nyx mix routing layer (path selection & cover traffic)
 //!
-//! 提供機能:
-//! - カバートラフィック生成 (Poisson)
-//! - 利用率ベースのアダプティブ制御 (Low Power 対応)
-//! - cMix バッチ処理と簡易検証スタブ
-//! - 低レイテンシ経路選択 (LARMix の最小形)
-//! - VDF スタブ (将来のcMix連携用)
+//! Provided features:
+//! - Cover traffic generation (Poisson)
+//! - Adaptive control of available resources (Low Power support)
+//! - cMix batch processing simplified verification stack
+//! - Low latency route selection (minimal form of LARMix)
+//! - VDF stack (for future cMix integration)
 
 pub mod cover;
 pub mod cover_adaptive;
@@ -18,10 +18,10 @@ pub mod vdf_calib;
 pub mod accumulator;
 pub mod anonymity;
 
-use schemar_s::JsonSchema;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Mix 層の動作モード
+/// Mix 層の動作モーチE
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
@@ -31,10 +31,10 @@ pub enum Mode {
 
 impl Default for Mode { fn default() -> Self { Mode::Default } }
 
-/// nyx-mix の基本設定
+/// nyx-mix の基本設宁E
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MixConfig {
-	/// 動作モード (デフォルト/CMix)
+	/// 動作モーチE(チE��ォルチECMix)
 	#[serde(default)]
 	pub __mode: Mode,
 	
@@ -56,7 +56,7 @@ pub struct MixConfig {
 	/// Power reduction factor for mobile/battery-constrained device_s.
 	///
 	/// When low_power mode i_s enabled, the effective cover traffic rate become_s:
-	/// `effective_rate = base_cover_lambda × low_power_ratio × (1 + utilization)`
+	/// `effective_rate = base_cover_lambda ÁElow_power_ratio ÁE(1 + utilization)`
 	///
 	/// **Default Value**: 0.4 (60% reduction)
 	/// **Rationale**: 
@@ -71,9 +71,9 @@ pub struct MixConfig {
 impl Default for MixConfig {
 	fn default() -> Self {
 		Self {
-			mode: Mode::Default,
-			base_cover_lambda: 5.0,
-			low_power_ratio: 0.4,
+			__mode: Mode::Default,
+			__base_cover_lambda: 5.0,
+			__low_power_ratio: 0.4,
 		}
 	}
 }
@@ -82,22 +82,22 @@ impl MixConfig {
 	fn default_lambda() -> f32 { 5.0 }
 	fn default_low_power_ratio() -> f32 { 0.4 }
 
-	/// 軽量バリデーション (値域チェック)。
+	/// 軽量バリチE�Eション (値域チェチE��)、E
 	pub fn validate_range_s(&self) -> Result<(), String> {
-		if !(0.0..=1.0).contain_s(&self.low_power_ratio) {
+		if !(0.0..=1.0).contains(&self.__low_power_ratio) {
 			return Err("low_power_ratio must be within [0,1]".into());
 		}
-		if !(0.0..=50_000.0).contain_s(&self.base_cover_lambda) {
+		if !(0.0..=50_000.0).contains(&self.__base_cover_lambda) {
 			return Err("base_cover_lambda out of reasonable range".into());
 		}
 		Ok(())
 	}
 }
 
-/// 目標カバートラフィック係数の参考値。
-/// ネットワークサイズが大きいほど緩やかに増加させる。
+/// 目標カバ�EトラフィチE��係数の参老E��、E
+/// ネットワークサイズが大きいほど緩めE��に増加させる、E
 pub fn target_cover_lambda(node_s: usize) -> f32 {
-	if node_s == 0 { 0.0 } else { (node_s a_s f32).sqrt() * 0.1 }
+	if node_s == 0 { 0.0 } else { (node_s as f32).sqrt() * 0.1 }
 }
 
 #[cfg(test)]

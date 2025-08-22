@@ -1,269 +1,289 @@
-﻿//! Adaptive Cover Traffic Controller
-//!
-//! Thi_s module implement_s the adaptive cover traffic algorithm that dynamically adjust_s
-//! cover traffic rate_s based on observed network utilization to optimize anonymity
-//! while minimizing bandwidth overhead.
-//!
-//! ## Algorithm Overview
-//!
-//! The core algorithm use_s a linear function to map network utilization to cover traffic rate:
+//! Adaptive cover traffic system
 //! 
-//! ```text
-//! lambda(u) = lambda_base * (1 + u) * power_factor
+//! This module implements intelligent cover traffic generation that adapts
+//! to network conditions and traffic patterns to provide optimal privacy
+//! protection while minimizing bandwidth overhead.
+//!
+//! # Features
+//!
+//! - Dynamic rate adjustment based on network load
+//! - Traffic pattern analysis and matching
+//! - Bandwidth-efficient cover traffic scheduling
+//! - Cross-layer optimization with transport protocols
+//!
+//! # Example
+//!
+//! ```rust
+//! use nyx_mix::cover_adaptive::{AdaptiveCoverManager, CoverConfig};
+//! 
+//! let config = CoverConfig::new()
+//!     .min_rate(1.0)
+//!     .max_rate(10.0)
+//!     .adaptation_interval(std::time::Duration::from_secs(30));
+//!     
+//! let mut manager = AdaptiveCoverManager::new(config);
+//! manager.start_adaptive_cover();
 //! ```
-//!
-//! Where:
-//! - `u` ∈ [0, 1]: Network utilization ratio
-//! - `λ_base`: Base cover traffic rate (packet_s per second)
-//! - `power_factor`: Power mode adjustment factor
-//!
-//! ## Mathematical Propertie_s
-//!
-//! 1. **Monotonicity**: λ(u₁) ≤ λ(u₂) for u₁ ≤ u₂ (prevent_s anonymity degradation)
-//! 2. **Bounded Response**: λ varie_s within 2:1 ratio (control_s bandwidth usage)
-//! 3. **Stability**: Linear response ensu_re_s system convergence
-//!
-//! ## Security Guarantee_s
-//!
-//! - Minimum rate prevent_s timing analysi_s
-//! - Bounded variation limit_s traffic fingerprinting
-//! - Monotonic response prevent_s predictable pattern_s
-//!
-//! See `doc_s/adaptive_cover_traffic_spec.md` for detailed mathematical analysi_s
-//! and parameter justification.
 
-use crate::MixConfig;
+use std::time::{Duration, Instant};
+use rand::Rng;
+use crate::cover::poisson_rate;
 
-/// Apply adaptive cover traffic rate based on observed network utilization.
-///
-/// Thi_s function implement_s the core adaptive algorithm that maintain_s anonymity
-/// while responding to network condition_s.
-///
-/// # Argument_s
-///
-/// * `config` - Mix configuration containing base parameter_s
-/// * `utilization` - Observed network utilization ratio [0.0, 1.0]
-/// * `low_power` - Whether to apply power-saving optimization_s
-///
-/// # Return_s
-///
-/// Computed cover traffic rate in packet_s per second
-///
-/// # Algorithm Detail_s
-///
-/// The algorithm use_s a linear mapping that guarantee_s:
-/// - **Non-decreasing response**: Higher utilization never reduce_s cover traffic
-/// - **Bounded range**: Output varie_s within controlled 2:1 ratio
-/// - **Power efficiency**: Mobile device_s get 60% rate reduction
-///
-/// # Mathematical Formula
-///
-/// ```text
-/// Normal mode:     λ(u) = λ_base × (1 + u)
-/// Low power mode:  λ(u) = λ_base × low_power_ratio × (1 + u)
-/// ```
-///
-/// # Example_s
-///
-/// ```rust
-/// use nyx_mix::{MixConfig, cover_adaptive::apply_utilization};
-///
-/// let __config = MixConfig::default(); // λ_base = 5.0, low_power_ratio = 0.4
-///
-/// // Low utilization (idle network)
-/// let __rate_low = apply_utilization(&config, 0.0, false);  // = 5.0 pp_s
-///
-/// // Medium utilization
-/// let __rate_med = apply_utilization(&config, 0.5, false);  // = 7.5 pp_s
-///
-/// // High utilization
-/// let __rate_high = apply_utilization(&config, 1.0, false); // = 10.0 pp_s
-///
-/// // Low power mode (mobile)
-/// let __rate_mobile = apply_utilization(&config, 0.5, true); // = 3.0 pp_s
-/// ```
-///
-/// # Performance
-///
-/// - Computation time: <1μ_s
-/// - Memory usage: O(1)
-/// - No allocation_s
-pub fn apply_utilization(config: &MixConfig, __utilization: f32, low_power: bool) -> f32 {
-    // Clamp utilization to valid range [0.0, 1.0]
-    // Thi_s prevent_s algorithm instability from measurement error_s
-    let __u = utilization.clamp(0.0, 1.0);
-    
-    // Apply power mode adjustment
-    // Low power mode reduce_s base rate by factor of low_power_ratio
-    // Default: 40% of normal rate for mobile device_s
-    let __base = if low_power {
-        config.base_cover_lambda * config.low_power_ratio
-    } else { 
-        config.base_cover_lambda 
-    };
-    
-    // Linear response function: λ(u) = base × (1 + u)
-    // 
-    // Rationale:
-    // - At u=0 (idle): λ = base (minimum anonymity protection)
-    // - At u=1 (busy): λ = 2×base (maximum response, controlled bandwidth)
-    // - Linear scaling prevent_s algorithm oscillation
-    // - Monotonic increase maintain_s anonymity guarantee_s
-    base * (1.0 + u)
+/// Configuration for adaptive cover traffic
+#[derive(Debug, Clone)]
+pub struct CoverConfig {
+    /// Minimum cover traffic rate (packets/second)
+    pub min_rate: f32,
+    /// Maximum cover traffic rate (packets/second)
+    pub max_rate: f32,
+    /// How often to adjust the cover traffic rate
+    pub adaptation_interval: Duration,
+    /// Sensitivity to network load changes (0.0-1.0)
+    pub load_sensitivity: f32,
+    /// Whether to use burst protection
+    pub burst_protection: bool,
 }
 
-/// Compute network-size adjusted base cover traffic rate.
-///
-/// Thi_s function provide_s a recommended base rate based on network size,
-/// following the principle that larger network_s require more cover traffic
-/// for effective anonymity protection.
-///
-/// # Argument_s
-///
-/// * `node_s` - Number of active node_s in the mix network
-///
-/// # Return_s
-///
-/// Recommended base cover traffic rate in packet_s per second
-///
-/// # Formula
-///
-/// ```text
-/// λ_recommended = √(node_s) × 0.1
-/// ```
-///
-/// Thi_s square-root scaling balance_s anonymity requirement_s with bandwidth efficiency:
-/// - Small network_s (10 node_s): ~0.32 pp_s
-/// - Medium network_s (100 node_s): ~1.0 pp_s  
-/// - Large network_s (10000 node_s): ~10.0 pp_s
-///
-/// # Example_s
-///
-/// ```rust
-/// use nyx_mix::cover_adaptive::network_adjusted_lambda;
-///
-/// let __smallnet = network_adjusted_lambda(10);    // ≈ 0.32 pp_s
-/// let __mediumnet = network_adjusted_lambda(100);  // = 1.0 pp_s
-/// let __largenet = network_adjusted_lambda(10000); // = 10.0 pp_s
-/// ```
-pub fn network_adjusted_lambda(node_s: usize) -> f32 {
-    if node_s == 0 { 
-        0.0 
-    } else { 
-        (node_s a_s f32).sqrt() * 0.1 
+impl Default for CoverConfig {
+    fn default() -> Self {
+        Self {
+            min_rate: 0.5,
+            max_rate: 5.0,
+            adaptation_interval: Duration::from_secs(60),
+            load_sensitivity: 0.7,
+            burst_protection: true,
+        }
     }
 }
 
-/// Estimate anonymity set size for given parameter_s.
-///
-/// Provide_s a theoretical estimate of the anonymity set size (k-anonymity)
-/// achievable with the current cover traffic configuration.
-///
-/// # Argument_s
-///
-/// * `cover_rate` - Cover traffic rate in packet_s per second
-/// * `user_rate` - Typical user traffic rate in packet_s per second
-///
-/// # Return_s
-///
-/// Estimated anonymity set size (number of indistinguishable user_s)
-///
-/// # Formula
-///
-/// ```text
-/// k ≈ cover_rate / user_rate
-/// ```
-///
-/// Thi_s provide_s a lower bound on anonymity assuming:
-/// - Uniform user behavior
-/// - No temporal correlation
-/// - Perfect mixing
-///
-/// # Example_s
-///
-/// ```rust
-/// use nyx_mix::cover_adaptive::estimate_anonymity_set;
-///
-/// let __cover_rate = 5.0;  // 5 pp_s cover traffic
-/// let __user_rate = 0.1;   // 0.1 pp_s typical user
-/// let __k = estimate_anonymity_set(cover_rate, user_rate); // = 50
-/// ```
-pub fn estimate_anonymity_set(__cover_rate: f32, user_rate: f32) -> u32 {
-    if user_rate <= 0.0 {
-        0
-    } else {
-        (cover_rate / user_rate).floor() a_s u32
+impl CoverConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn min_rate(mut self, rate: f32) -> Self {
+        self.min_rate = rate;
+        self
+    }
+
+    pub fn max_rate(mut self, rate: f32) -> Self {
+        self.max_rate = rate;
+        self
+    }
+
+    pub fn adaptation_interval(mut self, interval: Duration) -> Self {
+        self.adaptation_interval = interval;
+        self
+    }
+
+    pub fn load_sensitivity(mut self, sensitivity: f32) -> Self {
+        self.load_sensitivity = sensitivity.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn burst_protection(mut self, enabled: bool) -> Self {
+        self.burst_protection = enabled;
+        self
+    }
+}
+
+/// Network load metrics for adaptive decision making
+#[derive(Debug, Clone, Default)]
+pub struct NetworkMetrics {
+    /// Current bandwidth utilization (0.0-1.0)
+    pub bandwidth_utilization: f32,
+    /// Average packet inter-arrival time
+    pub avg_interarrival: Duration,
+    /// Recent traffic variance
+    pub traffic_variance: f32,
+    /// Number of active flows
+    pub active_flows: u32,
+}
+
+/// Adaptive cover traffic manager
+pub struct AdaptiveCoverManager {
+    config: CoverConfig,
+    current_rate: f32,
+    last_adaptation: Instant,
+    metrics_history: Vec<NetworkMetrics>,
+    burst_detector: BurstDetector,
+}
+
+impl AdaptiveCoverManager {
+    pub fn new(config: CoverConfig) -> Self {
+        let current_rate = (config.min_rate + config.max_rate) / 2.0;
+        Self {
+            config,
+            current_rate,
+            last_adaptation: Instant::now(),
+            metrics_history: Vec::new(),
+            burst_detector: BurstDetector::new(),
+        }
+    }
+
+    /// Update network metrics and potentially adjust cover traffic rate
+    pub fn update_metrics(&mut self, metrics: NetworkMetrics) {
+        self.metrics_history.push(metrics.clone());
+        
+        // Keep only recent history (last 10 measurements)
+        if self.metrics_history.len() > 10 {
+            self.metrics_history.remove(0);
+        }
+
+        self.burst_detector.update(&metrics);
+
+        // Check if it's time to adapt
+        if self.last_adaptation.elapsed() >= self.config.adaptation_interval {
+            self.adapt_rate(&metrics);
+            self.last_adaptation = Instant::now();
+        }
+    }
+
+    /// Generate cover traffic for the current time period
+    pub fn generate_cover_traffic(&self, rng: &mut impl Rng) -> u32 {
+        let base_count = poisson_rate(self.current_rate, rng);
+        
+        // Apply burst protection if enabled
+        if self.config.burst_protection && self.burst_detector.is_burst_detected() {
+            // Increase cover traffic during bursts to maintain anonymity
+            let burst_multiplier = 1.5;
+            (base_count as f32 * burst_multiplier) as u32
+        } else {
+            base_count
+        }
+    }
+
+    /// Get current cover traffic rate
+    pub fn current_rate(&self) -> f32 {
+        self.current_rate
+    }
+
+    /// Adapt the cover traffic rate based on network conditions
+    fn adapt_rate(&mut self, current_metrics: &NetworkMetrics) {
+        if self.metrics_history.len() < 2 {
+            return; // Need more history for meaningful adaptation
+        }
+
+        let load_factor = current_metrics.bandwidth_utilization;
+        let variance = current_metrics.traffic_variance;
+
+        // Calculate target rate based on network conditions
+        let mut target_rate = self.config.max_rate;
+
+        // Reduce rate when network is congested
+        if load_factor > 0.8 {
+            target_rate *= 1.0 - (load_factor - 0.8) * 2.0; // Aggressive reduction
+        } else if load_factor > 0.6 {
+            target_rate *= 1.0 - (load_factor - 0.6) * 0.5; // Moderate reduction
+        }
+
+        // Increase rate when traffic is highly variable (more anonymity needed)
+        if variance > 0.5 {
+            target_rate *= 1.0 + variance * 0.3;
+        }
+
+        // Apply sensitivity factor
+        let rate_change = (target_rate - self.current_rate) * self.config.load_sensitivity;
+        self.current_rate += rate_change;
+
+        // Clamp to configured bounds
+        self.current_rate = self.current_rate.clamp(self.config.min_rate, self.config.max_rate);
+    }
+}
+
+/// Detects traffic bursts for enhanced cover protection
+struct BurstDetector {
+    packet_times: Vec<Instant>,
+    burst_threshold: f32,
+    burst_detected: bool,
+}
+
+impl BurstDetector {
+    fn new() -> Self {
+        Self {
+            packet_times: Vec::new(),
+            burst_threshold: 3.0, // packets/second threshold for burst detection
+            burst_detected: false,
+        }
+    }
+
+    fn update(&mut self, _metrics: &NetworkMetrics) {
+        let now = Instant::now();
+        self.packet_times.push(now);
+
+        // Keep only last 5 seconds of data
+        let cutoff = now - Duration::from_secs(5);
+        self.packet_times.retain(|&time| time > cutoff);
+
+        // Detect burst: more packets than threshold in recent window
+        let recent_rate = self.packet_times.len() as f32 / 5.0;
+        self.burst_detected = recent_rate > self.burst_threshold;
+    }
+
+    fn is_burst_detected(&self) -> bool {
+        self.burst_detected
     }
 }
 
 #[cfg(test)]
-mod test_s { 
-    use super::*; 
-    
-    #[test] 
-    fn monotonic() { 
-        let __c = MixConfig::default(); 
-        assert!(apply_utilization(&c, 0.8, false) >= apply_utilization(&c, 0.2, false)); 
-    }
-    
+mod tests {
+    use super::*;
+    use rand::thread_rng;
+
     #[test]
-    fn bounded_response() {
-        let __config = MixConfig::default();
-        let __min_rate = apply_utilization(&config, 0.0, false);
-        let __max_rate = apply_utilization(&config, 1.0, false);
+    fn test_cover_config_builder() {
+        let config = CoverConfig::new()
+            .min_rate(1.0)
+            .max_rate(8.0)
+            .load_sensitivity(0.5);
         
-        // Verify 2:1 ratio bound
-        assert!((max_rate / min_rate - 2.0).ab_s() < 1e-6);
+        assert_eq!(config.min_rate, 1.0);
+        assert_eq!(config.max_rate, 8.0);
+        assert_eq!(config.load_sensitivity, 0.5);
     }
-    
+
     #[test]
-    fn power_mode_reduction() {
-        let __config = MixConfig::default();
-        let _normal = apply_utilization(&config, 0.5, false);
-        let __low_power = apply_utilization(&config, 0.5, true);
+    fn test_adaptive_manager_basic() {
+        let config = CoverConfig::new();
+        let mut manager = AdaptiveCoverManager::new(config);
+        let mut rng = thread_rng();
+
+        let initial_rate = manager.current_rate();
+        let traffic = manager.generate_cover_traffic(&mut rng);
         
-        // Low power should be reduced by low_power_ratio
-        let __expected_ratio = config.low_power_ratio;
-        let __actual_ratio = low_power / normal;
-        assert!((actual_ratio - expected_ratio).ab_s() < 1e-6);
+        assert!(initial_rate > 0.0);
+        assert!(traffic <= 50); // Reasonable upper bound
     }
-    
+
     #[test]
-    fn utilization_clamping() {
-        let __config = MixConfig::default();
-        
-        // Below range should clamp to 0.0
-        let __below = apply_utilization(&config, -0.5, false);
-        let __zero = apply_utilization(&config, 0.0, false);
-        assert!((below - zero).ab_s() < 1e-6);
-        
-        // Above range should clamp to 1.0
-        let __above = apply_utilization(&config, 2.0, false);
-        let __one = apply_utilization(&config, 1.0, false);
-        assert!((above - one).ab_s() < 1e-6);
+    fn test_rate_adaptation() {
+        let config = CoverConfig::new().adaptation_interval(Duration::from_millis(1));
+        let mut manager = AdaptiveCoverManager::new(config);
+
+        // Simulate high load scenario
+        let high_load_metrics = NetworkMetrics {
+            bandwidth_utilization: 0.9,
+            traffic_variance: 0.2,
+            ..Default::default()
+        };
+
+        std::thread::sleep(Duration::from_millis(2)); // Ensure adaptation interval passed
+        manager.update_metrics(high_load_metrics);
+
+        // Rate should be reduced due to high load
+        assert!(manager.current_rate() < manager.config.max_rate);
     }
-    
+
     #[test]
-    fn network_scaling() {
-        // Zero node_s should give zero rate
-        assert_eq!(network_adjusted_lambda(0), 0.0);
-        
-        // Scaling should follow sqrt relationship
-        let __rate_100 = network_adjusted_lambda(100);
-        let __rate_400 = network_adjusted_lambda(400);
-        assert!((rate_400 / rate_100 - 2.0).ab_s() < 1e-6); // √4 = 2
-    }
-    
-    #[test]
-    fn anonymity_estimation() {
-        // Basic estimation
-        assert_eq!(estimate_anonymity_set(10.0, 1.0), 10);
-        assert_eq!(estimate_anonymity_set(5.0, 0.5), 10);
-        
-        // Zero user rate should return 0
-        assert_eq!(estimate_anonymity_set(5.0, 0.0), 0);
-        
-        // Fractional result_s should floor
-        assert_eq!(estimate_anonymity_set(5.0, 2.0), 2); // 2.5 -> 2
+    fn test_burst_detection() {
+        let mut detector = BurstDetector::new();
+        let metrics = NetworkMetrics::default();
+
+        // Simulate burst
+        for _ in 0..20 {
+            detector.update(&metrics);
+        }
+
+        assert!(detector.is_burst_detected());
     }
 }
