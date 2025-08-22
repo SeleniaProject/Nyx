@@ -2722,15 +2722,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memoffset"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "metrics"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2911,7 +2902,6 @@ dependencies = [
  "bitflags 2.9.1",
  "cfg-if",
  "libc",
- "memoffset",
 ]
 
 [[package]]
@@ -3184,8 +3174,6 @@ dependencies = [
  "fluent-bundle",
  "futures",
  "hex-literal",
- "libc",
- "nix 0.27.1",
  "notify",
  "num-bigint",
  "num-traits",
@@ -3195,7 +3183,6 @@ dependencies = [
  "nyx-mobile-ffi",
  "nyx-telemetry",
  "once_cell",
- "pledge",
  "protoc-bin-vendored",
  "rand 0.8.5",
  "serde",
@@ -3211,10 +3198,7 @@ dependencies = [
  "toml 0.7.8",
  "tracing",
  "unic-langid",
- "unveil",
  "uuid",
- "win32job",
- "windows 0.56.0",
 ]
 
 [[package]]
@@ -4010,15 +3994,6 @@ checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
 dependencies = [
  "der",
  "spki",
-]
-
-[[package]]
-name = "pledge"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "252599417b7d9a43b7fdc63dd790b0848666a8910b2ebe1a25118309c3c981e5"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -5995,15 +5970,6 @@ name = "unsigned-varint"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb066959b24b5196ae73cb057f45598450d2c5f71460e98c49b738086eff9c06"
-
-[[package]]
-name = "unveil"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e7fa867d559102001ec694165ed17d5f82e95213060a65f9c8b6280084bbfec"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "ureq"

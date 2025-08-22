@@ -24,9 +24,16 @@ lto = "fat"
 opt-level = 3  # Changed from "z" to 3 for better balance of size and speed
 panic = "abort"
 strip = true   # Strip debug symbols for smaller binaries
+overflow-checks = false  # Disable overflow checks for maximum performance
+debug = 0  # Disable debug info for smaller binaries
 
 # Enable incremental compilation for faster rebuilds
-incremental = true 
+incremental = true
+
+# Additional performance optimizations
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 1 
 
 # Reduce link-time memory usage for tests on Windows/MSVC by disabling debug symbols
 # and minimizing object fragmentation.

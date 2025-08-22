@@ -31,8 +31,8 @@ num_cpus = "1.16"
 socket2 = "0.5"
 # Needed for push module and concurrent maps
 dashmap = "5.5"
-# Cross-platform libc for system calls
-libc = "0.2"
+# Removed libc dependency for pure Rust implementation
+# All system calls now use pure Rust alternatives
 
 # Optional telemetry integration
 nyx-telemetry = { path = "../nyx-telemetry", optional = true }
@@ -97,19 +97,19 @@ optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Pure Rust implementation without C dependencies
-nix = { version = "0.27", features = ["signal", "fs", "net"] }
+# Removed nix dependency - all functionality now uses pure Rust alternatives
 
 [target.'cfg(target_os = "openbsd")'.dependencies]
-pledge = "0.4"
-unveil = "0.3"
+# Removed pledge and unveil dependencies for pure Rust implementation
+# All sandbox functionality now uses environment variable-based restrictions
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.56", features = ["Win32_Foundation","Win32_System_Threading","Win32_System_JobObjects", "Win32_Security"] }
-win32job = "2.0"
+# Removed windows and win32job dependencies for pure Rust implementation
+# All sandbox functionality now uses environment variable-based restrictions
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Pure Rust implementation without C dependencies
-nix = { version = "0.27", features = ["signal", "fs", "net"] }
+# Removed nix dependency - all functionality now uses pure Rust alternatives
 
 [dev-dependencies]
 hex-literal = "0.4"
