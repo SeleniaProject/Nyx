@@ -4,7 +4,7 @@
 //! `spec/Nyx_Protocol_v1.0_Spec.md` Section 10: Compliance Levels.
 //!
 //! ## Compliance Levels
-//! 
+//!
 //! - **Core**: Minimum compatibility (v0.1 feature set)
 //! - **Plu_s**: Multipath, Hybrid Post-Quantum (recommended)
 //! - **Full**: cMix, Plugin Framework, Low Power Mode (all Features)
@@ -14,14 +14,14 @@ use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-/// Compliance level_s as defined in the Nyx protocol specification
+/// Compliance levels as defined in the Nyx protocol specification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ComplianceLevel {
     /// Core compliance: minimum feature set for basic interoperability
     Core,
-    /// Plu_s compliance: include_s multipath and hybrid post-quantum Features  
+    /// Plus compliance: includes multipath and hybrid post-quantum features  
     Plus,
-    /// Full compliance: all protocol Features including cMix and plugin_s
+    /// Full compliance: all protocol features including cMix and plugins
     Full,
 }
 
@@ -35,10 +35,10 @@ impl std::fmt::Display for ComplianceLevel {
     }
 }
 
-/// Required Features for each compliance _level
+/// Required Features for each compliance level
 #[derive(Debug, Clone)]
 pub struct ComplianceRequirements {
-    /// Features that must be present for thi_s compliance _level
+    /// Features that must be present for this compliance level
     pub required_features: HashSet<String>,
     /// Features that are recommended but not required
     pub recommended_features: HashSet<String>,
@@ -153,7 +153,7 @@ impl FeatureDetector {
         #[cfg(feature = "plugin")]
         features.insert("plugin_framework".to_string());
 
-        // Low power mode feature  
+        // Low power mode feature
         #[cfg(feature = "mobile")]
         features.insert("low_power_mode".to_string());
 
@@ -194,12 +194,20 @@ impl Default for FeatureDetector {
 /// Determine the highest compliance level achievable with current features
 pub fn determine_compliance_level(detector: &FeatureDetector) -> ComplianceLevel {
     let full_reqs = ComplianceRequirements::full();
-    if full_reqs.required_features.iter().all(|f| detector.has_feature(f)) {
+    if full_reqs
+        .required_features
+        .iter()
+        .all(|f| detector.has_feature(f))
+    {
         return ComplianceLevel::Full;
     }
 
     let plus_reqs = ComplianceRequirements::plus();
-    if plus_reqs.required_features.iter().all(|f| detector.has_feature(f)) {
+    if plus_reqs
+        .required_features
+        .iter()
+        .all(|f| detector.has_feature(f))
+    {
         return ComplianceLevel::Plus;
     }
 
@@ -278,16 +286,23 @@ impl ComplianceReport {
     /// Generate detailed compliance report
     pub fn detailed_report(&self) -> String {
         let mut report = String::new();
-        
-        report.push_str(&format!("Nyx Protocol Compliance Report\n"));
-        report.push_str(&format!("=============================\n\n"));
+
+        report.push_str("Nyx Protocol Compliance Report\n");
+        report.push_str("=============================\n\n");
         report.push_str(&format!("Target Level: {}\n", self.level));
-        report.push_str(&format!("Status: {}\n\n", if self.is_compliant { "COMPLIANT" } else { "NON-COMPLIANT" }));
+        report.push_str(&format!(
+            "Status: {}\n\n",
+            if self.is_compliant {
+                "COMPLIANT"
+            } else {
+                "NON-COMPLIANT"
+            }
+        ));
 
         if !self.missing_required.is_empty() {
             report.push_str("Missing Required Features:\n");
             for feature in &self.missing_required {
-                report.push_str(&format!("  - {}\n", feature));
+                report.push_str(&format!("  - {feature}\n"));
             }
             report.push('\n');
         }
@@ -295,7 +310,7 @@ impl ComplianceReport {
         if !self.missing_recommended.is_empty() {
             report.push_str("Missing Recommended Features:\n");
             for feature in &self.missing_recommended {
-                report.push_str(&format!("  - {}\n", feature));
+                report.push_str(&format!("  - {feature}\n"));
             }
             report.push('\n');
         }
@@ -304,36 +319,36 @@ impl ComplianceReport {
         let mut sorted_features: Vec<_> = self.available_features.iter().collect();
         sorted_features.sort();
         for feature in sorted_features {
-            report.push_str(&format!("  + {}\n", feature));
+            report.push_str(&format!("  + {feature}\n"));
         }
 
         report
     }
 }
 
-/// Simple policy describing _allowed configuration combination_s.
+/// Simple policy describing allowed configuration combinations.
 #[derive(Debug, Clone, Copy)]
 pub struct Policy {
-    pub ____allow_trace_log_s: bool,
-    pub _____________allow_multipath: bool,
+    pub allow_trace_logs: bool,
+    pub allow_multipath: bool,
 }
 
 impl Default for Policy {
-    fn default() -> Self { 
-        Self { 
-            ____allow_trace_log_s: false, 
-            _____________allow_multipath: true 
-        } 
+    fn default() -> Self {
+        Self {
+            allow_trace_logs: false,
+            allow_multipath: true,
+        }
     }
 }
 
 /// Validate a configuration against a policy.
 pub fn validate_against(cfg: &CoreConfig, pol: Policy) -> Result<()> {
-    if !pol.____allow_trace_log_s && cfg.____log_level == "trace" {
-        return Err(Error::config("trace log_s are dis_allowed by policy"));
+    if !pol.allow_trace_logs && cfg.log_level == "trace" {
+        return Err(Error::config("trace logs are disallowed by policy"));
     }
-    if cfg.____enable_multipath && !pol._____________allow_multipath {
-        return Err(Error::config("multipath i_s dis_allowed by policy"));
+    if cfg.enable_multipath && !pol.allow_multipath {
+        return Err(Error::config("multipath is disallowed by policy"));
     }
     Ok(())
 }
@@ -345,7 +360,7 @@ mod test_s {
     #[test]
     fn test_feature_detector() {
         let detector = FeatureDetector::new();
-        
+
         // Core features should always be available
         assert!(detector.has_feature("stream"));
         assert!(detector.has_feature("frame_codec"));
@@ -357,7 +372,7 @@ mod test_s {
     fn test_compliance_level_determination() {
         let detector = FeatureDetector::new();
         let level = determine_compliance_level(&detector);
-        
+
         // Should at least achieve Core compliance
         assert!(level >= ComplianceLevel::Core);
     }
@@ -366,9 +381,12 @@ mod test_s {
     fn test_core_compliance_validation() -> Result<(), Box<dyn std::error::Error>> {
         let detector = FeatureDetector::new();
         let report = validate_compliance_level(ComplianceLevel::Core, &detector)?;
-        
+
         // Core compliance should always be achievable
-        assert!(report.is_compliant, "Core compliance should always be achievable");
+        assert!(
+            report.is_compliant,
+            "Core compliance should always be achievable"
+        );
         assert!(report.missing_required.is_empty());
         Ok(())
     }
@@ -377,7 +395,7 @@ mod test_s {
     fn test_compliance_report_summary() -> Result<(), Box<dyn std::error::Error>> {
         let detector = FeatureDetector::new();
         let report = validate_compliance_level(ComplianceLevel::Core, &detector)?;
-        
+
         let summary = report.summary();
         assert!(summary.contains("Core"));
         assert!(summary.contains("?") || summary.contains("?"));
@@ -401,15 +419,19 @@ mod test_s {
 
     #[test]
     fn test_policy_blocks_trace() {
-        let cfg = CoreConfig { 
-            ____log_level: "trace".into(), 
-            ..CoreConfig::default() 
+        let cfg = CoreConfig {
+            log_level: "trace".into(),
+            ..CoreConfig::default()
         };
-        let e = validate_against(&cfg, Policy { 
-            ____allow_trace_log_s: false, 
-            _____________allow_multipath: true 
-        }).unwrap_err();
-        assert!(format!("{e}").contains("dis_allowed"));
+        let e = validate_against(
+            &cfg,
+            Policy {
+                allow_trace_logs: false,
+                allow_multipath: true,
+            },
+        )
+        .unwrap_err();
+        assert!(format!("{e}").contains("disallowed"));
     }
 
     #[test]
@@ -422,7 +444,7 @@ mod test_s {
     fn test_detailed_compliance_report() -> Result<(), Box<dyn std::error::Error>> {
         let detector = FeatureDetector::new();
         let report = validate_compliance_level(ComplianceLevel::Full, &detector)?;
-        
+
         let detailed = report.detailed_report();
         assert!(detailed.contains("Nyx Protocol Compliance Report"));
         assert!(detailed.contains("Target Level: Full"));
