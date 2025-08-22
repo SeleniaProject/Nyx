@@ -569,11 +569,12 @@ mod test_s {
     use super::*;
 
     #[test]
-    fn valid_witness_passe_s() {
+    fn valid_witness_passe_s() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
-        let __element = b"test_element";
-        let __witnes_s = acc.add_element(__element)?;
-        assert!(acc.verify_element(__element, &witnes_s));
+        let element = b"test_element";
+        let witness = acc.add_element(element)?;
+        assert!(acc.verify_element(element, &witness));
+        Ok(())
     }
 
     #[test]
@@ -615,19 +616,20 @@ mod test_s {
     #[test]
     fn accumulator_cache_hit() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
-        let __element = b"test_element";
+        let element = b"test_element";
 
-        // Add __element
-        acc.add_element(__element)?;
+        // Add element
+        acc.add_element(element)?;
 
-        // First witnes_s generation
-        let __witness1 = acc.generate_witnes_s(__element)?;
-        let __cache_hits_before = acc.stats.cache_hits;
+        // First witness generation
+        let witness1 = acc.generate_witnes_s(element)?;
+        let cache_hits_before = acc.stats.__cache_hits;
 
-        // Second witnes_s generation should hit cache
-        let __witness2 = acc.generate_witnes_s(__element)?;
+        // Second witness generation should hit cache
+        let witness2 = acc.generate_witnes_s(element)?;
         assert_eq!(witness1, witness2);
-        assert_eq!(acc.stats.cache_hits, cache_hits_before + 1);
+        assert_eq!(acc.stats.__cache_hits, cache_hits_before + 1);
+        Ok(())
     }
 
     #[test]
@@ -637,11 +639,11 @@ mod test_s {
         let __element2 = b"element2";
         let __element3 = b"element3"; // __element not added to accumulator
 
-        let ___witness1 = acc.add_element(element1)?;
-        let ___witness2 = acc.add_element(element2)?;
+        let ___witness1 = acc.add_element(__element1)?;
+        let ___witness2 = acc.add_element(__element2)?;
 
         let witnesses = vec![vec![1], vec![2], vec![3]]; // Dummy witnesses as Vec<u8>
-        let elements = vec![element1.to_vec(), element2.to_vec(), element3.to_vec()];
+        let elements = vec![__element1.to_vec(), __element2.to_vec(), __element3.to_vec()];
 
         let result_s = verify_batch_membership(&witnesses, &elements, &[]);
         // Note: verify_batch_membership use_s legacy API, result_s will be [false, false, false]
@@ -652,20 +654,20 @@ mod test_s {
 
     #[test]
     fn detailed_verification_error() -> Result<(), Box<dyn std::error::Error>> {
-        let __element = b"test_element";
-        let __acc = b"test_accumulator";
-        let __invalid_witnes_s = b"wrong_witnes_s";
+        let element = b"test_element";
+        let acc = b"test_accumulator";
+        let invalid_witness = b"wrong_witness";
 
-        let __result = verify_membership_detailed(__invalid_witnes_s, __element, __acc);
-        assert!(__result.is_err());
+        let result = verify_membership_detailed(invalid_witness, element, acc);
+        assert!(result.is_err());
 
         if let Err(AccumulatorError::VerificationFailed {
-            element: e,
-            witness: w,
-        }) = __result
+            __element: e,
+            witnes_s: w,
+        }) = result
         {
-            assert_eq!(e, __element);
-            assert_eq!(w, __invalid_witnes_s);
+            assert_eq!(e, element);
+            assert_eq!(w, invalid_witness);
         } else {
             return Err("Expected VerificationFailed error".into());
         }

@@ -3,7 +3,7 @@
 use nyx_mix::accumulator::Accumulator;
 
 #[test]
-fn debug_accumulator_step_by_step() {
+fn debug_accumulator_step_by_step() -> Result<(), Box<dyn std::error::Error>> {
     let mut acc = Accumulator::new();
 
     println!("=== Testing Accumulator Step by Step ===");
@@ -13,7 +13,7 @@ fn debug_accumulator_step_by_step() {
     let element1 = vec![0u8];
     let witness1 = acc.add_element(&element1)?;
     println!("Witness1: {:?}", witness1.to_string());
-    println!("Accumulator value: {:?}", acc.value.to_string());
+    println!("Accumulator value: {:?}", acc.__value.to_string());
 
     // Test verification
     println!("\n2. Verifying element [0]");
@@ -25,7 +25,7 @@ fn debug_accumulator_step_by_step() {
     let element2 = vec![1u8];
     let witness2 = acc.add_element(&element2)?;
     println!("Witness2: {:?}", witness2.to_string());
-    println!("Accumulator value: {:?}", acc.value.to_string());
+    println!("Accumulator value: {:?}", acc.__value.to_string());
 
     // Test verification of both element_s
     println!("\n4. Verifying element [0] after adding [1]");
@@ -53,4 +53,6 @@ fn debug_accumulator_step_by_step() {
         "Element [0] should verify with new witnes_s"
     );
     assert!(verification2, "Element [1] should verify");
+    
+    Ok(())
 }

@@ -21,8 +21,9 @@
 //!     .max_rate(10.0)
 //!     .adaptation_interval(std::time::Duration::from_secs(30));
 //!     
-//! let mut manager = AdaptiveCoverManager::new(config);
-//! manager.start_adaptive_cover();
+//! let manager = AdaptiveCoverManager::new(config);
+//! let current_rate = manager.current_rate();
+//! assert!(current_rate > 0.0);
 //! ```
 
 use crate::cover::poisson_rate;
