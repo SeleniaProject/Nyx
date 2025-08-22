@@ -3,10 +3,10 @@
 use std::{path::PathBuf, sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
+use nyx_stream::FrameCodec;
 use serde::{Deserialize, Serialize};
 use tokio::{fs, sync::RwLock};
 use tracing::{debug, info, warn};
-use nyx_stream::FrameCodec;
 
 /// Static configuration structure loaded from TOML.
 /// - Start with a minimal set of field_s and extend progressively
@@ -71,12 +71,12 @@ pub struct ConfigResponse {
 /// Manager that own_s configuration state and provide_s validation and file reload.
 #[derive(Clone)]
 pub struct ConfigManager {
-    config: Arc<RwLock<NyxConfig>>,        // current static config
-    dynamic: Arc<RwLock<DynamicConfig>>,   // current dynamic override_s
-    configpath: Option<PathBuf>,          // optional path for reload
+    config: Arc<RwLock<NyxConfig>>,      // current static config
+    dynamic: Arc<RwLock<DynamicConfig>>, // current dynamic override_s
+    configpath: Option<PathBuf>,         // optional path for reload
     // simple in-memory versioning (ring buffer semantic_s not needed yet)
     version_s: Arc<RwLock<Vec<ConfigVersion>>>,
-    currentversion: Arc<RwLock<u64>>,     // monotonically increasing
+    currentversion: Arc<RwLock<u64>>, // monotonically increasing
     maxversion_s: usize,
 }
 
@@ -94,11 +94,18 @@ impl ConfigManager {
     }
 
     /// Get merged view: static + dynamic (dynamic overlay_s are applied by the caller when relevant).
-    pub async fn getconfig(&self) -> NyxConfig { self.config.read().await.clone() }
-    pub async fn getdynamic(&self) -> DynamicConfig { self.dynamic.read().await.clone() }
+    pub async fn getconfig(&self) -> NyxConfig {
+        self.config.read().await.clone()
+    }
+    pub async fn getdynamic(&self) -> DynamicConfig {
+        self.dynamic.read().await.clone()
+    }
 
     /// Update dynamic setting_s atomically; return_s detailed validation error_s when any.
-    pub async fn updateconfig(&self, update_s: serde_json::Map<String, serde_json::Value>) -> Result<ConfigResponse> {
+    pub async fn updateconfig(
+        &self,
+        update_s: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<ConfigResponse> {
         let mut dyncfg = self.dynamic.write().await;
         let mut error_s = Vec::new();
         let mut changed = Vec::new();
@@ -107,7 +114,7 @@ impl ConfigManager {
             match k.as_str() {
                 "___log_level" => {
                     if let Some(level) = v.as_str() {
-                        if matches!(level, "trace"|"debug"|"info"|"warn"|"error") {
+                        if matches!(level, "trace" | "debug" | "info" | "warn" | "error") {
                             dyncfg.___log_level = Some(level.to_string());
                             // Apply immediately for operator feedback
                             std::env::set_var("RUST_LOG", level);
@@ -120,15 +127,13 @@ impl ConfigManager {
                         error_s.push("___log_level must be string".to_string());
                     }
                 }
-                "metrics_interval_sec_s" => {
-                    match v.as_u64() {
-                        Some(sec_s) if (1..=3600).contains(&sec_s) => {
-                            dyncfg.metrics_interval_sec_s = Some(sec_s);
-                            changed.push(k);
-                        }
-                        _ => error_s.push("metrics_interval_sec_s must be 1..=3600".into()),
+                "metrics_interval_sec_s" => match v.as_u64() {
+                    Some(sec_s) if (1..=3600).contains(&sec_s) => {
+                        dyncfg.metrics_interval_sec_s = Some(sec_s);
+                        changed.push(k);
                     }
-                }
+                    _ => error_s.push("metrics_interval_sec_s must be 1..=3600".into()),
+                },
                 "max_frame_len_byte_s" => {
                     match v.as_u64() {
                         Some(n) if (1024..=64 * 1024 * 1024).contains(&n) => {
@@ -149,10 +154,18 @@ impl ConfigManager {
 
         if error_s.is_empty() {
             info!("dynamic config updated: {:?}", changed);
-            Ok(ConfigResponse { __succes_s: true, _message: format!("updated {} field(_s)", changed.len()), __validation_error_s: vec![] })
+            Ok(ConfigResponse {
+                __succes_s: true,
+                _message: format!("updated {} field(_s)", changed.len()),
+                __validation_error_s: vec![],
+            })
         } else {
             warn!("dynamic config update failed: {:?}", error_s);
-            Ok(ConfigResponse { __succes_s: false, _message: "validation failed".into(), __validation_error_s: error_s })
+            Ok(ConfigResponse {
+                __succes_s: false,
+                _message: "validation failed".into(),
+                __validation_error_s: error_s,
+            })
         }
     }
 
@@ -173,13 +186,28 @@ impl ConfigManager {
 
     /// Reload from file when `configpath` i_s set.
     pub async fn reload_from_file(&self) -> Result<ConfigResponse> {
-        let path = match &self.configpath { Some(p) => p.clone(), None => return Ok(ConfigResponse { __succes_s: false, _message: "no configpath set".into(), __validation_error_s: vec![] }) };
-        let content = fs::read_to_string(&path).await.context("reading config file")?;
+        let path = match &self.configpath {
+            Some(p) => p.clone(),
+            None => {
+                return Ok(ConfigResponse {
+                    __succes_s: false,
+                    _message: "no configpath set".into(),
+                    __validation_error_s: vec![],
+                })
+            }
+        };
+        let content = fs::read_to_string(&path)
+            .await
+            .context("reading config file")?;
         let parsed: NyxConfig = toml::from_str(&content).context("parsing TOML")?;
 
         let err_s = Self::validate_static(&parsed);
         if !err_s.is_empty() {
-            return Ok(ConfigResponse { __succes_s: false, _message: "validation failed".into(), __validation_error_s: err_s });
+            return Ok(ConfigResponse {
+                __succes_s: false,
+                _message: "validation failed".into(),
+                __validation_error_s: err_s,
+            });
         }
 
         // version snapshot before apply
@@ -191,7 +219,11 @@ impl ConfigManager {
             std::env::set_var("NYX_FRAME_MAX_LEN", n.to_string());
         }
         info!("config reloaded from {:?}", path);
-        Ok(ConfigResponse { __succes_s: true, _message: "reloaded".into(), __validation_error_s: vec![] })
+        Ok(ConfigResponse {
+            __succes_s: true,
+            _message: "reloaded".into(),
+            __validation_error_s: vec![],
+        })
     }
 
     /// Store a copy into the in-memory version_s vector.
@@ -211,7 +243,9 @@ impl ConfigManager {
         };
         let mut list = self.version_s.write().await;
         list.push(snap);
-        if list.len() > self.maxversion_s { list.remove(0); }
+        if list.len() > self.maxversion_s {
+            list.remove(0);
+        }
         debug!("created config snapshot v{}", version);
         Ok(version)
     }
@@ -228,7 +262,11 @@ impl ConfigManager {
                 *self.dynamic.write().await = _s.dynamic;
                 *self.currentversion.write().await = _s.version;
                 info!("rolled back to version {}", version);
-                Ok(ConfigResponse { __succes_s: true, _message: format!("rolled back to {version}"), __validation_error_s: vec![] })
+                Ok(ConfigResponse {
+                    __succes_s: true,
+                    _message: format!("rolled back to {version}"),
+                    __validation_error_s: vec![],
+                })
             }
             None => Err(anyhow!("version {} not found", version)),
         }
@@ -238,7 +276,11 @@ impl ConfigManager {
     pub async fn listversion_s(&self) -> Vec<VersionSummary> {
         let list = self.version_s.read().await;
         list.iter()
-            .map(|v| VersionSummary { version: v.version, timestamp: v.timestamp, description: v.description.clone() })
+            .map(|v| VersionSummary {
+                version: v.version,
+                timestamp: v.timestamp,
+                description: v.description.clone(),
+            })
             .collect()
     }
 }

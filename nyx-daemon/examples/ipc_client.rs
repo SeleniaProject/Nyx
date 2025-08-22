@@ -1,10 +1,10 @@
 use std::io;
 
-#[cfg(unix)]
-use tokio::net::UnixStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(windows)]
 use tokio::net::windows::named_pipe::ClientOption_s;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
+use tokio::net::UnixStream;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {

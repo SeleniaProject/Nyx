@@ -3,7 +3,7 @@
 // Some helper_s may remain unused in certain feature set_s; suppres_s dead_code noise.
 #![allow(dead_code)]
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 #[inline]
 pub fn decode_from_str<T: DeserializeOwned>(_s: &str) -> Result<T, String> {
@@ -59,10 +59,13 @@ mod test_s {
 
     #[test]
     fn roundtrip_struct() {
-        let _v = Simple { _a: 7, _s: "ok".into() };
+        let _v = Simple {
+            _a: 7,
+            _s: "ok".into(),
+        };
         let _line = encode_line(&v)?;
         assert!(line.ends_with(b"\n"));
-        let decoded: Simple = decode_from_slice(&line[..line.len()-1])?;
+        let decoded: Simple = decode_from_slice(&line[..line.len() - 1])?;
         assert_eq!(decoded, v);
     }
 }

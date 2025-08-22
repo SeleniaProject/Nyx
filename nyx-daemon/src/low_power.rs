@@ -19,8 +19,8 @@ use serde::Serialize;
 // Re-export FFI functions from nyx-mobile-ffi. These are normal Rust functions with C ABI
 // and are safe to call directly (no unsafe block needed).
 use nyx_mobile_ffi::{
-    nyx_mobile_init, nyx_mobile_set____log_level, nyx_mobile_shutdown, nyx_power_get_state, NyxPowerState, NyxStatus,
-    rust_get_power_state, rust_get_resume_count, rust_get_wake_count,
+    nyx_mobile_init, nyx_mobile_set____log_level, nyx_mobile_shutdown, nyx_power_get_state,
+    rust_get_power_state, rust_get_resume_count, rust_get_wake_count, NyxPowerState, NyxStatus,
 };
 
 /// Background task handle for the low-power bridge.
@@ -69,7 +69,7 @@ impl LowPowerBridge {
             .and_then(|s| s.parse().ok())
             .unwrap_or(1.0 / 60.0);
 
-    let handle = tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut intv = interval(Duration::from_millis(poll_ms));
             // Tick once to establish a baseline without immediate work
             intv.tick().await;
@@ -79,7 +79,11 @@ impl LowPowerBridge {
 
             // Initialize inactivity trigger
             let start_ms = now_ms();
-            let mut inactivity = InactivityTrigger::new(Duration::from_millis(inactivity_ms), rate_per_sec, TimestampM_s(start_ms));
+            let mut inactivity = InactivityTrigger::new(
+                Duration::from_millis(inactivity_ms),
+                rate_per_sec,
+                TimestampM_s(start_ms),
+            );
 
             let mut prev_state: Option<u32> = None;
             let mut prev_wake: u32 = rust_get_wake_count();
@@ -94,12 +98,16 @@ impl LowPowerBridge {
                 // Primary source via FFI getter
                 let mut cur: u32 = 0;
                 let rc = nyx_power_get_state(&mut cur as *mut u32);
-                if rc != NyxStatus::Ok as i32 { cur = rust_get_power_state(); }
+                if rc != NyxStatus::Ok as i32 {
+                    cur = rust_get_power_state();
+                }
 
                 let now = now_ms();
                 if prev_state != Some(cur) {
                     // Debounce: suppress rapid toggles within debounce_ms
-                    if now.saturating_sub(last_emit_ms) < debounce_ms { continue; }
+                    if now.saturating_sub(last_emit_ms) < debounce_ms {
+                        continue;
+                    }
                     let stamp = now;
                     let screen = map_power_to_screen(cur);
                     history.push((TimestampM_s(stamp), screen));
@@ -107,15 +115,28 @@ impl LowPowerBridge {
                     let windowstart = stamp.saturating_sub(10 * 60 * 1000);
                     while history.len() > 2 {
                         if let Some(&(TimestampM_s(t0), _)) = history.first() {
-                            if t0 < windowstart { history.remove(0); } else { break; }
-                        } else { break; }
+                            if t0 < windowstart {
+                                history.remove(0);
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
                     }
 
                     // Emit rich event
-                    let detail = serde_json::to_string(&PowerEvent::State { state: display_power(cur).to_string() }).unwrap_or_else(|_| "{\"type\":\"state\"}".into());
-                    let _ = events.sender().send(Event { _ty: "power".into(), _detail: detail });
+                    let detail = serde_json::to_string(&PowerEvent::State {
+                        state: display_power(cur).to_string(),
+                    })
+                    .unwrap_or_else(|_| "{\"type\":\"state\"}".into());
+                    let _ = events.sender().send(Event {
+                        _ty: "power".into(),
+                        _detail: detail,
+                    });
                     // Metrics
-                    metrics::counter!("nyx.power.state.change", "state" => cur.to_string()).increment(1);
+                    metrics::counter!("nyx.power.state.change", "state" => cur.to_string())
+                        .increment(1);
 
                     // Activity heuristic: entering Active resets inactivity
                     if cur == NyxPowerState::Active as u32 {
@@ -141,22 +162,34 @@ impl LowPowerBridge {
 
                 // Inactivity trigger
                 if inactivity.should_trigger(TimestampM_s(now)) {
-                    let detail = serde_json::to_string(&PowerEvent::Inactivity).unwrap_or_else(|_| "{\"type\":\"inactivity\"}".into());
-                    let _ = events.sender().send(Event { _ty: "power".into(), _detail: detail });
+                    let detail = serde_json::to_string(&PowerEvent::Inactivity)
+                        .unwrap_or_else(|_| "{\"type\":\"inactivity\"}".into());
+                    let _ = events.sender().send(Event {
+                        _ty: "power".into(),
+                        _detail: detail,
+                    });
                     metrics::counter!("nyx.power.inactivity.trigger").increment(1);
                 }
 
                 // Detect wake/resume counters and emit events
                 let wk = rust_get_wake_count();
                 if wk > prev_wake {
-                    let detail = serde_json::to_string(&PowerEvent::Wake).unwrap_or_else(|_| "{\"type\":\"wake\"}".into());
-                    let _ = events.sender().send(Event { _ty: "power".into(), _detail: detail });
+                    let detail = serde_json::to_string(&PowerEvent::Wake)
+                        .unwrap_or_else(|_| "{\"type\":\"wake\"}".into());
+                    let _ = events.sender().send(Event {
+                        _ty: "power".into(),
+                        _detail: detail,
+                    });
                     prev_wake = wk;
                 }
                 let rs = rust_get_resume_count();
                 if rs > prev_resume {
-                    let detail = serde_json::to_string(&PowerEvent::Resume).unwrap_or_else(|_| "{\"type\":\"resume\"}".into());
-                    let _ = events.sender().send(Event { _ty: "power".into(), _detail: detail });
+                    let detail = serde_json::to_string(&PowerEvent::Resume)
+                        .unwrap_or_else(|_| "{\"type\":\"resume\"}".into());
+                    let _ = events.sender().send(Event {
+                        _ty: "power".into(),
+                        _detail: detail,
+                    });
                     prev_resume = rs;
                 }
             }
@@ -184,7 +217,10 @@ impl Drop for LowPowerBridge {
 
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn map_power_to_screen(state: u32) -> ScreenState {
@@ -226,13 +262,10 @@ mod test_s {
         let mut rx = event_s.subscribe();
         let __bridge = LowPowerBridge::start(event_s)?;
         // Expect first event due to initial state observation
-        let _ev = timeout(Duration::from_millis(1000), rx.recv())
-            .await
-            ?
-            ?;
+        let _ev = timeout(Duration::from_millis(1000), rx.recv()).await??;
         assert_eq!(ev.ty, "power");
-    // detail i_s JSON like {"type":"State","state":"active"}
-    assert!(ev.detail.contains("\"type\":") && ev.detail.contains("state"));
+        // detail i_s JSON like {"type":"State","state":"active"}
+        assert!(ev.detail.contains("\"type\":") && ev.detail.contains("state"));
     }
 
     #[tokio::test]
@@ -249,11 +282,12 @@ mod test_s {
         let __ = nyx_mobile_ffi::nyx_power_set_state(NyxPowerState::Background as u32);
 
         // Expect a state:background event
-        let _ev = timeout(Duration::from_millis(1500), rx.recv())
-            .await
-            ?
-            ?;
+        let _ev = timeout(Duration::from_millis(1500), rx.recv()).await??;
         assert_eq!(ev.ty, "power");
-    assert!(ev.detail.contains("\"state\":\"background\""), "got {}", ev.detail);
+        assert!(
+            ev.detail.contains("\"state\":\"background\""),
+            "got {}",
+            ev.detail
+        );
     }
 }

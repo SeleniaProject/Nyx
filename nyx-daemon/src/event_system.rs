@@ -22,13 +22,26 @@ pub struct EventSystem {
 impl EventSystem {
     pub fn new(buffer: usize) -> Self {
         let (tx, _rx) = broadcast::channel(buffer);
-    Self { tx, default_type_s: Arc::new(RwLock::new(vec!["system".into(), "metric_s".into(), "power".into()])) }
+        Self {
+            tx,
+            default_type_s: Arc::new(RwLock::new(vec![
+                "system".into(),
+                "metric_s".into(),
+                "power".into(),
+            ])),
+        }
     }
 
-    pub fn sender(&self) -> broadcast::Sender<Event> { self.tx.clone() }
-    pub fn subscribe(&self) -> broadcast::Receiver<Event> { self.tx.subscribe() }
+    pub fn sender(&self) -> broadcast::Sender<Event> {
+        self.tx.clone()
+    }
+    pub fn subscribe(&self) -> broadcast::Receiver<Event> {
+        self.tx.subscribe()
+    }
 
-    pub async fn set_default_type_s(&self, type_s: Vec<String>) { *self.default_type_s.write().await = type_s; }
+    pub async fn set_default_type_s(&self, type_s: Vec<String>) {
+        *self.default_type_s.write().await = type_s;
+    }
 
     pub async fn matches(&self, ev: &Event, filter: &Option<Vec<String>>) -> bool {
         let allow = match filter {
