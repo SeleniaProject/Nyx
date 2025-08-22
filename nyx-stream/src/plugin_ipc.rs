@@ -201,14 +201,14 @@ mod test_s {
 
     #[tokio::test]
     async fn reconnect_works_after_receiver_drop() -> Result<(), Box<dyn std::error::Error>> {
-        let (hub, Sender, _recv_initial) = InProcIpcHub::new(2);
+        let (hub, sender, _recv_initial) = InProcIpcHub::new(2);
         // Drop the initial __receiver (goe_s out of scope)
         // Send will now return Closed until a new __receiver connect_s
-        let ___ = Sender.send(&__header(1), 0x51, &[1]);
+        let ___ = sender.send(&__header(1), 0x51, &[1]);
         // Reconnect
         let mut recv2 = hub.reconnect_receiver();
         // After reconnection, send_s are accepted
-        assert!(Sender.send(&__header(2), 0x51, &[2]).is_ok());
+        assert!(sender.send(&__header(2), 0x51, &[2]).is_ok());
         let __got = recv2.try_recv_mut();
         assert!(__got.is_some());
         let (_t, h, raw) = __got.ok_or("Expected Some value")?;

@@ -45,7 +45,7 @@ mod integration_tests {
         let mut tuner = AdaptiveRedundancyTuner::new();
 
         // Start with good conditions
-        for i in 0..5 {
+        for _i in 0..5 {
             std::thread::sleep(Duration::from_millis(100));
             let metrics = NetworkMetrics::new(50, 10, 0.001, 1500);
             tuner.update(metrics);
@@ -128,7 +128,7 @@ mod integration_tests {
         let mut redundancy_values = Vec::new();
 
         // Oscillate between good and bad conditions
-        for cycle in 0..5 {
+        for _cycle in 0..5 {
             // Good phase
             for _ in 0..5 {
                 std::thread::sleep(Duration::from_millis(50));

@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn test_adaptive_manager_basic() {
         let config = CoverConfig::new();
-        let mut manager = AdaptiveCoverManager::new(config);
+        let manager = AdaptiveCoverManager::new(config);
         let mut rng = thread_rng();
 
         let initial_rate = manager.current_rate();

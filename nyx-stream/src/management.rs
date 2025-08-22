@@ -113,11 +113,11 @@ mod test_s {
 
     #[test]
     fn test_parse_close_unsupported_cap() -> Result<(), Box<dyn std::error::Error>> {
-        let __cap_id = 0x12345678u32;
-        let frame = build_close_unsupported_cap(__cap_id);
+        let cap_id = 0x12345678u32;
+        let frame = build_close_unsupported_cap(cap_id);
 
-        let __parsed_id = parse_close_unsupported_cap(&__frame).ok_or("Expected Some value")?;
-        assert_eq!(__parsed_id, __cap_id);
+        let parsed_id = parse_close_unsupported_cap(&frame).ok_or("Expected Some value")?;
+        assert_eq!(parsed_id, cap_id);
         Ok(())
     }
 
@@ -142,13 +142,13 @@ mod test_s {
     }
 
     #[test]
-    fn test_roundtrip_capability_id_s() -> Result<(), Box<dyn std::error::Error>> {
-        let __test_id_s = [0x00000001, 0x00000002, 0x12345678, 0xFFFFFFFF];
+    fn test_roundtrip_capability_ids() -> Result<(), Box<dyn std::error::Error>> {
+        let test_ids = [0x00000001, 0x00000002, 0x12345678, 0xFFFFFFFF];
 
-        for &cap_id in &__test_id_s {
+        for &cap_id in &test_ids {
             let frame = build_close_unsupported_cap(cap_id);
-            let __parsed = parse_close_unsupported_cap(&__frame).ok_or("Expected Some value")?;
-            assert_eq!(__parsed, cap_id);
+            let parsed = parse_close_unsupported_cap(&frame).ok_or("Expected Some value")?;
+            assert_eq!(parsed, cap_id);
         }
         Ok(())
     }

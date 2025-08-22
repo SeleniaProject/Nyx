@@ -12,16 +12,25 @@
 #![forbid(unsafe_code)]
 
 use crate::Error;
-// use hkdf::Hkdf;
-// use sha2::Sha256;
 
+// Imports for cryptographic operations
 #[cfg(feature = "classic")]
-// use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
-// use zeroize::Zeroize;
+use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
+#[cfg(feature = "classic")]
+use crate::session::AeadSession;
+#[cfg(feature = "classic")]
+use hkdf::Hkdf;
+#[cfg(feature = "classic")]
+use sha2::Sha256;
+#[cfg(feature = "classic")]
+use zeroize::Zeroize;
+#[cfg(feature = "classic")]
+use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
+
 #[cfg(feature = "kyber")]
 use crate::kyber;
 
-// Telemetry integration for handshake metric_s
+// Telemetry integration for handshake metrics
 #[cfg(feature = "telemetry")]
 use {
     std::sync::atomic::{AtomicU64, Ordering},
@@ -58,12 +67,12 @@ impl HandshakeTelemetry {
         }
     }
 
-    pub fn succes_s(self) {
+    pub fn success(self) {
         let duration = self._start_time.elapsed();
         HYBRID_HANDSHAKE_SUCCESS.fetch_add(1, Ordering::Relaxed);
         info!(
             operation = self.operation,
-            duration_m_s = duration.as_millis(),
+            duration_ms = duration.as_millis(),
             "hybrid handshake completed successfully"
         );
     }
@@ -73,7 +82,7 @@ impl HandshakeTelemetry {
         HYBRID_HANDSHAKE_FAILURES.fetch_add(1, Ordering::Relaxed);
         error!(
             operation = self.operation,
-            duration_m_s = duration.as_millis(),
+            duration_ms = duration.as_millis(),
             error = %error,
             "hybrid handshake failed"
         );
@@ -88,7 +97,7 @@ impl HandshakeTelemetry {
     pub fn new(_operation: &'static str) -> Self {
         Self
     }
-    pub fn succes_s(self) {}
+    pub fn success(self) {}
     pub fn failure(self, _error: &Error) {}
 }
 
@@ -106,52 +115,52 @@ impl HybridHandshake {
         debug!("classic Diffie-Hellman operation recorded");
     }
 
-    /// Get current handshake metric_s for monitoring
+    /// Get current handshake metrics for monitoring
     #[cfg(feature = "telemetry")]
-    pub fn get_metric_s() -> HybridHandshakeMetric_s {
-        HybridHandshakeMetric_s {
-            _total_attempt_s: HYBRID_HANDSHAKE_ATTEMPTS.load(Ordering::Relaxed),
-            _successful_handshake_s: HYBRID_HANDSHAKE_SUCCESS.load(Ordering::Relaxed),
-            _failed_handshake_s: HYBRID_HANDSHAKE_FAILURES.load(Ordering::Relaxed),
-            _pq_encapsulation_s: HYBRID_PQ_ENCAPSULATIONS.load(Ordering::Relaxed),
-            _classic_dh_operation_s: HYBRID_CLASSIC_DH_OPS.load(Ordering::Relaxed),
+    pub fn get_metrics() -> HybridHandshakeMetrics {
+        HybridHandshakeMetrics {
+            total_attempts: HYBRID_HANDSHAKE_ATTEMPTS.load(Ordering::Relaxed),
+            successful_handshakes: HYBRID_HANDSHAKE_SUCCESS.load(Ordering::Relaxed),
+            failed_handshakes: HYBRID_HANDSHAKE_FAILURES.load(Ordering::Relaxed),
+            pq_encapsulations: HYBRID_PQ_ENCAPSULATIONS.load(Ordering::Relaxed),
+            classic_dh_operations: HYBRID_CLASSIC_DH_OPS.load(Ordering::Relaxed),
         }
     }
 
-    /// Get telemetry _data accessor_s for external monitoring
+    /// Get telemetry data accessors for external monitoring
     #[cfg(feature = "telemetry")]
-    pub fn attempt_s() -> u64 {
+    pub fn attempts() -> u64 {
         HYBRID_HANDSHAKE_ATTEMPTS.load(Ordering::Relaxed)
     }
 
     #[cfg(feature = "telemetry")]
-    pub fn successe_s() -> u64 {
+    pub fn successes() -> u64 {
         HYBRID_HANDSHAKE_SUCCESS.load(Ordering::Relaxed)
     }
 
     #[cfg(feature = "telemetry")]
-    pub fn failu_re_s() -> u64 {
+    pub fn failures() -> u64 {
         HYBRID_HANDSHAKE_FAILURES.load(Ordering::Relaxed)
     }
 }
 
 #[cfg(feature = "telemetry")]
 #[derive(Debug, Clone, Copy)]
-pub struct HybridHandshakeMetric_s {
-    pub _total_attempt_s: u64,
-    pub _successful_handshake_s: u64,
-    pub _failed_handshake_s: u64,
-    pub _pq_encapsulation_s: u64,
-    pub _classic_dh_operation_s: u64,
+pub struct HybridHandshakeMetrics {
+    pub total_attempts: u64,
+    pub successful_handshakes: u64,
+    pub failed_handshakes: u64,
+    pub pq_encapsulations: u64,
+    pub classic_dh_operations: u64,
 }
 
 #[cfg(feature = "telemetry")]
-impl HybridHandshakeMetric_s {
+impl HybridHandshakeMetrics {
     pub fn success_rate(&self) -> f64 {
-        if self._total_attempt_s == 0 {
+        if self.total_attempts == 0 {
             0.0
         } else {
-            self._successful_handshake_s as f64 / self._total_attempt_s as f64
+            self.successful_handshakes as f64 / self.total_attempts as f64
         }
     }
 }
@@ -164,15 +173,15 @@ pub enum HybridKemKind {
 
 #[derive(Debug, Clone)]
 pub struct HybridConfig {
-    pub _kem: Option<HybridKemKind>,
-    pub _allow_0rtt: bool,
+    pub kem: Option<HybridKemKind>,
+    pub allow_0rtt: bool,
 }
 
 impl Default for HybridConfig {
     fn default() -> Self {
         Self {
-            _kem: None,
-            _allow_0rtt: true,
+            kem: None,
+            allow_0rtt: true,
         }
     }
 }
@@ -198,8 +207,8 @@ impl HybridHandshake {
     /// Create HPKE context for hybrid post-quantum envelope encryption
     #[cfg(feature = "hpke")]
     pub fn create_hpke_context(
-        recipient_info: &[u8],
-        context_info: &[u8],
+        _recipient_info: &[u8],
+        _context_info: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>)> {
         // Generate ephemeral X25519 key for HPKE
         let (sk, pk) = crate::hpke::gen_keypair();
@@ -212,8 +221,8 @@ impl HybridHandshake {
     #[cfg(feature = "hpke")]
     pub fn open_hpke_context(
         public_key: &[u8],
-        recipient_info: &[u8],
-        context_info: &[u8],
+        _recipient_info: &[u8],
+        _context_info: &[u8],
     ) -> Result<Vec<u8>> {
         // Return the public key for use in decryption
         Ok(public_key.to_vec())
@@ -452,7 +461,7 @@ pub mod demo {
         })();
 
         match &result {
-            Ok(_) => telemetry.succes_s(),
+            Ok(_) => telemetry.success(),
             Err(e) => telemetry.failure(e),
         }
 
@@ -581,7 +590,7 @@ pub mod demo {
         })();
 
         match &result {
-            Ok(_) => telemetry.succes_s(),
+            Ok(_) => telemetry.success(),
             Err(e) => telemetry.failure(e),
         }
 

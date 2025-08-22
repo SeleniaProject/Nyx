@@ -246,9 +246,9 @@ mod test_s {
         let pick_s: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
         let __c1b = pick_s.iter().filter(|&&p| p == 1).count();
         let __c2b = pick_s.iter().filter(|&&p| p == 2).count();
-        let c1b = pick_s.iter().filter(|&&x| x == 1).count();
+        let _c1b = pick_s.iter().filter(|&&x| x == 1).count();
         let c2b = pick_s.iter().filter(|&&x| x == 2).count();
-        assert!(c1b > c2b); // faster path i_s preferred
+        assert!(_c1b > c2b); // faster path is preferred
     }
 
     #[test]
@@ -271,24 +271,21 @@ mod test_s {
                 },
             ),
         ];
-        let mut _s = WeightedScheduler::new(&paths);
+        let mut s = WeightedScheduler::new(&paths);
         // Balanced first
         let pick_s: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
-        let __c1 = pick_s.iter().filter(|&&p| p == 1).count();
-        let __c2 = pick_s.iter().filter(|&&p| p == 2).count();
-        let c1 = pick_s.iter().filter(|&&x| x == 1).count();
-        let c2 = pick_s.iter().filter(|&&x| x == 2).count();
+        let c1 = pick_s.iter().filter(|&&p| p == 1).count();
+        let c2 = pick_s.iter().filter(|&&p| p == 2).count();
         assert!((c1 as i32 - c2 as i32).abs() <= 8);
 
-        // Penalize path 1 by observing losse_s
+        // Penalize path 1 by observing losses
         for _ in 0..5 {
-            _s.observe_loss(PathId(1));
+            s.observe_loss(PathId(1));
         }
         let pick_s: Vec<_> = (0..32).map(|_| s.next_path().0).collect();
-        let __c1b = pick_s.iter().filter(|&&p| p == 1).count();
-        let __c2b = pick_s.iter().filter(|&&p| p == 2).count();
-        let c2b = pick_s.iter().filter(|&&x| x == 2).count();
-        let c1b = pick_s.iter().filter(|&&x| x == 1).count();
-        assert!(c2b > c1b);
+        let _c1b = pick_s.iter().filter(|&&p| p == 1).count();
+        let c2b = pick_s.iter().filter(|&&p| p == 2).count();
+        let _c1b = pick_s.iter().filter(|&&x| x == 1).count();
+        assert!(c2b > _c1b);
     }
 }

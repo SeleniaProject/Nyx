@@ -3,7 +3,7 @@
 //! These test_s validate the integration between Android power state_s,
 //! screen tracking, and the Nyx power management system.
 
-use nyx_mobile_ffi::{NyxPowerState, NyxStatu_s};
+use nyx_mobile_ffi::{NyxPowerState, NyxStatus};
 use std::ffi::CString;
 use std::time::{Duration, Instant};
 
@@ -164,35 +164,35 @@ fn test_power_telemetry_integration() -> Result<(), Box<dyn std::error::Error>> 
 /// Test error handling and edge case_s
 #[test]
 fn test_power_management_error_handling() {
-    // Test operation_s before initialization
+    // Test operations before initialization
     assert_eq!(
         unsafe { nyx_power_set_state(0) },
-        NyxStatu_s::NotInitialized as i32
+        NyxStatus::NotInitialized as i32
     );
     assert_eq!(
         unsafe { nyx_push_wake() },
-        NyxStatu_s::NotInitialized as i32
+        NyxStatus::NotInitialized as i32
     );
 
     // Initialize for further test_s
     assert_eq!(unsafe { nyx_mobile_init() }, 0);
 
-    // Test invalid power state_s
+    // Test invalid power states
     assert_eq!(
         unsafe { nyx_power_set_state(999) },
-        NyxStatu_s::InvalidArgument as i32
+        NyxStatus::InvalidArgument as i32
     );
 
     // Test null pointer handling
     assert_eq!(
         unsafe { nyx_power_get_state(std::ptr::null_mut()) },
-        NyxStatu_s::InvalidArgument as i32
+        NyxStatus::InvalidArgument as i32
     );
 
-    // Test invalid telemetry argument_s
+    // Test invalid telemetry arguments
     assert_eq!(
         unsafe { nyx_mobile_set_telemetry_label(std::ptr::null(), std::ptr::null()) },
-        NyxStatu_s::InvalidArgument as i32
+        NyxStatus::InvalidArgument as i32
     );
 
     assert_eq!(unsafe { nyx_mobile_shutdown() }, 0);
@@ -236,9 +236,9 @@ fn test_concurrent_power_operation_s() -> Result<(), Box<dyn std::error::Error>>
         })
         .collect();
 
-    // Wait for all thread_s to complete
+    // Wait for all threads to complete
     for handle in handle_s {
-        handle.join()?;
+        handle.join().map_err(|e| format!("Thread join failed: {:?}", e))?;
     }
 
     assert_eq!(unsafe { nyx_mobile_shutdown() }, 0);

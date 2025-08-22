@@ -53,8 +53,10 @@ impl FlowController {
 
         // Remove all contiguous sequences at once for better cache performance
         if !self.seq_buffer.is_empty() {
-            // Use retain to avoid multiple hash lookups
-            self.sacked.retain(|&s| s < current);
+            // Remove all contiguous acknowledged sequences
+            for &seq in &self.seq_buffer {
+                self.sacked.remove(&seq);
+            }
             self.base = current;
         }
 
@@ -88,12 +90,12 @@ impl FlowController {
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
 
     #[test]
     fn test_basic_flow() {
-        let mut fc = FlowController::new(4, 8);
+        let fc = FlowController::new(4, 8);
         assert_eq!(fc.cwnd(), 4);
         assert_eq!(fc.base(), 1);
         assert!(fc.can_send(3));

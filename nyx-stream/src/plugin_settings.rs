@@ -33,7 +33,7 @@ mod test_s {
     #[test]
     fn defaults_are_sane() {
         let s = PluginSettings::default();
-        assert_eq!(s.queue_size, 1024);
-        assert_eq!(s.max_error_s, 100);
+        assert_eq!(s.__queue_size, 1024);
+        assert_eq!(s.__max_error_s, 100);
     }
 }

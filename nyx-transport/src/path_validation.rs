@@ -612,7 +612,6 @@ pub async fn validate_bidirectional_path(
 #[cfg(test)]
 mod test_s {
     use super::*;
-    use std::time::Duration;
 
     #[test]
     fn parse_ipv4_literal() -> std::result::Result<(), Box<dyn std::error::Error>> {

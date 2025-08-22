@@ -4,7 +4,7 @@
 //! These test_s are designed to run quickly while providing essential
 //! performance insight_s for development workflow_s.
 
-use byte_s::Byte_s;
+use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nyx_stream::async_stream::{AsyncStream, AsyncStreamConfig};
 use tokio::runtime::Runtime;

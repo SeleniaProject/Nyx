@@ -215,8 +215,8 @@ mod test_s {
 
     #[test]
     fn testnegotiate_succes_s() {
-        let __local = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
-        let __peer = vec![
+        let local = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
+        let peer = vec![
             Capability::required(CAP_CORE, vec![]),
             Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]),
         ];
@@ -226,10 +226,10 @@ mod test_s {
 
     #[test]
     fn testnegotiate_unsupported_required() {
-        let __local = &[CAP_CORE]; // Missing plugin framework
-        let __peer = vec![
+        let local = &[CAP_CORE]; // Missing plugin framework
+        let peer = vec![
             Capability::required(CAP_CORE, vec![]),
-            Capability::required(CAP_PLUGIN_FRAMEWORK, vec![]), // Thi_s will fail
+            Capability::required(CAP_PLUGIN_FRAMEWORK, vec![]), // This will fail
         ];
 
         match negotiate(local, &peer) {
@@ -242,23 +242,23 @@ mod test_s {
 
     #[test]
     fn testnegotiate_optional_unknown() {
-        let __local = &[CAP_CORE];
-        let __peer = vec![
+        let local = &[CAP_CORE];
+        let peer = vec![
             Capability::required(CAP_CORE, vec![]),
             Capability::optional(0x9999, vec![]), // Unknown but optional
         ];
 
-        // Should succeed - optional capabilitie_s are alway_s accepted
+        // Should succeed - optional capabilities are always accepted
         assert!(negotiate(local, &peer).is_ok());
     }
 
     #[test]
-    fn test_validate_capability_size_limit_s() {
+    fn test_validate_capability_size_limits() {
         let oversized = Capability::new(CAP_CORE, FLAG_OPTIONAL, vec![0u8; 2048]);
         assert!(validate_capability(&oversized).is_err());
 
-        // Test normal size with non-core capability (core ha_s special validation)
-        let _normal = Capability::new(CAP_PLUGIN_FRAMEWORK, FLAG_OPTIONAL, vec![0u8; 100]);
+        // Test normal size with non-core capability (core has special validation)
+        let normal = Capability::new(CAP_PLUGIN_FRAMEWORK, FLAG_OPTIONAL, vec![0u8; 100]);
         assert!(validate_capability(&normal).is_ok());
     }
 

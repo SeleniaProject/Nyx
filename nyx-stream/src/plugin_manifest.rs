@@ -76,11 +76,11 @@ id = 10
 name = "geo"
 version = 1
 "#;
-        let __m = load_manifest_from_toml_str(__t)?;
-        assert_eq!(__m.plugin_id(), PluginId(10));
-        assert_eq!(__m._name, "geo");
-        assert_eq!(__m.version, 1);
-        assert!(__m.permission_s.is_empty());
+        let m = load_manifest_from_toml_str(__t)?;
+        assert_eq!(m.plugin_id(), PluginId(10));
+        assert_eq!(m.name, "geo");
+        assert_eq!(m.version, 1);
+        assert!(m.permission_s.is_empty());
         Ok(())
     }
 
@@ -90,13 +90,13 @@ version = 1
 id = 11
 name = "io"
 version = 1
-permission_s = ["handshake", "data_acces_s"]
+permission_s = ["handshake", "data_access"]
 "#;
-        let __m = load_manifest_from_toml_str(__t)?;
-        assert_eq!(__m.permission_s.len(), 2);
-        assert!(validate_manifest(&__m).is_ok());
-        let info = __m.to_info();
-        assert_eq!(info.__id, PluginId(11));
+        let m = load_manifest_from_toml_str(__t)?;
+        assert_eq!(m.permission_s.len(), 2);
+        assert!(validate_manifest(&m).is_ok());
+        let info = m.to_info();
+        assert_eq!(info.id, PluginId(11));
         assert!(info.permission_s.contains(&Permission::Handshake));
         Ok(())
     }

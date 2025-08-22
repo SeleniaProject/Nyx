@@ -10,7 +10,7 @@ use nyx_stream::plugin_dispatch::PluginMessage;
 fn plugin_message_accessors_work() {
     let hdr = PluginHeader {
         id: PluginId(77),
-        flag_s: 0b1010_0101,
+        flags: 0b1010_0101,
         data: vec![9, 9, 9],
     };
     let raw = vec![1, 2, 3];

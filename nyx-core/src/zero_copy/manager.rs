@@ -291,38 +291,38 @@ mod test_s {
     use super::*;
     #[test]
     fn pool_reuse_s() {
-        let _p = BufferPool::with_capacity(1024);
+        let p = BufferPool::with_capacity(1024);
         let mut v = p.acquire(100);
         v.extend_from_slice(&[1, 2, 3]);
-        let _b = Buffer::from_vec(v);
+        let b = Buffer::from_vec(v);
         assert_eq!(b.as_slice(), &[1, 2, 3]);
         // cannot get Vec back from Buffer, but we can acquire-release cycle
-        let _v2 = p.acquire(50);
+        let v2 = p.acquire(50);
         assert!(v2.capacity() >= 50);
         drop(v2);
         // release some vector
         p.release(Vec::with_capacity(64));
-        let _v3 = p.acquire(10);
+        let v3 = p.acquire(10);
         assert!(v3.capacity() >= 10);
     }
 
     #[test]
     fn pool_mutex_poison_recovery() {
         use std::sync::Arc;
-        let _p = Arc::new(BufferPool::with_capacity(1024));
+        let p = Arc::new(BufferPool::with_capacity(1024));
         // Poison the mutex in another thread while holding the lock
-        let _p_ref = Arc::clone(&p);
-        let _handle = std::thread::spawn(move || {
+        let p_ref = Arc::clone(&p);
+        let handle = std::thread::spawn(move || {
             let __guard = p_ref.free.lock()?;
             return Err("intentional panic to poison mutex".into());
         });
         let __ = handle.join(); // ignore panic result; mutex should now be poisoned
 
         // After poisoning, acquire/release should still not panic due to recovery
-        let _v = p.acquire(16);
+        let v = p.acquire(16);
         assert!(v.capacity() >= 16);
         p.release(Vec::with_capacity(32));
-        let _v2 = p.acquire(8);
+        let v2 = p.acquire(8);
         assert!(v2.capacity() >= 8);
     }
 }

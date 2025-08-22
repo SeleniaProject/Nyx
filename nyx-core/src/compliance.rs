@@ -270,13 +270,13 @@ pub struct ComplianceReport {
 }
 
 impl ComplianceReport {
-    /// Get a human-readable summary of the compliance statu_s
+    /// Get a human-readable summary of the compliance status
     pub fn summary(&self) -> String {
         if self.is_compliant {
-            format!("✁E{} compliance achieved", self.level)
+            format!("✓ {} compliance achieved", self.level)
         } else {
             format!(
-                "? {} compliance failed - missing required Features: {}",
+                "✗ {} compliance failed - missing required features: {}",
                 self.level,
                 self.missing_required.join(", ")
             )
@@ -398,7 +398,7 @@ mod test_s {
 
         let summary = report.summary();
         assert!(summary.contains("Core"));
-        assert!(summary.contains("?") || summary.contains("?"));
+        assert!(summary.contains("✓") || summary.contains("✗") || summary.contains("available") || summary.contains("missing"));
         Ok(())
     }
 

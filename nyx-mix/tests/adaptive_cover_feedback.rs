@@ -182,7 +182,7 @@ fn adaptive_cover_performance() {
     
     for i in 0..10_000 {
         let utilization = (i % 100) as f32 / 100.0;
-        let rate = apply_utilization(&config, utilization.into(), i % 2 == 0);
+        let _rate = apply_utilization(&config, utilization.into(), i % 2 == 0);
     }
     
     let duration = start.elapsed();

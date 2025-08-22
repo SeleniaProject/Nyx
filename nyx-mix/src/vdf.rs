@@ -456,7 +456,7 @@ mod test_s {
 
         let start = Instant::now();
         let result = vdf.evaluate(seed, delay_m_s)?;
-        let elapsed = start.elapsed();
+        let _elapsed = start.elapsed();
 
         // In test mode, just verify the function complete_s successfully
         // and return_s valid output

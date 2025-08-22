@@ -77,10 +77,11 @@ mod test_s {
     use super::*;
 
     #[test]
-    fn token_roundtrip() {
-        let __key = generate_key();
-        let __t = issue_token(&key, "dev1", "nyx", 60)?;
-        let __dev = verify_token(&key, &t, "nyx")?;
-        assert_eq!(dev, "dev1");
+    fn token_roundtrip() -> super::Result<()> {
+        let __key = generate_key()?;
+        let __t = issue_token(&__key, "dev1", "nyx", 60)?;
+        let __dev = verify_token(&__key, &__t, "nyx")?;
+        assert_eq!(__dev, "dev1");
+        Ok(())
     }
 }

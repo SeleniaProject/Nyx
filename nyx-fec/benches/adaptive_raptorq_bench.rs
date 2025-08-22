@@ -1,7 +1,7 @@
 #![cfg(feature = "raptorq")]
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use nyx_fec::raptorq::{AdaptiveRedundancyTuner, NetworkMetrics, PidConfig};
+use nyx_fec::raptorq::{AdaptiveRedundancyTuner, NetworkMetrics, PidCoefficients};
 use std::time::Duration;
 
 fn adaptive_redundancy_benchmarks(c: &mut Criterion) {
@@ -112,7 +112,7 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
     let configurations = [
         (
             "conservative",
-            PidConfig {
+            PidCoefficients {
                 kp: 0.1,
                 ki: 0.01,
                 kd: 0.05,
@@ -120,7 +120,7 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
         ),
         (
             "balanced",
-            PidConfig {
+            PidCoefficients {
                 kp: 0.3,
                 ki: 0.05,
                 kd: 0.1,
@@ -128,7 +128,7 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
         ),
         (
             "aggressive",
-            PidConfig {
+            PidCoefficients {
                 kp: 0.8,
                 ki: 0.2,
                 kd: 0.3,
@@ -136,7 +136,7 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
         ),
         (
             "precision",
-            PidConfig {
+            PidCoefficients {
                 kp: 0.15,
                 ki: 0.02,
                 kd: 0.08,
@@ -144,7 +144,7 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
         ),
         (
             "responsive",
-            PidConfig {
+            PidCoefficients {
                 kp: 0.6,
                 ki: 0.15,
                 kd: 0.25,
@@ -158,7 +158,11 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
             pid_config,
             |b, config| {
                 b.iter(|| {
-                    let mut tuner = AdaptiveRedundancyTuner::with_config(*config);
+                    let mut tuner = AdaptiveRedundancyTuner::with_config(
+                        50, // max_history
+                        Duration::from_millis(1), // min_adjustment_interval 
+                        *config // pid_coefficients
+                    );
                     for i in 0..50 {
                         let loss = 0.001 + (i as f32) * 0.005; // Gradually increasing loss
                         let metrics = NetworkMetrics::new(100, 20, loss, 1000);
@@ -213,11 +217,15 @@ fn memory_allocation_benchmarks(c: &mut Criterion) {
 
     group.bench_function("create_tuner_with_config", |b| {
         b.iter(|| {
-            let tuner = AdaptiveRedundancyTuner::with_config(PidConfig {
-                kp: 0.5,
-                ki: 0.1,
-                kd: 0.2,
-            });
+            let tuner = AdaptiveRedundancyTuner::with_config(
+                50, // max_history
+                Duration::from_millis(1), // min_adjustment_interval
+                PidCoefficients {
+                    kp: 0.5,
+                    ki: 0.1,
+                    kd: 0.2,
+                }
+            );
             black_box(tuner);
         });
     });

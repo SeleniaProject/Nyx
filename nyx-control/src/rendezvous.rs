@@ -53,16 +53,17 @@ mod test_s {
     use rand::rngs::OsRng;
 
     #[test]
-    fn sign_and_verify() {
+    fn sign_and_verify() -> super::Result<()> {
         let __sk = SigningKey::generate(&mut OsRng);
         let __reg = Registration {
-            node_id: "n1".into(),
-            public_addr: "1.2.3.4:5".into(),
-            private_addr: "10.0.0.1:5".into(),
-            timestamp: 12345,
+            _node_id: "n1".into(),
+            __public_addr: "1.2.3.4:5".into(),
+            __private_addr: "10.0.0.1:5".into(),
+            __timestamp: 12345,
         };
-        let __s = sign_registration(&sk, &reg)?;
-        let __out = verify_registration(&_s)?;
-        assert_eq!(out, reg);
+        let __s = sign_registration(&__sk, &__reg)?;
+        let __out = verify_registration(&__s)?;
+        assert_eq!(__out, __reg);
+        Ok(())
     }
 }

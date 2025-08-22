@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use nyx_core::{
     low_power::{screen_off_ratio, InactivityTrigger, ScreenState},
-    types::TimestampM_s,
+    types::TimestampMs,
 };
 use tokio::{task::JoinHandle, time::interval};
 use tracing::{debug, info, warn};
@@ -75,14 +75,14 @@ impl LowPowerBridge {
             intv.tick().await;
 
             // Maintain a compact history of (timestamp, screen state)
-            let mut history: Vec<(TimestampM_s, ScreenState)> = Vec::with_capacity(128);
+            let mut history: Vec<(TimestampMs, ScreenState)> = Vec::with_capacity(128);
 
             // Initialize inactivity trigger
             let start_ms = now_ms();
             let mut inactivity = InactivityTrigger::new(
                 Duration::from_millis(inactivity_ms),
                 rate_per_sec,
-                TimestampM_s(start_ms),
+                TimestampMs(start_ms),
             );
 
             let mut prev_state: Option<u32> = None;
@@ -97,7 +97,7 @@ impl LowPowerBridge {
                 intv.tick().await;
                 // Primary source via FFI getter
                 let mut cur: u32 = 0;
-                let rc = nyx_power_get_state(&mut cur as *mut u32);
+                let rc = unsafe { nyx_power_get_state(&mut cur as *mut u32) };
                 if rc != NyxStatus::Ok as i32 {
                     cur = rust_get_power_state();
                 }
@@ -110,11 +110,11 @@ impl LowPowerBridge {
                     }
                     let stamp = now;
                     let screen = map_power_to_screen(cur);
-                    history.push((TimestampM_s(stamp), screen));
+                    history.push((TimestampMs(stamp), screen));
                     // Trim history to last 10 minutes
                     let windowstart = stamp.saturating_sub(10 * 60 * 1000);
                     while history.len() > 2 {
-                        if let Some(&(TimestampM_s(t0), _)) = history.first() {
+                        if let Some(&(TimestampMs(t0), _)) = history.first() {
                             if t0 < windowstart {
                                 history.remove(0);
                             } else {
@@ -140,7 +140,7 @@ impl LowPowerBridge {
 
                     // Activity heuristic: entering Active resets inactivity
                     if cur == NyxPowerState::Active as u32 {
-                        inactivity.record_activity(TimestampM_s(stamp));
+                        inactivity.record_activity(TimestampMs(stamp));
                     }
 
                     prev_state = Some(cur);
@@ -149,10 +149,10 @@ impl LowPowerBridge {
 
                 // Periodically compute off ratio over the last minute (if enough data)
                 let one_min_start = now.saturating_sub(60 * 1000);
-                let slice: Vec<(TimestampM_s, ScreenState)> = history
+                let slice: Vec<(TimestampMs, ScreenState)> = history
                     .iter()
                     .copied()
-                    .filter(|(TimestampM_s(t), _)| *t >= one_min_start)
+                    .filter(|(TimestampMs(t), _)| *t >= one_min_start)
                     .collect();
                 if slice.len() >= 2 {
                     let ratio = screen_off_ratio(&slice);
@@ -161,7 +161,7 @@ impl LowPowerBridge {
                 }
 
                 // Inactivity trigger
-                if inactivity.should_trigger(TimestampM_s(now)) {
+                if inactivity.should_trigger(TimestampMs(now)) {
                     let detail = serde_json::to_string(&PowerEvent::Inactivity)
                         .unwrap_or_else(|_| "{\"type\":\"inactivity\"}".into());
                     let _ = events.sender().send(Event {

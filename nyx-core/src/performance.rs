@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
-/// Exponentially Weighted Moving Average for f64 value_s.
+/// Exponentially Weighted Moving Average for f64 values.
 ///
-/// Ex        rl.refill_with(Duration::from_secs(1)); // should cap at capacitymple
+/// Example:
 /// -------
 /// ```rust
 /// use nyx_core::performance::Ewma;
@@ -44,16 +44,16 @@ impl Ewma {
 /// ```rust
 /// use nyx_core::performance::RateLimiter;
 /// use std::time::Duration;
-/// let mut rl = RateLimiter::new(2.0, 4.0); // _capacity 2, 4 token_s/sec
+/// let mut rl = RateLimiter::new(2.0, 4.0); // capacity 2, 4 tokens/sec
 /// assert!(rl.allow()); // consume 1 (1 left)
 /// assert!(rl.allow()); // consume 1 (0 left)
 /// assert!(!rl.allow());
 /// rl.refill_with(Duration::from_millis(250)); // +1 token (0.25*4)
 /// assert!(rl.allow()); // consume 1 (back to 0)
-/// rl.refill_with(Duration::from_sec_s(1)); // +4 token_s, capped at _capacity 2
+/// rl.refill_with(Duration::from_secs(1)); // +4 tokens, capped at capacity 2
 /// assert!(rl.allow());
 /// assert!(rl.allow());
-/// assert!(!rl.allow()); // _capacity cap respected
+/// assert!(!rl.allow()); // capacity cap respected
 /// ```
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
@@ -78,7 +78,7 @@ impl RateLimiter {
         self.last_refill = now;
         self.tokens = (self.tokens + dt * self.refill_per_sec).min(self.capacity);
     }
-    /// Refill by a provided elapsed duration (logical time). Does not change internal `last`.
+    /// Refill by a provided elapsed duration (logical time). Does not change internal `last_refill`.
     pub fn refill_with(&mut self, dt: Duration) {
         self.tokens =
             (self.tokens + dt.as_secs_f64() * self.refill_per_sec).min(self.capacity);
@@ -129,10 +129,10 @@ impl RateLimiter {
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
     #[test]
-    fn ewma_behave_s() {
+    fn ewma_behavior() {
         let mut e = Ewma::new(0.5);
         e.update(10.0);
         assert_eq!(e.get(), Some(10.0));
@@ -149,14 +149,14 @@ mod test_s {
         assert!(ok);
     }
     #[test]
-    fn rate_limiter_refill_with_cap_s() {
+    fn rate_limiter_refill_with_caps() {
         let mut rl = RateLimiter::new(2.0, 4.0);
         assert!(rl.allow());
         assert!(rl.allow());
         assert!(!rl.allow());
         rl.refill_with(Duration::from_millis(250));
         assert!(rl.allow());
-        rl.refill_with(Duration::from_secs(1)); // should cap at _capacity
+        rl.refill_with(Duration::from_secs(1)); // should cap at capacity
         assert!(rl.allow());
         assert!(rl.allow());
         assert!(!rl.allow());

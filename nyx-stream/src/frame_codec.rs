@@ -188,14 +188,14 @@ mod test_s {
     use proptest::prelude::*;
     proptest! {
         #[test]
-        __fn prop_roundtrip_random_payload(stream_id in 0u32..1000, seq in 0u64..10000, __data in proptest::collection::vec(any::<u8>(), 0..4096)) {
-            let __f = __frame::_data(stream_id, seq, __data.clone());
+        fn prop_roundtrip_random_payload(stream_id in 0u32..1000, seq in 0u64..10000, data in proptest::collection::vec(any::<u8>(), 0..4096)) {
+            let frame = Frame::data(stream_id, seq, data.clone());
             let mut buf = BytesMut::new();
-            __frameCodec::encode(&f, &mut buf)?;
-            let __got = __frameCodec::decode(&mut buf).unwrap()?;
+            FrameCodec::encode(&frame, &mut buf)?;
+            let got = FrameCodec::decode(&mut buf)?.ok_or_else(|| TestCaseError::Fail("decode failed".into()))?;
             prop_assert_eq!(got.header.stream_id, stream_id);
             prop_assert_eq!(got.header.seq, seq);
-            prop_assert_eq!(got.payload, __data);
+            prop_assert_eq!(got.payload, data);
         }
     }
 

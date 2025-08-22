@@ -1,4 +1,5 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
+#![cfg_attr(feature = "low_power", allow(unsafe_code))]
 
 // Public module_s for daemon runtime (pure Rust only; no ring/openssl).
 pub mod config_manager;

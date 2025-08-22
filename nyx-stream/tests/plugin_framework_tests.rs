@@ -36,7 +36,7 @@ fn test_plugin_frame_type_validation() {
 fn test_plugin_header_cbor_encoding() {
     let hdr = PluginHeader {
         id: PluginId(42),
-        flag_s: 0b1010_0001,
+        flags: 0b1010_0001,
         data: vec![1, 2, 3, 4, 5],
     };
 
@@ -52,7 +52,7 @@ fn test_plugin_header_cbor_encoding() {
 fn test_plugin_frame_building_and_parsing() {
     let hdr = PluginHeader {
         id: PluginId(7),
-        flag_s: 0,
+        flags: 0,
         data: b"hello".to_vec(),
     };
     let payload = b"payload-byte_s-for-plugin";
@@ -78,7 +78,7 @@ fn test_plugin_frame_building_and_parsing() {
 fn test_plugin_frame_size_limit_s() {
     let hdr = PluginHeader {
         id: PluginId(9),
-        flag_s: 0,
+        flags: 0,
         data: vec![0u8; 256],
     };
     let payload = vec![0xABu8; 64 * 1024]; // 64 KiB payload typical upper-bound for control/data

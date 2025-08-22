@@ -31,7 +31,7 @@ mod test_s {
     use super::*;
     #[test]
     fn manifest_eq() {
-        let _m = PluginManifest {
+        let m = PluginManifest {
             name: "x".into(),
             version: "1".into(),
         };

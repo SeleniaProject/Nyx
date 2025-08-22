@@ -1,15 +1,15 @@
 //! Comprehensive transport abstraction layer for anonymity networks
 //!
-//! The `nyx-transport` crate provides secure and flexible transportation mechanism_s:
-//! - UDP endpoint_s with comprehensive configuration
-//! - QUIC connection_s for encrypted transport
-//! - TCP fallback_s for restrictive network_s
-//! - NAT traversal via STUN/TURN protocol_s
+//! The `nyx-transport` crate provides secure and flexible transportation mechanisms:
+//! - UDP endpoints with comprehensive configuration
+//! - QUIC connections for encrypted transport
+//! - TCP fallbacks for restrictive networks
+//! - NAT traversal via STUN/TURN protocols
 //! - Path validation and connectivity verification
 //! - ICE-like connectivity establishment
 //!
-//! The implementation prioritize_s security, correctnes_s, and minimal dependencie_s
-//! while providing the networking primitive_s needed for anonymity network_s.
+//! The implementation prioritizes security, correctness, and minimal dependencies
+//! while providing the networking primitives needed for anonymity networks.
 
 #![forbid(unsafe_code)]
 
@@ -42,10 +42,10 @@ static UDP_BIND_CACHE: OnceLock<bool> = OnceLock::new();
 static TCP_BIND_CACHE: OnceLock<bool> = OnceLock::new();
 static IPV6_CACHE: OnceLock<bool> = OnceLock::new();
 
-/// Transport kind_s supported by thi_s crate.
+/// Transport kinds supported by this crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportKind {
-    /// UDP transport (alway_s available)
+    /// UDP transport (always available)
     Udp,
     /// QUIC transport (feature-gated)
     Quic,
@@ -67,20 +67,20 @@ pub struct TransportCapabilities {
     pub teredo_support: bool,
 }
 
-// Public module_s for comprehensive transport functionality
+// Public modules for comprehensive transport functionality
 pub mod ice;
 pub mod path_validation;
 pub mod stun_server;
 pub mod tcp_fallback;
 pub mod teredo;
 
-// QUIC module i_s feature-gated to avoid dependencie_s
+// QUIC module is feature-gated to avoid dependencies
 #[cfg(feature = "quic")]
 pub mod quic;
 
 #[cfg(not(feature = "quic"))]
 pub mod quic {
-    //! QUIC stub module when feature i_s disabled
+    //! QUIC stub module when feature is disabled
     pub fn is_supported() -> bool {
         false
     }
@@ -115,16 +115,16 @@ pub fn available(kind: TransportKind) -> bool {
         #[cfg(feature = "quic")]
         TransportKind::Quic => {
             // QUIC availability check - simplified since we can't use async here
-            true // Assume available if feature i_s enabled
+            true // Assume available if feature is enabled
         }
         #[cfg(not(feature = "quic"))]
         TransportKind::Quic => false,
         TransportKind::Tcp => *TCP_BIND_CACHE.get_or_init(can_bind_tcp_loopback),
-        TransportKind::Ice => *UDP_BIND_CACHE.get_or_init(can_bind_udp_loopback), // ICE requi_re_s UDP
+        TransportKind::Ice => *UDP_BIND_CACHE.get_or_init(can_bind_udp_loopback), // ICE requires UDP
     }
 }
 
-/// Check if IPv6 i_s supported on thi_s system
+/// Check if IPv6 is supported on this system
 pub fn has_ipv6_support() -> bool {
     *IPV6_CACHE.get_or_init(|| {
         use std::net::{Ipv6Addr, TcpListener};
@@ -142,7 +142,7 @@ fn can_bind_tcp_loopback() -> bool {
     TcpListener::bind("127.0.0.1:0").is_ok()
 }
 
-/// Simple UDP endpoint for loopback-only communication_s (127.0.0.1).
+/// Simple UDP endpoint for loopback-only communications (127.0.0.1).
 pub struct UdpEndpoint {
     sock: std::net::UdpSocket,
 }
@@ -180,7 +180,7 @@ impl UdpEndpoint {
         Ok(self.sock.local_addr()?)
     }
 
-    /// Send a datagram to the target addres_s.
+    /// Send a datagram to the target address.
     pub fn send_to(&self, buf: &[u8], to: std::net::SocketAddr) -> Result<usize> {
         Ok(self.sock.send_to(buf, to)?)
     }
@@ -350,7 +350,7 @@ impl Default for TransportRequirements {
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
 
     #[test]
@@ -472,7 +472,7 @@ mod test_s {
 pub use teredo::{perform_nat_traversal, validate_address, AddressType, TeredoAddress};
 
 pub use stun_server::{
-    // Enhanced NAT traversal type_s
+    // Enhanced NAT traversal types
     AdvancedNatTraversal,
     BindingRequest,
     BindingResponse,
@@ -484,6 +484,6 @@ pub use stun_server::{
     NatDetectionResult,
     NatTraversal,
     RelayStatistics,
-    // Classic STUN type_s
+    // Classic STUN types
     StunServer,
 };

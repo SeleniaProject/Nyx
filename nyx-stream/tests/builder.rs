@@ -1,5 +1,5 @@
-#![allow(unused_import_s)]
-use byte_s::BytesMut;
+#![allow(unused_imports)]
+use bytes::BytesMut;
 use nyx_stream::frame::{Frame, FrameHeader, FrameType};
 use nyx_stream::frame_codec::FrameCodec;
 

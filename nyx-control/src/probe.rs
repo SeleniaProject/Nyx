@@ -95,21 +95,25 @@ mod test_s {
     use super::*;
 
     #[tokio::test]
-    async fn probe_serves_health() {
+    async fn probe_serves_health() -> super::Result<()> {
         let __h = start_probe(0).await?;
-        let __addr = h.addr();
-        let __resp = tiny_http_get(addr, "/healthz").await;
-        assert!(resp.contains("200 OK"));
-        h.shutdown().await;
+        let __addr = __h.addr();
+        let __resp = tiny_http_get(__addr, "/healthz").await;
+        assert!(__resp.contains("200 OK"));
+        __h.shutdown().await;
+        Ok(())
     }
 
     async fn tiny_http_get(__addr: SocketAddr, path: &str) -> String {
         use tokio::net::TcpStream;
-        let mut _s = TcpStream::connect(addr).await?;
+        let mut _s = match TcpStream::connect(__addr).await {
+            Ok(s) => s,
+            Err(_) => return "connection failed".to_string(),
+        };
         let __req = format!("GET {path} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n");
-        _s.write_all(req.as_bytes()).await?;
+        let _ = _s.write_all(__req.as_bytes()).await;
         let mut out = Vec::new();
-        _s.read_to_end(&mut out).await?;
+        let _ = _s.read_to_end(&mut out).await;
         String::from_utf8_lossy(&out).to_string()
     }
 }

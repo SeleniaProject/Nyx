@@ -32,8 +32,8 @@ impl I18n {
 
     /// Format a message with optional arguments for the requested language.
     /// Falls back to key if not found.
-    pub fn format<'a>(&self, key: &str, args: Option<&FluentArgs<'a>>) -> String {
-        let Some(bundle) = self.bundles.get("en") else {
+    pub fn format<'a>(&self, lang: &str, key: &str, args: Option<&FluentArgs<'a>>) -> String {
+        let Some(bundle) = self.bundles.get(lang) else {
             return key.to_string();
         };
         let Some(msg) = bundle.get_message(key) else {
@@ -55,12 +55,12 @@ impl I18n {
     }
 
     /// Convenience for formatting with owned map-like args.
-    pub fn format_kv(&self, _lang: &str, key: &str, kv: &[(&str, &str)]) -> String {
+    pub fn format_kv(&self, lang: &str, key: &str, kv: &[(&str, &str)]) -> String {
         let mut args = FluentArgs::new();
         for (k, v) in kv {
             args.set(*k, FluentValue::String(Cow::Owned((*v).to_string())));
         }
-        self.format(key, Some(&args))
+        self.format(lang, key, Some(&args))
     }
 }
 
@@ -75,7 +75,7 @@ mod tests {
         let result = i.format_kv("en-US", "hello", &[("name", "Nyx")]);
         assert_eq!(result, "Hello, Nyx!");
         // missing lang/key => fallback
-        assert_eq!(i.format("missing", None), "missing");
+        assert_eq!(i.format("en-US", "missing", None), "missing");
         Ok(())
     }
 
@@ -84,7 +84,7 @@ mod tests {
         let mut i = I18n::default();
         // Message references missing variable; fluent will report an error we treat as fallback
         i.insert_resource("en-US", "oops = Value: { $x }\n")?;
-        let result = i.format("oops", None);
+        let result = i.format("en-US", "oops", None);
         assert_eq!(result, "oops");
         Ok(())
     }

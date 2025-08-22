@@ -204,13 +204,13 @@ mod unit_tests {
 
         // First generation
         let start_time = std::time::Instant::now();
-        let witness1 = acc.generate_witnes_s(element)?;
-        let first_duration = start_time.elapsed();
+        let _witness1 = acc.generate_witnes_s(element)?;
+        let _first_duration = start_time.elapsed();
 
         // Second generation (should hit cache)
         let start_time = std::time::Instant::now();
-        let witness2 = acc.generate_witnes_s(element)?;
-        let second_duration = start_time.elapsed();
+        let _witness2 = acc.generate_witnes_s(element)?;
+        let _second_duration = start_time.elapsed();
 
         // Cache hit should be faster (though this may not always be true in tests)
         // At minimum, cache statistics should update
