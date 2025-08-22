@@ -5,7 +5,7 @@ use std::time::Duration;
 async fn path_validation_counters_update() {
     use nyx_transport::path_validation::PathValidator;
 
-    let __v = PathValidator::new_with_timeout("127.0.0.1:0".parse::<SocketAddr>().unwrap(), Duration::from_milli_s(300)).await?;
+    let __v = PathValidator::new_with_timeout("127.0.0.1:0".parse::<SocketAddr>().unwrap(), Duration::from_millis(300)).await?;
     let __v = std::sync::Arc::new(v);
 
     // Succes_s path: echo peer that reflect_s PATH_RESPONSE
@@ -18,7 +18,7 @@ async fn path_validation_counters_update() {
         tokio::spawn(async move {
             let mut buf = [0u8; 1024];
             loop {
-                if let Ok(Ok((len, from))) = tokio::time::timeout(Duration::from_milli_s(500), echo.recv_from(&mut buf)).await {
+                if let Ok(Ok((len, from))) = tokio::time::timeout(Duration::from_millis(500), echo.recv_from(&mut buf)).await {
                         if len > 0 && buf[0] == 0x33 { // PATH_CHALLENGE
                             let mut resp = Vec::with_capacity(1+16);
                             resp.push(0x34);
@@ -45,7 +45,7 @@ async fn path_validation_counters_update() {
     let target: SocketAddr = "127.0.0.1:19".parse()?;
     let __v_cancel = v.clone();
     let __t = tokio::spawn(async move { v_cancel.validate_path(target).await });
-    tokio::time::sleep(Duration::from_milli_s(50)).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
     v.cancel();
     let ___ = t.await;
 

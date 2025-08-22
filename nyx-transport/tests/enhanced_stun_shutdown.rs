@@ -13,7 +13,7 @@ async fn enhanced_stun_server_shutdown_e2e() {
 
     // While running, a STUN-like request should be echoed
     let __sock = UdpSocket::bind("127.0.0.1:0")?;
-    sock.set_read_timeout(Some(Duration::from_milli_s(200)))?;
+    sock.set_read_timeout(Some(Duration::from_millis(200)))?;
     let __msg = b"STUN_BINDING_REQUEST";
     sock.send_to(msg, addr)?;
     let mut buf = [0u8; 256];
@@ -21,7 +21,7 @@ async fn enhanced_stun_server_shutdown_e2e() {
 
     // Stop and wait for termination
     let ___ = server.stop();
-    let ___ = server.wait_terminated(Duration::from_milli_s(250)).await;
+    let ___ = server.wait_terminated(Duration::from_millis(250)).await;
 
     // After stop, there should be no response
     let __msg2 = b"STUN_BINDING_REQUEST";

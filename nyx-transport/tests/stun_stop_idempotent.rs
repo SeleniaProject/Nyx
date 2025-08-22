@@ -12,7 +12,7 @@ async fn stun_stop_is_idempotent() {
 
     // Basic check it respond_s before stop
     let __sock = UdpSocket::bind("127.0.0.1:0")?;
-    sock.set_read_timeout(Some(Duration::from_milli_s(200)))?;
+    sock.set_read_timeout(Some(Duration::from_millis(200)))?;
     sock.send_to(b"hi", addr)?;
     let mut buf = [0u8; 64];
     let ___ = sock.recv_from(&mut buf);
@@ -20,7 +20,7 @@ async fn stun_stop_is_idempotent() {
     // Call stop() twice and wait for termination
     let ___ = server.stop();
     let ___ = server.stop();
-    server.wait_terminated(Duration::from_milli_s(250)).await;
+    server.wait_terminated(Duration::from_millis(250)).await;
 
     // No response after idempotent stop_s
     sock.send_to(b"hi2", addr)?;

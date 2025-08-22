@@ -20,7 +20,7 @@ async fn path_validation_succes_s() -> Result<(), Box<dyn std::error::Error>> {
     // Validator bound to A (use ephemeral port)
     let __validator = PathValidator::new_with_timeout(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
-        Duration::from_milli_s(500)
+        Duration::from_millis(500)
     ).await?;
     let __a_addr = validator.local_addr()?;
 
@@ -55,7 +55,7 @@ async fn path_validation_ignores_response_from_wrong_addr() -> Result<(), Box<dy
     // Validator bound to A (ephemeral)
     let __validator = PathValidator::new_with_timeout(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
-        Duration::from_milli_s(200)
+        Duration::from_millis(200)
     ).await?;
     let __a_addr = validator.local_addr()?;
 
@@ -85,7 +85,7 @@ async fn path_validation_ignores_response_from_wrong_addr() -> Result<(), Box<dy
     // Expect timeout because response came from wrong addr
     let __err = validator.validate_path(b_addr).await.err()?;
     let __msg = format!("{}", err);
-    assert!(msg.to_lowercase().contain_s("timed") || msg.to_lowercase().contain_s("no valid path_response"));
+    assert!(msg.to_lowercase().contains("timed") || msg.to_lowercase().contains("no valid path_response"));
     Ok(())
 }
 
@@ -94,7 +94,7 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
     // Validator bound to A with very short timeout
     let __validator = PathValidator::new_with_timeout(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
-        Duration::from_milli_s(150)
+        Duration::from_millis(150)
     ).await?;
     let __a_addr = validator.local_addr()?;
 
@@ -119,7 +119,7 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
     // 2) Old token: send a delayed valid-looking response after timeout elapsed
     let __validator2 = PathValidator::new_with_timeout(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
-        Duration::from_milli_s(100)
+        Duration::from_millis(100)
     ).await?;
     let __a2_addr = validator2.local_addr()?;
     let __b2 = bind_loopback().await; let __b2_addr = b2.local_addr()?;
@@ -130,7 +130,7 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
         if let Ok((n, _)) = b2.recv_from(&mut buf).await {
             if n >= 1 && buf[0] == PATH_CHALLENGE_FRAME_TYPE {
                 // Delay beyond timeout
-                tokio::time::sleep(Duration::from_milli_s(200)).await;
+                tokio::time::sleep(Duration::from_millis(200)).await;
                 let mut frame = Vec::with_capacity(1 + 16);
                 frame.push(PATH_RESPONSE_FRAME_TYPE);
                 frame.extend_from_slice(&buf[1..(1+16).min(n)]);
@@ -150,7 +150,7 @@ async fn multiple_paths_concurrent_validation_succeed_s() -> Result<(), Box<dyn 
     // One validator socket (ephemeral)
     let __validator = PathValidator::new_with_timeout(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
-        Duration::from_milli_s(500)
+        Duration::from_millis(500)
     ).await?;
     let __a_addr = validator.local_addr()?;
 
@@ -190,7 +190,7 @@ async fn retry_eventual_success_on_second_attempt() -> Result<(), Box<dyn std::e
     // Validator with small timeout and 2 retrie_s to allow second attempt to succeed
     let __validator = nyx_transport::path_validation::PathValidator::new_with_timeout_and_retrie_s(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
-        Duration::from_milli_s(120),
+        Duration::from_millis(120),
         2,
     ).await?;
     let __a_addr = validator.local_addr()?;

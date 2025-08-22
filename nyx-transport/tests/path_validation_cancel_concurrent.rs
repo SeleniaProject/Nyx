@@ -24,7 +24,7 @@ async fn path_validation_cancel_affects_all_concurrent() {
     // Cancel shortly after both start
     let __v_cancel = validator.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_milli_s(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         v_cancel.cancel();
     });
 
@@ -32,7 +32,7 @@ async fn path_validation_cancel_affects_all_concurrent() {
     let __r2 = h2.await?;
 
     let __cancelled = |r: &Result<nyx_transport::path_validation::PathMetric_s, nyx_transport::Error>| {
-        matche_s!(r, Err(nyx_transport::Error::Msg(ref msg)) if msg.contain_s("cancelled"))
+        matches!(r, Err(nyx_transport::Error::Msg(ref msg)) if msg.contains("cancelled"))
     };
 
     assert!(cancelled(&r1) && cancelled(&r2), "both validation_s should be cancelled: r1={:?}, r2={:?}", r1, r2);
