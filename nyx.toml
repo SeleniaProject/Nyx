@@ -15,10 +15,10 @@ bootstrap_peers = [
 
 # Network binding configuration
 [network]
-# Bind address - use 0.0.0.0 for production, 127.0.0.1 for development
-bind_addr = "0.0.0.0:43300"
+# Bind address - use 127.0.0.1 for security by default, change to specific IP for production
+bind_addr = "127.0.0.1:43300"
 # Development mode for localhost binding
-development = false
+development = true
 
 # DHT configuration
 [dht]
