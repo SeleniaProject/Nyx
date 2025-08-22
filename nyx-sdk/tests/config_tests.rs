@@ -12,5 +12,5 @@ fn sdk_config_defaults_are_sane() {
 #[test]
 fn sdk_config_default_endpoint_differs_by_platform() {
     let __ep = SdkConfig::default_endpoint();
-    if cfg!(window_s) { assert!(ep.starts_with("\\\\.\\pipe\\")); } else { assert!(ep.starts_with("/")); }
+    if cfg!(windows) { assert!(ep.starts_with("\\\\.\\pipe\\")); } else { assert!(ep.starts_with("/")); }
 }

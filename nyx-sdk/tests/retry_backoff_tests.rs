@@ -17,7 +17,7 @@ async fn retry_succeeds_before_max_attempt_s() {
                 }
             }
         },
-        |attempt| { 1 + attempt a_s u64 },
+        |attempt| { 1 + attempt as u64 },
         5,
     ).await;
     assert_eq!(_re_s.unwrap(), 42);
@@ -48,7 +48,7 @@ fn backoff_policy_exponential_with_jitter_bound_s() {
     for a in [0u32, 1, 5, 10, 20, 32, 64] {
         let __d = exponential_with_jitter(a, 10, 10_000);
         // within [base, max]
-        assert!(d.as_milli_s() a_s u64 <= 10_000);
-        assert!(d.as_milli_s() a_s u64 >= 0);
+        assert!(d.as_millis() as u64 <= 10_000);
+        assert!(d.as_millis() as u64 >= 0);
     }
 }

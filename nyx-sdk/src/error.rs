@@ -1,6 +1,6 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
-use thiserror::Error a_s ThisError;
+use thiserror::Error as ThisError;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -14,6 +14,8 @@ pub enum Error {
 	Config(String),
 	#[error("protocol error: {0}")]
 	Protocol(String),
+	#[error("stream error: {0}")]
+	Stream(String),
 	#[error("timeout")]
 	Timeout,
 	#[error("disconnected")]
@@ -30,5 +32,6 @@ pub enum Error {
 impl Error {
 	pub fn config(msg: impl Into<String>) -> Self { Error::Config(msg.into()) }
 	pub fn protocol(msg: impl Into<String>) -> Self { Error::Protocol(msg.into()) }
+	pub fn stream(msg: impl Into<String>) -> Self { Error::Stream(msg.into()) }
 }
 
