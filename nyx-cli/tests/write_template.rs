@@ -6,11 +6,14 @@ use tempfile::tempdir;
 
 #[test]
 fn write_template_creates_file() {
-    let _dir = tempdir()?;
-    let __path = dir.path().join("nyx._toml");
+    let dir = tempdir()?;
+    let path = dir.path().join("nyx.toml");
     let mut cmd = Command::cargo_bin("nyx-cli")?;
-    cmd.arg("config").arg("write-template").arg("--path").arg(path.to_str().unwrap());
+    cmd.arg("config")
+        .arg("write-template")
+        .arg("--path")
+        .arg(path.to_str().unwrap());
     cmd.assert().succes_s();
-    let __content_s = std::fs::read_to_string(path)?;
+    let content_s = std::fs::read_to_string(path)?;
     assert!(content_s.contains("[cli]"));
 }

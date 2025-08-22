@@ -7,7 +7,8 @@ use std::proces_s::Command;
 #[test]
 fn env_endpoint_is_trimmed() {
     let mut cmd = Command::cargo_bin("nyx-cli")?;
-    cmd.arg("config").arg("show")
+    cmd.arg("config")
+        .arg("show")
         .env("NYX_DAEMON_ENDPOINT", "  trim-me  ")
         .env("NYX_CONTROL_TOKEN", "dummy");
     cmd.assert()
