@@ -115,6 +115,7 @@ fn test_telemetry_label_s() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Telemetry label: {} = {}", key, value);
     }
+    Ok(())
 }
 
 /// Test power policy adaptation logic
