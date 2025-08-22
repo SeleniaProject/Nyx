@@ -15,15 +15,21 @@ use crate::Error;
 
 // Imports for cryptographic operations
 #[cfg(feature = "classic")]
+#[cfg(feature = "classic")]
 use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
+#[cfg(feature = "classic")]
 #[cfg(feature = "classic")]
 use crate::session::AeadSession;
 #[cfg(feature = "classic")]
+#[cfg(feature = "classic")]
 use hkdf::Hkdf;
+#[cfg(feature = "classic")]
 #[cfg(feature = "classic")]
 use sha2::Sha256;
 #[cfg(feature = "classic")]
+#[cfg(feature = "classic")]
 use zeroize::Zeroize;
+#[cfg(feature = "classic")]
 #[cfg(feature = "classic")]
 use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
 

@@ -95,7 +95,7 @@ mod test_s {
     use super::*;
 
     #[tokio::test]
-    async fn probe_serves_health() -> super::Result<()> {
+    async fn probe_serves_health() -> crate::Result<()> {
         let __h = start_probe(0).await?;
         let __addr = __h.addr();
         let __resp = tiny_http_get(__addr, "/healthz").await;

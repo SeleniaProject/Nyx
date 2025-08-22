@@ -97,7 +97,9 @@ impl std::fmt::Debug for Buffer {
 /// assert!(w.capacity() >= 64);
 /// ```
 /// Ultra-high performance buffer pool with size-classed allocation
+/// Memory-aligned for optimal cache performance
 #[derive(Default)]
+#[repr(align(64))] // Cache line alignment for maximum performance
 pub struct BufferPool {
     // Size-classed free lists for different buffer sizes
     small_buffers: Mutex<Vec<Vec<u8>>>,  // 64-256 bytes
@@ -138,6 +140,7 @@ impl BufferPool {
     /// Get the appropriate buffer class for a given size
     #[inline(always)]
     fn get_buffer_class(&self, size: usize) -> (&Mutex<Vec<Vec<u8>>>, &AtomicUsize) {
+        // Optimized branch prediction: most allocations are small
         if size <= self.small_limit {
             (&self.small_buffers, &self.allocated)
         } else if size <= self.medium_limit {
