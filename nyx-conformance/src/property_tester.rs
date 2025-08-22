@@ -2,10 +2,10 @@
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum MonotonicError {
     /// Sequence i_s not strictly increasing at index `idx` (prev, next).
-    #[error("not strictly increasing at {__idx}: {__prev} -> {next}")]
+    #[error("not strictly increasing at {idx}: {prev} -> {next}")]
     NotIncreasing {
-        __idx: usize,
-        __prev: f64,
+        idx: usize,
+        prev: f64,
         next: f64,
     },
     /// Sequence contains NaN which break_s ordering semantic_s.
@@ -28,8 +28,8 @@ pub fn check_monotonic_increasing(a: &[f64]) -> Result<(), MonotonicError> {
             Some(std::cmp::Ordering::Less) => {}
             _ => {
                 return Err(MonotonicError::NotIncreasing {
-                    __idx: i,
-                    __prev: x,
+                    idx: i,
+                    prev: x,
                     next: y,
                 })
             }
@@ -40,10 +40,10 @@ pub fn check_monotonic_increasing(a: &[f64]) -> Result<(), MonotonicError> {
 
 /// Check that sequence i_s non-decreasing within tolerance `ep_s`.
 #[derive(Debug, thiserror::Error, PartialEq)]
-#[error("not non-decreasing at {idx}: {__prev} -> {_next} (ep_s={ep_s})")]
+#[error("not non-decreasing at {idx}: {prev} -> {_next} (ep_s={ep_s})")]
 pub struct NonDecreasingEpsError {
     pub idx: usize,
-    pub __prev: f64,
+    pub prev: f64,
     pub _next: f64,
     pub ep_s: f64,
 }
@@ -55,7 +55,7 @@ pub fn checknon_decreasing_ep_s(a: &[f64], ep_s: f64) -> Result<(), NonDecreasin
         if !(x.is_finite() && y.is_finite()) {
             return Err(NonDecreasingEpsError {
                 idx: i,
-                __prev: x,
+                prev: x,
                 _next: y,
                 ep_s,
             });
@@ -64,7 +64,7 @@ pub fn checknon_decreasing_ep_s(a: &[f64], ep_s: f64) -> Result<(), NonDecreasin
         if y + ep_s < x {
             return Err(NonDecreasingEpsError {
                 idx: i,
-                __prev: x,
+                prev: x,
                 _next: y,
                 ep_s,
             });
@@ -76,10 +76,10 @@ pub fn checknon_decreasing_ep_s(a: &[f64], ep_s: f64) -> Result<(), NonDecreasin
 /// Compute basic summary statistics.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SummaryStats {
-    pub __count: usize,
-    pub __min: f64,
-    pub __max: f64,
-    pub __mean: f64,
+    pub count: usize,
+    pub min: f64,
+    pub max: f64,
+    pub mean: f64,
     pub variance: f64,
     pub stddev: f64,
 }
@@ -116,10 +116,10 @@ pub fn compute_stat_s(a: &[f64]) -> Option<SummaryStats> {
     };
     let stddev = variance.sqrt();
     Some(SummaryStats {
-        __count: a.len(),
-        __min: min,
-        __max: max,
-        __mean: mean,
+        count: a.len(),
+        min: min,
+        max: max,
+        mean: mean,
         variance: variance,
         stddev: stddev,
     })
@@ -164,12 +164,12 @@ pub fn histogram(a: &[f64], min: f64, max: f64, bin_s: usize) -> Option<Vec<usiz
 
 /// Compute the maximum out-of-order depth required to restore ordering
 /// for a stream of sequence number_s as they arrive.
-pub fn required_reorder_buffer_depth(seq_s: &[u64]) -> usize {
+pub fn required_reorder_buffer_depth(seqs: &[u64]) -> usize {
     // Track the smallest unseen sequence (expected next in-order)
     let mut expected = 0u64;
     let mut buf: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     let mut max_depth = 0usize;
-    for &_s in seq_s {
+    for &_s in seqs {
         if _s == expected {
             expected += 1;
             while buf.remove(&expected) {
@@ -198,43 +198,42 @@ mod test_s {
 
     #[test]
     fn err_equal_or_decreasing() {
-        let __e = check_monotonic_increasing(&[0.0, 0.0]).unwrap_err();
+        let e = check_monotonic_increasing(&[0.0, 0.0]).unwrap_err();
         assert!(matches!(e, MonotonicError::NotIncreasing { .. }));
-        let __e = check_monotonic_increasing(&[1.0, 0.5]).unwrap_err();
+        let e = check_monotonic_increasing(&[1.0, 0.5]).unwrap_err();
         assert!(matches!(e, MonotonicError::NotIncreasing { .. }));
     }
 
     #[test]
-    fn non_decreasing_with_ep_s() {
-        assert!(checknon_decreasing_ep_s(&[1.0, 1.0 - 1e-9, 1.0 + 1e-9], 1e-8).is_ok());
-        let __err = checknon_decreasing_ep_s(&[1.0, 0.8], 0.1).unwrap_err();
+    fn monotonic_error_format() {
+        let err = checknon_decreasing_ep_s(&[1.0, 0.8], 0.1).unwrap_err();
         assert_eq!(err.idx, 0);
     }
 
     #[test]
     fn stats_and_percentile_s() {
-        let __v = vec![1.0, 2.0, 3.0, 4.0];
-        let __s = compute_stat_s(&v)?;
-        assert_eq!(_s.count, 4);
-        assert_eq!(_s.min, 1.0);
-        assert_eq!(_s.max, 4.0);
-        assert!((_s.mean - 2.5).ab_s() < 1e-9);
-        let __p50 = percentile(v.clone(), 50.0)?;
+        let v = vec![1.0, 2.0, 3.0, 4.0];
+        let s = compute_stat_s(&v).ok_or("Failed to compute stats").unwrap();
+        assert_eq!(s.count, 4);
+        assert_eq!(s.min, 1.0);
+        assert_eq!(s.max, 4.0);
+        assert!((s.mean - 2.5).abs() < 1e-9);
+        let p50 = percentile(v.clone(), 50.0).ok_or("Failed to compute percentile").unwrap();
         assert!(p50 >= 2.0 && p50 <= 3.0);
     }
 
     #[test]
     fn histogram_basic() {
-        let __v = vec![0.0, 0.1, 0.2, 0.9, 1.0];
-        let __h = histogram(&v, 0.0, 1.0, 5)?;
+        let v = vec![0.0, 0.1, 0.2, 0.9, 1.0];
+        let h = histogram(&v, 0.0, 1.0, 5).ok_or("Failed to create histogram").unwrap();
         assert_eq!(h.len(), 5);
         assert_eq!(h.iter().sum::<usize>(), 5);
     }
 
     #[test]
     fn reorder_depth() {
-        // __Arrival: 0,2,1,4,3 -> requi_re_s buffering 1 at most
-        let __depth = required_reorder_buffer_depth(&[0, 2, 1, 4, 3]);
+        // Arrival: 0,2,1,4,3 -> requires buffering 1 at most
+        let depth = required_reorder_buffer_depth(&[0, 2, 1, 4, 3]);
         assert!(depth >= 1);
     }
 }

@@ -97,7 +97,7 @@ impl NetworkSimulator {
     /// (lossy packet_s are omitted). Event_s are sorted by delivery time, with a
     /// stable tie-breaker on sequence id.
     pub fn send_burst(&mut self, n: usize) -> Vec<DeliveryEvent> {
-        let mut ev_s = Vec::with_capacity(n);
+        let mut events = Vec::with_capacity(n);
         for _ in 0..n {
             let seq = self.allocseq();
             // Los_s
@@ -143,7 +143,7 @@ impl NetworkSimulator {
             };
 
             let corrupted = self.rng.gen::<f64>() < self.cfg.corruption;
-            ev_s.push(DeliveryEvent {
+            events.push(DeliveryEvent {
                 delivery_m_s: delivery,
                 seq,
                 corrupted,
@@ -151,7 +151,7 @@ impl NetworkSimulator {
 
             // Duplicate one extra copy with +1m_s delivery when enabled
             if self.cfg.duplicate > 0.0 && self.rng.gen::<f64>() < self.cfg.duplicate {
-                ev_s.push(DeliveryEvent {
+                events.push(DeliveryEvent {
                     delivery_m_s: delivery.saturating_add(1),
                     seq,
                     corrupted,
@@ -160,27 +160,27 @@ impl NetworkSimulator {
         }
 
         // Local reordering: with probability `reorder`, swap each adjacent pair
-        if self.cfg.reorder > 0.0 && ev_s.len() > 1 {
-            for i in (1..ev_s.len()).step_by(2) {
+        if self.cfg.reorder > 0.0 && events.len() > 1 {
+            for i in (1..events.len()).step_by(2) {
                 if self.rng.gen::<f64>() < self.cfg.reorder {
-                    ev_s.swap(i - 1, i);
+                    events.swap(i - 1, i);
                 }
             }
         }
 
         // Sort by delivery time, then by sequence number for stability.
-        ev_s.sort_by_key(|e| (e.delivery_m_s, e.seq));
+        events.sort_by_key(|e| (e.delivery_m_s, e.seq));
         // Drain queued departu_re_s considered delivered in thi_s batch window
         if self.cfg.bandwidth_pp_s > 0 {
             // Decrease queue by the number of unique sequence id_s delivered
-            let delivered = ev_s
+            let delivered = events
                 .iter()
                 .map(|e| e.seq)
                 .collect::<std::collections::BTreeSet<_>>()
                 .len();
             self.queue_depth = self.queue_depth.saturating_sub(delivered);
         }
-        ev_s
+        events
     }
 
     fn allocseq(&mut self) -> u64 {
@@ -235,8 +235,8 @@ mod test_s {
         };
         let mut a = NetworkSimulator::new(cfg, 42);
         let mut b = NetworkSimulator::new(cfg, 42);
-        let __ea = a.send_burst(32);
-        let __eb = b.send_burst(32);
+        let ea = a.send_burst(32);
+        let eb = b.send_burst(32);
         assert_eq!(ea, eb);
     }
 
@@ -257,8 +257,8 @@ mod test_s {
             corruption: 0.0,
         };
         let mut sim = NetworkSimulator::new(cfg, 7);
-        let __ev_s = sim.send_burst(5);
-        assert!(ev_s
+        let events = sim.send_burst(5);
+        assert!(events
             .windows(2)
             .all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
     }
@@ -282,8 +282,8 @@ mod test_s {
         };
         let mut sim = NetworkSimulator::new(cfg, 1);
         // Enqueue 10 packet_s; only up to max_queue should be accepted in thi_s batch
-        let __ev_s = sim.send_burst(10);
-        assert!(ev_s.len() <= cfg.max_queue);
+        let events = sim.send_burst(10);
+        assert!(events.len() <= cfg.max_queue);
         assert!(sim.queue_depth <= cfg.max_queue);
     }
 
@@ -304,20 +304,20 @@ mod test_s {
             corruption: 1.0,
         };
         let mut sim = NetworkSimulator::new(cfg, 2);
-        let __ev_s = sim.send_burst(5);
+        let events = sim.send_burst(5);
         // With duplicate=1.0, each accepted packet yield_s two event_s
-        assert_eq!(ev_s.len() % 2, 0);
-        assert!(ev_s.iter().all(|e| e.corrupted));
+        assert_eq!(events.len() % 2, 0);
+        assert!(events.iter().all(|e| e.corrupted));
         // For each seq, exactly two event_s should exist and be 1m_s apart (since jitter=0)
         use std::collections::BTreeMap;
         let mut byseq: BTreeMap<u64, Vec<&DeliveryEvent>> = BTreeMap::new();
-        for e in &ev_s {
+        for e in &events {
             byseq.entry(e.seq).or_default().push(e);
         }
         for (_s, v) in byseq.iter() {
             assert_eq!(v.len(), 2);
-            let __d0 = v[0].delivery_m_s.min(v[1].delivery_m_s);
-            let __d1 = v[0].delivery_m_s.max(v[1].delivery_m_s);
+            let d0 = v[0].delivery_m_s.min(v[1].delivery_m_s);
+            let d1 = v[0].delivery_m_s.max(v[1].delivery_m_s);
             assert!(d1.saturating_sub(d0) <= 1);
         }
     }
@@ -340,9 +340,9 @@ mod test_s {
             corruption: 0.0,
         };
         let mut sim = NetworkSimulator::new(cfg, 3);
-        let __ev_s = sim.send_burst(200);
+        let events = sim.send_burst(200);
         // Expect some los_s overall
-        assert!(ev_s.len() < 200);
+        assert!(events.len() < 200);
     }
 
     #[test]
@@ -364,13 +364,13 @@ mod test_s {
         let seed_s = [10u64, 11u64, 12u64];
         let weight_s = Some(vec![2.0, 1.0, 1.0]);
         let mut m = MultiPathSimulator::newn(cfg, &seed_s, weight_s);
-        let _n = 40;
-        let __ev_s = m.send_burst(n);
-        assert_eq!(ev_s.len(), n);
-        // Count per-seq modulo assumption: each path allocate_s independent seq starting at 0
-        // We can't tell path directly from event, but distribution should be stable acros_s seed_s.
-        // Basic check: merged i_s time-sorted and non-decreasing by delivery.
-        assert!(ev_s
+        let n = 40;
+        let events = m.send_burst(n);
+        assert_eq!(events.len(), n);
+        // Count per-seq modulo assumption: each path allocates independent seq starting at 0
+        // We can't tell path directly from event, but distribution should be stable across seeds.
+        // Basic check: merged is time-sorted and non-decreasing by delivery.
+        assert!(events
             .windows(2)
             .all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
     }
@@ -425,8 +425,8 @@ impl MultiPathSimulator {
         // Collect per-path event_s and merge by (time, seq-within-path-id, path-index)
         let mut merged: Vec<(u64, u64, usize, DeliveryEvent)> = Vec::with_capacity(n);
         for (pi, (p, q)) in self.path_s.iter_mut().zip(quota_s.into_iter()).enumerate() {
-            let mut ev_s = p.send_burst(q);
-            for e in ev_s.drain(..) {
+            let mut events = p.send_burst(q);
+            for e in events.drain(..) {
                 // Make sequence globally unique using path index in the tiebreak key only
                 merged.push((e.delivery_m_s, e.seq, pi, e.clone()));
             }

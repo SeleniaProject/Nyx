@@ -87,16 +87,16 @@ mod test_s {
     #[test]
     fn parse_defaults_on_empty() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let c = parse_config("")?;
-        assert!(c.enable_http);
-        assert_eq!(c.port, 0);
+        assert!(c.__enable_http);
+        assert_eq!(c.__port, 0);
         Ok(())
     }
 
     #[test]
     fn parse_toml_partial() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let c = parse_config("port = 8080")?;
-        assert!(c.enable_http);
-        assert_eq!(c.port, 8080);
+        assert!(c.__enable_http);
+        assert_eq!(c.__port, 8080);
         Ok(())
     }
 }

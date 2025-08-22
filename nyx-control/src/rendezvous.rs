@@ -50,7 +50,7 @@ pub fn verify_registration(signed: &[u8]) -> Result<Registration> {
 #[cfg(test)]
 mod test_s {
     use super::*;
-    use rand::rng_s::OsRng;
+    use rand::rngs::OsRng;
 
     #[test]
     fn sign_and_verify() {
