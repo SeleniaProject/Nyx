@@ -52,14 +52,18 @@ pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
         // at least one tag
         return Err(Error::Protocol("keystore blob too short".into()));
     }
-    let salt: [u8; SALT_LEN] = blob[0..SALT_LEN].try_into().map_err(|_| Error::Crypto("invalid salt length".into()))?;
-    let nonce: [u8; NONCE_LEN] = blob[SALT_LEN..SALT_LEN + NONCE_LEN].try_into().map_err(|_| Error::Crypto("invalid nonce length".into()))?;
+    let salt: [u8; SALT_LEN] = blob[0..SALT_LEN]
+        .try_into()
+        .map_err(|_| Error::Crypto("invalid salt length".into()))?;
+    let nonce: [u8; NONCE_LEN] = blob[SALT_LEN..SALT_LEN + NONCE_LEN]
+        .try_into()
+        .map_err(|_| Error::Crypto("invalid nonce length".into()))?;
     let ct = &blob[SALT_LEN + NONCE_LEN..];
 
     let mut key = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password, &salt, PBKDF2_ITERS, &mut key);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
-            let pt = cipher
+    let pt = cipher
         .decrypt(Nonce::from_slice(&nonce), ct)
         .map_err(|_| Error::Protocol("keystore decrypt failed".into()))?;
     // Zeroize
@@ -87,8 +91,8 @@ mod fsio {
     }
 
     pub fn load(path: &str, password: &[u8]) -> Result<Vec<u8>> {
-        let blob = std::fs::read(path)
-            .map_err(|e| Error::Protocol(format!("keystore read: {e}")))?;
+        let blob =
+            std::fs::read(path).map_err(|e| Error::Protocol(format!("keystore read: {e}")))?;
         decrypt_with_password(password, &blob)
     }
 }

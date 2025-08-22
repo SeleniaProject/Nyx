@@ -3,6 +3,7 @@
 use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
 use crate::kdf::{aeadnonce_xor, hkdf_expand};
 use crate::{Error, Result};
+use std::sync::OnceLock;
 
 /// AEAD session (unidirectional): derive per-record nonce from base nonce + sequence,
 /// with optional 32-bit direction identifier mixed to avoid overlap acros_s direction_s.
@@ -18,6 +19,8 @@ pub struct AeadSession {
     _rekey_bytes_interval: u64,
     // 32-bit direction identifier to be XORed into the first 4 byte_s of the nonce
     dir_id: u32,
+    // Pre-computed cipher instance for maximum performance - eliminates allocation overhead
+    cipher: OnceLock<AeadCipher>,
 }
 
 impl AeadSession {
@@ -28,7 +31,7 @@ impl AeadSession {
     pub fn new(_suite: AeadSuite, _key: AeadKey, nonce: [u8; 12]) -> Self {
         Self {
             __suite: _suite,
-            __key: _key,
+            __key: _key.clone(),
             basenonce: nonce,
             seq: 0,
             __maxseq: u64::MAX,
@@ -36,7 +39,15 @@ impl AeadSession {
             _bytes_sent: 0,
             _rekey_bytes_interval: 0,
             dir_id: 0,
+            cipher: OnceLock::new(),
         }
+    }
+
+    // Get or create the pre-computed cipher instance for maximum performance
+    #[inline(always)]
+    fn get_cipher(&self) -> &AeadCipher {
+        self.cipher
+            .get_or_init(|| AeadCipher::new(self.__suite, AeadKey(self.__key.0)))
     }
 
     /// Set an explicit upper bound for sequence (DoS avoidance, key update policy)
@@ -82,17 +93,19 @@ impl AeadSession {
     /// Rekey using HKDF; refresh key and base nonce, reset counters
     pub fn rekey(&mut self) {
         let old_key = self.__key.0; // copy
-        // New key
+                                    // New key
         let mut new_key = [0u8; 32];
         let _ = hkdf_expand(&old_key, b"nyx/aead/rekey/v1", &mut new_key);
         // New base nonce
         let mut newnonce = [0u8; 12];
         let _ = hkdf_expand(&old_key, b"nyx/aead/rekey/nonce/v1", &mut newnonce);
-        // 置揁E
+        // Ultra-high performance: reset cipher instance for new key
         self.__key = AeadKey(new_key);
         self.basenonce = newnonce;
         self.seq = 0;
         self._bytes_sent = 0;
+        // Clear pre-computed cipher to force recreation with new key
+        self.cipher = OnceLock::new();
     }
 
     /// Encrypt next packet. Return_s (sequence, ciphertext). Enforce_s limit_s.
@@ -114,7 +127,8 @@ impl AeadSession {
             base[i] ^= dir[i];
         }
         let n = AeadNonce(aeadnonce_xor(&base, self.seq));
-        let cipher = AeadCipher::new(self.__suite, AeadKey(self.__key.0));
+        // Ultra-high performance: use pre-computed cipher instance
+        let cipher = self.get_cipher();
         let ct = cipher.seal(n, aad, plaintext)?;
         let used = self.seq;
         self.seq = self.seq.saturating_add(1);
@@ -140,7 +154,8 @@ impl AeadSession {
             base[i] ^= dir[i];
         }
         let n = AeadNonce(aeadnonce_xor(&base, seq));
-        let cipher = AeadCipher::new(self.__suite, AeadKey(self.__key.0));
+        // Ultra-high performance: use pre-computed cipher instance
+        let cipher = self.get_cipher();
         cipher.open(n, aad, ciphertext)
     }
 
@@ -170,6 +185,8 @@ impl AeadSession {
 
 impl Drop for AeadSession {
     fn drop(&mut self) {
+        // Ultra-high performance: clear cipher instance first
+        self.cipher = OnceLock::new();
         // Zeroize base nonce and key explicitly (AeadKey also zeroize_s)
         self.basenonce.fill(0);
         // Explicitly zeroize key (safe even if AeadKey Drop also doe_s it)
@@ -203,7 +220,8 @@ mod test_s {
     use super::*;
 
     #[test]
-    fn seq_increments_and_refuses_after_max() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn seq_increments_and_refuses_after_max() -> core::result::Result<(), Box<dyn std::error::Error>>
+    {
         let key = AeadKey([9u8; 32]);
         let base = [0u8; 12];
         let mut ses_s = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
@@ -247,7 +265,8 @@ mod test_s {
     }
 
     #[test]
-    fn open_rejects_too_short_or_too_longciphertext() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn open_rejects_too_short_or_too_longciphertext(
+    ) -> core::result::Result<(), Box<dyn std::error::Error>> {
         let key = AeadKey([4u8; 32]);
         let base = [9u8; 12];
         let ses_s =
@@ -304,7 +323,8 @@ mod test_s {
     }
 
     #[test]
-    fn differentdirection_id_fails_decrypt() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn differentdirection_id_fails_decrypt() -> core::result::Result<(), Box<dyn std::error::Error>>
+    {
         let key = AeadKey([33u8; 32]);
         let base = [1u8; 12];
         let mut a = AeadSession::new(AeadSuite::ChaCha20Poly1305, key.clone(), base)

@@ -2,7 +2,7 @@
 
 #[test]
 fn test_hybrid_message_too_short() {
-    let __err = nyx_crypto::noise::validate_hybrid_message_len(&[0u8; 7]).unwrap_err();
-    let __s = format!("{__err}");
-    assert!(__s.contains("too short"));
+    let err_result = nyx_crypto::noise::validate_hybrid_message_len(&[0u8; 7]).unwrap_err();
+    let s_result = format!("{err_result}");
+    assert!(s_result.contains("too short"));
 }

@@ -1,14 +1,16 @@
 #![forbid(unsafe_code)]
 
+use crate::{Error, Result};
 use hkdf::Hkdf;
 use sha2::Sha256;
-use crate::{Error, Result};
 
 /// Thin wrapper around HKDF-SHA256 extract+expand.
 pub fn hkdf_expand(prk: &[u8], info: &[u8], out: &mut [u8]) -> Result<()> {
     // 既に prk として扱う、 salt は持ち込み済み想定
-    let hk = Hkdf::<Sha256>::from_prk(prk).map_err(|_| Error::Crypto("HKDF from_prk failed".into()))?;
-    hk.expand(info, out).map_err(|_| Error::Crypto("HKDF expand failed".into()))?;
+    let hk =
+        Hkdf::<Sha256>::from_prk(prk).map_err(|_| Error::Crypto("HKDF from_prk failed".into()))?;
+    hk.expand(info, out)
+        .map_err(|_| Error::Crypto("HKDF expand failed".into()))?;
     Ok(())
 }
 

@@ -11,16 +11,13 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{
-    Error,
-};
+use crate::Error;
 // use hkdf::Hkdf;
 // use sha2::Sha256;
 
 #[cfg(feature = "classic")]
 // use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
 // use zeroize::Zeroize;
-
 #[cfg(feature = "kyber")]
 use crate::kyber;
 
@@ -278,12 +275,15 @@ pub mod demo {
         }
         fn mix_key(&mut self, ikm: &[u8]) -> Result<()> {
             let hk = Hkdf::<Sha256>::new(Some(&self.ck), ikm);
-            hk.expand(LBL_MK, &mut self.ck).map_err(|e| Error::Protocol(format!("hkdf expand: {e}")))?;
+            hk.expand(LBL_MK, &mut self.ck)
+                .map_err(|e| Error::Protocol(format!("hkdf expand: {e}")))?;
             Ok(())
         }
         fn expand_ck(&self, info: &[u8], out: &mut [u8]) -> Result<()> {
-            let hk = Hkdf::<Sha256>::from_prk(&self.ck).map_err(|e| Error::Protocol(format!("hkdf from_prk: {e}")))?;
-            hk.expand(info, out).map_err(|e| Error::Protocol(format!("hkdf expand: {e}")))?;
+            let hk = Hkdf::<Sha256>::from_prk(&self.ck)
+                .map_err(|e| Error::Protocol(format!("hkdf from_prk: {e}")))?;
+            hk.expand(info, out)
+                .map_err(|e| Error::Protocol(format!("hkdf expand: {e}")))?;
             Ok(())
         }
         fn aad_tag(&self, label: &[u8]) -> [u8; 32] {
@@ -573,7 +573,11 @@ pub mod demo {
             msg2.push(HDR_KIND_MSG2 | HDR_FLAG_ROLE_R | HDR_FLAG_HYBRID);
             let body = m1_key_for_ack.seal(AeadNonce([0u8; 12]), &aad2, MSG2_ACK)?;
             msg2.extend_from_slice(&body);
-            Ok(ResponderResult { __tx: tx, __rx: rx, msg2 })
+            Ok(ResponderResult {
+                __tx: tx,
+                __rx: rx,
+                msg2,
+            })
         })();
 
         match &result {

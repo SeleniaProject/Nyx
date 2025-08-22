@@ -87,12 +87,15 @@ pub mod ik_demo {
         }
         fn mix_key(&mut self, ikm: &[u8]) -> Result<()> {
             let hk = Hkdf::<Sha256>::new(Some(&self.ck), ikm);
-            hk.expand(LBL_MK, &mut self.ck).map_err(|e| Error::Crypto(format!("HKDF expand failed: {}", e)))?;
+            hk.expand(LBL_MK, &mut self.ck)
+                .map_err(|e| Error::Crypto(format!("HKDF expand failed: {e}")))?;
             Ok(())
         }
         fn expand_ck(&self, info: &[u8], out: &mut [u8]) -> Result<()> {
-            let hk = Hkdf::<Sha256>::from_prk(&self.ck).map_err(|e| Error::Crypto(format!("HKDF from_prk failed: {}", e)))?;
-            hk.expand(info, out).map_err(|e| Error::Crypto(format!("HKDF expand failed: {}", e)))?;
+            let hk = Hkdf::<Sha256>::from_prk(&self.ck)
+                .map_err(|e| Error::Crypto(format!("HKDF from_prk failed: {e}")))?;
+            hk.expand(info, out)
+                .map_err(|e| Error::Crypto(format!("HKDF expand failed: {e}")))?;
             Ok(())
         }
         fn aad_tag(&self, label: &[u8]) -> [u8; 32] {
@@ -293,7 +296,9 @@ pub mod ik_demo {
             hdr_flag_s = kind_flag_s & 0x0F;
             idx = HDR_LEN;
         }
-        let e_pk_bytes: [u8; 32] = msg1[idx..idx + 32].try_into().map_err(|_| Error::Protocol("Failed to convert to [u8; 32]".into()))?;
+        let e_pk_bytes: [u8; 32] = msg1[idx..idx + 32]
+            .try_into()
+            .map_err(|_| Error::Protocol("Failed to convert to [u8; 32]".into()))?;
         idx += 32;
         let ct = &msg1[idx..idx + MSG1_LEN_CIPHERTEXT];
         if ct.len() != MSG1_LEN_CIPHERTEXT {
@@ -499,8 +504,7 @@ mod test_s {
         let prologue = b"nyx-noise-lite";
         let eph = [9u8; 32];
         let mut init =
-            initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"early-data"))
-                ?;
+            initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"early-data"))?;
         let resp = responder_handshake(&r, &i.pk, &init.msg1, prologue)?;
         assert_eq!(resp._early_data.as_deref(), Some(&b"early-data"[..]));
         initiator_verify_msg2(&mut init, &resp.msg2)?;
@@ -514,8 +518,7 @@ mod test_s {
         let r = StaticKeypair::generate();
         let prologue = b"nyx-noise-lite";
         let eph = [10u8; 32];
-        let init =
-            initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"ED"))?;
+        let init = initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"ED"))?;
         let mut msg1_bad = init.msg1.clone();
         let hdr = if &msg1_bad[0..2] == b"NX" { 4 } else { 0 };
         let idx = hdr + 32 + ik_demo::MSG1_LEN_CIPHERTEXT + 2; // early CT position
@@ -526,14 +529,14 @@ mod test_s {
     }
 
     #[test]
-    fn ik_demo_0rtt_legacy_without_header_rejected() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn ik_demo_0rtt_legacy_without_header_rejected(
+    ) -> core::result::Result<(), Box<dyn std::error::Error>> {
         use ik_demo::*;
         let i = StaticKeypair::generate();
         let r = StaticKeypair::generate();
         let prologue = b"nyx-noise-lite";
         let eph = [12u8; 32];
-        let init =
-            initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"E"))?;
+        let init = initiator_handshake_with_eph_seed_0rtt(&i, &r.pk, prologue, eph, Some(b"E"))?;
         // Strip header to simulate legacy msg1 carrying early data
         assert!(init.msg1.len() > 4 && &init.msg1[0..2] == b"NX");
         let legacy = init.msg1[4..].to_vec();
@@ -556,7 +559,8 @@ mod test_s {
     }
 
     #[test]
-    fn ik_demo_crossdirection_decrypt_fail_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn ik_demo_crossdirection_decrypt_fail_s(
+    ) -> core::result::Result<(), Box<dyn std::error::Error>> {
         use ik_demo::*;
         let i = StaticKeypair::generate();
         let r = StaticKeypair::generate();
@@ -575,7 +579,8 @@ mod test_s {
     }
 
     #[test]
-    fn ik_demo_rejects_wrong_initiator_pk() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn ik_demo_rejects_wrong_initiator_pk() -> core::result::Result<(), Box<dyn std::error::Error>>
+    {
         use ik_demo::*;
         let i = StaticKeypair::generate();
         let r = StaticKeypair::generate();
