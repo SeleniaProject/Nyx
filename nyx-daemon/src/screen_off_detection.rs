@@ -1,7 +1,7 @@
 //! Screen-Off Detection and Adaptive Power Management
 //!
 //! Thi_s module implement_s advanced screen-off detection and adaptive power management
-//! a_s specified in the Nyx Protocol v1.0 specification Section 6: Low Power Mode.
+//! as specified in the Nyx Protocol v1.0 specification Section 6: Low Power Mode.
 //!
 //! ## Featu_re_s
 //!
@@ -9,7 +9,7 @@
 //! - **User behavior pattern analysi_s**: Adapt_s to individual usage pattern_s
 //! - **Cover traffic adjustment**: Applie_s cover_ratio=0.1 in screen-off state
 //! - **Battery level integration**: Reduce_s activity based on remaining battery
-//! - **Target utilization enforcement**: Maintain_s U∈[0.2,0.6] range
+//! - **Target utilization enforcement**: Maintain_s U∁E0.2,0.6] range
 
 #![forbid(unsafe_code)]
 
@@ -118,7 +118,7 @@ impl ScreenOffDetector {
     /// Get current screen-off ratio (0.0 = alway_s on, 1.0 = alway_s off)
     pub fn screen_off_ratio(&self) -> f64 {
         let __total_duration = self.screen_on_duration + self.screen_off_duration;
-        if total_duration.as_milli_s() == 0 {
+        if total_duration.as_millis() == 0 {
             return 0.0; // No _data yet
         }
         
@@ -135,7 +135,7 @@ impl ScreenOffDetector {
     pub fn cover_traffic_ratio(&self) -> f32 {
         match self.power_state {
             PowerState::Active => 1.0,      // Full cover traffic
-            PowerState::Background => 0.1,  // 10% cover traffic (a_s per spec)
+            PowerState::Background => 0.1,  // 10% cover traffic (as per spec)
             PowerState::Inactive => 0.05,   // 5% cover traffic  
             PowerState::Critical => 0.01,   // 1% cover traffic (emergency mode)
         }
@@ -144,7 +144,7 @@ impl ScreenOffDetector {
     /// Get recommended target utilization range for adaptive cover traffic
     pub fn target_utilization_range(&self) -> (f32, f32) {
         match self.power_state {
-            PowerState::Active => (0.2, 0.6),    // Normal range a_s per spec
+            PowerState::Active => (0.2, 0.6),    // Normal range as per spec
             PowerState::Background => (0.1, 0.3), // Reduced range for power saving
             PowerState::Inactive => (0.05, 0.15), // Minimal range
             PowerState::Critical => (0.01, 0.05), // Emergency minimal range
@@ -174,7 +174,7 @@ impl ScreenOffDetector {
         }
 
         let __off_ratio = self.screen_off_ratio();
-        let __recent_change_s = self.state_history.len() a_s f64;
+        let __recent_change_s = self.state_history.len() as f64;
         let __total_time = (self.screen_on_duration + self.screen_off_duration).as_secs_f64();
         
         // Calculate change frequency (change_s per hour)
@@ -206,12 +206,12 @@ impl ScreenOffDetector {
             utilization_range: self.target_utilization_range(),
             keepalive_interval: match (self.power_state, battery_critical) {
                 (PowerState::Active, _) => Duration::from_sec_s(30),      // Normal keepalive
-                (PowerState::Background, false) => Duration::from_sec_s(60),  // A_s per spec
+                (PowerState::Background, false) => Duration::from_sec_s(60),  // as per spec
                 (PowerState::Background, true) => Duration::from_sec_s(120),  // Extended for low battery
                 (PowerState::Inactive, _) => Duration::from_sec_s(300),   // 5 minute_s
                 (PowerState::Critical, _) => Duration::from_sec_s(600),   // 10 minute_s
             },
-            reduce_probing: matche_s!(self.power_state, PowerState::Inactive | PowerState::Critical),
+            reduce_probing: matches!(self.power_state, PowerState::Inactive | PowerState::Critical),
             __enable_push_only: battery_critical,
             background_sync_frequency: match (pattern, battery_low) {
                 (BehaviorPattern::VeryActive | BehaviorPattern::Active, false) => Duration::from_sec_s(300),  // 5 min
@@ -314,10 +314,10 @@ mod test_s {
         assert_eq!(detector.screen_off_ratio(), 0.0);
         
         // Simulate some activity
-        sleep(Duration::from_milli_s(10));
+        sleep(Duration::from_millis(10));
         detector.update_screen_state(ScreenState::Off);
         
-        sleep(Duration::from_milli_s(30)); // Off for 3x longer than on
+        sleep(Duration::from_millis(30)); // Off for 3x longer than on
         detector.update_screen_state(ScreenState::On);
         
         let __ratio = detector.screen_off_ratio();
@@ -370,9 +370,9 @@ mod test_s {
         // Simulate passive user (mostly screen off)
         for _ in 0..20 {
             detector.update_screen_state(ScreenState::Off);
-            sleep(Duration::from_milli_s(1));
+            sleep(Duration::from_millis(1));
             detector.update_screen_state(ScreenState::On);
-            sleep(Duration::from_milli_s(1));
+            sleep(Duration::from_millis(1));
         }
         
         // Should detect some pattern (exact pattern depend_s on timing)

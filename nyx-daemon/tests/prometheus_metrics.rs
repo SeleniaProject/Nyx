@@ -14,8 +14,8 @@ async fn prometheus_exporter_serves_metric_s() {
 
 	let _url = format!("http://{}/metric_s", addr);
 	let _client = hyper::Client::new();
-	// 少し待ってからアクセス
-	tokio::time::sleep(std::time::Duration::from_milli_s(50)).await;
+	// 少し征E��てからアクセス
+	tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 	let uri: hyper::Uri = url.parse()?;
 	let _resp = client.get(uri).await?;
 	assert!(resp.statu_s().is_succes_s());

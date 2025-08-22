@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,16 +8,16 @@ use sysinfo::System;
 use tokio::task::JoinHandle;
 
 #[derive(Clone, Debug, Default)]
-pub struct DaemonMetric_s {
-	pub _cpu_usage_pct: f64,
-	pub _total_memory: u64,
+pub struct DaemonMetrics {
+	pub cpu_usage_pct: f64,
+	pub total_memory: u64,
 	pub used_memory: u64,
-	pub _thread_count: usize,
+	pub thread_count: usize,
 }
 
 #[derive(Clone)]
 pub struct MetricsCollector {
-	inner: Arc<RwLock<DaemonMetric_s>>,
+	inner: Arc<RwLock<DaemonMetrics>>,
 }
 
 impl Default for MetricsCollector {
@@ -25,23 +25,23 @@ impl Default for MetricsCollector {
 }
 
 impl MetricsCollector {
-	pub fn new() -> Self { Self { inner: Arc::new(RwLock::new(DaemonMetric_s::default())) } }
+	pub fn new() -> Self { Self { inner: Arc::new(RwLock::new(DaemonMetrics::default())) } }
 
-	pub fn snapshot(&self) -> DaemonMetric_s { self.inner.read().clone() }
+	pub fn snapshot(&self) -> DaemonMetrics { self.inner.read().clone() }
 
-	pub fn render_prometheu_s(&self) -> String {
-		let _m = self.snapshot();
+	pub fn render_prometheus(&self) -> String {
+		let m = self.snapshot();
 		format!(
 			concat!(
 				"# HELP nyx_daemon_cpu_usage_pct CPU usage percent\n",
 				"# TYPE nyx_daemon_cpu_usage_pct gauge\n",
 				"nyx_daemon_cpu_usage_pct {}\n",
-				"# HELP nyx_daemon_memory_total_byte_s Total memory byte_s\n",
-				"# TYPE nyx_daemon_memory_total_byte_s gauge\n",
-				"nyx_daemon_memory_total_byte_s {}\n",
-				"# HELP nyx_daemon_memoryused_byte_s Used memory byte_s\n",
-				"# TYPE nyx_daemon_memoryused_byte_s gauge\n",
-				"nyx_daemon_memoryused_byte_s {}\n",
+				"# HELP nyx_daemon_memory_total_bytes Total memory bytes\n",
+				"# TYPE nyx_daemon_memory_total_bytes gauge\n",
+				"nyx_daemon_memory_total_bytes {}\n",
+				"# HELP nyx_daemon_memory_used_bytes Used memory bytes\n",
+				"# TYPE nyx_daemon_memory_used_bytes gauge\n",
+				"nyx_daemon_memory_used_bytes {}\n",
 				"# HELP nyx_daemon_thread_count Thread count\n",
 				"# TYPE nyx_daemon_thread_count gauge\n",
 				"nyx_daemon_thread_count {}\n"
@@ -53,24 +53,24 @@ impl MetricsCollector {
 		)
 	}
 
-	/// Spawn a background task to periodically refresh metric_s.
+	/// Spawn a background task to periodically refresh metrics.
 	pub fn start_collection(self: &Arc<Self>, interval: Duration) -> JoinHandle<()> {
-		let _thi_s = Arc::clone(self);
+		let this = Arc::clone(self);
 		tokio::spawn(async move {
-			let mut sy_s = System::new_all();
+			let mut sys = System::new_all();
 			loop {
-				sy_s.refresh_all();
-				let _cpu = sy_s.global_cpu_info().cpu_usage() a_s f64;
-				let _total = sy_s.total_memory();
-				let used = sy_s.used_memory();
-				let _thread_s = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+				sys.refresh_all();
+				let cpu = sys.global_cpu_info().cpu_usage() as f64;
+				let total = sys.total_memory();
+				let used = sys.used_memory();
+				let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
 
 				{
-					let mut w = thi_s.inner.write();
+					let mut w = this.inner.write();
 					w.cpu_usage_pct = cpu;
 					w.total_memory = total;
 					w.used_memory = used;
-					w.thread_count = thread_s;
+					w.thread_count = threads;
 				}
 
 				tokio::time::sleep(interval).await;

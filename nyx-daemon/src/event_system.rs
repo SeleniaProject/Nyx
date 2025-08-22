@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
@@ -30,11 +30,11 @@ impl EventSystem {
 
     pub async fn set_default_type_s(&self, type_s: Vec<String>) { *self.default_type_s.write().await = type_s; }
 
-    pub async fn matche_s(&self, ev: &Event, filter: &Option<Vec<String>>) -> bool {
-        let _allow = match filter {
+    pub async fn matches(&self, ev: &Event, filter: &Option<Vec<String>>) -> bool {
+        let allow = match filter {
             Some(type_s) => type_s,
             None => &*self.default_type_s.read().await,
         };
-        allow.iter().any(|t| t == &ev.ty)
+        allow.iter().any(|t| t == &ev._ty)
     }
 }

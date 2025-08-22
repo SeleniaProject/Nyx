@@ -7,7 +7,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 #[inline]
 pub fn decode_from_str<T: DeserializeOwned>(_s: &str) -> Result<T, String> {
-    // NOTE: simd-json'_s from_str i_s unsafe in 0.13.x. A_s thi_s crate forbid_s unsafe code,
+    // NOTE: simd-json'_s from_str i_s unsafe in 0.13.x. as thi_s crate forbid_s unsafe code,
     // we alway_s fall back to serde_json for decoding to preserve safety guarantee_s.
     serde_json::from_str::<T>(_s).map_err(|e| e.to_string())
 }
@@ -23,7 +23,7 @@ pub fn encode_to_vec<T: Serialize>(v: &T) -> Result<Vec<u8>, String> {
     #[cfg(feature = "simd")]
     {
         let _s = simd_json::to_string(v).map_err(|e| e.to_string())?;
-        Ok(_s.into_byte_s())
+        Ok(_s.into_bytes())
     }
     #[cfg(not(feature = "simd"))]
     {
