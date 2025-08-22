@@ -2,7 +2,7 @@
 //! Nyx protocol conformance helper_s.
 //!
 //! Thi_s crate provide_s small, self-contained helper_s used by conformance and
-//! property test_s, such a_s a deterministic network simulator and generic
+//! property test_s, such as a deterministic network simulator and generic
 //! property-testing utilitie_s. These utilitie_s intentionally avoid any external
 //! side-effect_s and C/C++ dependencie_s.
 //!
@@ -21,7 +21,7 @@
 //! assert!(event_s.len() <= 32);
 //!
 //! // Property: strictly increasing timestamp_s after sorting
-//! let time_s: Vec<f64> = event_s.iter().map(|e| e.delivery_m_s a_s f64).collect();
+//! let time_s: Vec<f64> = event_s.iter().map(|e| e.delivery_m_s as f64).collect();
 //! // Allow equal millisecond timestamp_s due to finite resolution
 //! checknon_decreasing_ep_s(&time_s, 0.0)?;
 //! ```
@@ -53,7 +53,7 @@ mod test_s {
 		let mut sim = NetworkSimulator::new(cfg, 1337);
 		let __ev_s = sim.send_burst(16);
 		assert!(!ev_s.is_empty());
-		let time_s: Vec<f64> = ev_s.iter().map(|e| e.delivery_m_s a_s f64).collect();
+		let time_s: Vec<f64> = ev_s.iter().map(|e| e.delivery_m_s as f64).collect();
 		checknon_decreasing_ep_s(&time_s, 0.0)?;
 		let __st = compute_stat_s(&time_s)?;
 		assert_eq!(st.count, time_s.len());

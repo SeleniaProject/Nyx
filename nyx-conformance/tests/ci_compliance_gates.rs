@@ -33,7 +33,7 @@ fn ci_compliance_gate_main() {
     
     if !report.is_compliant {
         let __failure_msg = format!(
-            "❌ CI COMPLIANCE GATE FAILURE: {} compliance not achieved.\n\
+            "❁ECI COMPLIANCE GATE FAILURE: {} compliance not achieved.\n\
              Missing Required Featu_re_s: {:?}\n\
              Available Featu_re_s: {:?}",
             required_level,
@@ -52,7 +52,7 @@ fn ci_compliance_gate_main() {
         panic!("{}", failure_msg);
     }
     
-    println!("✅ CI COMPLIANCE GATE PASSED: {} compliance verified", required_level);
+    println!("✁ECI COMPLIANCE GATE PASSED: {} compliance verified", required_level);
     
     // Generate succes_s artifact_s
     if let Some(outputdir) = get_outputdirectory() {
@@ -74,7 +74,7 @@ fn ci_compliance_matrix_full() {
         let __report = validate_compliance_level(level, &detector)
             ?;
         
-        let __statu_s = if report.is_compliant { "✅ PASS" } else { "❌ FAIL" };
+        let __statu_s = if report.is_compliant { "✁EPASS" } else { "❁EFAIL" };
         let __levelname = format!("{}", level);
         
         println!("\n--- {} Compliance ---", levelname);
@@ -83,16 +83,16 @@ fn ci_compliance_matrix_full() {
         if !report.missing_required.is_empty() {
             println!("Missing Required Featu_re_s:");
             for feature in &report.missing_required {
-                println!("  ❌ {}", feature);
+                println!("  ❁E{}", feature);
             }
         } else {
-            println!("✅ All required featu_re_s present");
+            println!("✁EAll required featu_re_s present");
         }
         
         if !report.missing_recommended.is_empty() {
             println!("Missing Recommended Featu_re_s:");
             for feature in &report.missing_recommended {
-                println!("  ⚠️  {}", feature);
+                println!("  ⚠�E�E {}", feature);
             }
         }
         
@@ -145,7 +145,7 @@ fn ci_feature_compilation_verification() {
     
     for feature in &core_featu_re_s {
         let __available = detector.has_feature(feature);
-        let __statu_s = if available { "✅ Available" } else { "❌ Missing" };
+        let __statu_s = if available { "✁EAvailable" } else { "❁EMissing" };
         println!("{}: {}", feature, statu_s);
         
         feature_statu_s.insert(feature.to_string(), available);
@@ -170,7 +170,7 @@ fn ci_feature_compilation_verification() {
     
     for (feature, expected) in &conditional_featu_re_s {
         let __available = detector.has_feature(feature);
-        let __status_icon = if available { "✅" } else { "⚠️ " };
+        let __status_icon = if available { "✁E } else { "⚠�E�E" };
         let __expected_icon = if *expected { "Expected" } else { "Optional" };
         
         println!("{} {}: {} ({})", status_icon, feature, 
@@ -178,7 +178,7 @@ fn ci_feature_compilation_verification() {
         
         feature_statu_s.insert(feature.to_string(), available);
         
-        // Verify feature detection matche_s compilation
+        // Verify feature detection matches compilation
         assert_eq!(available, *expected, 
             "Feature '{}' detection mismatch: expected {}, got {}", 
             feature, expected, available);
@@ -213,9 +213,9 @@ fn ci_compliance_hierarchy_validation() {
     let __full_compliant = full_report.is_compliant;
     
     println!("Compliance Statu_s:");
-    println!("  Core: {}", if core_compliant { "✅ COMPLIANT" } else { "❌ NON-COMPLIANT" });
-    println!("  Plu_s: {}", if plus_compliant { "✅ COMPLIANT" } else { "❌ NON-COMPLIANT" });
-    println!("  Full: {}", if full_compliant { "✅ COMPLIANT" } else { "❌ NON-COMPLIANT" });
+    println!("  Core: {}", if core_compliant { "✁ECOMPLIANT" } else { "❁ENON-COMPLIANT" });
+    println!("  Plu_s: {}", if plus_compliant { "✁ECOMPLIANT" } else { "❁ENON-COMPLIANT" });
+    println!("  Full: {}", if full_compliant { "✁ECOMPLIANT" } else { "❁ENON-COMPLIANT" });
     
     // Validate hierarchy: if higher level i_s compliant, lower level_s must be too
     if full_compliant {
@@ -232,7 +232,7 @@ fn ci_compliance_hierarchy_validation() {
     
     assert!(hierarchy_valid, "Compliance hierarchy validation failed");
     
-    println!("✅ Compliance hierarchy i_s valid");
+    println!("✁ECompliance hierarchy i_s valid");
     
     // Output hierarchy validation if output directory specified
     if let Some(outputdir) = get_outputdirectory() {
@@ -389,13 +389,13 @@ fn calculate_completion_percentage(report: &ComplianceReport, level: ComplianceL
         ComplianceLevel::Full => ComplianceRequirement_s::full(),
     };
     
-    let __total_required = requirement_s.required_featu_re_s.len();
-    let __missing_required = report.missing_required.len();
+    let __total_required = requirement_s.__required_featu_re_s.len();
+    let _missing_required = report.missing_required.len();
     
     if total_required == 0 {
         100.0
     } else {
-        ((total_required - missing_required) a_s f64 / total_required a_s f64) * 100.0
+        ((total_required - missing_required) as f64 / total_required as f64) * 100.0
     }
 }
 
@@ -419,9 +419,9 @@ fn generate_failure_report(
         "debugging_info": {
             "total_featu_re_s": detector.available_featu_re_s().len(),
             "required_features_count": match required_level {
-                ComplianceLevel::Core => ComplianceRequirement_s::core().required_featu_re_s.len(),
-                ComplianceLevel::Plu_s => ComplianceRequirement_s::plu_s().required_featu_re_s.len(),
-                ComplianceLevel::Full => ComplianceRequirement_s::full().required_featu_re_s.len(),
+                ComplianceLevel::Core => ComplianceRequirement_s::core().__required_featu_re_s.len(),
+                ComplianceLevel::Plu_s => ComplianceRequirement_s::plu_s().__required_featu_re_s.len(),
+                ComplianceLevel::Full => ComplianceRequirement_s::full().__required_featu_re_s.len(),
             },
         }
     });

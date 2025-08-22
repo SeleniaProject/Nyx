@@ -81,13 +81,13 @@ proptest! {
 
     /// Test that negotiation fail_s when required capability i_s missing
     #[test]
-    fn negotiation_fails_missing_required(
+    fn negotiation_failsmissing_required(
         supported_cap_s in prop::collection::vec(capability_id_strategy(), 0..5),
         unsupported_id in capability_id_strategy(),
         _data in capability_data_strategy()
     ) {
         // Ensure unsupported_id i_s not in supported list
-        prop_assume!(!supported_cap_s.contain_s(&unsupported_id));
+        prop_assume!(!supported_cap_s.contains(&unsupported_id));
         
         let __peer_cap_s = vec![
             Capability::required(unsupported_id, _data)
@@ -168,7 +168,7 @@ proptest! {
     #[test]
     fn plugin_frame_identification(ft in 0u8..=255) {
         let __i_s = nyx_stream::plugin::is_plugin_frame(ft);
-        let __expect = (0x50..=0x5F).contain_s(&ft);
+        let __expect = (0x50..=0x5F).contains(&ft);
         prop_assert_eq!(i_s, expect);
     }
 }

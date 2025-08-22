@@ -1,44 +1,44 @@
-﻿use rand::rng_s::StdRng;
+use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 /// Configuration for the network simulator.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SimConfig {
 	/// Packet los_s probability in [0.0, 1.0].
-	pub __los_s: f64,
+	pub los_s: f64,
 	/// Mean one-way latency in millisecond_s.
-	pub __latency_m_s: u64,
+	pub latency_m_s: u64,
 	/// Jitter range (+/-) in millisecond_s applied uniformly.
-	pub __jitter_m_s: u64,
+	pub jitter_m_s: u64,
 	/// Probability of reordering two consecutive packet_s in [0.0, 1.0].
 	/// Note: reordering i_s applied locally before the final sort by delivery
 	/// time, so it primarily affect_s the mapping between sequence number_s and
 	/// their drawn latencie_s rather than the final chronological order.
-	pub __reorder: f64,
+	pub reorder: f64,
 	/// Bandwidth in packet_s per second (pp_s). 0 = unlimited (no queueing delay).
-	pub __bandwidth_pp_s: u64,
+	pub bandwidth_pp_s: u64,
 	/// Maximum queue size (packet_s). When full, tail-drop if enqueue would exceed.
-	pub __max_queue: usize,
+	pub max_queue: usize,
 	/// Gilbert-Elliott model parameter_s for burst los_s; if disabled, use_s `los_s` only.
-	pub __ge_good_to_bad: f64,
-	pub __ge_bad_to_good: f64,
-	pub __ge_loss_good: f64,
-	pub __ge_loss_bad: f64,
+	pub ge_good_to_bad: f64,
+	pub ge_bad_to_good: f64,
+	pub ge_loss_good: f64,
+	pub ge_loss_bad: f64,
 	/// Probability of duplicating a packet (create_s a second delivery event at +1m_s).
-	pub __duplicate: f64,
+	pub duplicate: f64,
 	/// Probability of bit-corruption flag (meta_data only; consumer can decide drop).
-	pub __corruption: f64,
+	pub corruption: f64,
 }
 
 impl Default for SimConfig {
 	fn default() -> Self {
 		Self {
 			los_s: 0.0,
-			__latency_m_s: 30,
-			__jitter_m_s: 5,
+			latency_m_s: 30,
+			jitter_m_s: 5,
 			reorder: 0.0,
-			__bandwidth_pp_s: 0,
-			__max_queue: 1024,
+			bandwidth_pp_s: 0,
+			max_queue: 1024,
 			ge_good_to_bad: 0.0,
 			ge_bad_to_good: 0.0,
 			ge_loss_good: 0.0,
@@ -53,11 +53,11 @@ impl Default for SimConfig {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeliveryEvent {
 	/// Monotonic simulated clock time when the packet i_s delivered.
-	pub __delivery_m_s: u64,
+	pub delivery_m_s: u64,
 	/// Sequential id assigned at enqueue time.
-	pub _seq: u64,
-	/// Whether the simulator marked the packet a_s corrupted.
-	pub __corrupted: bool,
+	pub seq: u64,
+	/// Whether the simulator marked the packet as corrupted.
+	pub corrupted: bool,
 }
 
 /// Deterministic, seedable network simulator producing delivery schedule.
@@ -65,26 +65,26 @@ pub struct DeliveryEvent {
 /// The simulator doe_s not model bandwidth. It only account_s for los_s, base
 /// latency, jitter, and simple local reordering of adjacent packet_s.
 pub struct NetworkSimulator {
-	__cfg: SimConfig,
-	__rng: StdRng,
-	_nextseq: u64,
-	_now_m_s: u64,
-	__ge_bad_state: bool,
-	__queue_depth: usize,
-	__last_departure_m_s: u64,
+	cfg: SimConfig,
+	rng: StdRng,
+	nextseq: u64,
+	now_m_s: u64,
+	ge_bad_state: bool,
+	queue_depth: usize,
+	last_departure_m_s: u64,
 }
 
 impl NetworkSimulator {
 	/// Create a new simulator with a given seed for reproducibility.
-	pub fn new(__cfg: SimConfig, seed: u64) -> Self {
+	pub fn new(cfg: SimConfig, seed: u64) -> Self {
 		Self {
 			cfg,
 			rng: StdRng::seed_from_u64(seed),
-			_nextseq: 0,
-			_now_m_s: 0,
-			__ge_bad_state: false,
-			__queue_depth: 0,
-			__last_departure_m_s: 0,
+			nextseq: 0,
+			now_m_s: 0,
+			ge_bad_state: false,
+			queue_depth: 0,
+			last_departure_m_s: 0,
 		}
 	}
 
@@ -97,43 +97,43 @@ impl NetworkSimulator {
 	pub fn send_burst(&mut self, n: usize) -> Vec<DeliveryEvent> {
 		let mut ev_s = Vec::with_capacity(n);
 		for _ in 0..n {
-			let _seq = self.allocseq();
+			let seq = self.allocseq();
 			// Los_s
 			if self.packet_lost() { continue; }
 
 			// Base latency plu_s jitter in [-jitter, +jitter]
-			let __jitter = if self.cfg.jitter_m_s == 0 {
+			let jitter = if self.cfg.jitter_m_s == 0 {
 				0i64
 			} else {
-				let __j = self.rng.gen_range(0..=self.cfg.jitter_m_s) a_s i64;
-				let __sign = if self.rng.gen::<bool>() { 1 } else { -1 };
+				let j = self.rng.gen_range(0..=self.cfg.jitter_m_s) as i64;
+				let sign = if self.rng.gen::<bool>() { 1 } else { -1 };
 				sign * j
 			};
 
 			// Simple bandwidth/queue model: if bandwidth_pp_s > 0, schedule departu_re_s
 			// minimally spaced by 1000/bandwidth_pp_s m_s. Tail-drop if queue would exceed.
-			let __base_latency = self.cfg.latency_m_s;
-			let __depart_m_s = if self.cfg.bandwidth_pp_s == 0 {
+			let base_latency = self.cfg.latency_m_s;
+			let depart_m_s = if self.cfg.bandwidth_pp_s == 0 {
 				self.now_m_s
 			} else {
-				let __min_gap = (1000 / self.cfg.bandwidth_pp_s.max(1)) a_s u64;
+				let min_gap = (1000 / self.cfg.bandwidth_pp_s.max(1)) as u64;
 				// Enforce FIFO departure schedule with limited queue
 				if self.queue_depth >= self.cfg.max_queue { continue; }
-				let _next_depart = if self.last_departure_m_s == 0 { self.now_m_s } else { self.last_departure_m_s + min_gap };
+				let next_depart = if self.last_departure_m_s == 0 { self.now_m_s } else { self.last_departure_m_s + min_gap };
 				self.last_departure_m_s = next_depart;
 				self.queue_depth += 1;
 				next_depart
 			};
 
-			let __base = depart_m_s.saturating_add(base_latency);
-			let __delivery = if jitter.isnegative() {
-				base.saturating_sub(jitter.unsigned_ab_s())
+			let base = depart_m_s.saturating_add(base_latency);
+			let delivery = if jitter.is_negative() {
+				base.saturating_sub(jitter.unsigned_abs())
 			} else {
-				base.saturating_add(jitter a_s u64)
+				base.saturating_add(jitter as u64)
 			};
 
-			let __corrupted = self.rng.gen::<f64>() < self.cfg.corruption;
-			ev_s.push(DeliveryEvent { __delivery_m_s: delivery, seq, corrupted });
+			let corrupted = self.rng.gen::<f64>() < self.cfg.corruption;
+			ev_s.push(DeliveryEvent { delivery_m_s: delivery, seq, corrupted });
 
 			// Duplicate one extra copy with +1m_s delivery when enabled
 			if self.cfg.duplicate > 0.0 && self.rng.gen::<f64>() < self.cfg.duplicate {
@@ -155,16 +155,16 @@ impl NetworkSimulator {
 		// Drain queued departu_re_s considered delivered in thi_s batch window
 		if self.cfg.bandwidth_pp_s > 0 {
 			// Decrease queue by the number of unique sequence id_s delivered
-			let __delivered = ev_s.iter().map(|e| e.seq).collect::<std::collection_s::BTreeSet<_>>().len();
+			let delivered = ev_s.iter().map(|e| e.seq).collect::<std::collections::BTreeSet<_>>().len();
 			self.queue_depth = self.queue_depth.saturating_sub(delivered);
 		}
 		ev_s
 	}
 
 	fn allocseq(&mut self) -> u64 {
-		let __s = self.nextseq;
+		let s = self.nextseq;
 		self.nextseq = self.nextseq.wrapping_add(1);
-		_s
+		s
 	}
 }
 
@@ -180,7 +180,7 @@ impl NetworkSimulator {
 		} else if self.rng.gen::<f64>() < self.cfg.ge_good_to_bad {
 			self.ge_bad_state = true;
 		}
-		let __p = if self.ge_bad_state { self.cfg.ge_loss_bad } else { self.cfg.ge_loss_good };
+		let p = if self.ge_bad_state { self.cfg.ge_loss_bad } else { self.cfg.ge_loss_good };
 		self.rng.gen::<f64>() < p
 	}
 }
@@ -191,7 +191,7 @@ mod test_s {
 
 	#[test]
 	fn deterministic_with_seed() {
-	let __cfg = SimConfig { los_s: 0.2, __latency_m_s: 50, __jitter_m_s: 10, reorder: 0.5, __bandwidth_pp_s: 1000, __max_queue: 64, ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0, duplicate: 0.1, corruption: 0.0 };
+	let cfg = SimConfig { los_s: 0.2, latency_m_s: 50, jitter_m_s: 10, reorder: 0.5, bandwidth_pp_s: 1000, max_queue: 64, ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0, duplicate: 0.1, corruption: 0.0 };
 		let mut a = NetworkSimulator::new(cfg, 42);
 		let mut b = NetworkSimulator::new(cfg, 42);
 		let __ea = a.send_burst(32);
@@ -201,17 +201,17 @@ mod test_s {
 
 	#[test]
 	fn delivery_sorted_and_stable() {
-	let __cfg = SimConfig { los_s: 0.0, __latency_m_s: 10, __jitter_m_s: 0, reorder: 1.0, __bandwidth_pp_s: 0, __max_queue: 8, ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0, duplicate: 0.0, corruption: 0.0 };
+	let cfg = SimConfig { los_s: 0.0, latency_m_s: 10, jitter_m_s: 0, reorder: 1.0, bandwidth_pp_s: 0, max_queue: 8, ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0, duplicate: 0.0, corruption: 0.0 };
 		let mut sim = NetworkSimulator::new(cfg, 7);
 		let __ev_s = sim.send_burst(5);
-		assert!(ev_s.window_s(2).all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
+		assert!(ev_s.windows(2).all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
 	}
 
 	#[test]
 	fn bandwidth_queue_and_tail_drop() {
 		// Very limited bandwidth -> only a few departu_re_s fit without exceeding max_queue
-		let __cfg = SimConfig { los_s: 0.0, __latency_m_s: 1, __jitter_m_s: 0, reorder: 0.0,
-			__bandwidth_pp_s: 10, __max_queue: 3,
+		let cfg = SimConfig { los_s: 0.0, latency_m_s: 1, jitter_m_s: 0, reorder: 0.0,
+			bandwidth_pp_s: 10, max_queue: 3,
 			ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0,
 			duplicate: 0.0, corruption: 0.0 };
 		let mut sim = NetworkSimulator::new(cfg, 1);
@@ -223,8 +223,8 @@ mod test_s {
 
 	#[test]
 	fn duplicate_and_corruption_flag_s() {
-		let __cfg = SimConfig { los_s: 0.0, __latency_m_s: 1, __jitter_m_s: 0, reorder: 0.0,
-			__bandwidth_pp_s: 0, __max_queue: 128,
+		let cfg = SimConfig { los_s: 0.0, latency_m_s: 1, jitter_m_s: 0, reorder: 0.0,
+			bandwidth_pp_s: 0, max_queue: 128,
 			ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0,
 			duplicate: 1.0, corruption: 1.0 };
 		let mut sim = NetworkSimulator::new(cfg, 2);
@@ -233,7 +233,7 @@ mod test_s {
 		assert_eq!(ev_s.len() % 2, 0);
 		assert!(ev_s.iter().all(|e| e.corrupted));
 		// For each seq, exactly two event_s should exist and be 1m_s apart (since jitter=0)
-		use std::collection_s::BTreeMap;
+		use std::collections::BTreeMap;
 		let mut byseq: BTreeMap<u64, Vec<&DeliveryEvent>> = BTreeMap::new();
 		for e in &ev_s { byseq.entry(e.seq).or_default().push(e); }
 		for (_s, v) in byseq.iter() {
@@ -247,8 +247,8 @@ mod test_s {
 	#[test]
 	fn gilbert_elliott_burst_los_s() {
 		// Configure strong burst_s: once in bad state, drop almost alway_s
-		let __cfg = SimConfig { los_s: 0.0, __latency_m_s: 1, __jitter_m_s: 0, reorder: 0.0,
-			__bandwidth_pp_s: 0, __max_queue: 1024,
+		let cfg = SimConfig { los_s: 0.0, latency_m_s: 1, jitter_m_s: 0, reorder: 0.0,
+			bandwidth_pp_s: 0, max_queue: 1024,
 			ge_good_to_bad: 0.5, ge_bad_to_good: 0.1, ge_loss_good: 0.01, ge_loss_bad: 0.9,
 			duplicate: 0.0, corruption: 0.0 };
 		let mut sim = NetworkSimulator::new(cfg, 3);
@@ -259,12 +259,12 @@ mod test_s {
 
 	#[test]
 	fn multipath_weighted_distribution() {
-		let __cfg = SimConfig { los_s: 0.0, __latency_m_s: 5, __jitter_m_s: 1, reorder: 0.0,
-			__bandwidth_pp_s: 0, __max_queue: 128,
+		let cfg = SimConfig { los_s: 0.0, latency_m_s: 5, jitter_m_s: 1, reorder: 0.0,
+			bandwidth_pp_s: 0, max_queue: 128,
 			ge_good_to_bad: 0.0, ge_bad_to_good: 0.0, ge_loss_good: 0.0, ge_loss_bad: 0.0,
 			duplicate: 0.0, corruption: 0.0 };
-		let __seed_s = [10u64, 11u64, 12u64];
-		let __weight_s = Some(vec![2.0, 1.0, 1.0]);
+		let seed_s = [10u64, 11u64, 12u64];
+		let weight_s = Some(vec![2.0, 1.0, 1.0]);
 		let mut m = MultiPathSimulator::newn(cfg, &seed_s, weight_s);
 		let _n = 40;
 		let __ev_s = m.send_burst(n);
@@ -272,7 +272,7 @@ mod test_s {
 		// Count per-seq modulo assumption: each path allocate_s independent seq starting at 0
 		// We can't tell path directly from event, but distribution should be stable acros_s seed_s.
 		// Basic check: merged i_s time-sorted and non-decreasing by delivery.
-		assert!(ev_s.window_s(2).all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
+		assert!(ev_s.windows(2).all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
 	}
 }
 
@@ -280,16 +280,16 @@ mod test_s {
 pub struct MultiPathSimulator {
 	path_s: Vec<NetworkSimulator>,
 	weight_s: Vec<f64>,
-	__rr_cursor: usize,
+	rr_cursor: usize,
 }
 
 impl MultiPathSimulator {
 	/// Construct a multipath simulator from N identical config_s but different seed_s.
-	pub fn newn(__cfg: SimConfig, seed_s: &[u64], weight_s: Option<Vec<f64>>) -> Self {
-		let __path_s = seed_s.iter().copied().map(|_s| NetworkSimulator::new(cfg, _s)).collect::<Vec<_>>();
-		let __w = weight_s.unwrap_or_else(|| vec![1.0; seed_s.len()]);
+	pub fn newn(cfg: SimConfig, seed_s: &[u64], weight_s: Option<Vec<f64>>) -> Self {
+		let path_s = seed_s.iter().copied().map(|_s| NetworkSimulator::new(cfg, _s)).collect::<Vec<_>>();
+		let w = weight_s.unwrap_or_else(|| vec![1.0; seed_s.len()]);
 		assert_eq!(path_s.len(), w.len());
-		Self { path_s, __weight_s: w, rr_cursor: 0 }
+		Self { path_s, weight_s: w, rr_cursor: 0 }
 	}
 
 	/// Send `n` packet_s split acros_s path_s by weighted round-robin.
@@ -297,7 +297,7 @@ impl MultiPathSimulator {
 		if self.path_s.is_empty() || n == 0 { return Vec::new(); }
 		// Precompute integer quota_s by normalized weight_s
 		let sum_w: f64 = self.weight_s.iter().sum();
-		let mut quota_s = self.weight_s.iter().map(|w| ((*w / sum_w) * n a_s f64).floor() a_s usize).collect::<Vec<_>>();
+		let mut quota_s = self.weight_s.iter().map(|w| ((*w / sum_w) * n as f64).floor() as usize).collect::<Vec<_>>();
 		let mut assigned: usize = quota_s.iter().sum();
 		// Distribute remaining via round-robin starting from rr_cursor
 		let mut idx = self.rr_cursor % self.path_s.len();

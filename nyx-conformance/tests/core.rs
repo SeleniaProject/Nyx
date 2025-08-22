@@ -1,17 +1,17 @@
 
 //! Core compliance testing for Nyx Protocol
 //!
-//! Test_s Core/Plu_s/Full compliance level_s a_s specified in
+//! Test_s Core/Plu_s/Full compliance level_s as specified in
 //! `spec/Nyx_Protocol_v1.0_Spec.md` Section 10: Compliance Level_s.
 
 use nyx_core::compliance::*;
 
-// 10. Compliance Level_s → nyx_config_parse_default_s
+// 10. Compliance Level_s ↁEnyx_config_parse_default_s
 #[test]
 fn nyx_config_parse_default_s() {
-	// ルートのnyx.tomlがあればパース、なければスキップ相当の軽量チェック
+	// ルート�Enyx.tomlがあれ�Eパ�Eス、なければスキチE�E相当�E軽量チェチE��
 	match std::fs::read_to_string("nyx._toml") {
-		Ok(content) => assert!(content.contain_s("[daemon]") || content.len() > 10),
+		Ok(content) => assert!(content.contains("[daemon]") || content.len() > 10),
 		Err(_) => assert!(true),
 	}
 }
@@ -76,11 +76,11 @@ fn test_compliance_report_generation() {
 		
 		println!("\n{}", report.detailed_report());
 		
-		// Verify report contain_s expected section_s
+		// Verify report contains expected section_s
 		let __detailed = report.detailed_report();
-		assert!(detailed.contain_s("Nyx Protocol Compliance Report"));
-		assert!(detailed.contain_s(&format!("Target Level: {}", level)));
-		assert!(detailed.contain_s("Available Featu_re_s:"));
+		assert!(detailed.contains("Nyx Protocol Compliance Report"));
+		assert!(detailed.contains(&format!("Target Level: {}", level)));
+		assert!(detailed.contains("Available Featu_re_s:"));
 	}
 }
 
@@ -111,14 +111,14 @@ fn test_compliance_matrix_validation() {
 	let __full_req_s = ComplianceRequirement_s::full();
 	
 	// Plu_s should include all Core requirement_s
-	for feature in &core_req_s.required_featu_re_s {
-		assert!(plus_req_s.required_featu_re_s.contain_s(feature),
+	for feature in &core_req_s.__required_featu_re_s {
+		assert!(plus_req_s.__required_featu_re_s.contains(feature),
 			"Plu_s compliance should include Core feature: {}", feature);
 	}
 	
 	// Full should include all Plu_s requirement_s
-	for feature in &plus_req_s.required_featu_re_s {
-		assert!(full_req_s.required_featu_re_s.contain_s(feature),
+	for feature in &plus_req_s.__required_featu_re_s {
+		assert!(full_req_s.__required_featu_re_s.contains(feature),
 			"Full compliance should include Plu_s feature: {}", feature);
 	}
 	

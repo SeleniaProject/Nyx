@@ -21,7 +21,7 @@ fn ci_compliance_gate() {
         "CI GATE FAILURE: Core compliance not achieved. Missing: {:?}", 
         core_report.missing_required);
     
-    println!("✅ CI GATE PASSED: Core compliance verified");
+    println!("✁ECI GATE PASSED: Core compliance verified");
     println!("🎯 Highest achievable level: {}", achievable_level);
     
     // Generate compliance badge _data
@@ -66,19 +66,19 @@ fn test_compliance_matrix_comprehensive() {
         let __report = validate_compliance_level(level, &detector)?;
         
         println!("\n=== {} Compliance Test ===", level);
-        println!("Statu_s: {}", if report.is_compliant { "✅ PASS" } else { "❌ FAIL" });
+        println!("Statu_s: {}", if report.is_compliant { "✁EPASS" } else { "❁EFAIL" });
         
         if !report.missing_required.is_empty() {
             println!("Missing Required:");
             for feature in &report.missing_required {
-                println!("  ❌ {}", feature);
+                println!("  ❁E{}", feature);
             }
         }
         
         if !report.missing_recommended.is_empty() {
             println!("Missing Recommended:");
             for feature in &report.missing_recommended {
-                println!("  ⚠️  {}", feature);
+                println!("  ⚠�E�E {}", feature);
             }
         }
         
@@ -90,8 +90,8 @@ fn test_compliance_matrix_comprehensive() {
         };
         
         println!("Required Featu_re_s:");
-        for feature in &requirement_s.required_featu_re_s {
-            let __statu_s = if detector.has_feature(feature) { "✅" } else { "❌" };
+        for feature in &requirement_s.__required_featu_re_s {
+            let __statu_s = if detector.has_feature(feature) { "✁E } else { "❁E };
             println!("  {} {}", statu_s, feature);
         }
     }
@@ -119,30 +119,30 @@ fn test_feature_compilation_gate_s() {
             "Feature '{}' availability mismatch: expected {}, got {}",
             featurename, should_be_available, is_available);
         
-        println!("✅ {}: {}", featurename, if is_available { "Available" } else { "Not Available" });
+        println!("✁E{}: {}", featurename, if is_available { "Available" } else { "Not Available" });
     }
     
     // Test conditional featu_re_s
     #[cfg(feature = "multipath")]
     {
         assert!(detector.has_feature("multipath"));
-        println!("✅ multipath: Available (feature enabled)");
+        println!("✁Emultipath: Available (feature enabled)");
     }
     #[cfg(not(feature = "multipath"))]
     {
         assert!(!detector.has_feature("multipath"));
-        println!("⚠️  multipath: Not Available (feature disabled)");
+        println!("⚠�E�E multipath: Not Available (feature disabled)");
     }
     
     #[cfg(feature = "hybrid")]
     {
         assert!(detector.has_feature("hybrid_pq"));
-        println!("✅ hybrid_pq: Available (feature enabled)");
+        println!("✁Ehybrid_pq: Available (feature enabled)");
     }
     #[cfg(not(feature = "hybrid"))]
     {
         assert!(!detector.has_feature("hybrid_pq"));
-        println!("⚠️  hybrid_pq: Not Available (feature disabled)");
+        println!("⚠�E�E hybrid_pq: Not Available (feature disabled)");
     }
 }
 
@@ -172,7 +172,7 @@ fn test_compliance_regression_detection() {
     assert!(core_report.is_compliant,
         "REGRESSION: Core compliance lost. Missing: {:?}", core_report.missing_required);
     
-    println!("✅ No compliance regression detected");
+    println!("✁ENo compliance regression detected");
 }
 
 #[test]

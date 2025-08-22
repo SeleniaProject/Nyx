@@ -1,7 +1,7 @@
 //! Capability negotiation audit logging test_s
 //!
 //! These test_s verify audit logging and monitoring for capability negotiation
-//! rejection and degradation scenario_s a_s specified in the traceability matrix.
+//! rejection and degradation scenario_s as specified in the traceability matrix.
 
 use nyx_stream::capability::*;
 use nyx_stream::management::*;
@@ -39,7 +39,7 @@ impl MockAuditLogger {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 ?
-                .as_sec_s(),
+                .as_secs(),
         };
         self.event_s.lock().unwrap().push(event);
     }
@@ -53,7 +53,7 @@ impl MockAuditLogger {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 ?
-                .as_sec_s(),
+                .as_secs(),
         };
         self.event_s.lock().unwrap().push(event);
     }
@@ -67,7 +67,7 @@ impl MockAuditLogger {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 ?
-                .as_sec_s(),
+                .as_secs(),
         };
         self.event_s.lock().unwrap().push(event);
     }
@@ -106,7 +106,7 @@ impl AuditingCapabilityNegotiator {
 
         for cap in peer_cap_s {
             if cap.is_required() {
-                if !self.local_supported.contain_s(&cap.id) {
+                if !self.local_supported.contains(&cap.id) {
                     // Log rejection and prepare for session termination
                     self.audit_logger.log_capability_rejection(
                         cap.id,
@@ -125,7 +125,7 @@ impl AuditingCapabilityNegotiator {
                 }
             } else {
                 // Optional capability
-                if self.local_supported.contain_s(&cap.id) {
+                if self.local_supported.contains(&cap.id) {
                     accepted_cap_s.push(cap.clone());
                 } else {
                     // Log degradation (optional capability ignored)
@@ -171,13 +171,13 @@ mod test_s {
         assert_eq!(rejection_event.event_type, "capability_rejection");
         assert_eq!(rejection_event.capability_id, Some(CAP_PLUGIN_FRAMEWORK));
         assert_eq!(rejection_event.peer_id, Some("peer-001".to_string()));
-        assert!(rejection_event.reason.contain_s("Unsupported required capability"));
+        assert!(rejection_event.reason.contains("Unsupported required capability"));
 
         // Check termination event
         let __termination_event = &event_s[1];
         assert_eq!(termination_event.event_type, "session_termination");
         assert_eq!(termination_event.peer_id, Some("peer-001".to_string()));
-        assert!(termination_event.reason.contain_s("Required capability"));
+        assert!(termination_event.reason.contains("Required capability"));
     }
 
     #[test]
@@ -207,7 +207,7 @@ mod test_s {
         let __degradation1 = &event_s[0];
         assert_eq!(degradation1.event_type, "capability_degradation");
         assert_eq!(degradation1.capability_id, Some(CAP_PLUGIN_FRAMEWORK));
-        assert!(degradation1.reason.contain_s("Optional capability"));
+        assert!(degradation1.reason.contains("Optional capability"));
 
         // Check second degradation (unknown capability)
         let __degradation2 = &event_s[1];
@@ -279,9 +279,9 @@ mod test_s {
 
         // Test that audit event_s can be serialized to JSON for external logging
         let __json = serde_json::to_string(event)?;
-        assert!(json.contain_s("capability_rejection"));
-        assert!(json.contain_s("2")); // CAP_PLUGIN_FRAMEWORK a_s decimal
-        assert!(json.contain_s("peer-005"));
+        assert!(json.contains("capability_rejection"));
+        assert!(json.contains("2")); // CAP_PLUGIN_FRAMEWORK as decimal
+        assert!(json.contains("peer-005"));
     }
 
     #[test]
@@ -290,9 +290,9 @@ mod test_s {
 
         // Log multiple event_s
         audit_logger.log_capability_degradation(0x1111, "peer-006", "First degradation");
-        std::thread::sleep(std::time::Duration::from_milli_s(10));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         audit_logger.log_capability_rejection(0x2222, "peer-006", "Rejection");
-        std::thread::sleep(std::time::Duration::from_milli_s(10));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         audit_logger.log_session_termination("peer-006", "Session ended");
 
         let __event_s = audit_logger.get_event_s();
@@ -328,6 +328,6 @@ mod test_s {
 
         let __event_s = audit_logger.get_event_s();
         assert_eq!(event_s.len(), 1);
-        assert!(event_s[0].reason.contain_s("too large"));
+        assert!(event_s[0].reason.contains("too large"));
     }
 }
