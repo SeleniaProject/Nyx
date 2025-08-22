@@ -6,8 +6,8 @@
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::time::{Duration, Instant};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
@@ -217,12 +217,12 @@ impl Default for IceAgentConfig {
             role: IceRole::Controlling,
             stun_servers: vec![
                 StunServerConfig {
-                    address: "8.8.8.8:3478".parse().unwrap(),
+                    address: "8.8.8.8:3478".parse().expect("Failed to parse STUN server address"),
                     timeout: Duration::from_secs(5),
                     max_retries: 3,
                 },
                 StunServerConfig {
-                    address: "8.8.4.4:3478".parse().unwrap(),
+                    address: "8.8.4.4:3478".parse().expect("Failed to parse STUN server address"),
                     timeout: Duration::from_secs(5),
                     max_retries: 3,
                 },
@@ -310,9 +310,10 @@ impl IceAgent {
     /// Start ICE candidate gathering process
     pub async fn start_gathering(&mut self) -> IceResult<()> {
         self.transition_to_state(IceAgentState::Gathering).await?;
-        
-        // Bind UDP socket for ICE communication
-        let socket = UdpSocket::bind("0.0.0.0:0").await
+
+        // Bind UDP socket for ICE communication (localhost for security)
+        let socket = UdpSocket::bind("127.0.0.1:0")
+            .await
             .map_err(|e| IceError::NetworkError(e.to_string()))?;
         self.socket = Some(Arc::new(socket));
 
@@ -388,13 +389,16 @@ impl IceAgent {
     /// Send data through the selected candidate pair
     pub async fn send_data(&self, data: &[u8]) -> IceResult<usize> {
         let selected = self.selected_pair.read().await;
-        let pair = selected.as_ref()
-            .ok_or(IceError::NoValidCandidatePairs)?;
+        let pair = selected.as_ref().ok_or(IceError::NoValidCandidatePairs)?;
 
-        let socket = self.socket.as_ref()
+        let socket = self
+            .socket
+            .as_ref()
             .ok_or(IceError::NetworkError("No socket available".to_string()))?;
 
-        let bytes_sent = socket.send_to(data, pair.remote.address).await
+        let bytes_sent = socket
+            .send_to(data, pair.remote.address)
+            .await
             .map_err(|e| IceError::NetworkError(e.to_string()))?;
 
         let mut stats = self.statistics.write().await;
@@ -405,11 +409,15 @@ impl IceAgent {
 
     /// Receive data from the ICE socket
     pub async fn receive_data(&self) -> IceResult<(Vec<u8>, SocketAddr)> {
-        let socket = self.socket.as_ref()
+        let socket = self
+            .socket
+            .as_ref()
             .ok_or(IceError::NetworkError("No socket available".to_string()))?;
 
         let mut buffer = vec![0u8; 1500]; // MTU size
-        let (len, addr) = socket.recv_from(&mut buffer).await
+        let (len, addr) = socket
+            .recv_from(&mut buffer)
+            .await
             .map_err(|e| IceError::NetworkError(e.to_string()))?;
 
         buffer.truncate(len);
@@ -440,7 +448,7 @@ impl IceAgent {
         if let Some(start_time) = timestamps.get(&old_state) {
             let duration = Instant::now().duration_since(*start_time);
             let mut stats = self.statistics.write().await;
-            
+
             match old_state {
                 IceAgentState::Gathering => {
                     stats.gathering_duration = Some(duration);
@@ -457,7 +465,7 @@ impl IceAgent {
 
     async fn gather_host_candidates(&self) -> IceResult<()> {
         let mut candidates = self.local_candidates.write().await;
-        
+
         // Add IPv4 loopback
         candidates.push(Candidate {
             foundation: "host-ipv4-lo".to_string(),
@@ -493,20 +501,23 @@ impl IceAgent {
             // Placeholder for STUN binding request implementation
             // In a real implementation, this would send STUN binding requests
             // to discover the external IP address and port
-            
+
             let mut candidates = self.local_candidates.write().await;
             candidates.push(Candidate {
                 foundation: format!("srflx-{}", stun_config.address),
                 component_id: 1,
                 transport: Transport::Udp,
-                priority: self.calculate_priority(CandidateType::ServerReflexive, "127.0.0.1".parse().unwrap()),
-                address: "127.0.0.1:0".parse().unwrap(),
+                priority: self.calculate_priority(
+                    CandidateType::ServerReflexive,
+                    "127.0.0.1".parse().expect("Failed to parse IP address"),
+                ),
+                address: "127.0.0.1:0".parse().expect("Failed to parse socket address"),
                 candidate_type: CandidateType::ServerReflexive,
-                related_address: Some("127.0.0.1:0".parse().unwrap()),
+                related_address: Some("127.0.0.1:0".parse().expect("Failed to parse related address")),
                 extensions: HashMap::new(),
             });
         }
-        
+
         Ok(())
     }
 
@@ -515,20 +526,21 @@ impl IceAgent {
             // Placeholder for TURN allocation implementation
             // In a real implementation, this would allocate relay addresses
             // on TURN servers for traversing symmetric NATs
-            
+
             let mut candidates = self.local_candidates.write().await;
             candidates.push(Candidate {
                 foundation: format!("relay-{}", turn_config.address),
                 component_id: 1,
                 transport: Transport::Udp,
-                priority: self.calculate_priority(CandidateType::Relay, "127.0.0.1".parse().unwrap()),
+                priority: self
+                    .calculate_priority(CandidateType::Relay, "127.0.0.1".parse().unwrap()),
                 address: "127.0.0.1:0".parse().unwrap(),
                 candidate_type: CandidateType::Relay,
                 related_address: Some("127.0.0.1:0".parse().unwrap()),
                 extensions: HashMap::new(),
             });
         }
-        
+
         Ok(())
     }
 
@@ -568,9 +580,9 @@ impl IceAgent {
         // Placeholder for actual STUN connectivity check
         // In a real implementation, this would send STUN binding requests
         // to verify connectivity between candidate pairs
-        
+
         let check_result = true; // Simulate successful check
-        
+
         if check_result {
             pair.state = CandidatePairState::Succeeded;
             pair.rtt = Some(Duration::from_millis(50)); // Simulated RTT
@@ -627,9 +639,13 @@ impl IceAgent {
             IceRole::Controlled => (remote.priority as u64, local.priority as u64),
         };
 
-        (1u64 << 32) * controlling_priority.min(controlled_priority) +
-        2 * controlling_priority.max(controlled_priority) +
-        if controlling_priority > controlled_priority { 1 } else { 0 }
+        (1u64 << 32) * controlling_priority.min(controlled_priority)
+            + 2 * controlling_priority.max(controlled_priority)
+            + if controlling_priority > controlled_priority {
+                1
+            } else {
+                0
+            }
     }
 }
 
@@ -659,7 +675,11 @@ impl Candidate {
     }
 
     /// Create a new server reflexive candidate
-    pub fn new_server_reflexive(component_id: u32, address: SocketAddr, related: SocketAddr) -> Self {
+    pub fn new_server_reflexive(
+        component_id: u32,
+        address: SocketAddr,
+        related: SocketAddr,
+    ) -> Self {
         Self {
             foundation: format!("srflx-{}", address),
             component_id,
@@ -722,7 +742,7 @@ mod tests {
     async fn test_ice_agent_creation() {
         let config = IceAgentConfig::default();
         let agent = IceAgent::new(config);
-        
+
         assert_eq!(agent.get_state().await, IceAgentState::Idle);
         assert!(agent.get_local_candidates().await.is_empty());
     }
@@ -731,7 +751,7 @@ mod tests {
     async fn test_candidate_priority_calculation() {
         let ipv4_addr = "192.168.1.1".parse().unwrap();
         let host_candidate = Candidate::new_host(1, SocketAddr::new(ipv4_addr, 5000));
-        
+
         assert_eq!(host_candidate.candidate_type, CandidateType::Host);
         assert!(host_candidate.priority > 0);
     }
@@ -740,13 +760,13 @@ mod tests {
     async fn test_candidate_pair_formation() {
         let config = IceAgentConfig::default();
         let agent = IceAgent::new(config);
-        
+
         let local_candidate = Candidate::new_host(1, "127.0.0.1:5000".parse().unwrap());
         let remote_candidate = Candidate::new_host(1, "127.0.0.1:6000".parse().unwrap());
-        
+
         agent.local_candidates.write().await.push(local_candidate);
         agent.add_remote_candidate(remote_candidate).await.unwrap();
-        
+
         let pairs = agent.candidate_pairs.read().await;
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].state, CandidatePairState::Waiting);

@@ -1,11 +1,11 @@
 //! Teredo and IPv4-mapped IPv6 address handling utilities.
-//! 
+//!
 //! This module provides comprehensive support for Teredo tunneling and IPv4-mapped
 //! IPv6 addresses, enabling IPv6 connectivity over IPv4 networks. It includes
 //! address validation, mapping, and NAT traversal helpers.
 
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::fmt;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 // use std::time::Duration;
 use thiserror::Error;
 // use tokio::time::timeout;
@@ -89,17 +89,19 @@ pub enum AddressType {
 pub fn ipv6_mapped(ipv4: Ipv4Addr) -> Ipv6Addr {
     let octets = ipv4.octets();
     Ipv6Addr::from([
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, octets[0], octets[1], octets[2], octets[3]
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, octets[0], octets[1], octets[2], octets[3],
     ])
 }
 
 /// Extract IPv4 address from an IPv6-mapped address
 pub fn extract_ipv4_from_mapped(ipv6: Ipv6Addr) -> Option<Ipv4Addr> {
     let octets = ipv6.octets();
-    
+
     // Check for IPv4-mapped prefix
     if octets[0..12] == IPV4_MAPPED_PREFIX {
-        Some(Ipv4Addr::new(octets[12], octets[13], octets[14], octets[15]))
+        Some(Ipv4Addr::new(
+            octets[12], octets[13], octets[14], octets[15],
+        ))
     } else {
         None
     }
@@ -120,21 +122,30 @@ pub fn create_teredo_address(
     // Obfuscate external address and port according to RFC 4380
     let obfuscated_addr_bytes = external_addr.octets().map(|b| b ^ 0xFF);
     let obfuscated_port = external_port ^ 0xFFFF;
-    
+
     // Build RFC 4380 compliant Teredo IPv6 address
     let server_bytes = server.octets();
     let ipv6_bytes = [
-        0x20, 0x01,  // Teredo prefix (2001:0::/32)
-        0x00, 0x00,  // Reserved fields
-        server_bytes[0], server_bytes[1], server_bytes[2], server_bytes[3],  // Teredo server
-        (flags >> 8) as u8, (flags & 0xFF) as u8,  // Flags field
-        (obfuscated_port >> 8) as u8, (obfuscated_port & 0xFF) as u8,  // Obfuscated port
-        obfuscated_addr_bytes[0], obfuscated_addr_bytes[1], // Obfuscated IPv4 (bytes 12-13)
-        obfuscated_addr_bytes[2], obfuscated_addr_bytes[3], // Obfuscated IPv4 (bytes 14-15)
+        0x20,
+        0x01, // Teredo prefix (2001:0::/32)
+        0x00,
+        0x00, // Reserved fields
+        server_bytes[0],
+        server_bytes[1],
+        server_bytes[2],
+        server_bytes[3], // Teredo server
+        (flags >> 8) as u8,
+        (flags & 0xFF) as u8, // Flags field
+        (obfuscated_port >> 8) as u8,
+        (obfuscated_port & 0xFF) as u8, // Obfuscated port
+        obfuscated_addr_bytes[0],
+        obfuscated_addr_bytes[1], // Obfuscated IPv4 (bytes 12-13)
+        obfuscated_addr_bytes[2],
+        obfuscated_addr_bytes[3], // Obfuscated IPv4 (bytes 14-15)
     ];
-    
+
     let ipv6_addr = Ipv6Addr::from(ipv6_bytes);
-    
+
     TeredoAddress {
         server,
         external_addr,
@@ -147,22 +158,22 @@ pub fn create_teredo_address(
 /// Parse a Teredo address from an IPv6 address (RFC 4380 compliant)
 pub fn parse_teredo_address(ipv6: Ipv6Addr) -> TeredoResult<TeredoAddress> {
     let octets = ipv6.octets();
-    
+
     // Check Teredo prefix (2001:0::/32)
     if octets[0] != 0x20 || octets[1] != 0x01 || octets[2] != 0x00 || octets[3] != 0x00 {
         return Err(TeredoError::PrefixMismatch);
     }
-    
+
     // Extract server address (bytes 4-7)
     let server = Ipv4Addr::new(octets[4], octets[5], octets[6], octets[7]);
-    
+
     // Extract flags (bytes 8-9)
     let flags = ((octets[8] as u16) << 8) | (octets[9] as u16);
-    
+
     // Extract obfuscated port (bytes 10-11) and deobfuscate
     let obfuscated_port = ((octets[10] as u16) << 8) | (octets[11] as u16);
     let external_port = obfuscated_port ^ 0xFFFF;
-    
+
     // Extract obfuscated IPv4 address (bytes 12-15) and deobfuscate
     let obfuscated_addr_bytes = [
         octets[12] ^ 0xFF,
@@ -171,7 +182,7 @@ pub fn parse_teredo_address(ipv6: Ipv6Addr) -> TeredoResult<TeredoAddress> {
         octets[15] ^ 0xFF,
     ];
     let external_addr = Ipv4Addr::from(obfuscated_addr_bytes);
-    
+
     Ok(TeredoAddress {
         server,
         external_addr,
@@ -200,7 +211,7 @@ pub fn classify_address(addr: &SocketAddr) -> AddressType {
             } else {
                 AddressType::Ipv4
             }
-        },
+        }
         SocketAddr::V6(v6) => {
             let ip = v6.ip();
             if is_ipv4_mapped(*ip) {
@@ -223,7 +234,7 @@ pub fn classify_address(addr: &SocketAddr) -> AddressType {
 /// Validate an address and detect NAT characteristics
 pub fn validate_address(addr: &SocketAddr) -> AddressValidation {
     let address_type = classify_address(addr);
-    
+
     let is_valid = match address_type {
         AddressType::Loopback | AddressType::Multicast => false,
         AddressType::Private => true,
@@ -233,24 +244,24 @@ pub fn validate_address(addr: &SocketAddr) -> AddressValidation {
             } else {
                 false
             }
-        },
+        }
         AddressType::Ipv4MappedIpv6 => {
             if let SocketAddr::V6(v6) = addr {
                 is_ipv4_mapped(*v6.ip())
             } else {
                 false
             }
-        },
+        }
         _ => true,
     };
-    
+
     let nat_type = match address_type {
         AddressType::Private => Some(NatType::Unknown),
         AddressType::TeredoIpv6 => Some(NatType::FullCone),
         AddressType::Ipv4 | AddressType::Ipv6 => None,
         _ => Some(NatType::Unknown),
     };
-    
+
     AddressValidation {
         is_valid,
         address_type,
@@ -265,7 +276,7 @@ pub fn convert_socket_addr(addr: SocketAddr) -> SocketAddr {
         SocketAddr::V4(v4) => {
             let mapped = ipv6_mapped(*v4.ip());
             SocketAddr::V6(SocketAddrV6::new(mapped, v4.port(), 0, 0))
-        },
+        }
         SocketAddr::V6(v6) => {
             if let Some(ipv4) = extract_ipv4_from_mapped(*v6.ip()) {
                 SocketAddr::V4(SocketAddrV4::new(ipv4, v6.port()))
@@ -292,7 +303,7 @@ pub fn create_test_teredo_address() -> TeredoAddress {
     let external_addr = Ipv4Addr::new(203, 0, 113, 1);
     let external_port = 12345;
     let flags = 0x8000;
-    
+
     create_teredo_address(server, external_addr, external_port, flags)
 }
 
@@ -315,7 +326,7 @@ mod tests {
     fn test_ipv6_mapped_creation() {
         let ipv4 = Ipv4Addr::new(192, 0, 2, 1);
         let mapped = ipv6_mapped(ipv4);
-        
+
         assert_eq!(mapped.octets()[0..12], IPV4_MAPPED_PREFIX);
         assert_eq!(mapped.octets()[12..16], [192, 0, 2, 1]);
     }
@@ -326,9 +337,9 @@ mod tests {
         let external_addr = Ipv4Addr::new(203, 0, 113, 1);
         let external_port = 12345;
         let flags = 0x8000;
-        
+
         let teredo = create_teredo_address(server, external_addr, external_port, flags);
-        
+
         assert_eq!(teredo.server, server);
         assert_eq!(teredo.external_addr, external_addr);
         assert_eq!(teredo.external_port, external_port);
@@ -339,7 +350,7 @@ mod tests {
     fn test_address_classification() {
         let private_v4 = SocketAddr::new("192.168.1.1".parse().unwrap(), 80);
         assert_eq!(classify_address(&private_v4), AddressType::Private);
-        
+
         let public_v4 = SocketAddr::new("8.8.8.8".parse().unwrap(), 53);
         assert_eq!(classify_address(&public_v4), AddressType::Ipv4);
     }

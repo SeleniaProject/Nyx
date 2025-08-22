@@ -302,7 +302,8 @@ impl QuicConnection {
     /// ストリーム書き込み
     pub async fn write_stream(&mut self, stream_id: u64, _data: Bytes) -> Result<(), QuicError> {
         let mut stream_s = self.stream_s.write().await;
-        let stream = stream_s.get_mut(&stream_id)
+        let stream = stream_s
+            .get_mut(&stream_id)
             .ok_or(QuicError::StreamNotFound(String::from("Stream not found")))?;
 
         stream.write_data(_data).await?;
@@ -314,7 +315,8 @@ impl QuicConnection {
     /// ストリーム読み込み
     pub async fn read_stream(&mut self, stream_id: u64) -> Result<Option<Bytes>, QuicError> {
         let mut stream_s = self.stream_s.write().await;
-        let stream = stream_s.get_mut(&stream_id)
+        let stream = stream_s
+            .get_mut(&stream_id)
             .ok_or(QuicError::StreamNotFound(String::from("Stream not found")))?;
 
         let _data = stream.read_data().await?;
@@ -339,8 +341,11 @@ impl QuicConnection {
     /// 接続状態を Connected に変更
     pub async fn establish_connection(&self, _servername: Option<String>) -> Result<(), QuicError> {
         let mut state = self.state.write().await;
-        
-        if let ConnectionState::Connecting { peer, start_time, .. } = state.clone() {
+
+        if let ConnectionState::Connecting {
+            peer, start_time, ..
+        } = state.clone()
+        {
             *state = ConnectionState::Connected {
                 peer,
                 established_at: start_time,
@@ -405,12 +410,20 @@ impl QuicCryptoContext {
     }
 
     /// パケット暗号化
-    pub async fn encrypt_packet(&self, packet: &[u8], _packetnumber: u64) -> Result<Bytes, QuicError> {
+    pub async fn encrypt_packet(
+        &self,
+        packet: &[u8],
+        _packetnumber: u64,
+    ) -> Result<Bytes, QuicError> {
         Ok(Bytes::copy_from_slice(packet))
     }
 
     /// パケット復号化
-    pub async fn decrypt_packet(&self, encrypted_packet: &[u8], _packetnumber: u64) -> Result<Bytes, QuicError> {
+    pub async fn decrypt_packet(
+        &self,
+        encrypted_packet: &[u8],
+        _packetnumber: u64,
+    ) -> Result<Bytes, QuicError> {
         Ok(Bytes::copy_from_slice(encrypted_packet))
     }
 }
@@ -418,7 +431,8 @@ impl QuicCryptoContext {
 impl QuicEndpoint {
     /// 新しいQUIC Endpoint作成
     pub async fn new(bind_addr: SocketAddr, config: QuicEndpointConfig) -> Result<Self, QuicError> {
-        let socket = UdpSocket::bind(bind_addr).await
+        let socket = UdpSocket::bind(bind_addr)
+            .await
             .map_err(|e| QuicError::Io(e.to_string()))?;
         let connection_s = Arc::new(TokioRwLock::new(HashMap::new()));
         let statistic_s = Arc::new(TokioRwLock::new(EndpointStatistic_s::default()));
@@ -433,9 +447,13 @@ impl QuicEndpoint {
     }
 
     /// 接続統計取得
-    pub async fn get_connection_stats(&self, connection_id: &Bytes) -> Result<ConnectionStat_s, QuicError> {
+    pub async fn get_connection_stats(
+        &self,
+        connection_id: &Bytes,
+    ) -> Result<ConnectionStat_s, QuicError> {
         let connection_s = self.connection_s.read().await;
-        let connection = connection_s.get(connection_id)
+        let connection = connection_s
+            .get(connection_id)
             .ok_or_else(|| QuicError::ConnectionNotFound(connection_id.clone()))?;
 
         let stat_s = connection.stat_s.read().await.clone();
@@ -451,7 +469,9 @@ impl QuicEndpoint {
     /// 接続取得
     pub async fn get_connection(&self, connection_id: &Bytes) -> Result<QuicConnection, QuicError> {
         let connection_s = self.connection_s.read().await;
-        connection_s.get(connection_id).cloned()
+        connection_s
+            .get(connection_id)
+            .cloned()
             .ok_or_else(|| QuicError::ConnectionNotFound(connection_id.clone()))
     }
 
@@ -469,7 +489,8 @@ impl QuicEndpoint {
         let timeout_duration = self.config.idle_timeout;
         let current_time = Instant::now();
 
-        let idle_ids: Vec<Bytes> = connection_s.iter()
+        let idle_ids: Vec<Bytes> = connection_s
+            .iter()
             .filter_map(|(id, conn)| {
                 if current_time.duration_since(conn._last_activity) > timeout_duration {
                     Some(id.clone())
@@ -489,7 +510,8 @@ impl QuicEndpoint {
     /// データ送信
     pub async fn send_data(&self, connection_id: &Bytes) -> Result<(), QuicError> {
         let connection_s = self.connection_s.read().await;
-        connection_s.get(connection_id)
+        connection_s
+            .get(connection_id)
             .ok_or_else(|| QuicError::ConnectionNotFound(connection_id.clone()))?;
 
         Ok(())
