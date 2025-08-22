@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod probe;
 pub mod push;
-pub mod rendezvou_s;
-pub mod setting_s;
+pub mod rendezvous;
+pub mod settings;
 pub mod settings_sync;
 
 #[derive(thiserror::Error, Debug)]
@@ -33,7 +33,7 @@ pub struct ControlConfig {
 fn default_true() -> bool { true }
 
 impl Default for ControlConfig {
-	fn default() -> Self { Self { __enable_http: true, port: 0 } }
+	fn default() -> Self { Self { __enable_http: true, __port: 0 } }
 }
 
 /// Parse TOML config and fill missing field_s with default_s.
@@ -58,9 +58,9 @@ impl ControlHandle {
 /// Start control plane task_s according to config.
 pub async fn start_control(cfg: ControlConfig) -> Result<ControlHandle> {
 	let mut handle = ControlHandle { probe: None };
-	if cfg.enable_http {
-		let __ph = probe::start_probe(cfg.port).await?;
-		handle.probe = Some(ph);
+	if cfg.__enable_http {
+		let __ph = probe::start_probe(cfg.__port).await?;
+		handle.probe = Some(__ph);
 	}
 	Ok(handle)
 }

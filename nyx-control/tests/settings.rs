@@ -1,5 +1,5 @@
 
-use nyx_control a_s ctl;
+use nyx_control as ctl;
 
 #[test]
 fn parse_cfg() {
