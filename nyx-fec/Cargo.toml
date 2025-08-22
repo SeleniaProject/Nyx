@@ -16,7 +16,7 @@ reed-solomon-erasure = "6"
 ## Keep the crate lean: other deps were unused in this crate. Add back only if required.
 
 [features]
-default = []
+default = ["raptorq"]
 raptorq = []
 telemetry = []
 

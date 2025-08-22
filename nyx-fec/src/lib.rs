@@ -8,22 +8,25 @@
 
 #![forbid(unsafe_code)]
 
+pub mod padding;
 #[cfg(feature = "raptorq")]
 pub mod raptorq;
-pub mod timing;
-pub mod padding;
 pub mod rs1280;
+pub mod timing;
 
 /// Error type for FEC operation_s in thi_s crate.
 #[derive(Debug)]
-pub enum Error { Protocol(String) }
+pub enum Error {
+    Protocol(String),
+}
 impl core::fmt::Display for Error {
-	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-		match self { Error::Protocol(_s) => write!(f, "{_s}") }
-	}
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Error::Protocol(_s) => write!(f, "{_s}"),
+        }
+    }
 }
 impl std::error::Error for Error {}
 
 /// Convenience result alia_s.
 pub type Result<T> = core::result::Result<T, Error>;
-
