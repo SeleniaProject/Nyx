@@ -9,7 +9,7 @@ mod imp {
         kem::{Kem, X25519HkdfSha256},
         Deserializable, OpModeR, OpModeS, Serializable,
     };
-    use rand::rng_s::OsRng;
+    use rand::rngs::OsRng;
     use rand::RngCore;
 
     /// Sender: encapsulate to recipient'_s public key and encrypt with context
@@ -28,7 +28,7 @@ mod imp {
         let ct = senderctx
             .seal(pt, aad)
             .map_err(|_| Error::Protocol("hpke seal".into()))?;
-        Ok((enc.to_byte_s().to_vec(), ct))
+        Ok((enc.to_bytes().to_vec(), ct))
     }
 
     /// Receiver: open ciphertext using encapped key and recipient'_s private key
@@ -45,7 +45,7 @@ mod imp {
             b"nyx-hpke",
         )
         .map_err(|_| Error::Protocol("hpke setup receiver".into()))?;
-        let _pt = recipctx
+        let pt = recipctx
             .open(ct, aad)
             .map_err(|_| Error::Protocol("hpke open".into()))?;
         Ok(pt)
@@ -55,7 +55,7 @@ mod imp {
     pub fn gen_keypair() -> (Vec<u8>, Vec<u8>) {
         let mut rng = OsRng;
         let (sk, pk) = X25519HkdfSha256::gen_keypair(&mut rng);
-        (sk.to_byte_s().to_vec(), pk.to_byte_s().to_vec())
+        (sk.to_bytes().to_vec(), pk.to_bytes().to_vec())
     }
 
     /// Random AAD helper
@@ -92,7 +92,7 @@ mod test_s {
 
     #[test]
     fn hpke_roundtrip_when_enabled() -> Result<(), Box<dyn std::error::Error>> {
-        // このテストは feature=hpke のときのみ有意
+        // This test is only meaningful with feature=hpke enabled
         let (sk, pk) = gen_keypair();
         if pk.is_empty() {
             return Ok(());

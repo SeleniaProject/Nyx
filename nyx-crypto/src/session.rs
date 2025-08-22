@@ -3,7 +3,6 @@
 use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
 use crate::kdf::{aeadnonce_xor, hkdf_expand};
 use crate::{Error, Result};
-use crate::{Error, Result};
 
 /// AEAD session (unidirectional): derive per-record nonce from base nonce + sequence,
 /// with optional 32-bit direction identifier mixed to avoid overlap acros_s direction_s.
@@ -54,7 +53,7 @@ impl AeadSession {
 
     /// Set rekey _threshold by byte_s (0 disable_s)
     pub fn with_rekey_bytes_interval(mut self, byte_s: u64) -> Self {
-        self._rekey_bytes_interval = byte_s; // 0は無効として扱う
+        self._rekey_bytes_interval = byte_s; // 0は無効として扱ぁE
         self
     }
 
@@ -80,16 +79,16 @@ impl AeadSession {
         false
     }
 
-    /// Rekey using HKDF; refresh key and base nonce, reset counter_s
+    /// Rekey using HKDF; refresh key and base nonce, reset counters
     pub fn rekey(&mut self) {
         let old_key = self.__key.0; // copy
-        // 新しい鍵
+        // New key
         let mut new_key = [0u8; 32];
-        hkdf_expand(&old_key, b"nyx/aead/rekey/v1", &mut new_key);
-        // 新しいベースノンス
+        let _ = hkdf_expand(&old_key, b"nyx/aead/rekey/v1", &mut new_key);
+        // New base nonce
         let mut newnonce = [0u8; 12];
-        hkdf_expand(&old_key, b"nyx/aead/rekey/nonce/v1", &mut newnonce);
-        // 置換
+        let _ = hkdf_expand(&old_key, b"nyx/aead/rekey/nonce/v1", &mut newnonce);
+        // 置揁E
         self.__key = AeadKey(new_key);
         self.basenonce = newnonce;
         self.seq = 0;
@@ -98,7 +97,7 @@ impl AeadSession {
 
     /// Encrypt next packet. Return_s (sequence, ciphertext). Enforce_s limit_s.
     pub fn sealnext(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<(u64, Vec<u8>)> {
-        // seq が maxseq に到達したら以降の送信を拒否（nonce再利用防止）
+        // seq ぁEmaxseq に到達したら以降�E送信を拒否�E�Eonce再利用防止�E�E
         if self.seq >= self.__maxseq {
             return Err(Error::Protocol("aead sequence exhausted".into()));
         }
@@ -119,7 +118,7 @@ impl AeadSession {
         let ct = cipher.seal(n, aad, plaintext)?;
         let used = self.seq;
         self.seq = self.seq.saturating_add(1);
-        // タグも含む暗号文長を加算（おおよその上限としてDoS耐性に寄与）
+        // タグも含む暗号斁E��を加算（おおよそ�E上限としてDoS耐性に寁E��！E
         self._bytes_sent = self._bytes_sent.saturating_add(ct.len() as u64);
         Ok((used, ct))
     }
@@ -204,146 +203,134 @@ mod test_s {
     use super::*;
 
     #[test]
-    fn seq_increments_and_refuses_after_max() {
-        let _key = AeadKey([9u8; 32]);
-        let _base = [0u8; 12];
+    fn seq_increments_and_refuses_after_max() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([9u8; 32]);
+        let base = [0u8; 12];
         let mut ses_s = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
             .with_maxseq(2)
             .withdirection_id(1);
-        let _aad = b"aad";
+        let aad = b"aad";
         let (s0, c0) = ses_s.sealnext(aad, b"m0")?;
         assert_eq!(s0, 0);
-        let (_s1, c1) = ses_s.sealnext(aad, b"m1")?;
-        assert_eq!(_s1, 1);
-        // 次は上限到達で拒否（seq==maxseq でエラー）
+        let (s1, c1) = ses_s.sealnext(aad, b"m1")?;
+        assert_eq!(s1, 1);
         assert!(ses_s.sealnext(aad, b"m3").is_err());
-        // 復号検証
         assert_eq!(ses_s.open_at(s0, aad, &c0).unwrap(), b"m0");
-        assert_eq!(ses_s.open_at(_s1, aad, &c1).unwrap(), b"m1");
-        // 2つ送信のみ成功
+        assert_eq!(ses_s.open_at(s1, aad, &c1).unwrap(), b"m1");
+        Ok(())
     }
 
     #[test]
-    fn open_fails_with_wrongseq() {
-        let _key = AeadKey([1u8; 32]);
-        let _base = [0u8; 12];
+    fn open_fails_with_wrongseq() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([1u8; 32]);
+        let base = [0u8; 12];
         let mut ses_s =
             AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(7);
-        let _aad = b"aad";
-        let (_s, c) = ses_s.sealnext(aad, b"m")?;
-        assert_eq!(_s, 0);
-        // 異なる seq での復号は失敗
+        let aad = b"aad";
+        let (s, c) = ses_s.sealnext(aad, b"m")?;
+        assert_eq!(s, 0);
         assert!(ses_s.open_at(1, aad, &c).is_err());
+        Ok(())
     }
 
     #[test]
-    fn refuses_too_long_input_s() {
-        let _key = AeadKey([2u8; 32]);
-        let _base = [0u8; 12];
+    fn refuses_too_long_input_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([2u8; 32]);
+        let base = [0u8; 12];
         let mut ses_s =
             AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(3);
-        let _long_pt = vec![0u8; (AeadSession::MAX_PLAINTEXT_LEN + 1) a_s usize];
+        let long_pt = vec![0u8; (AeadSession::MAX_PLAINTEXT_LEN + 1) as usize];
         assert!(ses_s.sealnext(b"ok", &long_pt).is_err());
-        let _long_aad = vec![0u8; (AeadSession::MAX_AAD_LEN + 1) a_s usize];
+        let long_aad = vec![0u8; (AeadSession::MAX_AAD_LEN + 1) as usize];
         assert!(ses_s.sealnext(&long_aad, b"ok").is_err());
+        Ok(())
     }
 
     #[test]
-    fn open_rejects_too_short_or_too_longciphertext() {
-        let _key = AeadKey([4u8; 32]);
-        let _base = [9u8; 12];
-        let _ses_s =
+    fn open_rejects_too_short_or_too_longciphertext() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([4u8; 32]);
+        let base = [9u8; 12];
+        let ses_s =
             AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(0xAABBCCDD);
-        // too short (< tag)
         assert!(ses_s.open_at(0, b"", &[0u8; 15]).is_err());
-        // too long (> pt max + tag)
-        let _big = vec![0u8; AeadSession::MAX_PLAINTEXT_LEN + AeadSession::MAX_TAG_OVERHEAD + 1];
+        let big = vec![0u8; AeadSession::MAX_PLAINTEXT_LEN + AeadSession::MAX_TAG_OVERHEAD + 1];
         assert!(ses_s.open_at(0, b"", &big).is_err());
+        Ok(())
     }
 
     #[test]
-    fn rekey_resetssequence_and_key_s() {
-        let _key = AeadKey([7u8; 32]);
-        let _base = [3u8; 12];
+    fn rekey_resetssequence_and_key_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([7u8; 32]);
+        let base = [3u8; 12];
         let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
             .with_rekey_interval(2)
             .withdirection_id(1);
-        // Receiver before rekey (simulating old state)
-        let _rx_old = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([7u8; 32]), base)
+        let rx_old = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([7u8; 32]), base)
             .withdirection_id(1);
-        // 2つ送ってrekey条件に到達
         let (_, c0) = tx.sealnext(b"aad", b"m0")?;
         let (_, c1) = tx.sealnext(b"aad", b"m1")?;
         assert!(tx.needs_rekey());
-        // rekey前の受信側で旧CTは復号できる
         assert_eq!(rx_old.open_at(0, b"aad", &c0).unwrap(), b"m0");
         assert_eq!(rx_old.open_at(1, b"aad", &c1).unwrap(), b"m1");
-        // rekey実施
         tx.rekey();
         assert_eq!(tx.seq(), 0);
-        // 新しい鍵/ノンスで暗号化したものは同一セッションでは復号可能
-        let (_s2, c2) = tx.sealnext(b"aad", b"m2")?;
-        assert_eq!(_s2, 0);
-        let _pt2 = tx.open_at(0, b"aad", &c2)?;
+        let (s2, c2) = tx.sealnext(b"aad", b"m2")?;
+        assert_eq!(s2, 0);
+        let pt2 = tx.open_at(0, b"aad", &c2)?;
         assert_eq!(pt2, b"m2");
-        // 旧受信側では新しいCTは復号できない
         assert!(rx_old.open_at(0, b"aad", &c2).is_err());
+        Ok(())
     }
 
     #[test]
-    fn rekey_both_sides_compat() {
-        let _init_key = AeadKey([11u8; 32]);
-        let _base = [5u8; 12];
+    fn rekey_both_sides_compat() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let init_key = AeadKey([11u8; 32]);
+        let base = [5u8; 12];
         let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, init_key, base)
             .with_rekey_interval(1)
             .withdirection_id(2);
         let mut rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([11u8; 32]), base)
             .with_rekey_interval(1)
             .withdirection_id(2);
-        // 1レコードでrekey閾値到達
         let (s0, c0) = tx.sealnext(b"aad", b"hello")?;
         assert_eq!(rx.open_at(s0, b"aad", &c0).unwrap(), b"hello");
         assert!(tx.needs_rekey());
-        // 両端rekey
         tx.rekey();
         rx.rekey();
-        // 次の送信はseq=0で新キー
-        let (_s1, c1) = tx.sealnext(b"aad", b"world")?;
-        assert_eq!(_s1, 0);
+        let (s1, c1) = tx.sealnext(b"aad", b"world")?;
+        assert_eq!(s1, 0);
         assert_eq!(rx.open_at(0, b"aad", &c1).unwrap(), b"world");
+        Ok(())
     }
 
     #[test]
-    fn differentdirection_id_fails_decrypt() {
-        // Same key/base/seq but different direction ID_s must not decrypt each other
-        let _key = AeadKey([33u8; 32]);
-        let _base = [1u8; 12];
+    fn differentdirection_id_fails_decrypt() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([33u8; 32]);
+        let base = [1u8; 12];
         let mut a = AeadSession::new(AeadSuite::ChaCha20Poly1305, key.clone(), base)
             .withdirection_id(0x11111111);
-        let _b =
+        let b =
             AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(0x22222222);
-        let (_s, c) = a.sealnext(b"aad", b"msg")?;
-        assert!(b.open_at(_s, b"aad", &c).is_err());
+        let (s, c) = a.sealnext(b"aad", b"msg")?;
+        assert!(b.open_at(s, b"aad", &c).is_err());
+        Ok(())
     }
 
     #[test]
-    fn rekey_by_bytes_threshold() {
-        let _key = AeadKey([22u8; 32]);
-        let _base = [7u8; 12];
-        // しきい値を小さく設定して動作確認（タグ16B + 本文5B 程度で超える）
+    fn rekey_by_bytes_threshold() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([22u8; 32]);
+        let base = [7u8; 12];
         let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
-            .with_rekey_interval(u64::MAX) // レコード数では打たない
+            .with_rekey_interval(u64::MAX)
             .with_rekey_bytes_interval(20);
         assert!(!tx.needs_rekey());
         let (_s0, _c0) = tx.sealnext(b"a", b"hello")?;
-        // 暗号文長を加算後、しきい値超えを想定
         assert!(tx.needs_rekey());
-        // rekeyでカウンタがリセットされる
         tx.rekey();
         assert_eq!(tx.seq(), 0);
         assert!(!tx.needs_rekey());
-        // 送信しても直後はまだ未到達のはず
-        let __ = tx.sealnext(b"a", b"x")?;
+        let _ = tx.sealnext(b"a", b"x")?;
         assert!(!tx.needs_rekey());
+        Ok(())
     }
 }

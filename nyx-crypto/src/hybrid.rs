@@ -12,16 +12,14 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite},
-    session::AeadSession,
-    Error, Result,
+    Error,
 };
-use hkdf::Hkdf;
-use sha2::Sha256;
+// use hkdf::Hkdf;
+// use sha2::Sha256;
 
 #[cfg(feature = "classic")]
-use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
-use zeroize::Zeroize;
+// use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
+// use zeroize::Zeroize;
 
 #[cfg(feature = "kyber")]
 use crate::kyber;
@@ -58,27 +56,27 @@ impl HandshakeTelemetry {
         HYBRID_HANDSHAKE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
         debug!(operation = operation, "hybrid handshake started");
         Self {
-            start_time: Instant::now(),
+            _start_time: Instant::now(),
             operation,
         }
     }
 
     pub fn succes_s(self) {
-        let _duration = self._start_time.elapsed();
+        let duration = self._start_time.elapsed();
         HYBRID_HANDSHAKE_SUCCESS.fetch_add(1, Ordering::Relaxed);
         info!(
-            operation = self._operation,
-            duration_m_s = duration.as_milli_s(),
+            operation = self.operation,
+            duration_m_s = duration.as_millis(),
             "hybrid handshake completed successfully"
         );
     }
 
     pub fn failure(self, error: &Error) {
-        let _duration = self._start_time.elapsed();
+        let duration = self._start_time.elapsed();
         HYBRID_HANDSHAKE_FAILURES.fetch_add(1, Ordering::Relaxed);
         error!(
-            operation = self._operation,
-            duration_m_s = duration.as_milli_s(),
+            operation = self.operation,
+            duration_m_s = duration.as_millis(),
             error = %error,
             "hybrid handshake failed"
         );
@@ -115,11 +113,11 @@ impl HybridHandshake {
     #[cfg(feature = "telemetry")]
     pub fn get_metric_s() -> HybridHandshakeMetric_s {
         HybridHandshakeMetric_s {
-            total_attempt_s: HYBRID_HANDSHAKE_ATTEMPTS.load(Ordering::Relaxed),
-            successful_handshake_s: HYBRID_HANDSHAKE_SUCCESS.load(Ordering::Relaxed),
-            failed_handshake_s: HYBRID_HANDSHAKE_FAILURES.load(Ordering::Relaxed),
-            pq_encapsulation_s: HYBRID_PQ_ENCAPSULATIONS.load(Ordering::Relaxed),
-            classic_dh_operation_s: HYBRID_CLASSIC_DH_OPS.load(Ordering::Relaxed),
+            _total_attempt_s: HYBRID_HANDSHAKE_ATTEMPTS.load(Ordering::Relaxed),
+            _successful_handshake_s: HYBRID_HANDSHAKE_SUCCESS.load(Ordering::Relaxed),
+            _failed_handshake_s: HYBRID_HANDSHAKE_FAILURES.load(Ordering::Relaxed),
+            _pq_encapsulation_s: HYBRID_PQ_ENCAPSULATIONS.load(Ordering::Relaxed),
+            _classic_dh_operation_s: HYBRID_CLASSIC_DH_OPS.load(Ordering::Relaxed),
         }
     }
 
@@ -176,7 +174,7 @@ pub struct HybridConfig {
 impl Default for HybridConfig {
     fn default() -> Self {
         Self {
-            __kem: None,
+            _kem: None,
             _allow_0rtt: true,
         }
     }
@@ -229,7 +227,7 @@ impl HybridHandshake {
 pub mod demo {
     use super::*;
 
-    // Wire header (same base format a_s noise::ik_demo)
+    // Wire header (same base format as noise::ik_demo)
     const HDR_MAGIC: [u8; 2] = [b'N', b'X'];
     const HDR_VER: u8 = 1;
     const HDR_KIND_MSG1: u8 = 0x10;
@@ -262,34 +260,36 @@ pub mod demo {
             d.finalize().into()
         }
         fn new(prologue: &[u8]) -> Self {
-            let _pname = b"Noise_Nyx_HYBRID"; // distinct label
-            let _ck = Self::h(pname);
+            let pname = b"Noise_Nyx_HYBRID"; // distinct label
+            let ck = Self::h(pname);
             use sha2::Digest;
             let mut d = sha2::Sha256::new();
             d.update(pname);
             d.update(prologue);
-            let _h = d.finalize().into();
+            let h = d.finalize().into();
             Self { ck, h }
         }
         fn mix_hash(&mut self, _data: &[u8]) {
             use sha2::Digest;
             let mut d = sha2::Sha256::new();
-            d.update(self._h);
+            d.update(self.h);
             d.update(_data);
-            self._h = d.finalize().into();
+            self.h = d.finalize().into();
         }
-        fn mix_key(&mut self, ikm: &[u8]) {
-            let hk = Hkdf::<Sha256>::new(Some(&self._ck), ikm);
-            hk.expand(LBL_MK, &mut self._ck)?;
+        fn mix_key(&mut self, ikm: &[u8]) -> Result<()> {
+            let hk = Hkdf::<Sha256>::new(Some(&self.ck), ikm);
+            hk.expand(LBL_MK, &mut self.ck).map_err(|e| Error::Protocol(format!("hkdf expand: {e}")))?;
+            Ok(())
         }
-        fn expand_ck(&self, info: &[u8], out: &mut [u8]) {
-            let hk = Hkdf::<Sha256>::from_prk(&self._ck)?;
-            hk.expand(info, out)?;
+        fn expand_ck(&self, info: &[u8], out: &mut [u8]) -> Result<()> {
+            let hk = Hkdf::<Sha256>::from_prk(&self.ck).map_err(|e| Error::Protocol(format!("hkdf from_prk: {e}")))?;
+            hk.expand(info, out).map_err(|e| Error::Protocol(format!("hkdf expand: {e}")))?;
+            Ok(())
         }
         fn aad_tag(&self, label: &[u8]) -> [u8; 32] {
             use sha2::Digest;
             let mut d = sha2::Sha256::new();
-            d.update(self._h);
+            d.update(self.h);
             d.update(label);
             d.finalize().into()
         }
@@ -301,15 +301,15 @@ pub mod demo {
         pub pk: kyber::PublicKey,
     }
     impl KyberStaticKeypair {
-        pub fn generate() -> Self {
+        pub fn generate() -> Result<Self> {
             let mut rng = rand::thread_rng();
             let (sk, pk) = kyber::keypair(&mut rng)?;
-            Self { sk, pk }
+            Ok(Self { sk, pk })
         }
 
-        pub fn generatenew(seed: &[u8; 32]) -> Self {
+        pub fn generatenew(seed: &[u8; 32]) -> Result<Self> {
             let (sk, pk) = kyber::derive(*seed)?;
-            Self { sk, pk }
+            Ok(Self { sk, pk })
         }
     }
 
@@ -321,11 +321,11 @@ pub mod demo {
     impl X25519StaticKeypair {
         pub fn generate() -> Self {
             let mut rng = rand::thread_rng();
-            let _sk = XSecret::random_from_rng(&mut rng);
-            let _pk = XPublic::from(&sk);
+            let sk = XSecret::random_from_rng(&mut rng);
+            let pk = XPublic::from(&sk);
             Self {
-                sk: sk.to_byte_s(),
-                pk: pk.to_byte_s(),
+                sk: sk.to_bytes(),
+                pk: pk.to_bytes(),
             }
         }
 
@@ -334,11 +334,11 @@ pub mod demo {
         }
 
         pub fn from_seed(seed: [u8; 32]) -> Self {
-            let _sk = XSecret::from(seed);
-            let _pk = XPublic::from(&sk);
+            let sk = XSecret::from(seed);
+            let pk = XPublic::from(&sk);
             Self {
-                sk: sk.to_byte_s(),
-                pk: pk.to_byte_s(),
+                sk: sk.to_bytes(),
+                pk: pk.to_bytes(),
             }
         }
     }
@@ -364,54 +364,54 @@ pub mod demo {
         r_pq_pk: &kyber::PublicKey,
         prologue: &[u8],
     ) -> Result<InitiatorResult> {
-        let _telemetry = HandshakeTelemetry::new("initiator_handshake");
+        let telemetry = HandshakeTelemetry::new("initiator_handshake");
 
-        let _result = (|| -> Result<InitiatorResult> {
+        let result = (|| -> Result<InitiatorResult> {
             let eph_seed: [u8; 32] = rand::random();
-            let _e_sk = XSecret::from(eph_seed);
-            let _e_pk = XPublic::from(&e_sk);
+            let e_sk = XSecret::from(eph_seed);
+            let e_pk = XPublic::from(&e_sk);
 
             let mut s_s = SymmetricState::new(prologue);
-            s_s.mix_hash(e_pk.as_byte_s());
+            s_s.mix_hash(e_pk.as_bytes());
 
             // e_s - record classic DH operation
-            let _r_pk = XPublic::from(*r_static_pk_x);
-            let _dh_e_s = e_sk.diffie_hellman(&r_pk).to_byte_s();
+            let r_pk = XPublic::from(*r_static_pk_x);
+            let dh_e_s = e_sk.diffie_hellman(&r_pk).to_bytes();
             #[cfg(feature = "telemetry")]
             HybridHandshake::record_classic_dh_operation();
-            s_s.mix_key(&dh_e_s);
+            s_s.mix_key(&dh_e_s)?;
 
             // m1 key and msg1 with enc(static pk)
             let mut k_m1 = [0u8; 32];
-            s_s.expand_ck(LBL_M1, &mut k_m1);
-            let _m1_key = AeadKey(k_m1);
+            s_s.expand_ck(LBL_M1, &mut k_m1)?;
+            let m1_key = AeadKey(k_m1);
             let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, m1_key.clone());
-            let _aad = s_s.aad_tag(b"msg1");
+            let aad = s_s.aad_tag(b"msg1");
             let ct = cipher.seal(AeadNonce([0u8; 12]), &aad, &istatic.pk)?;
             s_s.mix_hash(&ct);
 
             // Kyber encapsulate to responder PQ pk - record PQ operation
             let (ct_pq, ss_pq) = {
                 let mut rng = rand::thread_rng();
-                let _result = kyber::encapsulate(r_pq_pk, &mut rng)?;
+                let result = kyber::encapsulate(r_pq_pk, &mut rng)?;
                 #[cfg(feature = "telemetry")]
                 HybridHandshake::record_pq_operation();
                 result
             };
 
             // s_s (static-static) classic - record another classic DH operation
-            let _isk = XSecret::from(istatic.sk);
-            let _r_pk2 = XPublic::from(*r_static_pk_x);
-            let _dh_s_s = isk.diffie_hellman(&r_pk2).to_byte_s();
+            let isk = XSecret::from(istatic.sk);
+            let r_pk2 = XPublic::from(*r_static_pk_x);
+            let dh_s_s = isk.diffie_hellman(&r_pk2).to_bytes();
             #[cfg(feature = "telemetry")]
             HybridHandshake::record_classic_dh_operation();
 
             // Mix classic s_s then PQ secret, then derive session_s
-            s_s.mix_key(&dh_s_s);
-            s_s.mix_key(&ss_pq);
+            s_s.mix_key(&dh_s_s)?;
+            s_s.mix_key(&ss_pq)?;
 
             let mut out = [0u8; 32 + 32 + 12 + 12];
-            s_s.expand_ck(LBL_SESSION, &mut out);
+            s_s.expand_ck(LBL_SESSION, &mut out)?;
             let mut k_i2r = [0u8; 32];
             k_i2r.copy_from_slice(&out[0..32]);
             let mut k_r2i = [0u8; 32];
@@ -421,19 +421,19 @@ pub mod demo {
             let mut n_r2i = [0u8; 12];
             n_r2i.copy_from_slice(&out[76..88]);
             out.zeroize();
-            let _tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_i2r), n_i2r)
+            let tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_i2r), n_i2r)
                 .withdirection_id(DIR_I2R);
-            let _rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_r2i), n_r2i)
+            let rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_r2i), n_r2i)
                 .withdirection_id(DIR_R2I);
 
             let mut msg1 = Vec::with_capacity(HDR_LEN + 32 + ct.len() + 2 + ct_pq.len());
             msg1.extend_from_slice(&HDR_MAGIC);
             msg1.push(HDR_VER);
             msg1.push(HDR_KIND_MSG1 | HDR_FLAG_ROLE_I | HDR_FLAG_HYBRID);
-            msg1.extend_from_slice(&e_pk.to_byte_s());
+            msg1.extend_from_slice(&e_pk.to_bytes());
             msg1.extend_from_slice(&ct);
             let l: u16 = ct_pq.len() as u16; // Kyber ct length
-            msg1.extend_from_slice(&l.to_be_byte_s());
+            msg1.extend_from_slice(&l.to_be_bytes());
             msg1.extend_from_slice(&ct_pq);
 
             // cleanup sensitive material
@@ -444,8 +444,8 @@ pub mod demo {
 
             Ok(InitiatorResult {
                 msg1,
-                tx,
-                rx,
+                __tx: tx,
+                __rx: rx,
                 _handshake__key: m1_key,
                 handshake_hash: s_s.h,
             })
@@ -466,16 +466,16 @@ pub mod demo {
         prologue: &[u8],
         msg1: &[u8],
     ) -> Result<ResponderResult> {
-        let _telemetry = HandshakeTelemetry::new("responder_handshake");
+        let telemetry = HandshakeTelemetry::new("responder_handshake");
 
-        let _result = (|| -> Result<ResponderResult> {
+        let result = (|| -> Result<ResponderResult> {
             if msg1.len() < HDR_LEN + 32 + 16 {
                 return Err(Error::Protocol("hybrid msg1 too short".into()));
             }
             if msg1[0..2] != HDR_MAGIC || msg1[2] != HDR_VER {
                 return Err(Error::Protocol("hybrid msg1 header".into()));
             }
-            let _kind_flag_s = msg1[3];
+            let kind_flag_s = msg1[3];
             if (kind_flag_s & 0xF0) != HDR_KIND_MSG1 {
                 return Err(Error::Protocol("hybrid msg1 type".into()));
             }
@@ -495,13 +495,13 @@ pub mod demo {
             if msg1.len() < idx + 16 {
                 return Err(Error::Protocol("hybrid msg1 ct short".into()));
             }
-            let ct_len = 48; // matche_s noise::ik_demo MSG1_LEN_CIPHERTEXT for ChaChaPoly
+            let ct_len = 48; // matches noise::ik_demo MSG1_LEN_CIPHERTEXT for ChaChaPoly
             let ct = &msg1[idx..idx + ct_len];
             idx += ct_len;
             if msg1.len() < idx + 2 {
                 return Err(Error::Protocol("hybrid msg1 pq len missing".into()));
             }
-            let _l = u16::from_be_bytes([msg1[idx], msg1[idx + 1]]) as usize;
+            let l = u16::from_be_bytes([msg1[idx], msg1[idx + 1]]) as usize;
             idx += 2;
             if msg1.len() != idx + l {
                 return Err(Error::Protocol("hybrid msg1 pq len mismatch".into()));
@@ -509,27 +509,27 @@ pub mod demo {
             let ct_pq = &msg1[idx..idx + l];
 
             // symmetric state
-            let _e_pk = XPublic::from(e_pk_byte_s);
+            let e_pk = XPublic::from(e_pk_byte_s);
             let mut s_s = SymmetricState::new(prologue);
-            s_s.mix_hash(e_pk.as_byte_s());
-            let _r_sk = XSecret::from(r_static_x.sk);
-            let _dh_e_s = r_sk.diffie_hellman(&e_pk).to_byte_s();
+            s_s.mix_hash(e_pk.as_bytes());
+            let r_sk = XSecret::from(r_static_x.sk);
+            let dh_e_s = r_sk.diffie_hellman(&e_pk).to_bytes();
             #[cfg(feature = "telemetry")]
             HybridHandshake::record_classic_dh_operation();
-            s_s.mix_key(&dh_e_s);
+            s_s.mix_key(&dh_e_s)?;
             let mut k_m1 = [0u8; 32];
-            s_s.expand_ck(LBL_M1, &mut k_m1);
-            let _m1_key = AeadKey(k_m1);
+            s_s.expand_ck(LBL_M1, &mut k_m1)?;
+            let m1_key = AeadKey(k_m1);
             let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, m1_key);
-            let _aad = s_s.aad_tag(b"msg1");
-            let _s_i_pk = cipher.open(AeadNonce([0u8; 12]), &aad, ct)?;
+            let aad = s_s.aad_tag(b"msg1");
+            let s_i_pk = cipher.open(AeadNonce([0u8; 12]), &aad, ct)?;
             if s_i_pk.as_slice() != istatic_pk_expected {
                 return Err(Error::Protocol("hybrid initiator static mismatch".into()));
             }
 
             // Kyber decapsulate - record PQ operation
-            let _ss_pq = {
-                let _result = kyber::decapsulate(
+            let ss_pq = {
+                let result = kyber::decapsulate(
                     &ct_pq
                         .try_into()
                         .map_err(|_| Error::Protocol("hybrid pq ct size".into()))?,
@@ -541,15 +541,15 @@ pub mod demo {
             };
 
             // static-static - record classic DH operation
-            let _i_pk = XPublic::from(*istatic_pk_expected);
-            let _dh_s_s = r_sk.diffie_hellman(&i_pk).to_byte_s();
+            let i_pk = XPublic::from(*istatic_pk_expected);
+            let dh_s_s = r_sk.diffie_hellman(&i_pk).to_bytes();
             #[cfg(feature = "telemetry")]
             HybridHandshake::record_classic_dh_operation();
-            s_s.mix_key(&dh_s_s);
-            s_s.mix_key(&ss_pq);
+            s_s.mix_key(&dh_s_s)?;
+            s_s.mix_key(&ss_pq)?;
 
             let mut out = [0u8; 32 + 32 + 12 + 12];
-            s_s.expand_ck(LBL_SESSION, &mut out);
+            s_s.expand_ck(LBL_SESSION, &mut out)?;
             let mut k_i2r = [0u8; 32];
             k_i2r.copy_from_slice(&out[0..32]);
             let mut k_r2i = [0u8; 32];
@@ -559,21 +559,21 @@ pub mod demo {
             let mut n_r2i = [0u8; 12];
             n_r2i.copy_from_slice(&out[76..88]);
             out.zeroize();
-            let _tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_r2i), n_r2i)
+            let tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_r2i), n_r2i)
                 .withdirection_id(DIR_R2I);
-            let _rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_i2r), n_i2r)
+            let rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_i2r), n_i2r)
                 .withdirection_id(DIR_I2R);
 
             // msg2 ack
-            let _aad2 = s_s.aad_tag(LBL_MSG2_AAD);
-            let _m1_key_for_ack = AeadCipher::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_m1));
+            let aad2 = s_s.aad_tag(LBL_MSG2_AAD);
+            let m1_key_for_ack = AeadCipher::new(AeadSuite::ChaCha20Poly1305, AeadKey(k_m1));
             let mut msg2 = Vec::with_capacity(HDR_LEN + MSG2_ACK.len() + 16);
             msg2.extend_from_slice(&HDR_MAGIC);
             msg2.push(HDR_VER);
             msg2.push(HDR_KIND_MSG2 | HDR_FLAG_ROLE_R | HDR_FLAG_HYBRID);
-            let _body = m1_key_for_ack.seal(AeadNonce([0u8; 12]), &aad2, MSG2_ACK)?;
+            let body = m1_key_for_ack.seal(AeadNonce([0u8; 12]), &aad2, MSG2_ACK)?;
             msg2.extend_from_slice(&body);
-            Ok(ResponderResult { tx, rx, msg2 })
+            Ok(ResponderResult { __tx: tx, __rx: rx, msg2 })
         })();
 
         match &result {
@@ -591,7 +591,7 @@ pub mod demo {
         if msg2[0..2] != HDR_MAGIC || msg2[2] != HDR_VER {
             return Err(Error::Protocol("hybrid msg2 header".into()));
         }
-        let _kind_flag_s = msg2[3];
+        let kind_flag_s = msg2[3];
         if (kind_flag_s & 0xF0) != HDR_KIND_MSG2 {
             return Err(Error::Protocol("hybrid msg2 type".into()));
         }
@@ -602,7 +602,7 @@ pub mod demo {
             return Err(Error::Protocol("hybrid msg2 missing flag".into()));
         }
         let ct = &msg2[HDR_LEN..];
-        let hk = core::mem::replace(&mut init.handshake_key, AeadKey([0u8; 32]));
+        let hk = core::mem::replace(&mut init._handshake__key, AeadKey([0u8; 32]));
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, hk);
         let aad2: [u8; 32] = {
             use sha2::Digest;
@@ -612,7 +612,7 @@ pub mod demo {
             let x: [u8; 32] = d.finalize().into();
             x
         };
-        let _pt = cipher.open(AeadNonce([0u8; 12]), &aad2, ct)?;
+        let pt = cipher.open(AeadNonce([0u8; 12]), &aad2, ct)?;
         if pt.as_slice() != MSG2_ACK {
             return Err(Error::Protocol("hybrid msg2 invalid".into()));
         }

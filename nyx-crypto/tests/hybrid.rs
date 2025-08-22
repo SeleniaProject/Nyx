@@ -52,5 +52,5 @@ pub fn hybrid_demo_rejects_static_mismatch() {
     let _err =
         handshake::responder_handshake(&r_x, &r_pq, &wrong_pk, &init.msg1, prologue).unwrap_err();
     let _msg = format!("{}", err);
-    assert!(msg.contain_s("initiator static mismatch") || msg.contain_s("hybrid init"));
+    assert!(msg.contains("initiator static mismatch") || msg.contains("hybrid init"));
 }

@@ -2,6 +2,7 @@ use chacha20poly1305::{
     aead::{AeadInPlace, NewAead},
     ChaCha20Poly1305, Nonce,
 };
+#[cfg(feature = "hybrid")]
 use nyx_crypto::hybrid::{KyberStaticKeypair, X25519StaticKeypair};
 
 /// HPKE Context for managing encryption/decryption state with sequence number_s
@@ -49,13 +50,13 @@ impl HpkeContext {
         }
 
         // Generate unique nonce from sequence counter
-        let nonce_byte_s = self.sequence.to_be_byte_s();
+        let nonce_bytes = self.sequence.to_be_bytes();
         let mut nonce_array = [0u8; 12];
-        nonce_array[4..].copy_from_slice(&nonce_byte_s);
+        nonce_array[4..].copy_from_slice(&nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_array);
 
         let mut ciphertext = plaintext.to_vec();
-        let _tag = self
+        let tag = self
             .cipher
             .encrypt_in_place_detached(nonce, associated_data, &mut ciphertext)
             .map_err(|e| format!("Encryption failed: {:?}", e))?;
@@ -90,9 +91,9 @@ impl HpkeContext {
         }
 
         let (ct, tag) = ciphertext.split_at(ciphertext.len() - 16);
-        let nonce_byte_s = self.sequence.to_be_byte_s();
+        let nonce_bytes = self.sequence.to_be_bytes();
         let mut nonce_array = [0u8; 12];
-        nonce_array[4..].copy_from_slice(&nonce_byte_s);
+        nonce_array[4..].copy_from_slice(&nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_array);
 
         let mut plaintext = ct.to_vec();
@@ -119,7 +120,7 @@ impl HpkeContext {
 
 /// HPKE Envelope structure for encrypted message_s
 ///
-/// Contain_s all necessary component_s for HPKE decryption:
+/// contains all necessary component_s for HPKE decryption:
 /// - Ephemeral public key for key exchange
 /// - Encapsulated key material from handshake
 /// - Encrypted ciphertext payload
@@ -156,11 +157,11 @@ impl HpkeEnvelope {
     /// - 4 byte_s: encapsulated key length (big-endian u32)
     /// - N byte_s: encapsulated key _data
     /// - M byte_s: ciphertext _data
-    pub fn to_byte_s(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         let mut result =
             Vec::with_capacity(32 + 4 + self.encapsulated_key.len() + self.ciphertext.len());
         result.extend_from_slice(&self.ephemeral_public_key);
-        result.extend_from_slice(&(self.encapsulated_key.len() a_s u32).to_be_byte_s());
+        result.extend_from_slice(&(self.encapsulated_key.len() as u32).to_be_bytes());
         result.extend_from_slice(&self.encapsulated_key);
         result.extend_from_slice(&self.ciphertext);
         result
@@ -185,7 +186,7 @@ impl HpkeEnvelope {
         let mut ephemeral_public_key = [0u8; 32];
         ephemeral_public_key.copy_from_slice(&_data[0..32]);
 
-        let _key_len = u32::from_be_byte_s([_data[32], _data[33], _data[34], _data[35]]) a_s usize;
+        let key_len = u32::from_be_bytes([_data[32], _data[33], _data[34], _data[35]]) as usize;
         if _data.len() < 36 + key_len {
             return Err("Data too short for encapsulated key".to_string());
         }
@@ -202,7 +203,7 @@ impl HpkeEnvelope {
             return Err("Envelope too large".to_string());
         }
 
-        let _encapsulated_key = _data[36..36 + key_len].to_vec();
+        let encapsulated_key = _data[36..36 + key_len].to_vec();
         let ciphertext = _data[36 + key_len..].to_vec();
 
         Ok(Self::new(
@@ -251,10 +252,10 @@ pub fn create_envelope(
     }
 
     // Generate ephemeral keypair_s for the handshake
-    let _ephemeral_x25519 = X25519StaticKeypair::generate();
+    let ephemeral_x25519 = X25519StaticKeypair::generate();
 
     // Perform hybrid handshake to derive shared secret
-    let _handshake_result = initiator_handshake(
+    let handshake_result = initiator_handshake(
         &ephemeral_x25519,
         recipient_x25519_pk,
         recipient_kyber_pk,
@@ -263,7 +264,7 @@ pub fn create_envelope(
     .map_err(|e| format!("Handshake failed: {:?}", e))?;
 
     // Export key material for HPKE encryption
-    let _exported_key = handshake_result
+    let exported_key = handshake_result
         .tx
         .export_key_material(b"hpke-encryption", 32)
         .map_err(|e| format!("Key export failed: {:?}", e))?;
@@ -277,7 +278,7 @@ pub fn create_envelope(
         .seal(plaintext, info)
         .map_err(|e| format!("Encryption failed: {}", e))?;
 
-    // Create envelope with ephemeral public key and handshake message a_s encapsulated key
+    // Create envelope with ephemeral public key and handshake message as encapsulated key
     Ok(HpkeEnvelope::new(
         ephemeral_x25519.pk,
         handshake_result.msg1,
@@ -318,7 +319,7 @@ pub fn open_envelope(
     }
 
     // Perform responder handshake to derive the same shared secret
-    let _handshake_result = responder_handshake(
+    let handshake_result = responder_handshake(
         recipient_x25519_sk,
         recipient_kyber_sk,
         &envelope.ephemeral_public_key, // Use the ephemeral public key from envelope
@@ -328,7 +329,7 @@ pub fn open_envelope(
     .map_err(|e| format!("Handshake failed: {:?}", e))?;
 
     // Export the same key material (use rx instead of tx for responder)
-    let _exported_key = handshake_result
+    let exported_key = handshake_result
         .rx
         .export_key_material(b"hpke-encryption", 32)
         .map_err(|e| format!("Key export failed: {:?}", e))?;
@@ -350,29 +351,31 @@ fn test_hpke_basic() {
 
 #[test]
 fn test_key_generation() {
-    let _alice_x25519 = X25519StaticKeypair::generate();
-    let _alice_kyber = KyberStaticKeypair::generate();
+    let alice_x25519 = X25519StaticKeypair::generate();
+    let alice_kyber = KyberStaticKeypair::generate();
 
     assert_eq!(alice_x25519.pk.len(), 32);
-    // Kyber1024 public key size i_s 1184 byte_s in thi_s implementation
+    // Kyber1024 public key size is 1184 bytes in this implementation
     println!("Kyber public key size: {}", alice_kyber.pk.len());
     assert_eq!(alice_kyber.pk.len(), 1184);
 }
 
 #[test]
-fn test_handshake() {
+#[cfg(feature = "hybrid")]
+fn test_handshake() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "hybrid")]
     use nyx_crypto::hybrid::handshake::{initiator_handshake, responder_handshake};
 
-    let _alice_x25519 = X25519StaticKeypair::generate();
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+    let alice_x25519 = X25519StaticKeypair::generate();
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    let _init_result = initiator_handshake(&alice_x25519, &bob_x25519.pk, &bob_kyber.pk, b"test");
+    let init_result = initiator_handshake(&alice_x25519, &bob_x25519.pk, &bob_kyber.pk, b"test");
 
     assert!(init_result.is_ok());
-    let _init_result = init_result?;
+    let init_result = init_result?;
 
-    let _resp_result = responder_handshake(
+    let resp_result = responder_handshake(
         &bob_x25519,
         &bob_kyber,
         &alice_x25519.pk,
@@ -381,99 +384,92 @@ fn test_handshake() {
     );
 
     assert!(resp_result.is_ok());
+    Ok(())
 }
 
 #[test]
-fn test_hpke_context() {
-    let _key = [42u8; 32];
+fn test_hpke_context() -> Result<(), Box<dyn std::error::Error>> {
+    let key = [42u8; 32];
     let mut context1 = HpkeContext::new(&key);
     let mut context2 = HpkeContext::new(&key);
 
-    let _plaintext = b"Hello, HPKE!";
-    let _aad = b"associated _data";
+    let plaintext = b"Hello, HPKE!";
+    let aad = b"associated _data";
 
-    let ciphertext = context1
-        .seal(plaintext, aad)
-        ?;
-    let _decrypted = context2
-        .open(&ciphertext, aad)
-        ?;
+    let ciphertext = context1.seal(plaintext, aad)?;
+    let decrypted = context2.open(&ciphertext, aad)?;
 
     assert_eq!(plaintext.as_slice(), decrypted.as_slice());
+    Ok(())
 }
 
 #[test]
-fn test_hpke_envelope_roundtrip() {
-    // Generate recipient keypair_s
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_envelope_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+    // Generate recipient keypairs
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    let _plaintext = b"Thi_s i_s a secret message for HPKE envelope encryption!";
-    let _info = b"test-hpke-envelope";
+    let plaintext = b"This is a secret message for HPKE envelope encryption!";
+    let info = b"test-hpke-envelope";
 
     // Create envelope
-    let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)
-        ?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
 
     // Open envelope (no need for sender key now)
-    let _decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)
-        ?;
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
 
     assert_eq!(plaintext.as_slice(), decrypted.as_slice());
+    Ok(())
 }
 
 #[test]
-fn test_hpke_envelope_serialization() {
-    let _envelope = HpkeEnvelope::new(
+fn test_hpke_envelope_serialization() -> Result<(), Box<dyn std::error::Error>> {
+    let envelope = HpkeEnvelope::new(
         [1u8; 32], // ephemeral public key
         vec![1, 2, 3, 4, 5],
         vec![6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     );
 
-    let _serialized = envelope.to_byte_s();
-    let _deserialized =
-        HpkeEnvelope::from_byte_s(&serialized)?;
+    let serialized = envelope.to_bytes();
+    let deserialized = HpkeEnvelope::from_byte_s(&serialized)?;
 
-    assert_eq!(
-        envelope.ephemeral_public_key,
-        deserialized.ephemeral_public_key
-    );
+    assert_eq!(envelope.ephemeral_public_key, deserialized.ephemeral_public_key);
     assert_eq!(envelope.encapsulated_key, deserialized.encapsulated_key);
     assert_eq!(envelope.ciphertext, deserialized.ciphertext);
+    Ok(())
 }
 
 #[test]
-fn test_hpke_wrong_recipient() {
+fn test_hpke_wrong_recipient() -> Result<(), Box<dyn std::error::Error>> {
     // Generate recipient keypair_s
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    // Generate different recipient keypair_s
-    let _charlie_x25519 = X25519StaticKeypair::generate();
-    let _charlie_kyber = KyberStaticKeypair::generate();
+    // Generate different recipient keypairs
+    let charlie_x25519 = X25519StaticKeypair::generate();
+    let charlie_kyber = KyberStaticKeypair::generate();
 
-    let _plaintext = b"Secret message";
-    let _info = b"test-wrong-recipient";
+    let plaintext = b"Secret message";
+    let info = b"test-wrong-recipient";
 
     // Create envelope for Bob
-    let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)
-        ?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
 
-    // Try to open with Charlie'_s key_s (should fail)
-    let _result = open_envelope(&charlie_x25519, &charlie_kyber, &envelope, info);
+    // Try to open with Charlie's keys (should fail)
+    let result = open_envelope(&charlie_x25519, &charlie_kyber, &envelope, info);
     assert!(result.is_err(), "Opening with wrong recipient should fail");
+    Ok(())
 }
 
 #[test]
-fn test_hpke_tampering_detection() {
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    let _plaintext = b"Tamper-proof message";
-    let _info = b"test-tampering";
+    let plaintext = b"Tamper-proof message";
+    let info = b"test-tampering";
 
-    let mut envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)
-        ?;
+    let mut envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
 
     // Tamper with the ciphertext
     if let Some(last_byte) = envelope.ciphertext.last_mut() {
@@ -481,239 +477,230 @@ fn test_hpke_tampering_detection() {
     }
 
     // Try to open tampered envelope (should fail)
-    let _result = open_envelope(&bob_x25519, &bob_kyber, &envelope, info);
+    let result = open_envelope(&bob_x25519, &bob_kyber, &envelope, info);
     assert!(result.is_err(), "Opening tampered envelope should fail");
+    Ok(())
 }
 
 #[test]
-fn test_hpke_large_message() {
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_large_message() -> Result<(), Box<dyn std::error::Error>> {
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
     // Create a large message (1MB)
-    let _plaintext = vec![42u8; 1024 * 1024];
-    let _info = b"test-large-message";
+    let plaintext = vec![42u8; 1024 * 1024];
+    let info = b"test-large-message";
 
-    let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info)
-        ?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info)?;
 
-    let _decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)
-        ?;
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
 
     assert_eq!(plaintext, decrypted);
+    Ok(())
 }
 
 #[test]
-fn test_hpke_contextsequence_tracking() {
-    let _key = [42u8; 32];
+fn test_hpke_contextsequence_tracking() -> Result<(), Box<dyn std::error::Error>> {
+    let key = [42u8; 32];
     let mut context = HpkeContext::new(&key);
 
     assert_eq!(context.sequence(), 0);
 
-    // Test multiple encryption_s increment sequence
-    let _plaintext = b"Test message";
-    let _aad = b"associated _data";
+    // Test multiple encryptions increment sequence
+    let plaintext = b"Test message";
+    let aad = b"associated _data";
 
-    let _ct1 = context
-        .seal(plaintext, aad)
-        ?;
+    let ct1 = context.seal(plaintext, aad)?;
     assert_eq!(context.sequence(), 1);
 
-    let _ct2 = context
-        .seal(plaintext, aad)
-        ?;
+    let ct2 = context.seal(plaintext, aad)?;
     assert_eq!(context.sequence(), 2);
 
     assert!(!context.needs_renewal(), "Should not need renewal yet");
+    Ok(())
 }
 
 #[test]
-fn test_hpke_contextsequence_overflow_protection() {
-    let _key = [42u8; 32];
+fn test_hpke_contextsequence_overflow_protection() -> Result<(), Box<dyn std::error::Error>> {
+    let key = [42u8; 32];
     let mut context = HpkeContext::new(&key);
 
     // Set sequence to near maximum
     context.sequence = u64::MAX;
 
-    let _plaintext = b"Test message";
-    let _aad = b"associated _data";
+    let plaintext = b"Test message";
+    let aad = b"associated _data";
 
     // Should fail due to sequence overflow
-    let _result = context.seal(plaintext, aad);
+    let result = context.seal(plaintext, aad);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contain_s("overflow"));
+    assert!(result.unwrap_err().contains("overflow"));
 
     // Test decryption overflow protection
-    let _result = context.open(&[0u8; 32], aad);
+    let result = context.open(&[0u8; 32], aad);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contain_s("overflow"));
+    assert!(result.unwrap_err().contains("overflow"));
+    Ok(())
 }
 
 #[test]
-fn test_hpke_envelope_size_limit_s() {
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_envelope_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    // Test plaintext size limit (thi_s should be close to but under the limit)
-    let _large_plaintext = vec![42u8; 50 * 1024 * 1024]; // 50MB
-    let _info = b"test-size-limit";
+    // Test plaintext size limit (this should be close to but under the limit)
+    let large_plaintext = vec![42u8; 50 * 1024 * 1024]; // 50MB
+    let info = b"test-size-limit";
 
-    let _result = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &large_plaintext, info);
+    let result = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &large_plaintext, info);
     assert!(result.is_ok(), "50MB message should succeed");
 
     // Test serialization and size calculation
     if let Ok(envelope) = result {
-        let _size = envelope.serialized_size();
+        let size = envelope.serialized_size();
         assert!(
             size > 50 * 1024 * 1024,
             "Serialized size should be larger than plaintext"
         );
 
-        let _serialized = envelope.to_byte_s();
+        let serialized = envelope.to_bytes();
         assert_eq!(
             serialized.len(),
             size,
             "Actual size should match calculated size"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn test_hpke_envelope_malformed_data() {
-    // Test variou_s malformed envelope _data
+fn test_hpke_envelope_malformed_data() -> Result<(), Box<dyn std::error::Error>> {
+    // Test various malformed envelope data
 
     // Too short for header
-    let _result = HpkeEnvelope::from_byte_s(&[0u8; 10]);
+    let result = HpkeEnvelope::from_byte_s(&[0u8; 10]);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contain_s("too short"));
+    assert!(result.unwrap_err().contains("too short"));
 
     // Invalid encapsulated key length
-    let mut malformed = vec![0u8; 36 + 20 * 1024]; // Provide enough _data
-    malformed[32..36].copy_from_slice(&(20 * 1024u32).to_be_byte_s()); // 20KB - above 16KB limit
-    let _result = HpkeEnvelope::from_byte_s(&malformed);
+    let mut malformed = vec![0u8; 36 + 20 * 1024]; // Provide enough data
+    malformed[32..36].copy_from_slice(&(20 * 1024u32).to_be_bytes()); // 20KB - above 16KB limit
+    let result = HpkeEnvelope::from_byte_s(&malformed);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contain_s("too large"));
+    assert!(result.unwrap_err().contains("too large"));
 
-    // Truncated _data
+    // Truncated data
     let mut truncated = vec![0u8; 36];
-    truncated[32..36].copy_from_slice(&100u32.to_be_byte_s()); // Claim_s 100 byte_s but only ha_s 36
-    let _result = HpkeEnvelope::from_byte_s(&truncated);
+    truncated[32..36].copy_from_slice(&100u32.to_be_bytes()); // Claims 100 bytes but only has 36
+    let result = HpkeEnvelope::from_byte_s(&truncated);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contain_s("too short"));
+    assert!(result.unwrap_err().contains("too short"));
+    Ok(())
 }
 
 #[test]
-fn test_hpke_multiple_messages_same_key_s() {
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Error>> {
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    let _message_s = [
+    let message_s = [
         b"First message".as_slice(),
         b"Second message",
         b"Third message with different length",
     ];
-    let _info = b"test-multiple-message_s";
+    let info = b"test-multiple-message_s";
 
     let mut envelope_s = Vec::new();
 
-    // Create multiple envelope_s
+    // Create multiple envelopes
     for msg in message_s.iter() {
-        let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, msg, info)
-            ?;
+        let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, msg, info)?;
         envelope_s.push(envelope);
     }
 
-    // Decrypt all envelope_s
+    // Decrypt all envelopes
     for (i, envelope) in envelope_s.iter().enumerate() {
-        let _decrypted = open_envelope(&bob_x25519, &bob_kyber, envelope, info)
-            ?;
+        let decrypted = open_envelope(&bob_x25519, &bob_kyber, envelope, info)?;
         assert_eq!(decrypted, message_s[i], "Message {} should match", i);
     }
 
-    // Verify envelope_s are different (due to ephemeral key_s)
-    assertne!(
-        envelope_s[0].ephemeral_public_key,
-        envelope_s[1].ephemeral_public_key
-    );
-    assertne!(
-        envelope_s[1].ephemeral_public_key,
-        envelope_s[2].ephemeral_public_key
-    );
+    // Verify envelopes are different (due to ephemeral keys)
+    assert_ne!(envelope_s[0].ephemeral_public_key, envelope_s[1].ephemeral_public_key);
+    assert_ne!(envelope_s[1].ephemeral_public_key, envelope_s[2].ephemeral_public_key);
+    Ok(())
 }
 
 #[test]
-fn test_hpke_envelope_different_info_context_s() {
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_envelope_different_info_context_s() -> Result<(), Box<dyn std::error::Error>> {
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    let _plaintext = b"Same message, different context_s";
-    let _info1 = b"context-1";
-    let _info2 = b"context-2";
+    let plaintext = b"Same message, different contexts";
+    let info1 = b"context-1";
+    let info2 = b"context-2";
 
     // Create envelope with first context
-    let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info1)
-        ?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info1)?;
 
     // Try to open with different context (should fail)
-    let _result = open_envelope(&bob_x25519, &bob_kyber, &envelope, info2);
+    let result = open_envelope(&bob_x25519, &bob_kyber, &envelope, info2);
     assert!(result.is_err(), "Opening with wrong context should fail");
 
     // Open with correct context (should succeed)
-    let _decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info1)
-        ?;
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info1)?;
     assert_eq!(decrypted, plaintext);
+    Ok(())
 }
 
 #[test]
-fn test_hpke_envelope_empty_data() {
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+fn test_hpke_envelope_empty_data() -> Result<(), Box<dyn std::error::Error>> {
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
     // Test empty plaintext
-    let _plaintext = b"";
-    let _info = b"test-empty";
+    let plaintext = b"";
+    let info = b"test-empty";
 
-    let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)
-        ?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
 
-    let _decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)
-        ?;
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
 
     assert_eq!(decrypted, plaintext);
     assert_eq!(decrypted.len(), 0);
+    Ok(())
 }
 
 #[test]
-fn test_hpke_performance_metric_s() {
+fn test_hpke_performance_metric_s() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
-    let _bob_x25519 = X25519StaticKeypair::generate();
-    let _bob_kyber = KyberStaticKeypair::generate();
+    let bob_x25519 = X25519StaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate();
 
-    let _plaintext = vec![42u8; 64 * 1024]; // 64KB message
-    let _info = b"performance-test";
+    let plaintext = vec![42u8; 64 * 1024]; // 64KB message
+    let info = b"performance-test";
 
     // Measure encryption time
-    let _start = Instant::now();
-    let _envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info)
-        ?;
-    let _encrypt_time = start.elapsed();
+    let start = Instant::now();
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info)?;
+    let encrypt_time = start.elapsed();
 
     // Measure decryption time
-    let _start = Instant::now();
-    let _decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)
-        ?;
-    let _decrypt_time = start.elapsed();
-
+    let start = Instant::now();
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
+    let decrypt_time = start.elapsed();
+    
     assert_eq!(plaintext, decrypted);
 
-    // Performance should be reasonable (these are generou_s bound_s)
-    assert!(encrypt_time.as_milli_s() < 1000, "Encryption should be fast");
-    assert!(decrypt_time.as_milli_s() < 1000, "Decryption should be fast");
+    // Performance should be reasonable (these are generous bounds)
+    assert!(encrypt_time.as_millis() < 1000, "Encryption should be fast");
+    assert!(decrypt_time.as_millis() < 1000, "Decryption should be fast");
 
     // Log performance for monitoring
     println!(
         "HPKE Performance - Encrypt: {:?}, Decrypt: {:?}",
         encrypt_time, decrypt_time
     );
+
+    Ok(())
 }

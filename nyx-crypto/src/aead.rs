@@ -28,19 +28,19 @@ pub struct AeadNonce(pub [u8; 12]);
 
 pub struct AeadCipher {
     __suite: AeadSuite,
-    __key: AeadKey,
+    _key: AeadKey,
 }
 
 impl AeadCipher {
-    pub fn new(_suite: AeadSuite, _key: AeadKey) -> Self {
-        Self { __suite: _suite, __key: _key }
+    pub fn new(_suite: AeadSuite, key: AeadKey) -> Self {
+        Self { __suite: _suite, _key: key }
     }
 
     pub fn seal(&self, nonce: AeadNonce, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
         match self.__suite {
             AeadSuite::ChaCha20Poly1305 => {
-                let _key = Key::from_slice(&self.__key.0);
-                let cipher = ChaCha20Poly1305::new(_key);
+                let key = Key::from_slice(&self._key.0);
+                let cipher = ChaCha20Poly1305::new(key);
                 let nonce = Nonce::from_slice(&nonce.0);
                 cipher
                     .encrypt(
@@ -58,8 +58,8 @@ impl AeadCipher {
     pub fn open(&self, nonce: AeadNonce, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
         match self.__suite {
             AeadSuite::ChaCha20Poly1305 => {
-                let _key = Key::from_slice(&self.__key.0);
-                let cipher = ChaCha20Poly1305::new(_key);
+                let key = Key::from_slice(&self._key.0);
+                let cipher = ChaCha20Poly1305::new(key);
                 let nonce = Nonce::from_slice(&nonce.0);
                 cipher
                     .decrypt(
@@ -81,7 +81,7 @@ mod test_s {
     use proptest::prelude::*;
 
     #[test]
-    fn chacha20_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+    fn chacha20_roundtrip() -> core::result::Result<(), Box<dyn std::error::Error>> {
         let key = AeadKey([7u8; 32]);
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
         let nonce = AeadNonce([1u8; 12]);
@@ -94,7 +94,7 @@ mod test_s {
     }
 
     #[test]
-    fn open_fails_with_wrong_aad() -> Result<(), Box<dyn std::error::Error>> {
+    fn open_fails_with_wrongaad() -> core::result::Result<(), Box<dyn std::error::Error>> {
         let key = AeadKey([3u8; 32]);
         let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
         let nonce = AeadNonce([2u8; 12]);
@@ -106,14 +106,14 @@ mod test_s {
     proptest! {
         #[test]
         fn roundtrip_random_input(a in any::<Vec<u8>>(), m in any::<Vec<u8>>()) {
-            let _key = AeadKey([5u8; 32]);
+            let key = AeadKey([5u8; 32]);
             let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
             let nonce = [0u8;12];
             // a/mが大きすぎると時間がかかるため上限を設ける
-            let _aad = if a.len() > 256 { &a[..256] } else { &a };
-            let _msg = if m.len() > 2048 { &m[..2048] } else { &m };
+            let aad = if a.len() > 256 { &a[..256] } else { &a };
+            let msg = if m.len() > 2048 { &m[..2048] } else { &m };
             let ct = cipher.seal(AeadNonce(nonce), aad, msg)?;
-            let _pt = cipher.open(AeadNonce(nonce), aad, &ct)?;
+            let pt = cipher.open(AeadNonce(nonce), aad, &ct)?;
             prop_assert_eq!(pt, msg);
         }
     }

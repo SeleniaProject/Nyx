@@ -19,7 +19,7 @@ pub mod noise;
 pub mod pcr;
 pub mod session;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum Error {
     #[error("Protocol error: {0}")]
     Protocol(String),

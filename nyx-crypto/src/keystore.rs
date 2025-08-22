@@ -52,14 +52,14 @@ pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
         // at least one tag
         return Err(Error::Protocol("keystore blob too short".into()));
     }
-    let salt: [u8; SALT_LEN] = blob[0..SALT_LEN].try_into()?;
-    let nonce: [u8; NONCE_LEN] = blob[SALT_LEN..SALT_LEN + NONCE_LEN].try_into()?;
+    let salt: [u8; SALT_LEN] = blob[0..SALT_LEN].try_into().map_err(|_| Error::Crypto("invalid salt length".into()))?;
+    let nonce: [u8; NONCE_LEN] = blob[SALT_LEN..SALT_LEN + NONCE_LEN].try_into().map_err(|_| Error::Crypto("invalid nonce length".into()))?;
     let ct = &blob[SALT_LEN + NONCE_LEN..];
 
     let mut key = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password, &salt, PBKDF2_ITERS, &mut key);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
-    let _pt = cipher
+            let pt = cipher
         .decrypt(Nonce::from_slice(&nonce), ct)
         .map_err(|_| Error::Protocol("keystore decrypt failed".into()))?;
     // Zeroize
@@ -74,22 +74,20 @@ pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
 #[cfg(feature = "runtime")]
 mod fsio {
     use super::*;
-    use tokio::{f_s, io::AsyncWriteExt};
+    use std::fs;
+    use std::io::Write;
 
-    pub async fn save(path: &str, password: &[u8], plaintext: &[u8]) -> Result<()> {
-        let _blob = encrypt_with_password(password, plaintext)?;
-        let mut f = fs::File::create(path)
-            .await
+    pub fn save(path: &str, password: &[u8], plaintext: &[u8]) -> Result<()> {
+        let blob = encrypt_with_password(password, plaintext)?;
+        let mut f = std::fs::File::create(path)
             .map_err(|e| Error::Protocol(format!("keystore create: {e}")))?;
         f.write_all(&blob)
-            .await
             .map_err(|e| Error::Protocol(format!("keystore write: {e}")))?;
         Ok(())
     }
 
-    pub async fn load(path: &str, password: &[u8]) -> Result<Vec<u8>> {
-        let _blob = fs::read(path)
-            .await
+    pub fn load(path: &str, password: &[u8]) -> Result<Vec<u8>> {
+        let blob = std::fs::read(path)
             .map_err(|e| Error::Protocol(format!("keystore read: {e}")))?;
         decrypt_with_password(password, &blob)
     }
@@ -100,18 +98,20 @@ mod test_s {
     use super::*;
 
     #[test]
-    fn roundtrip() {
-        let _pw = b"password";
-        let _data = b"top-secret";
-        let _blob = encrypt_with_password(pw, _data)?;
+    fn roundtrip() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let pw = b"password";
+        let data = b"top-secret";
+        let blob = encrypt_with_password(pw, data)?;
         assert!(blob.len() > SALT_LEN + NONCE_LEN);
-        let _out = decrypt_with_password(pw, &blob)?;
-        assert_eq!(out, _data);
+        let out = decrypt_with_password(pw, &blob)?;
+        assert_eq!(out, data);
+        Ok(())
     }
 
     #[test]
-    fn wrong_password_fail_s() {
-        let _blob = encrypt_with_password(b"pw1", b"_data")?;
+    fn wrong_password_fail_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let blob = encrypt_with_password(b"pw1", b"data")?;
         assert!(decrypt_with_password(b"pw2", &blob).is_err());
+        Ok(())
     }
 }
