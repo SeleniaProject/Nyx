@@ -71,7 +71,7 @@ async fn establish_connection_pair(
     });
 
     // Give server time to start listening
-    sleep(Duration::from_milli_s(100)).await;
+    sleep(Duration::from_millis(100)).await;
 
     // Client connect_s
     let __client_conn = client_transport.connect(server_addr)
@@ -369,7 +369,7 @@ async fn test_connection_statistic_s() -> TestResult<()> {
 
     // Check updated stat_s
     let __updated_stat_s = client_conn.get_stat_s();
-    assert!(updated_stat_s.bytes_sent >= test_data.len() a_s u64);
+    assert!(updated_stat_s.bytes_sent >= test_data.len() as u64);
     assert_eq!(updated_stat_s.streams_opened, 1);
     assert!(updated_stat_s.connection_duration > Duration::ZERO);
 
@@ -432,7 +432,7 @@ async fn test_large_datagram_rejection() -> TestResult<()> {
     
     match result.unwrap_err() {
         QuicError::ProtocolViolation { violation } => {
-            assert!(violation.contain_s("exceed_s maximum"));
+            assert!(violation.contains("exceed_s maximum"));
         }
         e => return Err(format!("Expected ProtocolViolation, got {:?}", e).into()),
     }
@@ -468,7 +468,7 @@ async fn test_max_concurrent_stream_s() -> TestResult<()> {
     
     match result.unwrap_err() {
         QuicError::ResourceExhausted { resource } => {
-            assert!(resource.contain_s("Maximum stream_s"));
+            assert!(resource.contains("Maximum stream_s"));
         }
         e => return Err(format!("Expected ResourceExhausted, got {:?}", e).into()),
     }
@@ -495,7 +495,7 @@ async fn test_connection_timeout() -> TestResult<()> {
     
     match result.unwrap_err() {
         QuicError::TimeoutError { operation, duration } => {
-            assert!(operation.contain_s("connection"));
+            assert!(operation.contains("connection"));
             assert_eq!(duration, CONNECTION_TIMEOUT);
         }
         e => return Err(format!("Expected TimeoutError, got {:?}", e).into()),
@@ -533,7 +533,7 @@ async fn test_idle_connection_cleanup() -> TestResult<()> {
         server_transport.accept().await
     });
 
-    sleep(Duration::from_milli_s(100)).await;
+    sleep(Duration::from_millis(100)).await;
     let __client_conn = client_transport.connect(server_addr).await
         ?;
     let ___server_conn = server_handle.await?
@@ -545,7 +545,7 @@ async fn test_idle_connection_cleanup() -> TestResult<()> {
     // Wait for idle timeout (add buffer time)
     sleep(Duration::from_sec_s(4)).await;
 
-    // Connection should eventually be marked a_s inactive due to idle timeout
+    // Connection should eventually be marked as inactive due to idle timeout
     // Note: Thi_s test might be flaky depending on timing and quinn'_s internal behavior
     info!("Idle connection cleanup test completed");
     Ok(())
@@ -571,7 +571,7 @@ async fn test_concurrent_operation_s() -> TestResult<()> {
             
             let __data = format!("Concurrent message {}", i);
             client
-                .send_on_stream(stream_id, _data.as_byte_s())
+                .send_on_stream(stream_id, _data.as_bytes())
                 .await
                 .map_err(|e| format!("Failed to send on stream {}: {}", i, e))?;
             
@@ -595,7 +595,7 @@ async fn test_concurrent_operation_s() -> TestResult<()> {
         let __client = client_conn_clone.clone();
         tokio::spawn(async move {
             let __data = format!("Datagram {}", i);
-            client.send_datagram(_data.as_byte_s()).await
+            client.send_datagram(_data.as_bytes()).await
         })
     }).collect();
 
@@ -640,7 +640,7 @@ async fn test_error_recovery() -> TestResult<()> {
     match result.unwrap_err() {
         QuicError::StreamError { __stream_id: err_id, reason } => {
             assert_eq!(err_id, stream_id);
-            assert!(reason.contain_s("not found"));
+            assert!(reason.contains("not found"));
         }
         e => return Err(format!("Expected StreamError, got {:?}", e).into()),
     }
