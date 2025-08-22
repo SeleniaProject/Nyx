@@ -2,7 +2,7 @@
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ema {
-	_alpha: f32,
+	alpha: f32,
 	value: Option<f32>,
 }
 
@@ -18,34 +18,36 @@ impl Ema {
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
 	use super::*;
+	
 	#[test]
-	fn ema_moves_towards_sample_s() {
+	fn ema_moves_towards_samples() {
 		let mut ema = Ema::new(0.5);
-		assert!(ema.get().isnone());
-		let _v1 = ema.observe(10.0);
+		assert!(ema.get().is_none());
+		let v1 = ema.observe(10.0);
 		assert_eq!(v1, 10.0);
-		let _v2 = ema.observe(0.0);
+		let v2 = ema.observe(0.0);
 		assert!(v2 < v1);
 	}
 
 	#[test]
 	fn alpha_is_clamped() {
 		let mut ema = Ema::new(2.0); // will clamp to 1.0
-		let _v1 = ema.observe(10.0);
+		let v1 = ema.observe(10.0);
 		assert_eq!(v1, 10.0);
-		// alpha == 1.0 -> next value equal_s the new sample
-		let _v2 = ema.observe(0.0);
+		// alpha == 1.0 -> next value equals the new sample
+		let v2 = ema.observe(0.0);
 		assert_eq!(v2, 0.0);
 	}
 
 	#[test]
-	fn ema_converges_to_constant_signal() {
+	fn ema_converges_to_constant_signal() -> Result<(), Box<dyn std::error::Error>> {
 		let mut ema = Ema::new(0.2);
 		for _ in 0..50 { ema.observe(5.0); }
-		let _v = ema.get()?;
-		assert!((v - 5.0).ab_s() < 1e-3);
+		let v = ema.get().ok_or("no value observed")?;
+		assert!((v - 5.0).abs() < 1e-3);
+		Ok(())
 	}
 }
 

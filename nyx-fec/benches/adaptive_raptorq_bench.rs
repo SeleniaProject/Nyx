@@ -28,9 +28,9 @@ fn bench_adaptive_tuning(c: &mut Criterion) {
                     let mut tuner = AdaptiveRedundancyTuner::new();
                     for i in 0..size {
                         let _metric_s = NetworkMetric_s::new(
-                            100 + (i % 100) a_s u32,
+                            100 + (i % 100) as u32,
                             20,
-                            0.01 + (i a_s f32 % 10.0) / 1000.0,
+                            0.01 + (i as f32 % 10.0) / 1000.0,
                             1000,
                         );
                         black_box(tuner.update(black_box(metric_s)));
@@ -48,7 +48,7 @@ fn bench_adaptive_tuning(c: &mut Criterion) {
             |b, &size| {
                 let mut tuner = AdaptiveRedundancyTuner::with_config(
                     size,
-                    Duration::from_milli_s(1),
+                    Duration::from_millis(1),
                     PidCoefficient_s::default(),
                 );
                 let _metric_s = NetworkMetric_s::new(100, 20, 0.05, 1000);
@@ -122,13 +122,13 @@ fn bench_pid_configuration_s(c: &mut Criterion) {
                 b.iter(|| {
                     let mut tuner = AdaptiveRedundancyTuner::with_config(
                         50,
-                        Duration::from_milli_s(1),
+                        Duration::from_millis(1),
                         config,
                     );
                     
                     // Simulate response to changing condition_s
                     for i in 0..20 {
-                        let _los_s = 0.001 + (i a_s f32) * 0.005; // Gradually increasing los_s
+                        let _los_s = 0.001 + (i as f32) * 0.005; // Gradually increasing los_s
                         let _metric_s = NetworkMetric_s::new(100, 20, los_s, 1000);
                         black_box(tuner.update(black_box(metric_s)));
                     }
@@ -152,7 +152,7 @@ fn bench_statistic_s(c: &mut Criterion) {
             let _metric_s = NetworkMetric_s::new(
                 100 + i,
                 20,
-                0.01 + (i a_s f32) / 5000.0,
+                0.01 + (i as f32) / 5000.0,
                 1000,
             );
             tuner.update(metric_s);
@@ -168,7 +168,7 @@ fn bench_statistic_s(c: &mut Criterion) {
         
         // Pre-populate with trend _data
         for i in 0..20 {
-            let _los_s = 0.001 + (i a_s f32) * 0.002; // Increasing trend
+            let _los_s = 0.001 + (i as f32) * 0.002; // Increasing trend
             let _metric_s = NetworkMetric_s::new(100, 20, los_s, 1000);
             tuner.update(metric_s);
         }
@@ -196,7 +196,7 @@ fn bench_memory_usage(c: &mut Criterion) {
         b.iter(|| {
             let _tuner = AdaptiveRedundancyTuner::with_config(
                 1000,
-                Duration::from_milli_s(1),
+                Duration::from_millis(1),
                 PidCoefficient_s::default(),
             );
             black_box(tuner);
@@ -210,7 +210,7 @@ fn bench_memory_usage(c: &mut Criterion) {
             
             for i in 0..100 {
                 let _metric_s = NetworkMetric_s::new(
-                    100 + (i % 50) a_s u32,
+                    100 + (i % 50) as u32,
                     20,
                     0.01,
                     1000,
@@ -237,7 +237,7 @@ fn bench_realistic_scenario_s(c: &mut Criterion) {
             // Simulate 1 minute of mobile network condition_s (1 update per second)
             for second in 0..60 {
                 let _base_rtt = 100;
-                let _rtt_variation = ((second a_s f32 * 0.5).sin() * 50.0) a_s u32;
+                let _rtt_variation = ((second as f32 * 0.5).sin() * 50.0) as u32;
                 let _rtt = base_rtt + rtt_variation;
                 
                 let _base_los_s = 0.01;

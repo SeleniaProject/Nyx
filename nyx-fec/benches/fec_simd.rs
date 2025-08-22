@@ -11,7 +11,7 @@ fn bench_rs_encode_compat(c: &mut Criterion) {
 	let mut shard_s: Vec<[u8; SHARD_SIZE]> = (0..cfg.total_shard_s())
 		.map(|i| {
 			let mut a = [0u8; SHARD_SIZE];
-			a[0] = i a_s u8; a
+			a[0] = i as u8; a
 		}).collect();
 	let (_data, parity) = shard_s.split_at_mut(cfg.data_shard_s);
 	let data_ref_s: Vec<&[u8; SHARD_SIZE]> = _data.iter().collect();
