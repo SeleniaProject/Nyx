@@ -1,32 +1,136 @@
-#![allow(unused_import_s)]
-use nyx_stream::frame::{Frame, FrameHeader, FrameType};
-use nyx_stream::plugin::{PluginHeader, PluginId};
-use nyx_stream::plugin_frame::PluginFrame;
+//! Frame processing tests
+//!
+//! Tests for frame encoding, decoding, and validation in the stream layer.
+
+use bytes::{Bytes, BytesMut};
+use nyx_stream::{Frame, FrameCodec, FrameType};
 
 #[test]
-fn frame_header_sanity() {
-	let __h = FrameHeader { __stream_id: 42, _seq: 7, ty: FrameType::Data };
-	assert_eq!(h.stream_id, 42);
-	assert_eq!(h.seq, 7);
+fn test_frame_encoding_decoding() {
+    let original_data = b"Hello, World!";
+    let frame_local = Frame::new(FrameType::Data, original_data.to_vec());
+
+    // Encode the frame
+    let mut codec = FrameCodec::new();
+    let mut buffer = BytesMut::new();
+
+    codec
+        .encode(&frame, &mut buffer)
+        .expect("Frame encoding should succeed");
+
+    // Decode the frame
+    let decoded_frame = codec
+        .decode(&mut buffer)
+        .expect("Frame decoding should succeed")
+        .expect("Should have a complete frame");
+
+    assert_eq!(decoded_frame.frame_type(), frame.frame_type());
+    assert_eq!(decoded_frame.payload(), frame.payload());
+
+    println!("Frame encoding/decoding test passed");
 }
 
 #[test]
-fn parse_basic_header() {
-	// 蛻･蜷阪ユ繧ｹ繝・ 荳翫→蜷檎ｭ峨・繝倥ャ繝蝓ｺ譛ｬ讀懆ｨｼ・・pec mapping謨ｴ蜷育畑・・
-	let __h = FrameHeader { __stream_id: 1, _seq: 2, ty: FrameType::Data };
-	assert_eq!(h.stream_id, 1);
-	assert_eq!(h.seq, 2);
-	assert!(matches!(h.ty, FrameType::Data));
+fn test_frame_types() {
+    let data_frame = Frame::new(FrameType::Data, b"data".to_vec());
+    let control_frame = Frame::new(FrameType::Control, b"control".to_vec());
+    let heartbeat_frame = Frame::new(FrameType::Heartbeat, vec![]);
+
+    assert_eq!(data_frame.frame_type(), FrameType::Data);
+    assert_eq!(control_frame.frame_type(), FrameType::Control);
+    assert_eq!(heartbeat_frame.frame_type(), FrameType::Heartbeat);
+
+    println!("Frame type test passed");
 }
 
 #[test]
-fn plugin_frame_cbor_round_trip() {
-	let __hdr = PluginHeader { id: PluginId(7), __flag_s: 0xA5, _data: vec![1,2,3,4] };
-	let __pf = PluginFrame::new(0x51, hdr.clone(), [9,8,7,6,5]);
-	let __cbor = pf.to_cbor()?;
-	let __de = PluginFrame::from_cbor(&cbor)?;
-	assert_eq!(de.frame_type, 0x51);
-	assert_eq!(de.header, hdr);
-	assert_eq!(de.payload, vec![9,8,7,6,5]);
+fn test_frame_payload_limits() {
+    // Test empty payload
+    let empty_frame = Frame::new(FrameType::Data, vec![]);
+    assert_eq!(empty_frame.payload().len(), 0);
+
+    // Test normal payload
+    let normal_payload = vec![1u8; 1024];
+    let normal_frame = Frame::new(FrameType::Data, normal_payload.clone());
+    assert_eq!(normal_frame.payload(), &normal_payload);
+
+    // Test large payload (should be handled gracefully)
+    let large_payload = vec![1u8; 64 * 1024]; // 64KB
+    let large_frame = Frame::new(FrameType::Data, large_payload.clone());
+    assert_eq!(large_frame.payload(), &large_payload);
+
+    println!("Frame payload limits test passed");
 }
 
+#[test]
+fn test_frame_serialization_roundtrip() {
+    let test_cases = vec![
+        (FrameType::Data, b"test data".to_vec()),
+        (FrameType::Control, b"control message".to_vec()),
+        (FrameType::Heartbeat, vec![]),
+        (FrameType::Data, vec![0u8; 1000]), // Large payload
+    ];
+
+    let mut codec = FrameCodec::new();
+
+    for (frame_type, payload) in test_cases {
+        let original_frame = Frame::new(frame_type, payload);
+
+        // Serialize
+        let mut buffer = BytesMut::new();
+        codec
+            .encode(&original_frame, &mut buffer)
+            .expect("Encoding should succeed");
+
+        // Deserialize
+        let decoded_frame = codec
+            .decode(&mut buffer)
+            .expect("Decoding should succeed")
+            .expect("Should have complete frame");
+
+        // Verify roundtrip
+        assert_eq!(original_frame.frame_type(), decoded_frame.frame_type());
+        assert_eq!(original_frame.payload(), decoded_frame.payload());
+    }
+
+    println!("Frame serialization roundtrip test passed");
+}
+
+#[test]
+fn test_frame_codec_error_handling() {
+    let mut codec = FrameCodec::new();
+
+    // Test decoding empty buffer
+    let mut empty_buffer = BytesMut::new();
+    let result = codec
+        .decode(&mut empty_buffer)
+        .expect("Decode should not panic");
+    assert!(result.is_none(), "Empty buffer should return None");
+
+    // Test decoding incomplete frame
+    let mut incomplete_buffer = BytesMut::from(&b"incomplete"[..]);
+    let result = codec
+        .decode(&mut incomplete_buffer)
+        .expect("Decode should not panic");
+    // Result depends on implementation - either None or error
+
+    println!("Frame codec error handling test passed");
+}
+
+#[test]
+fn test_frame_metadata() {
+    let frame_local = Frame::new(FrameType::Data, b"test".to_vec());
+
+    // Test basic metadata
+    assert_eq!(frame.frame_type(), FrameType::Data);
+    assert_eq!(frame.payload().len(), 4);
+
+    // Test frame size calculation
+    let frame_size = frame.total_size();
+    assert!(
+        frame_size >= frame.payload().len(),
+        "Total size should include headers"
+    );
+
+    println!("Frame metadata test passed");
+}

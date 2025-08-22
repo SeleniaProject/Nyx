@@ -22,17 +22,17 @@ impl PluginMessage {
             payload,
         }
     }
-    
+
     /// Get the plugin ID from the header
     pub fn plugin_id(&self) -> crate::plugin::PluginId {
         self.header.id
     }
-    
+
     /// Check if this message is marked as required
     pub fn is_required(&self) -> bool {
         (self.header.flags & 0x01) != 0
     }
-    
+
     /// Get the total size of the message
     pub fn size(&self) -> usize {
         self.payload.len() + self.header.data.len()

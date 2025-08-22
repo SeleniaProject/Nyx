@@ -234,7 +234,7 @@ async fn endpoint_task(
                     }
                     entry.last_sent = Instant::now();
                     entry.retries += 1;
-                    flow.on_los_s();
+                    flow.on_loss();
                     rtt.on_timeout();
                     if let Some(ref mut mp) = mpr {
                         mp.on_loss(entry.last_path);
@@ -420,7 +420,7 @@ mod tests {
                     break;
                 }
             } else {
-                tokio::task::yieldnow().await;
+                tokio::task::yield_now().await;
             }
         }
         assert_eq!(got.len(), 100);
@@ -463,7 +463,7 @@ mod tests {
             if let Some(buf) = b.recv().await? {
                 got.push(buf);
             } else {
-                tokio::task::yieldnow().await;
+                tokio::task::yield_now().await;
             }
         }
         assert_eq!(&got[0][..], b"a1");
@@ -530,7 +530,7 @@ mod tests {
             if let Some(buf) = b.recv().await? {
                 out.push(String::from_utf8(buf.to_vec())?);
             } else {
-                tokio::task::yieldnow().await;
+                tokio::task::yield_now().await;
             }
         }
         for i in 0..50u32 {
@@ -562,7 +562,7 @@ mod tests {
                     break;
                 }
             } else {
-                tokio::task::yieldnow().await;
+                tokio::task::yield_now().await;
             }
         }
         assert!(!got.is_empty());

@@ -86,28 +86,33 @@ impl SandboxGuard {
         match self.policy.allow_filesystem {
             FilesystemAccess::None => {
                 warn!(path = %path, "File access denied by sandbox");
-                return Err(SandboxError::FileAccessDenied(path.to_string()));
+                Err(SandboxError::FileAccessDenied(path.to_string()))
             }
             FilesystemAccess::ReadOnly | FilesystemAccess::Full => {
                 // Check allowlist if configured
                 if !self.policy.filesystem_allowlist.is_empty() {
-                    let normalized_path = Path::new(path).canonicalize()
-                        .map_err(|_| SandboxError::FileAccessDenied(format!("Invalid path: {}", path)))?;
-                    
+                    let normalized_path = Path::new(path).canonicalize().map_err(|_| {
+                        SandboxError::FileAccessDenied(format!("Invalid path: {path}"))
+                    })?;
+
                     for allowed_path in &self.policy.filesystem_allowlist {
-                        let allowed_normalized = Path::new(allowed_path).canonicalize()
-                            .map_err(|_| SandboxError::ConfigurationError(format!("Invalid allowlist path: {}", allowed_path)))?;
-                        
+                        let allowed_normalized =
+                            Path::new(allowed_path).canonicalize().map_err(|_| {
+                                                    SandboxError::ConfigurationError(format!(
+                        "Invalid allowlist path: {allowed_path}"
+                    ))
+                            })?;
+
                         if normalized_path.starts_with(&allowed_normalized) {
                             debug!(path = %path, "File access granted");
                             return Ok(());
                         }
                     }
-                    
+
                     warn!(path = %path, "File access denied - not in allowlist");
                     return Err(SandboxError::FileAccessDenied(path.to_string()));
                 }
-                
+
                 debug!(path = %path, "File access granted (no restrictions)");
                 Ok(())
             }
@@ -118,7 +123,11 @@ impl SandboxGuard {
     pub fn check_memory_usage(&self, current_usage: usize) -> Result<(), SandboxError> {
         if let Some(limit) = self.policy.memory_limit {
             if current_usage > limit {
-                warn!(usage = current_usage, limit = limit, "Memory limit exceeded");
+                warn!(
+                    usage = current_usage,
+                    limit = limit,
+                    "Memory limit exceeded"
+                );
                 return Err(SandboxError::MemoryLimitExceeded(current_usage));
             }
         }
@@ -144,9 +153,9 @@ fn destination_matches_pattern(destination: &str, pattern: &str) -> bool {
         let suffix = &pattern[1..];
         return destination.ends_with(suffix);
     }
-    
+
     if pattern.ends_with('*') && pattern.len() > 1 {
-        let prefix = &pattern[..pattern.len()-1];
+        let prefix = &pattern[..pattern.len() - 1];
         return destination.starts_with(prefix);
     }
 
@@ -189,8 +198,8 @@ impl SandboxPolicy {
             allow_network: true,
             allow_filesystem: FilesystemAccess::ReadOnly,
             memory_limit: Some(128 * 1024 * 1024), // 128MB
-            network_allowlist: Vec::new(), // Empty = allow all
-            filesystem_allowlist: Vec::new(), // Empty = allow all
+            network_allowlist: Vec::new(),         // Empty = allow all
+            filesystem_allowlist: Vec::new(),      // Empty = allow all
         }
     }
 
@@ -244,7 +253,7 @@ mod tests {
     #[test]
     fn test_strict_policy_denies_everything() {
         let guard = SandboxGuard::new(SandboxPolicy::strict());
-        
+
         assert!(guard.check_connect("example.com").is_err());
         assert!(guard.check_open_path("/tmp/test.txt").is_err());
         assert!(guard.check_memory_usage(64 * 1024 * 1024).is_err()); // Over 32MB limit
@@ -253,7 +262,7 @@ mod tests {
     #[test]
     fn test_permissive_policy_allows_access() {
         let guard = SandboxGuard::new(SandboxPolicy::permissive());
-        
+
         assert!(guard.check_connect("example.com").is_ok());
         assert!(guard.check_memory_usage(64 * 1024 * 1024).is_ok()); // Under 128MB limit
     }
@@ -275,8 +284,14 @@ mod tests {
     #[test]
     fn test_pattern_matching() {
         assert!(destination_matches_pattern("example.com", "example.com"));
-        assert!(destination_matches_pattern("api.example.com", "*.example.com"));
-        assert!(destination_matches_pattern("api.example.com", ".example.com"));
+        assert!(destination_matches_pattern(
+            "api.example.com",
+            "*.example.com"
+        ));
+        assert!(destination_matches_pattern(
+            "api.example.com",
+            ".example.com"
+        ));
         assert!(!destination_matches_pattern("evil.com", "*.example.com"));
     }
 }

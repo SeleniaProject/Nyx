@@ -190,11 +190,11 @@ mod test_s {
 
     #[test]
     fn test_capability_flag_s() {
-        let __required = Capability::required(CAP_CORE, vec![]);
+        let required = Capability::required(CAP_CORE, vec![]);
         assert!(required.is_required());
         assert!(!required.is_optional());
 
-        let __optional = Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]);
+        let optional = Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]);
         assert!(!optional.is_required());
         assert!(optional.is_optional());
     }
@@ -254,7 +254,7 @@ mod test_s {
 
     #[test]
     fn test_validate_capability_size_limit_s() {
-        let __oversized = Capability::new(CAP_CORE, FLAG_OPTIONAL, vec![0u8; 2048]);
+        let oversized = Capability::new(CAP_CORE, FLAG_OPTIONAL, vec![0u8; 2048]);
         assert!(validate_capability(&oversized).is_err());
 
         // Test normal size with non-core capability (core ha_s special validation)
@@ -264,17 +264,17 @@ mod test_s {
 
     #[test]
     fn test_decode_size_limit_s() {
-        let __oversized_data = vec![0u8; 128 * 1024]; // 128KB
+        let oversized_data = vec![0u8; 128 * 1024]; // 128KB
         assert!(decode_cap_s(&oversized_data).is_err());
     }
 
     #[test]
     fn test_core_capability_validation() {
         // Core capability should have empty _data
-        let __valid_core = Capability::required(CAP_CORE, vec![]);
+        let valid_core = Capability::required(CAP_CORE, vec![]);
         assert!(validate_capability(&valid_core).is_ok());
 
-        let __invalid_core = Capability::required(CAP_CORE, b"unexpected".to_vec());
+        let invalid_core = Capability::required(CAP_CORE, b"unexpected".to_vec());
         assert!(validate_capability(&invalid_core).is_err());
     }
 }

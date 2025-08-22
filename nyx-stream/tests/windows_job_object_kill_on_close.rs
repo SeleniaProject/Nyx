@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
 // windows-only test to assert that applying the OS sandbox policy succeed_s
-// and i_s idempotent. We avoid spawning child processe_s to keep CI stable.
+// and is idempotent. We avoid spawning child processe_s to keep CI stable.
 
 #[cfg(windows)]
 #[test]
 fn windows_sandbox_apply_minimal_is_ok_and_idempotent() {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy};
 
-    let __s1 = apply_policy(SandboxPolicy::Minimal);
+    let s1 = apply_policy(SandboxPolicy::Minimal);
     // Second call should be a no-op and return same statu_s
-    let __s2 = apply_policy(SandboxPolicy::Minimal);
+    let s2 = apply_policy(SandboxPolicy::Minimal);
     assert_eq!(s1, s2);
 
     // On windows with os_sandbox feature, it should be Applied
