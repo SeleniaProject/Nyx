@@ -1,6 +1,5 @@
-
-use std::{fs, path::PathBuf};
 use schemars::schema_for;
+use std::{fs, path::PathBuf};
 // use schemars::JsonSchema;
 // use serde::{Deserialize, Serialize};
 use nyx_stream::plugin_manifest::PluginManifest;
@@ -15,4 +14,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Manifest schema written: {}", path.display());
     Ok(())
 }
-

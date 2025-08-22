@@ -46,7 +46,11 @@ pub struct Capability {
 impl Capability {
     /// Create a new capability
     pub fn new(__id: u32, __flag_s: u8, _data: Vec<u8>) -> Self {
-        Self { __id: __id, __flag_s, _data }
+        Self {
+            __id,
+            __flag_s,
+            _data,
+        }
     }
 
     /// Create a required capability
