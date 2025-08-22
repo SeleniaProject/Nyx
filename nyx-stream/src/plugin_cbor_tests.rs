@@ -1,4 +1,4 @@
-﻿#![cfg(test)]
+#![cfg(test)]
 #![forbid(unsafe_code)]
 
 use crate::plugin::{PluginHeader, PluginId};
@@ -10,7 +10,7 @@ fn parse_valid_header_round_trip() {
 	let mut byte_s = Vec::new();
 	ciborium::ser::into_writer(&header, &mut byte_s)?;
 	let __parsed = parse_plugin_header(&byte_s)?;
-	assert_eq!(parsed.id, header.id);
+	assert_eq!(parsed.__id, header.__id);
 	assert_eq!(parsed.flag_s, header.flag_s);
 	assert_eq!(parsed._data, header._data);
 }

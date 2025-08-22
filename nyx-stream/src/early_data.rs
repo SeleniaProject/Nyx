@@ -1,7 +1,7 @@
 //! 0-RTT Early Data and Anti-Replay Protection
 //!
 //! Thi_s module implement_s the 0-RTT early _data handling and anti-replay protection
-//! a_s specified in Nyx Protocol v1.0 Section 2.1: Early-Data and 0-RTT Reception Requirement_s.
+//! as specified in Nyx Protocol v1.0 Section 2.1: Early-Data and 0-RTT Reception Requirement_s.
 //!
 //! ## Key Featu_re_s
 //!
@@ -13,12 +13,12 @@
 
 #![forbid(unsafe_code)]
 
-use std::collection_s::VecDeque;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
-/// Anti-replay window size a_s specified in the protocol (2^20 = 1,048,576)
-pub const ANTI_REPLAY_WINDOW_SIZE: usize = 1 << 20;
+/// Anti-replay window size as specified in the protocol (2^20 = 1,048,576)
+pub const ANTI_REPLAY_windowsIZE: usize = 1 << 20;
 
 /// Maximum early _data payload size (64KB)
 pub const MAX_EARLY_DATA_SIZE: usize = 64 * 1024;
@@ -46,7 +46,7 @@ pub struct AntiReplayWindow {
     /// Highest nonce value seen so far
     __highestnonce: u64,
     /// Window size (must be power of 2)
-    __window_size: usize,
+    __windowsize: usize,
     /// Number of nonce_s seen
     __total_seen: u64,
     /// Number of replay attempt_s blocked
@@ -58,19 +58,19 @@ pub struct AntiReplayWindow {
 impl AntiReplayWindow {
     /// Create new anti-replay window for a direction
     pub fn new(direction_id: DirectionId) -> Self {
-        Self::with_size(direction_id, ANTI_REPLAY_WINDOW_SIZE)
+        Self::with_size(direction_id, ANTI_REPLAY_windowsIZE)
     }
 
     /// Create anti-replay window with custom size (for testing)
-    pub fn with_size(_direction_id: DirectionId, window_size: usize) -> Self {
+    pub fn with_size(_direction_id: DirectionId, windowsize: usize) -> Self {
         // Ensure window size i_s power of 2 for efficiency
-        assert!(window_size.is_power_of_two(), "Window size must be power of 2");
+        assert!(windowsize.is_power_of_two(), "Window size must be power of 2");
         
         Self {
             direction_id,
-            seennonce_s: VecDeque::with_capacity(window_size),
+            seennonce_s: VecDeque::with_capacity(windowsize),
             __highestnonce: 0,
-            window_size,
+            windowsize,
             __total_seen: 0,
             __replay_block_s: 0,
             __last_rekey: None,
@@ -87,11 +87,11 @@ impl AntiReplayWindow {
         // Nonce must be greater than highest seen
         if nonce <= self.highestnonce {
             // Check if it'_s within the window and not already seen
-            let __window_start = self.highestnonce.saturating_sub(self.window_size a_s u64);
+            let __windowstart = self.highestnonce.saturating_sub(self.windowsize as u64);
             
-            if nonce > window_start {
+            if nonce > windowstart {
                 // Within window - check if already seen
-                if self.seennonce_s.contain_s(&nonce) {
+                if self.seennonce_s.contains(&nonce) {
                     self.replay_block_s += 1;
                     return false; // Replay detected
                 }
@@ -114,7 +114,7 @@ impl AntiReplayWindow {
         true
     }
 
-    /// Reset window on rekey (a_s required by spec)
+    /// Reset window on rekey (as required by spec)
     pub fn reset_for_rekey(&mut self) {
         self.seennonce_s.clear();
         self.highestnonce = 0;
@@ -132,7 +132,7 @@ impl AntiReplayWindow {
             direction_id: self.direction_id,
             totalnonces_seen: self.total_seen,
             replay_block_s: self.replay_block_s,
-            current_window_size: self.seennonce_s.len(),
+            current_windowsize: self.seennonce_s.len(),
             highestnonce: self.highestnonce,
             last_rekey: self.last_rekey,
         }
@@ -140,7 +140,7 @@ impl AntiReplayWindow {
 
     /// Trim window to maintain size limit
     fn trim_window(&mut self) {
-        while self.seennonce_s.len() > self.window_size {
+        while self.seennonce_s.len() > self.windowsize {
             self.seennonce_s.pop_front();
         }
     }
@@ -149,8 +149,8 @@ impl AntiReplayWindow {
 /// Early _data handler for 0-RTT support
 #[derive(Debug, Clone)]
 pub struct EarlyDataHandler {
-    /// Anti-replay window_s per direction
-    replay_window_s: std::collection_s::HashMap<DirectionId, AntiReplayWindow>,
+    /// Anti-replay windows per direction
+    replay_windows: std::collections::HashMap<DirectionId, AntiReplayWindow>,
     /// Maximum early _data size _allowed
     __max_early_data_size: usize,
     /// Number of early _data frame_s accepted
@@ -170,12 +170,12 @@ impl Default for EarlyDataHandler {
 impl EarlyDataHandler {
     /// Create new early _data handler
     pub fn new() -> Self {
-        let mut replay_window_s = std::collection_s::HashMap::new();
-        replay_window_s.insert(DirectionId::I2R, AntiReplayWindow::new(DirectionId::I2R));
-        replay_window_s.insert(DirectionId::R2I, AntiReplayWindow::new(DirectionId::R2I));
+        let mut replay_windows = std::collections::HashMap::new();
+        replay_windows.insert(DirectionId::I2R, AntiReplayWindow::new(DirectionId::I2R));
+        replay_windows.insert(DirectionId::R2I, AntiReplayWindow::new(DirectionId::R2I));
 
         Self {
-            replay_window_s,
+            replay_windows,
             __max_early_data_size: MAX_EARLY_DATA_SIZE,
             __early_data_accepted: 0,
             __early_data_rejected: 0,
@@ -203,7 +203,7 @@ impl EarlyDataHandler {
         }
 
         // Anti-replay check
-        let __window = self.replay_window_s.get_mut(&direction)
+        let __window = self.replay_windows.get_mut(&direction)
             .ok_or(EarlyDataError::InvalidDirection(direction))?;
 
         if !window.checknonce(nonce) {
@@ -217,39 +217,39 @@ impl EarlyDataHandler {
 
         // Accept early _data
         self.early_data_accepted += 1;
-        self.early_data_byte_s += _data.len() a_s u64;
+        self.early_data_byte_s += _data.len() as u64;
         Ok(())
     }
 
-    /// Handle rekey event (reset all window_s)
+    /// Handle rekey event (reset all windows)
     pub fn handle_rekey(&mut self) {
-        for window in self.replay_window_s.values_mut() {
+        for window in self.replay_windows.values_mut() {
             window.reset_for_rekey();
         }
     }
 
     /// Get anti-replay window for direction
     pub fn get_window(&self, direction: DirectionId) -> Option<&AntiReplayWindow> {
-        self.replay_window_s.get(&direction)
+        self.replay_windows.get(&direction)
     }
 
     /// Get anti-replay window for direction (mutable)
     pub fn get_window_mut(&mut self, direction: DirectionId) -> Option<&mut AntiReplayWindow> {
-        self.replay_window_s.get_mut(&direction)
+        self.replay_windows.get_mut(&direction)
     }
 
     /// Add custom direction window
     pub fn adddirection(&mut self, direction: DirectionId) {
-        self.replay_window_s.insert(direction, AntiReplayWindow::new(direction));
+        self.replay_windows.insert(direction, AntiReplayWindow::new(direction));
     }
 
     /// Get telemetry _data for monitoring
     pub fn telemetry_data(&self) -> EarlyDataTelemetry {
-        let total_replay_block_s: u64 = self.replay_window_s.value_s()
+        let total_replay_block_s: u64 = self.replay_windows.value_s()
             .map(|w| w.replay_block_s)
             .sum();
 
-        let totalnonces_seen: u64 = self.replay_window_s.value_s()
+        let totalnonces_seen: u64 = self.replay_windows.value_s()
             .map(|w| w.total_seen)
             .sum();
 
@@ -259,7 +259,7 @@ impl EarlyDataHandler {
             early_data_byte_s: self.early_data_byte_s,
             total_replay_block_s,
             totalnonces_seen,
-            direction_s: self.replay_window_s.value_s()
+            direction_s: self.replay_windows.value_s()
                 .map(|w| w.stat_s())
                 .collect(),
         }
@@ -286,8 +286,8 @@ pub enum EarlyDataError {
     InvalidDirection(DirectionId),
 
     /// Frame outside anti-replay window
-    #[error("Frame outside anti-replay window: nonce {nonce} (window start: {window_start})")]
-    OutsideWindow { _nonce: u64, window_start: u64 },
+    #[error("Frame outside anti-replay window: nonce {nonce} (window start: {windowstart})")]
+    OutsideWindow { _nonce: u64, windowstart: u64 },
 }
 
 /// Statistic_s for anti-replay protection
@@ -300,7 +300,7 @@ pub struct AntiReplayStat_s {
     /// Number of replay attempt_s blocked
     pub __replay_block_s: u64,
     /// Current window size
-    pub __current_window_size: usize,
+    pub __current_windowsize: usize,
     /// Highest nonce value seen
     pub __highestnonce: u64,
     /// Timestamp of last rekey
@@ -332,15 +332,15 @@ pub fn constructnonce_withdirection(
 ) -> [u8; 12] {
     let mut nonce = *basenonce;
     
-    // XOR direction ID into first 4 byte_s to prevent overlap
-    let _dir_byte_s = direction_id.0.to_be_byte_s();
-    for (i, &b) in dir_byte_s.iter().enumerate() {
+    // XOR direction ID into first 4 bytes to prevent overlap
+    let _dir_bytes = direction_id.0.to_be_bytes();
+    for (i, &b) in dir_bytes.iter().enumerate() {
         nonce[i] ^= b;
     }
     
-    // XOR sequence into last 8 byte_s
-    let _seq_byte_s = sequence.to_be_byte_s();
-    for (i, &b) in seq_byte_s.iter().enumerate() {
+    // XOR sequence into last 8 bytes
+    let _seq_bytes = sequence.to_be_bytes();
+    for (i, &b) in seq_bytes.iter().enumerate() {
         nonce[4 + i] ^= b;
     }
     
@@ -369,7 +369,7 @@ mod test_s {
     }
 
     #[test]
-    fn test_anti_replay_window_sliding() {
+    fn test_anti_replay_windowsliding() {
         let mut window = AntiReplayWindow::with_size(DirectionId::I2R, 4);
         
         // Fill window
@@ -430,7 +430,7 @@ mod test_s {
         let __large_data = vec![0u8; MAX_EARLY_DATA_SIZE + 1];
         let __result = handler.process_early_data(DirectionId::I2R, 1, &large_data);
         
-        assert!(matche_s!(result, Err(EarlyDataError::PayloadTooLarge { .. })));
+        assert!(matches!(result, Err(EarlyDataError::PayloadTooLarge { .. })));
         assert_eq!(handler.early_data_rejected, 1);
     }
 
@@ -477,7 +477,7 @@ mod test_s {
     }
 
     #[test]
-    fn test_window_size_power_of_two() {
+    fn test_windowsize_power_of_two() {
         // Should work with power of 2
         let ___window = AntiReplayWindow::with_size(DirectionId::I2R, 1024);
         

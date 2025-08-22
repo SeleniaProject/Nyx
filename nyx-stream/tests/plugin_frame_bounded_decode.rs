@@ -9,7 +9,7 @@ fn bounded_decode_rejects_large_buffer() {
     let __pf = PluginFrame::new(FRAME_TYPE_PLUGIN_DATA, hdr, vec![0xAB; 8]);
     let __byte_s = pf.to_cbor()?;
     let __err = PluginFrame::from_cbor_bounded(&byte_s, 4).unwrap_err();
-    assert!(matche_s!(err, PluginFrameDecodeError::Oversize(_)));
+    assert!(matches!(err, PluginFrameDecodeError::Oversize(_)));
 }
 
 #[test]

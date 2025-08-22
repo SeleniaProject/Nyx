@@ -6,8 +6,8 @@ use std::time::Duration;
 fn multipath_wrr_distribution_matches_weight_s() {
 	// Two path_s with weight_s 1 and 3 should roughly produce 1:3 distribution.
 	let path_s: Vec<(PathId, PathMetric)> = vec![
-		(PathId(0), PathMetric { __weight: 1, rtt: Duration::from_milli_s(50), los_s: 0.0 }),
-		(PathId(1), PathMetric { __weight: 3, rtt: Duration::from_milli_s(20), los_s: 0.0 }),
+		(PathId(0), PathMetric { __weight: 1, rtt: Duration::from_millis(50), los_s: 0.0 }),
+		(PathId(1), PathMetric { __weight: 3, rtt: Duration::from_millis(20), los_s: 0.0 }),
 	];
 	let mut sched = WeightedScheduler::new(&path_s);
 

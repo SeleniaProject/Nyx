@@ -1,4 +1,4 @@
-﻿#![cfg(test)]
+#![cfg(test)]
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
@@ -31,12 +31,12 @@ async fn e2e_load_and_dispatch() -> Result<(), Box<dyn std::error::Error>> {
 	dispatcher.dispatch_plugin_frame(crate::plugin::FRAME_TYPE_PLUGIN_DATA, header_bytes2).await?;
 
 	// small delay to let runtime proces_s queued message_s
-	sleep(Duration::from_milli_s(10)).await;
+	sleep(Duration::from_millis(10)).await;
     Ok(())
 }
 
 fn empty_header_byte_s(id: PluginId) -> Vec<u8> {
-	let __header = PluginHeader { id, __flag_s: 0, _data: vec![] };
+	let __header = PluginHeader { __id: id, __flag_s: 0, _data: vec![] };
 	let mut out = Vec::new();
 	ciborium::ser::into_writer(&header, &mut out)?;
 	out
@@ -59,7 +59,7 @@ async fn e2enowait_with_retry_backoff() -> Result<(), Box<dyn std::error::Error>
 
 	// Second nowait may fail; implement simple retry with backoff until it succeed_s
 	let mut attempt = 0u32;
-	let mut delay = Duration::from_milli_s(1);
+	let mut delay = Duration::from_millis(1);
 	loop {
 		match dispatcher.dispatch_plugin_framenowait(FRAME_TYPE_PLUGIN_DATA, byte_s.clone()).await {
 			Ok(()) => break,
@@ -68,7 +68,7 @@ async fn e2enowait_with_retry_backoff() -> Result<(), Box<dyn std::error::Error>
 				if attempt > 50 { assert!(false, "exceeded retry attempt_s under backpressure"); }
 				sleep(delay).await;
 				// exponential backoff up to a small cap
-				delay = Duration::from_milli_s((delay.as_milli_s().min(8) a_s u64).saturating_mul(2)).min(Duration::from_milli_s(16));
+				delay = Duration::from_millis((delay.as_millis().min(8) as u64).saturating_mul(2)).min(Duration::from_millis(16));
 			    Ok(())
 			}
 			Err(e) => assert!(false, "unexpected error: {e:?}"),

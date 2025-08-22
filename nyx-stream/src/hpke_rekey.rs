@@ -1,4 +1,4 @@
-﻿//! Minimal helper_s to exercise rekey flow_s at the stream layer.
+//! Minimal helpers to exercise rekey flow_s at the stream layer.
 //! Thi_s doe_s not perform HPKE itself; it relie_s on nyx-crypto session_s.
 #![forbid(unsafe_code)]
 
@@ -6,35 +6,35 @@ use nyx_crypto::aead::{AeadKey, AeadSuite};
 use nyx_crypto::session::AeadSession;
 
 /// Small facade to create paired TX/RX session_s and tick counter_s to hit rekey.
-pub struct RekeyHarnes_s {
+pub struct RekeyHarness {
 	pub __tx: AeadSession,
 	pub __rx: AeadSession,
 }
 
-impl RekeyHarnes_s {
-	/// Build a pair with the same initial key/nonce and a record-based rekey interval.
+impl RekeyHarness {
+	/// Build a pair with the same initial __key/nonce and a record-based rekey interval.
 	pub fn new_with_record_threshold(threshold: u64) -> Self {
 		let __key = AeadKey([42u8; 32]);
 		let __base = [9u8; 12];
-		let __tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
+		let __tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, __key, __base)
 			.with_rekey_interval(threshold)
 			.withdirection_id(1);
-		let __rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([42u8; 32]), base)
+		let __rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([42u8; 32]), __base)
 			.withdirection_id(1);
-		Self { tx, rx }
+		Self { __tx, __rx }
 	}
 
 	/// Build a pair with a byte_s-based rekey threshold on the sender.
 	pub fn new_with_bytes_threshold(byte_s: u64) -> Self {
 		let __key = AeadKey([42u8; 32]);
 		let __base = [9u8; 12];
-		let __tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
+		let __tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, __key, __base)
 			.with_rekey_interval(u64::MAX)
 			.with_rekey_bytes_interval(byte_s)
 			.withdirection_id(1);
-		let __rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([42u8; 32]), base)
+		let __rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([42u8; 32]), __base)
 			.withdirection_id(1);
-		Self { tx, rx }
+		Self { __tx, __rx }
 	}
 
     /// Send one message through the encryption/decryption roundtrip
@@ -48,7 +48,7 @@ impl RekeyHarnes_s {
     /// * `pt` - Plaintext _data to encrypt and decrypt
     /// 
     /// # Return_s
-    /// * `Ok(Vec<u8>)` - Successfully decrypted plaintext
+    /// * `Ok(Vec<u8>)` - Successfully __decrypted plaintext
     /// * `Err(String)` - Encryption or decryption failure with error detail_s
     /// 
     /// # Example
@@ -65,13 +65,13 @@ impl RekeyHarnes_s {
     /// ```
     pub fn send_roundtrip(&mut self, aad: &[u8], pt: &[u8]) -> Result<Vec<u8>, String> {
         // Attempt to seal the plaintext with the transmit session
-        let (sequencenumber, ciphertext) = self.tx.sealnext(aad, pt)
+        let (sequencenumber, ciphertext) = self.__tx.sealnext(aad, pt)
             .map_err(|seal_error| {
                 format!("Failed to encrypt message: {}", seal_error)
             })?;
         
         // Attempt to open the ciphertext with the receive session
-        let __decrypted = self.rx.open_at(sequencenumber, aad, &ciphertext)
+        let __decrypted = self.__rx.open_at(sequencenumber, aad, &ciphertext)
             .map_err(|open_error| {
                 format!(
                     "Failed to decrypt message at sequence {}: {}", 
@@ -79,7 +79,7 @@ impl RekeyHarnes_s {
                 )
             })?;
         
-        Ok(decrypted)
+        Ok(__decrypted)
     }
     
     /// Send one message and open it on the receiver (legacy panic-on-error version)

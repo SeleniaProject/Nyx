@@ -1,7 +1,7 @@
-﻿//! Management frame handling and error code_s for Nyx Protocol
+//! Management frame handling and error code_s for Nyx Protocol
 //!
 //! Thi_s module provide_s utilitie_s for building CLOSE frame_s with specific
-//! error code_s, particularly for capability negotiation failu_re_s a_s defined
+//! error code_s, particularly for capability negotiation failu_re_s as defined
 //! in `spec/Capability_Negotiation_Policy.md`.
 
 use crate::capability::ERR_UNSUPPORTED_CAP;
@@ -12,18 +12,18 @@ use crate::capability::ERR_UNSUPPORTED_CAP;
 /// and include_s the unsupported capability ID in the reason field.
 ///
 /// # Argument_s
-/// * `id` - The unsupported capability ID (32-bit, stored a_s 4-byte big-endian)
+/// * `id` - The unsupported capability ID (32-bit, stored as 4-byte big-endian)
 ///
 /// # Return_s
 /// Vector containing the CLOSE frame byte_s with error code and capability ID
 pub fn build_close_unsupported_cap(id: u32) -> Vec<u8> {
     let mut frame = Vec::with_capacity(6);
     
-    // Add error code (2 byte_s, big-endian)
-    frame.extend_from_slice(&ERR_UNSUPPORTED_CAP.to_be_byte_s());
+    // Add error code (2 bytes, big-endian)
+    frame.extend_from_slice(&ERR_UNSUPPORTED_CAP.to_be_bytes());
     
-    // Add unsupported capability ID (4 byte_s, big-endian)
-    frame.extend_from_slice(&id.to_be_byte_s());
+    // Add unsupported capability ID (4 bytes, big-endian)
+    frame.extend_from_slice(&id.to_be_bytes());
     
     frame
 }
@@ -43,14 +43,14 @@ pub fn parse_close_unsupported_cap(reason: &[u8]) -> Option<u32> {
         return None;
     }
     
-    // Verify error code matche_s
-    let __error_code = u16::from_be_byte_s([reason[0], reason[1]]);
-    if error_code != ERR_UNSUPPORTED_CAP {
+    // Verify error code matches
+    let _error_code = u16::from_be_bytes([reason[0], reason[1]]);
+    if _error_code != ERR_UNSUPPORTED_CAP {
         return None;
     }
     
     // Extract capability ID
-    let __cap_id = u32::from_be_byte_s([reason[2], reason[3], reason[4], reason[5]]);
+    let cap_id = u32::from_be_bytes([reason[2], reason[3], reason[4], reason[5]]);
     Some(cap_id)
 }
 
@@ -67,7 +67,7 @@ pub mod frame_type_s {
 }
 
 /// Common error code_s for management frame_s
-pub mod error_code_s {
+pub mod _error_code_s {
     /// Protocol error
     pub const ERR_PROTOCOL_ERROR: u16 = 0x01;
     
@@ -97,36 +97,37 @@ mod test_s {
 
     #[test]
     fn test_build_close_unsupported_cap() {
-        let __cap_id = CAP_PLUGIN_FRAMEWORK;
+        let _cap_id = CAP_PLUGIN_FRAMEWORK;
         let __frame = build_close_unsupported_cap(cap_id);
         
         assert_eq!(frame.len(), 6);
         
-        // Check error code (first 2 byte_s)
-        let __error_code = u16::from_be_byte_s([frame[0], frame[1]]);
+        // Check error code (first 2 bytes)
+        let _error_code = u16::from_be_bytes([frame[0], frame[1]]);
         assert_eq!(error_code, ERR_UNSUPPORTED_CAP);
         
-        // Check capability ID (last 4 byte_s)
-        let __parsed_id = u32::from_be_byte_s([frame[2], frame[3], frame[4], frame[5]]);
+        // Check capability ID (last 4 bytes)
+        let _parsed_id = u32::from_be_bytes([frame[2], frame[3], frame[4], frame[5]]);
         assert_eq!(parsed_id, cap_id);
     }
 
     #[test]
-    fn test_parse_close_unsupported_cap() {
+    fn test_parse_close_unsupported_cap() -> Result<(), Box<dyn std::error::Error>> {
         let __cap_id = 0x12345678u32;
-        let __frame = build_close_unsupported_cap(cap_id);
+        let __frame = build_close_unsupported_cap(__cap_id);
         
-        let __parsed_id = parse_close_unsupported_cap(&frame)?;
-        assert_eq!(parsed_id, cap_id);
+        let __parsed_id = parse_close_unsupported_cap(&__frame).ok_or("Expected Some value")?;
+        assert_eq!(__parsed_id, __cap_id);
+        Ok(())
     }
 
     #[test]
     fn test_parse_close_invalid_length() {
         // Too short
-        assert!(parse_close_unsupported_cap(&[0x00, 0x07]).isnone());
+        assert!(parse_close_unsupported_cap(&[0x00, 0x07]).is_none());
         
         // Too long
-        assert!(parse_close_unsupported_cap(&[0x00, 0x07, 0x00, 0x00, 0x00, 0x01, 0xFF]).isnone());
+        assert!(parse_close_unsupported_cap(&[0x00, 0x07, 0x00, 0x00, 0x00, 0x01, 0xFF]).is_none());
     }
 
     #[test]
@@ -137,17 +138,18 @@ mod test_s {
         frame[0] = 0x00;
         frame[1] = 0x01; // ERR_PROTOCOL_ERROR instead
         
-        assert!(parse_close_unsupported_cap(&frame).isnone());
+        assert!(parse_close_unsupported_cap(&frame).is_none());
     }
 
     #[test]
-    fn test_roundtrip_capability_id_s() {
+    fn test_roundtrip_capability_id_s() -> Result<(), Box<dyn std::error::Error>> {
         let __test_id_s = [0x00000001, 0x00000002, 0x12345678, 0xFFFFFFFF];
         
-        for &cap_id in &test_id_s {
+        for &cap_id in &__test_id_s {
             let __frame = build_close_unsupported_cap(cap_id);
-            let __parsed = parse_close_unsupported_cap(&frame)?;
-            assert_eq!(parsed, cap_id);
+            let __parsed = parse_close_unsupported_cap(&__frame).ok_or("Expected Some value")?;
+            assert_eq!(__parsed, cap_id);
         }
+        Ok(())
     }
 }

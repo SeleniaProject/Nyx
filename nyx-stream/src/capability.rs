@@ -1,67 +1,67 @@
-﻿//! Capability negotiation implementation for Nyx Protocol v1.0
+//! Capability negotiation implementation for Nyx Protocol v1.0
 //!
-//! Thi_s module implement_s the capability negotiation system a_s defined in
+//! Thi_s module implement_s the capability negotiation system as defined in
 //! `spec/Capability_Negotiation_Policy.md`. It provide_s CBOR-based capability
 //! exchange, negotiation algorithm_s, and error handling for unsupported required capabilitie_s.
 //!
 //! # Wire Format
-//! Capabilitie_s are exchanged a_s CBOR array_s containing map_s with:
-//! - `id`: u32 capability identifier
+//! Capabilitie_s are exchanged as CBOR array_s containing map_s with:
+//! - `id`: u32 capability __identifier
 //! - `flag_s`: u8 flag_s (bit 0: 1=Required, 0=Optional)
 //! - `data`: byte_s for version/parameter_s/sub-featu_re_s
 //!
 //! # Error Handling
 //! Unsupported required capabilitie_s trigger session termination with
-//! `ERR_UNSUPPORTED_CAP = 0x07` and the unsupported capability ID in CLOSE reason.
+//! `ERR_UNSUPPORTED_CAP = 0x07` and the unsupported capability __id in CLOSE reason.
 
 use serde::{Deserialize, Serialize};
-use std::collection_s::HashSet;
+use std::collections::HashSet;
 
 /// Error code_s for capability negotiation failu_re_s
 pub const ERR_UNSUPPORTED_CAP: u16 = 0x07;
 
-/// Predefined capability ID_s a_s per specification
+/// Predefined capability __id_s as per specification
 pub const CAP_CORE: u32 = 0x0001;
 pub const CAP_PLUGIN_FRAMEWORK: u32 = 0x0002;
 
-/// Local supported capability ID_s
+/// Local supported capability __id_s
 pub const LOCAL_CAP_IDS: &[u32] = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
 
 /// Capability flag_s
 pub const FLAG_REQUIRED: u8 = 0x01;
 pub const FLAG_OPTIONAL: u8 = 0x00;
 
-/// A single capability with ID, flag_s, and optional _data
+/// A single capability with __id, __flag_s, and optional _data
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Capability {
-    /// Capability identifier (32-bit)
+    /// Capability __identifier (32-bit)
     pub __id: u32,
     /// Flag_s byte (bit 0: Required=1, Optional=0)
     pub __flag_s: u8,
     /// Optional _data for versioning/parameter_s
-    #[serde(with = "serde_byte_s")]
+    #[serde(with = "serde_bytes")]
     pub _data: Vec<u8>,
 }
 
 impl Capability {
     /// Create a new capability
     pub fn new(__id: u32, __flag_s: u8, _data: Vec<u8>) -> Self {
-        Self { id, flag_s, _data }
+        Self { __id: __id, __flag_s, _data }
     }
 
     /// Create a required capability
     pub fn required(__id: u32, _data: Vec<u8>) -> Self {
-        Self::new(id, FLAG_REQUIRED, _data)
+        Self::new(__id, FLAG_REQUIRED, _data)
     }
 
     /// Create an optional capability
     pub fn optional(__id: u32, _data: Vec<u8>) -> Self {
-        Self::new(id, FLAG_OPTIONAL, _data)
+        Self::new(__id, FLAG_OPTIONAL, _data)
     }
 
     /// Check if thi_s capability i_s required
     pub fn is_required(&self) -> bool {
-        (self.flag_s & FLAG_REQUIRED) != 0
+        (self.__flag_s & FLAG_REQUIRED) != 0
     }
 
     /// Check if thi_s capability i_s optional
@@ -73,7 +73,7 @@ impl Capability {
 /// Error type for capability negotiation failu_re_s
 #[derive(Debug, Clone, PartialEq)]
 pub enum CapabilityError {
-    /// Unsupported required capability with ID
+    /// Unsupported required capability with __id
     UnsupportedRequired(u32),
     /// CBOR encoding/decoding error
     CborError(String),
@@ -119,10 +119,10 @@ pub fn decode_cap_s(_data: &[u8]) -> Result<Vec<Capability>, CapabilityError> {
 /// Negotiate capabilitie_s between local and peer
 ///
 /// Return_s Ok(()) if negotiation succeed_s, or Err with the first
-/// unsupported required capability ID if negotiation fail_s.
+/// unsupported required capability __id if negotiation fail_s.
 ///
 /// # Algorithm
-/// 1. For each peer capability marked a_s required
+/// 1. For each peer capability marked as required
 /// 2. Check if local implementation support_s it
 /// 3. Return error on first unsupported required capability
 /// 4. Optional capabilitie_s are alway_s accepted (may be ignored)
@@ -133,8 +133,8 @@ pub fn negotiate(
     let local_set: HashSet<u32> = local_supported.iter().copied().collect();
 
     for cap in peer_cap_s {
-        if cap.is_required() && !local_set.contain_s(&cap.id) {
-            return Err(CapabilityError::UnsupportedRequired(cap.id));
+        if cap.is_required() && !local_set.contains(&cap.__id) {
+            return Err(CapabilityError::UnsupportedRequired(cap.__id));
         }
     }
 
@@ -158,8 +158,8 @@ pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
         ));
     }
 
-    // Validate known capability ID_s have expected format_s
-    match cap.id {
+    // Validate known capability __id_s have expected format_s
+    match cap.__id {
         CAP_CORE => {
             // Core capability should have empty _data for v1.0
             if !cap._data.is_empty() {
@@ -196,16 +196,17 @@ mod test_s {
     }
 
     #[test]
-    fn test_cbor_roundtrip() {
+    fn test_cbor_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let __cap_s = vec![
             Capability::required(CAP_CORE, vec![]),
             Capability::optional(CAP_PLUGIN_FRAMEWORK, b"v1.0".to_vec()),
         ];
 
-        let __encoded = encode_cap_s(&cap_s)?;
-        let __decoded = decode_cap_s(&encoded)?;
+        let __encoded = encode_cap_s(&__cap_s)?;
+        let __decoded = decode_cap_s(&__encoded)?;
 
-        assert_eq!(cap_s, decoded);
+        assert_eq!(__cap_s, __decoded);
+        Ok(())
     }
 
     #[test]

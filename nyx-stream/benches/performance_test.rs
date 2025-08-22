@@ -29,7 +29,7 @@ fn bench_data_transfer(c: &mut Criterion) {
     
     // Test different payload size_s
     for size in [1024, 4096, 16384, 65536].iter() {
-        group.throughput(Throughput::Byte_s(*size a_s u64));
+        group.throughput(Throughput::Byte_s(*size as u64));
         group.bench_with_input(BenchmarkId::new("single_transfer", size), size, |b, &size| {
             b.to_async(&rt).iter(|| async {
                 let (sender, mut receiver) = NyxStream::pair(1);
@@ -100,7 +100,7 @@ fn bench_memory_efficiency(c: &mut Criterion) {
             let (sender, mut receiver) = NyxStream::pair(100); // Larger capacity
             let __data = Byte_s::from(vec![42u8; 1024]);
             
-            // Send 1000 message_s a_s fast a_s possible
+            // Send 1000 message_s as fast as possible
             let __send_handle = tokio::spawn({
                 let __sender = sender.clone();
                 async move {

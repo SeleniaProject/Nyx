@@ -1,27 +1,27 @@
-﻿use byte_s::Byte_s;
+use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error_s::{Result, Error};
+use crate::errors::{Result, Error};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FrameType { Data, Ack, Close }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FrameHeader {
-	pub __stream_id: u32,
-	pub _seq: u64,
-	pub __ty: FrameType,
+	pub stream_id: u32,
+	pub seq: u64,
+	pub ty: FrameType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Frame {
-	pub __header: FrameHeader,
-	#[serde(with = "serde_byte_s")]
+	pub header: FrameHeader,
+	#[serde(with = "serde_bytes")]
 	pub payload: Vec<u8>,
 }
 
 impl Frame {
-	pub fn _data(__stream_id: u32, _seq: u64, payload: impl Into<Byte_s>) -> Self {
-		let payload: Byte_s = payload.into();
+	pub fn data(stream_id: u32, seq: u64, payload: impl Into<Bytes>) -> Self {
+		let payload: Bytes = payload.into();
 		Self { header: FrameHeader { stream_id, seq, ty: FrameType::Data }, payload: payload.to_vec() }
 	}
 
@@ -31,8 +31,8 @@ impl Frame {
 		Ok(out)
 	}
 
-	pub fn from_cbor(byte_s: &[u8]) -> Result<Self> {
-		let __reader = std::io::Cursor::new(byte_s);
+	pub fn from_cbor(bytes: &[u8]) -> Result<Self> {
+		let reader = std::io::Cursor::new(bytes);
 		let v: Self = ciborium::de::from_reader(reader).map_err(Error::Cbor)?;
 		Ok(v)
 	}
@@ -41,8 +41,8 @@ impl Frame {
 		Ok(serde_json::to_vec(self)?)
 	}
 
-	pub fn from_json(byte_s: &[u8]) -> Result<Self> {
-		Ok(serde_json::from_slice(byte_s)?)
+	pub fn from_json(bytes: &[u8]) -> Result<Self> {
+		Ok(serde_json::from_slice(bytes)?)
 	}
 }
 
@@ -51,23 +51,25 @@ mod test_s {
 	use super::*;
 
 	#[test]
-	fn cbor_roundtrip_frame() {
-		let __f = Frame::_data(10, 99, b"hello-cbor".as_ref());
-		let __enc = f.to_cbor()?;
-		let __dec = Frame::from_cbor(&enc)?;
+	fn cbor_roundtrip_frame() -> Result<(), Box<dyn std::error::Error>> {
+		let f = Frame::data(10, 99, b"hello-cbor".as_ref());
+		let enc = f.to_cbor()?;
+		let dec = Frame::from_cbor(&enc)?;
 		assert_eq!(dec.header.stream_id, 10);
 		assert_eq!(dec.header.seq, 99);
 		assert_eq!(&dec.payload[..], b"hello-cbor");
+		Ok(())
 	}
 
 	#[test]
-	fn json_roundtrip_frame() {
-		let __f = Frame::_data(2, 3, Byte_s::from_static(b""));
-		let __enc = f.to_json()?;
-		let __dec = Frame::from_json(&enc)?;
+	fn json_roundtrip_frame() -> Result<(), Box<dyn std::error::Error>> {
+		let f = Frame::data(2, 3, Bytes::from_static(b""));
+		let enc = f.to_json()?;
+		let dec = Frame::from_json(&enc)?;
 		assert_eq!(dec.header.stream_id, 2);
 		assert_eq!(dec.header.seq, 3);
 		assert!(dec.payload.is_empty());
+		Ok(())
 	}
 
 	#[test]

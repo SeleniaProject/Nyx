@@ -5,8 +5,8 @@
 use nyx_stream::plugin_dispatch::PluginDispatcher;
 use nyx_stream::plugin_registry::{PluginInfo, PluginRegistry, Permission};
 use nyx_stream::plugin::{PluginHeader, PluginId, FRAME_TYPE_PLUGIN_CONTROL};
-use nyx_stream::plugin_sandbox::{SandboxPolicy a_s StreamPolicy, SandboxGuard};
-use nyx_core::sandbox::{apply_policy, SandboxPolicy a_s CorePolicy, SandboxStatu_s};
+use nyx_stream::plugin_sandbox::{SandboxPolicy as StreamPolicy, SandboxGuard};
+use nyx_core::sandbox::{apply_policy, SandboxPolicy as CorePolicy, SandboxStatu_s};
 use std::sync::Arc;
 use std::env;
 
@@ -119,13 +119,13 @@ fn sandbox_guard_with_os_sandbox() {
     
     // Create stream sandbox guard with path allowlist
     // Use platform-appropriate path_s and enable filesystem acces_s
-    #[cfg(window_s)]
+    #[cfg(windows)]
     let (allowed_prefix, allowed_path, denied_path) = (
         std::path::Path::new("C:\\temp"),
         "C:\\temp\\file.txt",
-        "C:\\Window_s\\System32\\config\\sam"
+        "C:\\windows\\System32\\config\\sam"
     );
-    #[cfg(not(window_s))]
+    #[cfg(not(windows))]
     let (allowed_prefix, allowed_path, denied_path) = (
         std::path::Path::new("/tmp"),
         "/tmp/file.txt", 
@@ -173,7 +173,7 @@ async fn resource_constraints_plugin_impact() {
 
         // Test multiple rapid operation_s (should work within resource limit_s)
         for i in 0..10 {
-            let __test_data = header_byte_s(pid, format!("SBX:TEST {}", i).as_byte_s());
+            let __test_data = header_byte_s(pid, format!("SBX:TEST {}", i).as_bytes());
             let __result = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, test_data).await;
             // Don't assert succes_s/failure, just ensure no panic or crash
             println!("Operation {} result: {:?}", i, result.is_ok());
@@ -187,14 +187,14 @@ fn platform_specific_integration() {
     let __os_statu_s = apply_policy(CorePolicy::Minimal);
     
     // Test platform-specific expectation_s
-    #[cfg(all(window_s, feature = "os_sandbox"))]
+    #[cfg(all(windows, feature = "os_sandbox"))]
     {
         assert_eq!(os_statu_s, SandboxStatu_s::Applied);
-        // Window_s should have Job Object restriction_s active
-        println!("Window_s Job Object sandbox active");
+        // windows should have Job Object restriction_s active
+        println!("windows Job Object sandbox active");
     }
     
-    #[cfg(all(target_o_s = "linux", feature = "os_sandbox"))]
+    #[cfg(all(target_os = "linux", feature = "os_sandbox"))]
     {
         assert_eq!(os_statu_s, SandboxStatu_s::Applied);
         // Linux should have resource limit_s and environment restriction_s
@@ -204,7 +204,7 @@ fn platform_specific_integration() {
         println!("Linux cooperative sandbox active");
     }
     
-    #[cfg(all(target_o_s = "maco_s", feature = "os_sandbox"))]
+    #[cfg(all(target_os = "macos", feature = "os_sandbox"))]
     {
         assert_eq!(os_statu_s, SandboxStatu_s::Applied);
         // macOS should have resource limit_s and environment restriction_s

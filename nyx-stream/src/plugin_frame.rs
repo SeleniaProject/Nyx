@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -8,9 +8,9 @@ use crate::plugin::{PluginHeader, is_plugin_frame};
 /// Complete Plugin Frame structure used on the wire within Nyx Stream
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PluginFrame {
-	pub __frame_type: u8,         // 0x50..=0x5F
-	pub __header: PluginHeader,   // plugin id/flag_s/aux _data
-	#[serde(with = "serde_byte_s")]
+	pub frame_type: u8,         // 0x50..=0x5F
+	pub header: PluginHeader,   // plugin id/flags/aux data
+	#[serde(with = "serde_bytes")]
 	pub payload: Vec<u8>,       // plugin-specific payload
 }
 
@@ -24,8 +24,8 @@ pub enum PluginFrameDecodeError {
 }
 
 impl PluginFrame {
-	pub fn new(__frame_type: u8, __header: PluginHeader, payload: impl AsRef<[u8]>) -> Self {
-		debug_assert!(is_plugin_frame(frame_type), "PluginFrame::new expect_s frame_type 0x50..=0x5F");
+	pub fn new(frame_type: u8, header: PluginHeader, payload: impl AsRef<[u8]>) -> Self {
+		debug_assert!(is_plugin_frame(frame_type), "PluginFrame::new expects frame_type 0x50..=0x5F");
 		Self { frame_type, header, payload: payload.as_ref().to_vec() }
 	}
 
@@ -35,21 +35,21 @@ impl PluginFrame {
 		Ok(out)
 	}
 
-	pub fn from_cbor(byte_s: &[u8]) -> Result<Self, ciborium::de::Error<std::io::Error>> {
-		let __reader = std::io::Cursor::new(byte_s);
+	pub fn from_cbor(bytes: &[u8]) -> Result<Self, ciborium::de::Error<std::io::Error>> {
+		let reader = std::io::Cursor::new(bytes);
 		ciborium::de::from_reader(reader)
 	}
 
-	/// Decode with an upper bound on input length to avoid oversized allocation_s/DoS.
-	pub fn from_cbor_bounded(byte_s: &[u8], max_len: usize) -> Result<Self, PluginFrameDecodeError> {
-		if byte_s.len() > max_len { return Err(PluginFrameDecodeError::Oversize(byte_s.len())); }
-		let __reader = std::io::Cursor::new(byte_s);
+	/// Decode with an upper bound on input length to avoid oversized allocations/DoS.
+	pub fn from_cbor_bounded(bytes: &[u8], max_len: usize) -> Result<Self, PluginFrameDecodeError> {
+		if bytes.len() > max_len { return Err(PluginFrameDecodeError::Oversize(bytes.len())); }
+		let reader = std::io::Cursor::new(bytes);
 		ciborium::de::from_reader(reader).map_err(|e| PluginFrameDecodeError::Decode(e.to_string()))
 	}
 
 	/// Decode with a conservative default bound (256 KiB)
-	pub fn from_cbor_checked(byte_s: &[u8]) -> Result<Self, PluginFrameDecodeError> {
+	pub fn from_cbor_checked(bytes: &[u8]) -> Result<Self, PluginFrameDecodeError> {
 		const MAX_FRAME_CBOR_LEN: usize = 256 * 1024;
-		Self::from_cbor_bounded(byte_s, MAX_FRAME_CBOR_LEN)
+		Self::from_cbor_bounded(bytes, MAX_FRAME_CBOR_LEN)
 	}
 }

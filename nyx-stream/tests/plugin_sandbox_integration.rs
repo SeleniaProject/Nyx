@@ -4,7 +4,7 @@ use nyx_stream::plugin_dispatch::PluginDispatcher;
 use nyx_stream::plugin_registry::{PluginInfo, PluginRegistry, Permission};
 use nyx_stream::plugin::{PluginHeader, PluginId, FRAME_TYPE_PLUGIN_CONTROL};
 use nyx_stream::plugin_sandbox::{SandboxPolicy, SandboxGuard, SandboxError};
-use nyx_core::sandbox::{apply_policy, SandboxPolicy a_s CorePolicy, SandboxStatu_s};
+use nyx_core::sandbox::{apply_policy, SandboxPolicy as CorePolicy, SandboxStatu_s};
 use std::sync::Arc;
 
 fn header_byte_s(__id: PluginId, _data: &[u8]) -> Vec<u8> {
@@ -34,7 +34,7 @@ async fn sandbox_allowlist_blocks_and_allow_s() {
     // Denied connect to 127.0.0.1
     let __bytesng = header_byte_s(pid, b"SBX:CONNECT 127.0.0.1:80");
     let __err = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytesng).await.unwrap_err();
-    match err { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contain_s("denied")); }, e => panic!("{e:?}") }
+    match err { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contains("denied")); }, e => panic!("{e:?}") }
 
     // Allowed open under /var/lib/nyx
     let __bytes_ok2 = header_byte_s(pid, b"SBX:OPEN /var/lib/nyx/file");
@@ -43,7 +43,7 @@ async fn sandbox_allowlist_blocks_and_allow_s() {
     // Denied open elsewhere
     let __bytesng2 = header_byte_s(pid, b"SBX:OPEN /etc/passwd");
     let __err2 = dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, bytesng2).await.unwrap_err();
-    match err2 { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contain_s("denied")); }, e => panic!("{e:?}") }
+    match err2 { nyx_stream::plugin_dispatch::DispatchError::RuntimeError(id, msg) => { assert_eq!(id, pid); assert!(msg.contains("denied")); }, e => panic!("{e:?}") }
 }
 
 /// Test cros_s-platform OS-level sandbox functionality
@@ -55,10 +55,10 @@ fn test_cross_platform_os_sandbox() {
     
     // Verify platform-appropriate behavior
     #[cfg(any(
-        all(window_s, feature = "os_sandbox"),
-        all(target_o_s = "linux", feature = "os_sandbox"),
-        all(target_o_s = "maco_s", feature = "os_sandbox"),
-        all(target_o_s = "openbsd", feature = "os_sandbox")
+        all(windows, feature = "os_sandbox"),
+        all(target_os = "linux", feature = "os_sandbox"),
+        all(target_os = "macos", feature = "os_sandbox"),
+        all(target_os = "openbsd", feature = "os_sandbox")
     ))]
     {
         assert_eq!(minimal_statu_s, SandboxStatu_s::Applied);
@@ -67,10 +67,10 @@ fn test_cross_platform_os_sandbox() {
     }
     
     #[cfg(not(any(
-        all(window_s, feature = "os_sandbox"),
-        all(target_o_s = "linux", feature = "os_sandbox"),
-        all(target_o_s = "maco_s", feature = "os_sandbox"),
-        all(target_o_s = "openbsd", feature = "os_sandbox")
+        all(windows, feature = "os_sandbox"),
+        all(target_os = "linux", feature = "os_sandbox"),
+        all(target_os = "macos", feature = "os_sandbox"),
+        all(target_os = "openbsd", feature = "os_sandbox")
     )))]
     {
         assert_eq!(minimal_statu_s, SandboxStatu_s::Unsupported);
@@ -200,7 +200,7 @@ fn test_policy_combination_s() {
 }
 
 /// Platform-specific path handling test_s
-#[cfg(window_s)]
+#[cfg(windows)]
 #[test]
 fn test_windows_pathnormalization() {
     let __policy = SandboxPolicy::default()
@@ -212,14 +212,14 @@ fn test_windows_pathnormalization() {
         ..policy 
     });
     
-    // Test case-insensitive matching (Window_s behavior)
+    // Test case-insensitive matching (windows behavior)
     assert!(guard.check_open_path("c:\\program file_s\\nyx\\config._toml").is_ok());
     assert!(guard.check_open_path("C:\\PROGRAM FILES\\NYX\\_data.db").is_ok());
     assert!(guard.check_open_path("c:\\user_s\\testuser\\app_data\\local\\nyx\\cache.bin").is_ok());
     
     // Ensure blocked path_s still work
     assert_eq!(
-        guard.check_open_path("C:\\Window_s\\System32\\kernel32.dll").unwrap_err(),
+        guard.check_open_path("C:\\windows\\System32\\kernel32.dll").unwrap_err(),
         SandboxError::FsDenied
     );
     assert_eq!(

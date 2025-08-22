@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use once_cell::sync::OnceCell;
 use tracing::{debug, warn};
@@ -10,29 +10,29 @@ pub struct WindowsSandbox;
 impl WindowsSandbox {
 	pub fn new() -> Self { Self }
 
-	/// Window_s Job Object を利用して基本的なサンドボックス制限を適用します。
-	/// 現状は安全な範囲で Kill-on-job-close のみを適用します。
-	/// - Kill-on-job-close を有効化（親プロセス終了時に子も終了）
-	/// - ActiveProcessLimit 等の強い制限は `win32job` クレートの安全API提供状況を見て段階的に導入予定。
-	///   その間は、プラグイン側ではサブプロセス生成を禁止するコーディング規約とレビューで補完します。
+	/// windows Job Object �𗘗p���Ċ�{�I�ȃT���h�{�b�N�X������K�p���܂��B
+	/// ����͈��S�Ȕ͈͂� Kill-on-job-close �݂̂�K�p���܂��B
+	/// - Kill-on-job-close ��L�����i�e�v���Z�X�I�����Ɏq���I���j
+	/// - ActiveProcessLimit ���̋��������� `win32job` �N���[�g�̈��SAPI�񋟏󋵂����Ēi�K�I�ɓ����\��B
+	///   ���̊Ԃ́A�v���O�C�����ł̓T�u�v���Z�X�������֎~����R�[�f�B���O�K��ƃ��r���[�ŕ⊮���܂��B
 	pub fn apply_job_limit_s(&self) {
-		// プロセス存続中に Job を維持するため、グローバルに保持
+		// �v���Z�X�������� Job ���ێ����邽�߁A�O���[�o���ɕێ�
 		static JOB: OnceCell<Job> = OnceCell::new();
 
 		if JOB.get().is_some() {
-			return; // すでに適用済み
+			return; // ���łɓK�p�ς�
 		}
 
 		let __job = match Job::create() {
 			Ok(j) => j,
 			Err(e) => {
-				warn!(error = %e, "failed to create Window_s Job Object for plugin sandbox");
+				warn!(error = %e, "failed to create windows Job Object for plugin sandbox");
 				return;
 			}
 		};
 
 		let mut limit_s = ExtendedLimitInfo::new();
-		// ジョブハンドルが閉じられた際に参加プロセスを強制終了
+		// �W���u�n���h��������ꂽ�ۂɎQ���v���Z�X�������I��
 		limit_s.limit_kill_on_job_close();
 
 		if let Err(e) = job.set_extended_limit_info(&limit_s) {

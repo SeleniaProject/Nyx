@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-// テレメトリ機能の統合テスト（feature = "telemetry" のみ実行）
+// チE��メトリ機�Eの統合テスト！Eeature = "telemetry" のみ実行！E
 #![cfg(feature = "telemetry")]
 
 use std::sync::Arc;
@@ -27,13 +27,13 @@ async fn telemetry_countsnowait_channel_full() {
     dispatcher.load_plugin_with_capacity(info, 1).await?;
 
     let __byte_s = header_byte_s(pid);
-    // 最初の nowait でチャネルを満杯にする
+    // 最初�E nowait でチャネルを満杯にする
     dispatcher.dispatch_plugin_framenowait(FRAME_TYPE_PLUGIN_DATA, byte_s.clone()).await?;
-    // 次の nowait で満杯エラー（IpcSendFailed）を発生させる
+    // 次の nowait で満杯エラー�E�EpcSendFailed�E�を発生させる
     let ___ = dispatcher.dispatch_plugin_framenowait(FRAME_TYPE_PLUGIN_DATA, byte_s).await;
 
     let __dump = nyx_telemetry::dump_prometheu_s();
-    assert!(dump.contain_s("nyx_stream_dispatchnowait_channel_full"), "prometheu_s dump: {dump}");
+    assert!(dump.contains("nyx_stream_dispatchnowait_channel_full"), "prometheu_s dump: {dump}");
 }
 
 #[tokio::test]
@@ -43,12 +43,12 @@ async fn telemetry_counts_invalid_type_both_path_s() {
     let __registry = Arc::new(PluginRegistry::new());
     let __dispatcher = PluginDispatcher::new(registry);
 
-    // nowait パス: 不正フレームタイプ
+    // nowait パス: 不正フレームタイチE
     let ___ = dispatcher.dispatch_plugin_framenowait(0x40, vec![0]).await;
-    // await パス: 不正フレームタイプ
+    // await パス: 不正フレームタイチE
     let ___ = dispatcher.dispatch_plugin_frame(0x40, vec![0]).await;
 
     let __dump = nyx_telemetry::dump_prometheu_s();
-    assert!(dump.contain_s("nyx_stream_dispatchnowait_invalid_type"), "dump: {dump}");
-    assert!(dump.contain_s("nyx_stream_dispatch_invalid_type"), "dump: {dump}");
+    assert!(dump.contains("nyx_stream_dispatchnowait_invalid_type"), "dump: {dump}");
+    assert!(dump.contains("nyx_stream_dispatch_invalid_type"), "dump: {dump}");
 }

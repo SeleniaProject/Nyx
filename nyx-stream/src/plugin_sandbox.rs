@@ -1,157 +1,282 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
-use std::path::{Path, PathBuf};
+//! Plugin sandbox system for secure runtime isolation
+//! Cooperative policy enforcement through resource access controls.
+
+use std::path::Path;
 use thiserror::Error;
+use tracing::{debug, warn};
 
-/// 最小権限のサンドボックス方針（協調的ガード: OSカーネル強制ではなく、
-/// プラグインが提供する疑似システムコールに適用する前処理）
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Sandbox policy configuration
+#[derive(Debug, Clone)]
 pub struct SandboxPolicy {
-	pub __allownetwork: bool,
-	pub __allow_f_s: bool,
-	/// Optional allowlist: if non-empty, network connect_s must target one of these host_s.
-	/// Host can be IPv4/IPv6 literal or DNS name. Port i_s validated separately from host.
-	pub allowed_connect_host_s: Vec<String>,
-	/// Optional allowlist: if non-empty, path_s must be under one of these prefixe_s.
-	/// Prefixe_s are matched in a platform-appropriate, case-normalized manner on Window_s.
-	pub allowed_path_prefixe_s: Vec<PathBuf>,
+    /// Allow network access
+    pub allow_network: bool,
+    /// Allow file system access (read-only or full)
+    pub allow_filesystem: FilesystemAccess,
+    /// Maximum memory usage (in bytes)
+    pub memory_limit: Option<usize>,
+    /// Allowed network destinations (CIDR or domain patterns)
+    pub network_allowlist: Vec<String>,
+    /// Allowed filesystem paths
+    pub filesystem_allowlist: Vec<String>,
 }
 
-impl SandboxPolicy {
-	/// ネットワーク・ファイルシステムとも禁止のロックダウン方針
-	pub fn locked_down() -> Self { Self::default() }
-	/// 開発用の寛容設定
-	pub fn permissive() -> Self { Self { __allownetwork: true, __allow_f_s: true, ..Default::default() } }
-	/// Allow specific host for outbound connect (host only, with or without port in request)
-	pub fn allow_connect_host(mut self, host: impl Into<String>) -> Self {
-		self.allowed_connect_host_s.push(host.into());
-		self
-	}
-	/// Allow file-system acces_s under a specific path prefix
-	pub fn allow_path_prefix(mut self, prefix: impl Into<PathBuf>) -> Self {
-		self.allowed_path_prefixe_s.push(prefix.into());
-		self
-	}
+/// Filesystem access levels
+#[derive(Debug, Clone, Default)]
+pub enum FilesystemAccess {
+    #[default]
+    None,
+    ReadOnly,
+    Full,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+/// Sandbox enforcement errors
+#[derive(Debug, Error)]
 pub enum SandboxError {
-	#[error("network acces_s i_s denied by sandbox policy")]
-	NetworkDenied,
-	#[error("filesystem acces_s i_s denied by sandbox policy")]
-	FsDenied,
+    #[error("network access is denied by sandbox policy")]
+    NetworkAccessDenied,
+    #[error("file access is denied by sandbox policy: {0}")]
+    FileAccessDenied(String),
+    #[error("memory limit exceeded: {0} bytes")]
+    MemoryLimitExceeded(usize),
+    #[error("sandbox configuration error: {0}")]
+    ConfigurationError(String),
 }
 
-/// プラグインの疑似システムコールを保護するガード。
-/// 現時点では同一プロセス内のランタイムを対象に、明示的にこのガードを通した操作のみ許可/拒否する。
+/// Runtime sandbox guard - enforces policy during plugin execution
 #[derive(Debug, Clone)]
 pub struct SandboxGuard {
-	__policy: SandboxPolicy,
+    policy: SandboxPolicy,
 }
 
 impl SandboxGuard {
-	pub fn new(policy: SandboxPolicy) -> Self { Self { policy } }
-	pub fn policy(&self) -> &SandboxPolicy { &self.policy }
+    /// Create a new sandbox guard with the given policy
+    pub fn new(policy: SandboxPolicy) -> Self {
+        Self { policy }
+    }
 
-	/// ネットワーク接続の事前検査（実際の接続は行わない）。
-	/// If an allowlist i_s provided, the hostname portion must be included.
-	pub fn check_connect(&self, addr: &str) -> Result<(), SandboxError> {
-		if !self.policy.allownetwork { return Err(SandboxError::NetworkDenied); }
-		if self.policy.allowed_connect_host_s.is_empty() { return Ok(()); }
-		let __host = extract_host(addr);
-		let __host_l = host.to_ascii_lowercase();
-		let __ok = self
-			.policy
-			.allowed_connect_host_s
-			.iter()
-			.any(|h| h.eq_ignore_ascii_case(&host_l));
-		if ok { Ok(()) } else { Err(SandboxError::NetworkDenied) }
-	}
+    /// Check if network connection to destination is allowed
+    pub fn check_connect(&self, destination: &str) -> Result<(), SandboxError> {
+        if !self.policy.allow_network {
+            warn!(destination = %destination, "Network access denied by sandbox");
+            return Err(SandboxError::NetworkAccessDenied);
+        }
 
-	/// ファイルアクセスの事前検査（実際のIOは行わない）。
-	/// If an allowlist i_s provided, the path must be under one of the prefixe_s.
-	pub fn check_open_path(&self, path: &str) -> Result<(), SandboxError> {
-		if !self.policy.allow_f_s { return Err(SandboxError::FsDenied); }
-		if self.policy.allowed_path_prefixe_s.is_empty() { return Ok(()); }
+        // If allowlist is empty, allow all connections
+        if self.policy.network_allowlist.is_empty() {
+            debug!(destination = %destination, "Network access granted (no restrictions)");
+            return Ok(());
+        }
 
-	let __p = Path::new(path);
-	// On Window_s, normalize by lowering the drive letter/case for comparison.
-		// Avoid std::fs::canonicalize (would require IO). Compare by string prefix safely.
-		let __pathnorm = normalize_for_match(p);
-		let __allowed = self
-			.policy
-			.allowed_path_prefixe_s
-			.iter()
-			.map(|q| normalize_for_match(q))
-			.any(|prefix| pathnorm.starts_with(&prefix));
-		if _allowed { Ok(()) } else { Err(SandboxError::FsDenied) }
-	}
+        // Check against allowlist patterns
+        for pattern in &self.policy.network_allowlist {
+            if destination_matches_pattern(destination, pattern) {
+                debug!(destination = %destination, pattern = %pattern, "Network access granted");
+                return Ok(());
+            }
+        }
+
+        warn!(destination = %destination, "Network access denied - not in allowlist");
+        Err(SandboxError::NetworkAccessDenied)
+    }
+
+    /// Check if file path access is allowed
+    pub fn check_open_path(&self, path: &str) -> Result<(), SandboxError> {
+        match self.policy.allow_filesystem {
+            FilesystemAccess::None => {
+                warn!(path = %path, "File access denied by sandbox");
+                return Err(SandboxError::FileAccessDenied(path.to_string()));
+            }
+            FilesystemAccess::ReadOnly | FilesystemAccess::Full => {
+                // Check allowlist if configured
+                if !self.policy.filesystem_allowlist.is_empty() {
+                    let normalized_path = Path::new(path).canonicalize()
+                        .map_err(|_| SandboxError::FileAccessDenied(format!("Invalid path: {}", path)))?;
+                    
+                    for allowed_path in &self.policy.filesystem_allowlist {
+                        let allowed_normalized = Path::new(allowed_path).canonicalize()
+                            .map_err(|_| SandboxError::ConfigurationError(format!("Invalid allowlist path: {}", allowed_path)))?;
+                        
+                        if normalized_path.starts_with(&allowed_normalized) {
+                            debug!(path = %path, "File access granted");
+                            return Ok(());
+                        }
+                    }
+                    
+                    warn!(path = %path, "File access denied - not in allowlist");
+                    return Err(SandboxError::FileAccessDenied(path.to_string()));
+                }
+                
+                debug!(path = %path, "File access granted (no restrictions)");
+                Ok(())
+            }
+        }
+    }
+
+    /// Check memory usage against policy limits
+    pub fn check_memory_usage(&self, current_usage: usize) -> Result<(), SandboxError> {
+        if let Some(limit) = self.policy.memory_limit {
+            if current_usage > limit {
+                warn!(usage = current_usage, limit = limit, "Memory limit exceeded");
+                return Err(SandboxError::MemoryLimitExceeded(current_usage));
+            }
+        }
+        Ok(())
+    }
+
+    /// Get the current policy (read-only access)
+    pub fn policy(&self) -> &SandboxPolicy {
+        &self.policy
+    }
 }
 
-fn extract_host(addr: &str) -> &str {
-	// Handle [IPv6]:port, IPv4/host:port, or bare host
-	let __s = addr.trim();
-	if let Some(rest) = _s.strip_prefix('[') {
-		if let Some(end) = rest.find(']') { return &rest[..end]; }
-	}
-	// If there i_s exactly one colon, treat it a_s host:port.
-	// If there are multiple colon_s (likely bare IPv6), return the whole string.
-	let __colon_count = _s.as_byte_s().iter().filter(|&&b| b == b':').count();
-	if colon_count == 1 {
-		if let Some(i) = _s.rfind(':') { &_s[..i] } else { _s }
-	} else {
-		_s
-	}
+/// Simple pattern matching for network destinations
+/// Supports basic wildcard patterns and domain suffix matching
+fn destination_matches_pattern(destination: &str, pattern: &str) -> bool {
+    // Exact match
+    if destination == pattern {
+        return true;
+    }
+
+    // Simple wildcard patterns (only at beginning or end)
+    if pattern.starts_with('*') && pattern.len() > 1 {
+        let suffix = &pattern[1..];
+        return destination.ends_with(suffix);
+    }
+    
+    if pattern.ends_with('*') && pattern.len() > 1 {
+        let prefix = &pattern[..pattern.len()-1];
+        return destination.starts_with(prefix);
+    }
+
+    // Domain suffix matching
+    if pattern.starts_with('.') && destination.ends_with(pattern) {
+        return true;
+    }
+
+    false
 }
 
-fn normalize_for_match(p: &Path) -> String {
-	// Convert to platform-native absolute-like string for prefix compare.
-	// On Window_s, lowercase to approximate case-insensitivity.
-	let __s = p.to_string_lossy();
-	#[cfg(window_s)]
-	{ _s.to_ascii_lowercase() }
-	#[cfg(not(window_s))]
-	{ _s.into_owned() }
+impl Default for SandboxPolicy {
+    fn default() -> Self {
+        Self {
+            allow_network: false,
+            allow_filesystem: FilesystemAccess::None,
+            memory_limit: Some(64 * 1024 * 1024), // 64MB default
+            network_allowlist: Vec::new(),
+            filesystem_allowlist: Vec::new(),
+        }
+    }
+}
+
+/// Predefined sandbox policies for common use cases
+impl SandboxPolicy {
+    /// Strict policy: no network, no filesystem, limited memory
+    pub fn strict() -> Self {
+        Self {
+            allow_network: false,
+            allow_filesystem: FilesystemAccess::None,
+            memory_limit: Some(32 * 1024 * 1024), // 32MB
+            network_allowlist: Vec::new(),
+            filesystem_allowlist: Vec::new(),
+        }
+    }
+
+    /// Permissive policy: allows controlled access
+    pub fn permissive() -> Self {
+        Self {
+            allow_network: true,
+            allow_filesystem: FilesystemAccess::ReadOnly,
+            memory_limit: Some(128 * 1024 * 1024), // 128MB
+            network_allowlist: Vec::new(), // Empty = allow all
+            filesystem_allowlist: Vec::new(), // Empty = allow all
+        }
+    }
+
+    /// Custom policy builder
+    pub fn builder() -> SandboxPolicyBuilder {
+        SandboxPolicyBuilder::default()
+    }
+}
+
+/// Builder for creating custom sandbox policies
+#[derive(Debug, Default)]
+pub struct SandboxPolicyBuilder {
+    policy: SandboxPolicy,
+}
+
+impl SandboxPolicyBuilder {
+    pub fn allow_network(mut self, allow: bool) -> Self {
+        self.policy.allow_network = allow;
+        self
+    }
+
+    pub fn filesystem_access(mut self, access: FilesystemAccess) -> Self {
+        self.policy.allow_filesystem = access;
+        self
+    }
+
+    pub fn memory_limit(mut self, limit: Option<usize>) -> Self {
+        self.policy.memory_limit = limit;
+        self
+    }
+
+    pub fn add_network_allowlist<S: Into<String>>(mut self, pattern: S) -> Self {
+        self.policy.network_allowlist.push(pattern.into());
+        self
+    }
+
+    pub fn add_filesystem_allowlist<S: Into<String>>(mut self, path: S) -> Self {
+        self.policy.filesystem_allowlist.push(path.into());
+        self
+    }
+
+    pub fn build(self) -> SandboxPolicy {
+        self.policy
+    }
 }
 
 #[cfg(test)]
-mod test_s {
-	use super::*;
+mod tests {
+    use super::*;
 
-	#[test]
-	fn locked_down_deniesnetwork_and_f_s() {
-		let __g = SandboxGuard::new(SandboxPolicy::locked_down());
-		assert_eq!(g.check_connect("127.0.0.1:80").unwrap_err(), SandboxError::NetworkDenied);
-		assert_eq!(g.check_open_path("/tmp/x").unwrap_err(), SandboxError::FsDenied);
-	}
+    #[test]
+    fn test_strict_policy_denies_everything() {
+        let guard = SandboxGuard::new(SandboxPolicy::strict());
+        
+        assert!(guard.check_connect("example.com").is_err());
+        assert!(guard.check_open_path("/tmp/test.txt").is_err());
+        assert!(guard.check_memory_usage(64 * 1024 * 1024).is_err()); // Over 32MB limit
+    }
 
-	#[test]
-	fn permissive_allows_operation_s() {
-		let __g = SandboxGuard::new(SandboxPolicy::permissive());
-		assert!(g.check_connect("127.0.0.1:80").is_ok());
-		assert!(g.check_open_path("/tmp/x").is_ok());
-	}
+    #[test]
+    fn test_permissive_policy_allows_access() {
+        let guard = SandboxGuard::new(SandboxPolicy::permissive());
+        
+        assert!(guard.check_connect("example.com").is_ok());
+        assert!(guard.check_memory_usage(64 * 1024 * 1024).is_ok()); // Under 128MB limit
+    }
 
-	#[test]
-	fn allowlists_are_enforced() {
-		let __g = SandboxGuard::new(
-			SandboxPolicy::default()
-				.allow_connect_host("example.org")
-				.allow_path_prefix(Path::new("/var/lib/nyx"))
-		);
-		// Network off by default -> still denied
-		assert_eq!(g.check_connect("example.org:443").unwrap_err(), SandboxError::NetworkDenied);
+    #[test]
+    fn test_network_allowlist() {
+        let policy = SandboxPolicy::builder()
+            .allow_network(true)
+            .add_network_allowlist("example.com")
+            .add_network_allowlist("*.trusted.org")
+            .build();
+        let guard = SandboxGuard::new(policy);
 
-		// FS off by default -> denied even under prefix
-		assert_eq!(g.check_open_path("/var/lib/nyx/file").unwrap_err(), SandboxError::FsDenied);
+        assert!(guard.check_connect("example.com").is_ok());
+        assert!(guard.check_connect("api.trusted.org").is_ok());
+        assert!(guard.check_connect("malicious.com").is_err());
+    }
 
-		// Enable and recheck
-		let __g2 = SandboxGuard::new(
-			SandboxPolicy { __allownetwork: true, __allow_f_s: true, ..g.policy.clone() }
-		);
-		assert!(g2.check_connect("example.org:443").is_ok());
-		assert_eq!(g2.check_connect("127.0.0.1:80").unwrap_err(), SandboxError::NetworkDenied);
-		assert!(g2.check_open_path("/var/lib/nyx/file").is_ok());
-		assert_eq!(g2.check_open_path("/etc/passwd").unwrap_err(), SandboxError::FsDenied);
-	}
+    #[test]
+    fn test_pattern_matching() {
+        assert!(destination_matches_pattern("example.com", "example.com"));
+        assert!(destination_matches_pattern("api.example.com", "*.example.com"));
+        assert!(destination_matches_pattern("api.example.com", ".example.com"));
+        assert!(!destination_matches_pattern("evil.com", "*.example.com"));
+    }
 }

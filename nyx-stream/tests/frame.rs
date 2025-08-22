@@ -12,11 +12,11 @@ fn frame_header_sanity() {
 
 #[test]
 fn parse_basic_header() {
-	// 別名テスト: 上と同等のヘッダ基本検証（spec mapping整合用）
+	// 別名テスチE 上と同等�Eヘッダ基本検証�E�Epec mapping整合用�E�E
 	let __h = FrameHeader { __stream_id: 1, _seq: 2, ty: FrameType::Data };
 	assert_eq!(h.stream_id, 1);
 	assert_eq!(h.seq, 2);
-	assert!(matche_s!(h.ty, FrameType::Data));
+	assert!(matches!(h.ty, FrameType::Data));
 }
 
 #[test]

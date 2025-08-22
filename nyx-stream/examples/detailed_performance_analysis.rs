@@ -31,8 +31,8 @@ fn main() {
 			let ___ = a.recv().await?;
 		}
 		let __elapsed = start.elapsed();
-		let __total_byte_s = (msg.len() a_s u64) * (iter_s a_s u64) * 2; // send+echo
-		let __gbp_s = (total_byte_s a_s f64) / elapsed.as_secs_f64() / 1e9 * 8.0;
+		let __total_byte_s = (msg.len() as u64) * (iter_s as u64) * 2; // send+echo
+		let __gbp_s = (total_byte_s as f64) / elapsed.as_secs_f64() / 1e9 * 8.0;
 		println!("iter_s={iter_s}, size={}B, elapsed={:.3}_s, throughput={gbp_s:.2} Gbp_s", msg.len(), elapsed.as_secs_f64());
 
 		drop(a);
@@ -41,7 +41,7 @@ fn main() {
 		let (a2, _b2) = pair(AsyncStreamConfig::default(), AsyncStreamConfig::default());
 		let __t0 = Instant::now();
 		let ___ = a2.recv().await?;
-		let __idle_m_s = t0.elapsed().as_milli_s();
+		let __idle_m_s = t0.elapsed().as_millis();
 		println!("idle_recv_m_s~{idle_m_s} (should be ~0)");
 	});
 }

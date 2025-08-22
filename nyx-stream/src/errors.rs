@@ -1,4 +1,4 @@
-﻿use thiserror::Error;
+use thiserror::Error;
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 

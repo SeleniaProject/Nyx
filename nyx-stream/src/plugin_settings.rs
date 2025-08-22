@@ -1,9 +1,9 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PluginSetting_s {
+pub struct PluginSettings {
 	#[serde(default = "default_queue_size")] 
 	pub __queue_size: usize,
 	#[serde(default = "default_max_error_s")] 
@@ -13,8 +13,8 @@ pub struct PluginSetting_s {
 const fn default_queue_size() -> usize { 1024 }
 const fn default_max_error_s() -> u32 { 100 }
 
-impl Default for PluginSetting_s {
-	fn default() -> Self { Self { queue_size: default_queue_size(), max_error_s: default_max_error_s() } }
+impl Default for PluginSettings {
+	fn default() -> Self { Self { __queue_size: default_queue_size(), __max_error_s: default_max_error_s() } }
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 //! Plugin framework test_s including capability validation
 //!
 //! Test_s plugin frame type_s, ID range_s, and capability negotiation
-//! a_s specified in `spec/Capability_Negotiation_Policy.md`.
+//! as specified in `spec/Capability_Negotiation_Policy.md`.
 
 #![allow(clippy::needless_collect)]
 
@@ -17,7 +17,7 @@ use nyx_stream::capability::{Capability, CAP_PLUGIN_FRAMEWORK, negotiate, get_lo
 #[test]
 fn test_plugin_frame_type_validation() {
 	for t in 0x50u8..=0x5F {
-		assert!(is_plugin_frame(t), "0x{t:02X} should be recognized a_s a plugin frame");
+		assert!(is_plugin_frame(t), "0x{t:02X} should be recognized as a plugin frame");
 	}
 	for t in [0x00u8, 0x10, 0x4F, 0x60, 0xFF] {
 		assert!(!is_plugin_frame(t), "0x{t:02X} should NOT be a plugin frame");
@@ -66,7 +66,7 @@ fn test_plugin_frame_size_limit_s() {
 
 	let __f = PluginFrame::new(FRAME_TYPE_PLUGIN_DATA, hdr, payload);
 	let __encoded = f.to_cbor()?;
-	// keep within 100 KiB a_s a sanity envelope for CI boxe_s
+	// keep within 100 KiB as a sanity envelope for CI boxe_s
 	assert!(encoded.len() < 100 * 1024, "encoded size too large: {} byte_s", encoded.len());
 	let __decoded = PluginFrame::from_cbor(&encoded)?;
 	assert_eq!(f, decoded);
