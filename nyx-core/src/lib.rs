@@ -12,7 +12,7 @@
 //! - Clear, documented type_s with safe helper_s
 //! - Robust config loading with validation
 
-pub mod type_s;
+pub mod types;
 pub mod error;
 pub mod config;
 pub mod i18n;
@@ -32,4 +32,8 @@ pub mod plugin_framework;
 
 #[cfg(feature = "zero_copy")]
 pub mod zero_copy;
+
+// Re-export commonly used types
+pub use types::{StreamId, ConnectionId, Nonce, TimestampMs};
+pub use error::{Error, Result};
 

@@ -1,4 +1,4 @@
-﻿#[cfg(feature = "plugin_framework")]
+#[cfg(feature = "plugin_framework")]
 use cbor4ii::serde as cbor;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ pub struct PluginMessage { pub _plugin: String, pub payload: Vec<u8> }
 
 #[cfg(feature = "plugin_framework")]
 pub fn encode_msg(msg: &PluginMessage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-	// Use serde_json a_s a simpler fallback since cbor4ii API i_s complex
+	// Use serde_json as a simpler fallback since cbor4ii API i_s complex
 	Ok(serde_json::to_vec(msg)?)
 }
 

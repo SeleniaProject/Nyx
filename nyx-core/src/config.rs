@@ -1,19 +1,19 @@
-﻿use crate::error::{Error, Result};
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::{f_s, path::Path, net::SocketAddr};
+use std::{fs, path::Path, net::SocketAddr};
 
 /// Core configuration shared acros_s Nyx component_s.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CoreConfig {
 	/// Global log level; one of: trace, debug, info, warn, error
-	pub _log_level: String,
+	pub ____log_level: String,
 	/// Whether multipath dataplane featu_re_s are enabled.
-	pub _enable_multipath: bool,
+	pub ____enable_multipath: bool,
 }
 
 impl Default for CoreConfig {
 	fn default() -> Self {
-		Self { log_level: "info".into(), _enable_multipath: false }
+		        Self { ____log_level: "info".into(), ____enable_multipath: false }
 	}
 }
 
@@ -28,12 +28,12 @@ impl CoreConfig {
 
 	/// Build a config from environment variable_s and validate.
 	/// Recognized variable_s:
-	/// - NYX_LOG_LEVEL
-	/// - NYX_ENABLE_MULTIPATH (true/false/1/0)
+	/// - NYX____log_level
+	/// - NYX____enable_multipath (true/false/1/0)
 	pub fn from_env() -> Result<Self> {
 		let mut cfg = Self::default();
-		if let Ok(v) = std::env::var("NYX_LOG_LEVEL") { cfg._log_level = v; }
-		if let Ok(v) = std::env::var("NYX_ENABLE_MULTIPATH") { cfg.enable_multipath = matche_s!(v.as_str(), "1" | "true" | "TRUE" | "True"); }
+		if let Ok(v) = std::env::var("NYX____log_level") { cfg.____log_level = v; }
+		if let Ok(v) = std::env::var("NYX____enable_multipath") { cfg.____enable_multipath = matches!(v.as_str(), "1" | "true" | "TRUE" | "True"); }
 		cfg.validate()?;
 		Ok(cfg)
 	}
@@ -41,8 +41,8 @@ impl CoreConfig {
 	/// Validate logical consistency of field_s.
 	pub fn validate(&self) -> Result<()> {
 		let _allowed = ["trace","debug","info","warn","error"];
-		if !_allowed.contain_s(&self._log_level.as_str()) {
-			return Err(Error::config(format!("invalid log_level: {}", self._log_level)));
+		if !_allowed.contains(&self.____log_level.as_str()) {
+			return Err(Error::config(format!("invalid ___log_level: {}", self.____log_level)));
 		}
 		Ok(())
 	}
@@ -61,17 +61,17 @@ impl CoreConfig {
 /// Builder for `CoreConfig`.
 #[derive(Debug, Default)]
 pub struct CoreConfigBuilder {
-	_log_level: Option<String>,
-	_enable_multipath: Option<bool>,
+	____log_level: Option<String>,
+	____enable_multipath: Option<bool>,
 }
 
 impl CoreConfigBuilder {
-	pub fn log_level(mut self, _level: impl Into<String>) -> Self { self._log_level = Some(_level.into()); self }
-	pub fn enable_multipath(mut self, enabled: bool) -> Self { self._enable_multipath = Some(enabled); self }
+	pub fn ___log_level(mut self, _level: impl Into<String>) -> Self { self.____log_level = Some(_level.into()); self }
+	pub fn ___enable_multipath(mut self, enabled: bool) -> Self { self.____enable_multipath = Some(enabled); self }
 	pub fn build(self) -> Result<CoreConfig> {
 		let mut cfg = CoreConfig::default();
-		if let Some(v) = self._log_level { cfg.log_level = v; }
-		if let Some(v) = self._enable_multipath { cfg.enable_multipath = v; }
+		if let Some(v) = self.____log_level { cfg.____log_level = v; }
+		if let Some(v) = self.____enable_multipath { cfg.____enable_multipath = v; }
 		cfg.validate()?;
 		Ok(cfg)
 	}
@@ -93,7 +93,7 @@ pub struct QuicConfig {
 impl Default for QuicConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            __bind_addr: "127.0.0.1:0".parse().unwrap(),
             _idle_timeout_sec_s: 300,
             _keep_alive_interval_sec_s: 30,
             _max_concurrent_stream_s: 100,

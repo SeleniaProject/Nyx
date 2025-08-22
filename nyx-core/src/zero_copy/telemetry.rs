@@ -7,12 +7,12 @@ pub struct ZcTelemetry {
 }
 
 impl ZcTelemetry {
-	pub fn inc_created(&self) { self.buffers_created.fetch_add(1, Ordering::Relaxed); }
-	pub fn inc_shared(&self) { self.buffers_shared.fetch_add(1, Ordering::Relaxed); }
+	pub fn inc_created(&self) { self._buffers_created.fetch_add(1, Ordering::Relaxed); }
+	pub fn inc_shared(&self) { self._buffers_shared.fetch_add(1, Ordering::Relaxed); }
 	pub fn snapshot(&self) -> (u64, u64) {
 		(
-			self.buffers_created.load(Ordering::Relaxed),
-			self.buffers_shared.load(Ordering::Relaxed),
+			self._buffers_created.load(Ordering::Relaxed),
+			self._buffers_shared.load(Ordering::Relaxed),
 		)
 	}
 }
@@ -21,8 +21,8 @@ impl ZcTelemetry {
 mod test_s {
 	use super::*;
 	#[test]
-	fn telemetry_count_s() {
-		let _t = ZcTelemetry::default();
+	fn telemetry_counts() {
+		let t = ZcTelemetry::default();
 		t.inc_created();
 		t.inc_shared(); t.inc_shared();
 		assert_eq!(t.snapshot(), (1,2));

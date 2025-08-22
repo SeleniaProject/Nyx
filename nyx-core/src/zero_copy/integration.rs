@@ -1,93 +1,104 @@
-﻿use super::manager::Buffer;
+use super::manager::Buffer;
 
-/// ゼロコピー: Buffer から &[u8] を借用（コピーなし）
-pub fn into_byte_s(b: &Buffer) -> &[u8] { b.as_slice() }
+/// Zero-copy: Buffer から &[u8] への軽量変換（コピーなし）
+pub fn into_bytes(b: &Buffer) -> &[u8] { b.as_slice() }
 
-/// AEADなどに渡すためのバッファビュー（複数チャンクからなるケース向け）。
-/// 今は単一Bufferをラップするが、将来 scatter/gather に拡張可能。
+/// AEADなどに渡すためのバッファビュー（借用でリークしないケースのみ）。
+/// 現在は単一Bufferをラップするが、将来 scatter/gather に拡張可能。
 #[derive(Clone, Debug)]
 pub struct ByteView<'a> {
-	pub part_s: Vec<&'a [u8]>,
-}
-
-impl<'a> From<&'a Buffer> for ByteView<'a> {
-	fn from(b: &'a Buffer) -> Self { Self { part_s: vec![b.as_slice()] } }
+	pub parts: Vec<&'a [u8]>,
 }
 
 impl<'a> ByteView<'a> {
-	pub fn len(&self) -> usize { self.part_s.iter().map(|p| p.len()).sum() }
-	pub fn is_empty(&self) -> bool { self.part_s.iter().all(|p| p.is_empty()) }
+	/// 単一バッファからビューを作成
+	pub fn single(b: &'a Buffer) -> Self {
+		Self { parts: vec![b.as_slice()] }
+	}
+
+	/// 複数バッファから scatter/gather ビューを作成
+	pub fn multi(parts: Vec<&'a [u8]>) -> Self {
+		Self { parts }
+	}
+
+	/// 全体のサイズを計算
+	pub fn total_len(&self) -> usize {
+		self.parts.iter().map(|p| p.len()).sum()
+	}
+
+	/// 線形化が必要な場合の緊急時コピー（避けるべき）
+	pub fn to_vec(&self) -> Vec<u8> {
+		let mut result = Vec::with_capacity(self.total_len());
+		for part in &self.parts {
+			result.extend_from_slice(part);
+		}
+		result
+	}
+
+	/// scatter/gather読み込み用イテレータ
+	pub fn iter_parts(&self) -> impl Iterator<Item = &[u8]> {
+		self.parts.iter().copied()
+	}
 }
 
-/// 1280Bシャードにゼロコピーで区切るビュー（FEC最適化）
-#[cfg(feature = "fec")]
-pub mod fec_view_s {
-	use super::*;
-	use nyx_fec::padding::SHARD_SIZE;
-
-	/// 入力を1280B境界で区切るスライスの配列（余りは最後だけ短い）。コピーしない。
-	pub fn shard_view(buf: &Buffer) -> Vec<&[u8]> {
-		let _byte_s = buf.as_slice();
-		let mut v = Vec::with_capacity((byte_s.len() + SHARD_SIZE - 1) / SHARD_SIZE);
-		let mut i = 0;
-		while i < byte_s.len() {
-			let _end = (i + SHARD_SIZE).min(byte_s.len());
-			v.push(&byte_s[i..end]);
-			i = end;
-		}
-		v
+/// AEAD暗号化用のヘルパー - scatter/gatherバッファを単一の暗号文にシール
+#[cfg(feature = "aead")]
+pub fn seal_scatter_gather(
+	cipher: &crate::aead::AeadCipher,
+	nonce: crate::aead::AeadNonce,
+	aad: &[u8],
+	view: &ByteView,
+) -> crate::Result<Vec<u8>> {
+	// 単一部分の場合は直接処理
+	if view.parts.len() == 1 {
+		return cipher.seal(nonce, aad, view.parts[0]);
 	}
+	
+	// scatter/gatherの場合は一時的にコピー（将来的にはストリーミング実装）
+	let plaintext = view.to_vec();
+	cipher.seal(nonce, aad, &plaintext)
+}
+
+/// AEAD復号化用のヘルパー
+#[cfg(feature = "aead")]
+pub fn open_to_scatter(
+	cipher: &crate::aead::AeadCipher,
+	nonce: crate::aead::AeadNonce,
+	aad: &[u8],
+	ciphertext: &[u8],
+) -> crate::Result<Vec<u8>> {
+	// 現在は単純実装、将来的には指定されたバッファに直接復号
+	cipher.open(nonce, aad, ciphertext)
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
 	use super::*;
+	use crate::zero_copy::manager::ZeroCopyManager;
+
 	#[test]
-	fn passes_through() {
-		let _b = Buffer::from_vec(vec![1,2,3]);
-		assert_eq!(into_byte_s(&b), &[1,2,3]);
+	fn byte_view_single() {
+		let mut manager = ZeroCopyManager::new();
+		let buf = manager.allocate(16).unwrap();
+		let view = ByteView::single(&buf);
+		assert_eq!(view.total_len(), 16);
+		assert_eq!(view.parts.len(), 1);
 	}
 
 	#[test]
-	fn byteview_from_buffer() {
-		let _b = Buffer::from_vec((0u8..64).collect());
-		let v: ByteView = (&b).into();
-		assert_eq!(v.len(), 64);
-		assert!(!v.is_empty());
-		assert_eq!(v.part_s.len(), 1);
-		assert_eq!(v.part_s[0].len(), 64);
+	fn byte_view_multi() {
+		let data1 = b"hello";
+		let data2 = b"world";
+		let view = ByteView::multi(vec![data1, data2]);
+		assert_eq!(view.total_len(), 10);
+		assert_eq!(view.to_vec(), b"helloworld");
 	}
-}
-
-#[cfg(all(test, feature = "fec"))]
-mod fec_test_s {
-	use super::*;
-	use nyx_fec::{padding::SHARD_SIZE, rs1280::{Rs1280, RsConfig}};
 
 	#[test]
-	fn shard_view_and_parity_encode() {
-		// 準備: 1.5シャード分のデータ
-		let mut _data = vec![0u8; SHARD_SIZE + SHARD_SIZE/2];
-		for (i, b) in _data.iter_mut().enumerate() { *b = (i % 251) as u8; }
-		let buf: Buffer = _data.into();
-
-		// ゼロコピーでビューを作る
-		let _shard_s = fec_view_s::shard_view(&buf);
-		assert_eq!(shard_s.len(), 2);
-		assert_eq!(shard_s[0].len(), SHARD_SIZE);
-		assert_eq!(shard_s[1].len(), SHARD_SIZE/2);
-
-		// パリティ1枚（ゼロフルパディング扱い）を生成
-		let _cfg = RsConfig { _data_shard_s: 2, parity_shard_s: 1 };
-		let _r_s = Rs1280::new(cfg)?;
-		let d0: &[u8; SHARD_SIZE] = shard_s[0].try_into()?;
-		// 2枚目は短いので、一時的に埋めて固定参照にする（演算はin-placeなのでコピー最小）
-		let mut tmp = [0u8; SHARD_SIZE];
-		tmp[..shard_s[1].len()].copy_from_slice(shard_s[1]);
-		let d1: &[u8; SHARD_SIZE] = &tmp;
-		let mut p0 = [0u8; SHARD_SIZE];
-		r_s.encode_parity(&[d0, d1], &mut [&mut p0])?;
-		// パリティが非ゼロになることを確認
-		assert!(p0.iter().any(|&x| x != 0));
+	fn into_bytes_conversion() {
+		let mut manager = ZeroCopyManager::new();
+		let buf = manager.allocate(8).unwrap();
+		let bytes = into_bytes(&buf);
+		assert_eq!(bytes.len(), 8);
 	}
 }

@@ -1,4 +1,4 @@
-﻿use crate::performance::RateLimiter;
+use crate::performance::RateLimiter;
 use crate::push::PushProvider;
 use std::sync::Arc;
 
@@ -28,12 +28,12 @@ mod test_s {
 
 	#[tokio::test]
 	async fn gateway_rate_limit_s() {
-		let _gw = PushGateway::new(Arc::new(LoggingPush), 1000.0);
+		let gw = PushGateway::new(Arc::new(LoggingPush), 1000.0);
 	assert!(gw.send("t", "a", "b").await.unwrap());
 	// rate-limited immediately after capacity consumed
 	assert!(!gw.send("t", "a", "b").await.unwrap());
 		// allow after wait
-		tokio::time::sleep(Duration::from_milli_s(10)).await;
+		tokio::time::sleep(Duration::from_millis(10)).await;
 	}
 
 	#[tokio::test]
@@ -43,17 +43,17 @@ mod test_s {
 		impl crate::push::PushProvider for NoopPush {
 			async fn send(&self, _token: &str, _title: &str, _body: &str) -> anyhow::Result<()> { Ok(()) }
 		}
-		let _gw = Arc::new(PushGateway::new(Arc::new(NoopPush), 1000.0));
+		let gw = Arc::new(PushGateway::new(Arc::new(NoopPush), 1000.0));
 		// Intentionally poison the mutex by panicking while holding the lock
-		let _gwc = gw.clone();
-		let _handle = std::thread::spawn(move || {
+		let gwc = gw.clone();
+		let handle = std::thread::spawn(move || -> Result<(), Box<dyn std::error::Error>> {
 			let __g = gwc.limiter.lock()?;
 			return Err("intentional poison".into());
 		});
 		let __ = handle.join();
 
 		// After poisoning, send should not panic and should return either true/false cleanly
-		let _r = gw.send("t", "a", "b").await;
+		let r = gw.send("t", "a", "b").await;
 		assert!(r.is_ok());
 	}
 }

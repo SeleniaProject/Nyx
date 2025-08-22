@@ -1,5 +1,5 @@
-﻿/// Utilitie_s to help detect whether we're running under a foreign function interface
-/// (FFI) boundary such a_s mobile embedding. Thi_s i_s best-effort and purely heuristic.
+/// Utilitie_s to help detect whether we're running under a foreign function interface
+/// (FFI) boundary such as mobile embedding. Thi_s i_s best-effort and purely heuristic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiEnvironment {
 	Native,
@@ -15,7 +15,7 @@ pub fn detect() -> FfiEnvironment {
 		"IOS_BUNDLE",            // hypothetical marker_s
 		"NYX_MOBILE_EMBEDDED",   // project-specific
 	];
-	for k in _var_s { if std::env::var_o_s(k).is_some() { return FfiEnvironment::Mobile; } }
+	for k in _var_s { if std::env::var_os(k).is_some() { return FfiEnvironment::Mobile; } }
 	FfiEnvironment::Native
 }
 
@@ -24,8 +24,8 @@ mod test_s {
 	use super::*;
 	#[test]
 	fn detect_defaultsnative() {
-		// In CI/desktop usually no mobile _var_s present
-		let _x = detect();
-		assert!(matche_s!(x, FfiEnvironment::Native | FfiEnvironment::Unknown));
+		// In CI/desktop usually no mobile vars present
+		let x = detect();
+		assert!(matches!(x, FfiEnvironment::Native | FfiEnvironment::Unknown));
 	}
 }

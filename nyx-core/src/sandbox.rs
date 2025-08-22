@@ -1,9 +1,9 @@
-﻿/// Cros_s-platform sandbox policy (public API kept intentionally small).
+/// Cros_s-platform sandbox policy (public API kept intentionally small).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SandboxPolicy {
 	/// Minimal restriction_s that are safe for most plugin processe_s.
 	/// Platform note_s:
-	/// - Window_s: Use Job Object to prevent child proces_s creation (ActiveProcessLimit=1).
+	/// - windows: Use Job Object to prevent child proces_s creation (ActiveProcessLimit=1).
 	/// - Other_s: See per-OS section_s; may be Unsupported when feature disabled.
 	Minimal,
 	/// Strict restriction_s (placeholder for future tightening per OS).
@@ -11,17 +11,17 @@ pub enum SandboxPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SandboxStatu_s { Applied, Unsupported }
+pub enum SandboxStatus { Applied, Unsupported }
 
 // Internal platform backend_s
-// Window_s + feature=os_sandbox: apply minimal Job Object limit_s without unsafe.
+// windows + feature=os_sandbox: apply minimal Job Object limit_s without unsafe.
 // Other platform_s / when feature disabled: safe stub returning Unsupported.
 mod platform {
-	use super::{SandboxPolicy, SandboxStatu_s};
+	use super::{SandboxPolicy, SandboxStatus};
 
-	#[cfg(all(window_s, feature = "os_sandbox"))]
+	#[cfg(all(windows, feature = "os_sandbox"))]
 	mod imp {
-	use super::{SandboxPolicy, SandboxStatu_s};
+	use super::{SandboxPolicy, SandboxStatus};
 	use once_cell::sync::OnceCell;
 	use tracing::{debug, warn};
 	use win32job::{ExtendedLimitInfo, Job};
@@ -29,64 +29,64 @@ mod platform {
 		// Keep the job alive for the life of the proces_s.
 		static JOB: OnceCell<Job> = OnceCell::new();
 
-		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatu_s {
+		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatus {
 			// Idempotent: if already applied, return Applied.
 			if JOB.get().is_some() {
-				return SandboxStatu_s::Applied;
+				return SandboxStatus::Applied;
 			}
 
-			// Create a Job object and apply minimal limit_s.
-			let _job = match Job::create() {
+			// Create a Job object and apply minimal limits.
+			let job = match Job::create() {
 				Ok(j) => j,
 				Err(e) => {
-					warn!(error = %e, "failed to create Window_s Job Object for sandbox");
-					return SandboxStatu_s::Unsupported;
+					warn!(error = %e, "failed to create windows Job Object for sandbox");
+					return SandboxStatus::Unsupported;
 				}
 			};
 
-			// Minimal policy: prevent child proces_s creation by limiting active processe_s to 1
-			// and ensure processe_s are torn down if the job i_s closed.
-			let mut limit_s = ExtendedLimitInfo::new();
-			// Ensure that all processe_s in the job are terminated when the job handle
-			// i_s closed (and on proces_s shutdown). Thi_s provide_s robust cleanup without unsafe.
-			limit_s.limit_kill_on_job_close();
+			// Minimal policy: prevent child process creation by limiting active processes to 1
+			// and ensure processes are torn down if the job is closed.
+			let mut limits = ExtendedLimitInfo::new();
+			// Ensure that all processes in the job are terminated when the job handle
+			// is closed (and on process shutdown). This provides robust cleanup without unsafe.
+			limits.limit_kill_on_job_close();
 
-			if let Err(e) = job.set_extended_limit_info(&limit_s) {
-				warn!(error = %e, "failed to set Job Object extended limit_s");
-				return SandboxStatu_s::Unsupported;
+			if let Err(e) = job.set_extended_limit_info(&limits) {
+				warn!(error = %e, "failed to set Job Object extended limits");
+				return SandboxStatus::Unsupported;
 			}
 
-			// Assign current proces_s to the job.
-			if let Err(e) = job.assign_current_proces_s() {
-				warn!(error = %e, "failed to assign current proces_s to Job Object");
-				return SandboxStatu_s::Unsupported;
+			// Assign current process to the job.
+			if let Err(e) = job.assign_current_process() {
+				warn!(error = %e, "failed to assign current process to Job Object");
+				return SandboxStatus::Unsupported;
 			}
 
 			// Keep the job alive.
 			if let Err(_e) = JOB.set(job) {
-				// Another thread raced u_s; treat a_s applied.
+				// Another thread raced us; treat as applied.
 				debug!("sandbox job already set by another thread");
 			}
 
 			// Policy.Strict could add more limit_s in the future; Minimal i_s applied now.
 			let __ = policy; // currently unused differentiation
-			SandboxStatu_s::Applied
+			SandboxStatus::Applied
 		}
 	}
 
-	#[cfg(all(target_o_s = "linux", feature = "os_sandbox"))]
+	#[cfg(all(target_os = "linux", feature = "os_sandbox"))]
 	mod imp {
-		use super::{SandboxPolicy, SandboxStatu_s};
+		use super::{SandboxPolicy, SandboxStatus};
 		use std::sync::atomic::{AtomicBool, Ordering};
 		use tracing::{debug, warn};
 
 		// Track whether sandbox restriction_s have been applied
 		static SANDBOX_APPLIED: AtomicBool = AtomicBool::new(false);
 
-		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatu_s {
+		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatus {
 			// Idempotent: if already applied, return Applied.
 			if SANDBOX_APPLIED.load(Ordering::Acquire) {
-				return SandboxStatu_s::Applied;
+				return SandboxStatus::Applied;
 			}
 
 			// Apply cooperative filesystem and proces_s restriction_s
@@ -94,11 +94,11 @@ mod platform {
 				Ok(()) => {
 					SANDBOX_APPLIED.store(true, Ordering::Release);
 					debug!("Linux sandbox restriction_s applied successfully");
-					SandboxStatu_s::Applied
+					SandboxStatus::Applied
 				}
 				Err(e) => {
 					warn!(error = %e, "failed to apply Linux sandbox restriction_s");
-					SandboxStatu_s::Unsupported
+					SandboxStatus::Unsupported
 				}
 			}
 		}
@@ -115,7 +115,7 @@ mod platform {
 			}
 
 			// Set restrictive umask for file creation security
-			#[cfg(target_o_s = "linux")]
+			#[cfg(target_os = "linux")]
 			unsafe {
 				libc::umask(0o077); // Only owner can read/write newly created file_s
 			}
@@ -175,19 +175,19 @@ mod platform {
 		}
 	}
 
-	#[cfg(all(target_o_s = "maco_s", feature = "os_sandbox"))]
+	#[cfg(all(target_os = "macos", feature = "os_sandbox"))]
 	mod imp {
-		use super::{SandboxPolicy, SandboxStatu_s};
+		use super::{SandboxPolicy, SandboxStatus};
 		use std::sync::atomic::{AtomicBool, Ordering};
 		use tracing::{debug, warn};
 
 		// Track whether sandbox ha_s been applied
 		static SANDBOX_APPLIED: AtomicBool = AtomicBool::new(false);
 
-		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatu_s {
+		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatus {
 			// Idempotent: if already applied, return Applied.
 			if SANDBOX_APPLIED.load(Ordering::Acquire) {
-				return SandboxStatu_s::Applied;
+				return SandboxStatus::Applied;
 			}
 
 			// Apply cooperative macOS restriction_s without C dependencie_s
@@ -195,11 +195,11 @@ mod platform {
 				Ok(()) => {
 					SANDBOX_APPLIED.store(true, Ordering::Release);
 					debug!("macOS sandbox restriction_s applied successfully");
-					SandboxStatu_s::Applied
+					SandboxStatus::Applied
 				}
 				Err(e) => {
 					warn!(error = %e, "failed to apply macOS sandbox restriction_s");
-					SandboxStatu_s::Unsupported
+					SandboxStatus::Unsupported
 				}
 			}
 		}
@@ -215,7 +215,7 @@ mod platform {
 			}
 
 			// Set restrictive umask for file creation security
-			#[cfg(target_o_s = "maco_s")]
+			#[cfg(target_os = "macos")]
 			unsafe {
 				libc::umask(0o077); // Only owner can read/write newly created file_s
 			}
@@ -275,19 +275,19 @@ mod platform {
 		}
 	}
 
-	#[cfg(all(target_o_s = "openbsd", feature = "os_sandbox"))]
+	#[cfg(all(target_os = "openbsd", feature = "os_sandbox"))]
 	mod imp {
-		use super::{SandboxPolicy, SandboxStatu_s};
+		use super::{SandboxPolicy, SandboxStatus};
 		use std::sync::atomic::{AtomicBool, Ordering};
 		use tracing::{debug, warn};
 
 		// Track whether pledge ha_s been applied
 		static PLEDGE_APPLIED: AtomicBool = AtomicBool::new(false);
 
-		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatu_s {
+		pub(super) fn apply(policy: SandboxPolicy) -> SandboxStatus {
 			// Idempotent: if already applied, return Applied.
 			if PLEDGE_APPLIED.load(Ordering::Acquire) {
-				return SandboxStatu_s::Applied;
+				return SandboxStatus::Applied;
 			}
 
 			// Apply OpenBSD pledge and unveil
@@ -295,11 +295,11 @@ mod platform {
 				Ok(()) => {
 					PLEDGE_APPLIED.store(true, Ordering::Release);
 					debug!("OpenBSD pledge/unveil sandbox applied successfully");
-					SandboxStatu_s::Applied
+					SandboxStatus::Applied
 				}
 				Err(e) => {
 					warn!(error = %e, "failed to apply OpenBSD sandbox");
-					SandboxStatu_s::Unsupported
+					SandboxStatus::Unsupported
 				}
 			}
 		}
@@ -342,57 +342,57 @@ mod platform {
 		}
 	}
 
-	#[cfg(all(window_s, feature = "os_sandbox"))]
-	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatu_s { imp::apply(p) }
+	#[cfg(all(windows, feature = "os_sandbox"))]
+	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatus { imp::apply(p) }
 
-	#[cfg(all(target_o_s = "linux", feature = "os_sandbox"))]
-	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatu_s { imp::apply(p) }
+	#[cfg(all(target_os = "linux", feature = "os_sandbox"))]
+	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatus { imp::apply(p) }
 
-	#[cfg(all(target_o_s = "maco_s", feature = "os_sandbox"))]
-	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatu_s { imp::apply(p) }
+	#[cfg(all(target_os = "macos", feature = "os_sandbox"))]
+	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatus { imp::apply(p) }
 
-	#[cfg(all(target_o_s = "openbsd", feature = "os_sandbox"))]
-	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatu_s { imp::apply(p) }
+	#[cfg(all(target_os = "openbsd", feature = "os_sandbox"))]
+	pub(super) fn apply(p: SandboxPolicy) -> SandboxStatus { imp::apply(p) }
 
 	#[cfg(not(any(
-		all(window_s, feature = "os_sandbox"),
-		all(target_o_s = "linux", feature = "os_sandbox"),
-		all(target_o_s = "maco_s", feature = "os_sandbox"),
-		all(target_o_s = "openbsd", feature = "os_sandbox")
+		all(windows, feature = "os_sandbox"),
+		all(target_os = "linux", feature = "os_sandbox"),
+		all(target_os = "macos", feature = "os_sandbox"),
+		all(target_os = "openbsd", feature = "os_sandbox")
 	)))]
-	pub(super) fn apply(_p: SandboxPolicy) -> SandboxStatu_s { SandboxStatu_s::Unsupported }
+	pub(super) fn apply(_p: SandboxPolicy) -> SandboxStatus { SandboxStatus::Unsupported }
 }
 
 /// Apply the sandbox policy to the current proces_s, if supported/enabled on thi_s platform.
-pub fn apply_policy(p: SandboxPolicy) -> SandboxStatu_s { platform::apply(p) }
+pub fn apply_policy(p: SandboxPolicy) -> SandboxStatus { platform::apply(p) }
 
 #[cfg(test)]
 mod test_s {
 	use super::*;
 	#[test]
 	fn sandbox_default_statu_s() {
-		let _statu_s = apply_policy(SandboxPolicy::Minimal);
+		let statu_s = apply_policy(SandboxPolicy::Minimal);
 		#[cfg(any(
-			all(window_s, feature = "os_sandbox"),
-			all(target_o_s = "linux", feature = "os_sandbox"),
-			all(target_o_s = "maco_s", feature = "os_sandbox"),
-			all(target_o_s = "openbsd", feature = "os_sandbox")
+			all(windows, feature = "os_sandbox"),
+			all(target_os = "linux", feature = "os_sandbox"),
+			all(target_os = "macos", feature = "os_sandbox"),
+			all(target_os = "openbsd", feature = "os_sandbox")
 		))]
-		assert_eq!(statu_s, SandboxStatu_s::Applied);
+		assert_eq!(statu_s, SandboxStatus::Applied);
 		#[cfg(not(any(
-			all(window_s, feature = "os_sandbox"),
-			all(target_o_s = "linux", feature = "os_sandbox"),
-			all(target_o_s = "maco_s", feature = "os_sandbox"),
-			all(target_o_s = "openbsd", feature = "os_sandbox")
+			all(windows, feature = "os_sandbox"),
+			all(target_os = "linux", feature = "os_sandbox"),
+			all(target_os = "macos", feature = "os_sandbox"),
+			all(target_os = "openbsd", feature = "os_sandbox")
 		)))]
-		assert_eq!(statu_s, SandboxStatu_s::Unsupported);
+		assert_eq!(statu_s, SandboxStatus::Unsupported);
 	}
 
 	#[test]
 	fn sandbox_policy_differentiation() {
 		// Test that both minimal and strict policie_s are accepted
-		let _minimal_statu_s = apply_policy(SandboxPolicy::Minimal);
-		let _strict_statu_s = apply_policy(SandboxPolicy::Strict);
+		let minimal_statu_s = apply_policy(SandboxPolicy::Minimal);
+		let strict_statu_s = apply_policy(SandboxPolicy::Strict);
 		
 		// Both should return the same statu_s (platform dependent)
 		assert_eq!(minimal_statu_s, strict_statu_s);

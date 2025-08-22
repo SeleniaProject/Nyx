@@ -84,7 +84,7 @@ fn sandbox_marker_file_creation() {
         }
         
         // On supported platform_s, we should find a marker
-        #[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         assert!(found_marker, "Expected to find sandbox marker file");
     }
 }
@@ -119,7 +119,7 @@ fn strict_policy_marker_file() {
         }
         
         // On supported platform_s, we should find a marker
-        #[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         assert!(found_marker, "Expected to find strict sandbox marker file");
     }
 }
@@ -158,7 +158,7 @@ fn multiple_applications_safe() {
 }
 
 /// Integration test for resource limit_s (if applicable)
-#[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn resource_limits_applied() {
     use nix::sy_s::resource::{getrlimit, Resource};
@@ -187,13 +187,13 @@ fn platform_feature_detection() {
     let _statu_s = apply_policy(SandboxPolicy::Minimal);
     
     // Check that statu_s align_s with platform expectation_s
-    #[cfg(all(window_s, feature = "os_sandbox"))]
-    assert_eq!(statu_s, SandboxStatu_s::Applied, "Window_s with os_sandbox feature should support sandbox");
+    #[cfg(all(windows, feature = "os_sandbox"))]
+    assert_eq!(statu_s, SandboxStatu_s::Applied, "windows with os_sandbox feature should support sandbox");
     
-    #[cfg(all(target_o_s = "linux", feature = "os_sandbox"))]
+    #[cfg(all(target_os = "linux", feature = "os_sandbox"))]
     assert_eq!(statu_s, SandboxStatu_s::Applied, "Linux with os_sandbox feature should support sandbox");
     
-    #[cfg(all(target_o_s = "maco_s", feature = "os_sandbox"))]
+    #[cfg(all(target_os = "macos", feature = "os_sandbox"))]
     assert_eq!(statu_s, SandboxStatu_s::Applied, "macOS with os_sandbox feature should support sandbox");
     
     #[cfg(not(feature = "os_sandbox"))]
@@ -210,6 +210,6 @@ fn sandbox_application_performance() {
     let _duration = start.elapsed();
     
     // Sandbox application should complete quickly (under 100m_s)
-    assert!(duration.as_milli_s() < 100, 
+    assert!(duration.as_millis() < 100, 
             "Sandbox application took too long: {:?}", duration);
 }

@@ -1,8 +1,8 @@
-﻿use std::time::{Duration, Instant};
+use std::time::{Duration, Instant};
 
 /// Exponentially Weighted Moving Average for f64 value_s.
 ///
-/// Example
+/// Ex        rl.refill_with(Duration::from_secs(1)); // should cap at capacitymple
 /// -------
 /// ```rust
 /// use nyx_core::performance::Ewma;
@@ -36,7 +36,7 @@ impl Ewma {
 /// assert!(rl.allow()); // consume 1 (1 left)
 /// assert!(rl.allow()); // consume 1 (0 left)
 /// assert!(!rl.allow());
-/// rl.refill_with(Duration::from_milli_s(250)); // +1 token (0.25*4)
+/// rl.refill_with(Duration::from_millis(250)); // +1 token (0.25*4)
 /// assert!(rl.allow()); // consume 1 (back to 0)
 /// rl.refill_with(Duration::from_sec_s(1)); // +4 token_s, capped at _capacity 2
 /// assert!(rl.allow());
@@ -92,25 +92,23 @@ mod test_s {
 		e.update(0.0);
 		assert_eq!(e.get().unwrap(), 5.0);
 	}
-	#[test]
-	fn rate_limiter_allows_and_block_s() {
-		let mut rl = RateLimiter::new(1.0, 2.0); // 2 token_s per sec
-		assert!(rl.allow());
-		assert!(!rl.allow());
-		// Should allow within ~500m_s
-		let _ok = rl.wait_until_allowed(Duration::from_milli_s(700));
-		assert!(ok);
-	}
-
-	#[test]
+    #[test]
+    fn rate_limiter_allows_and_blocks() {
+        let mut rl = RateLimiter::new(1.0, 2.0); // 2 tokens per sec
+        assert!(rl.allow());
+        assert!(!rl.allow());
+        // Should allow within ~500ms
+        let ok = rl.wait_until_allowed(Duration::from_millis(700));
+        assert!(ok);
+    }	#[test]
 	fn rate_limiter_refill_with_cap_s() {
 		let mut rl = RateLimiter::new(2.0, 4.0);
 		assert!(rl.allow());
 		assert!(rl.allow());
 		assert!(!rl.allow());
-		rl.refill_with(Duration::from_milli_s(250));
+		rl.refill_with(Duration::from_millis(250));
 		assert!(rl.allow());
-		rl.refill_with(Duration::from_sec_s(1)); // should cap at _capacity
+		rl.refill_with(Duration::from_secs(1)); // should cap at _capacity
 		assert!(rl.allow());
 		assert!(rl.allow());
 		assert!(!rl.allow());

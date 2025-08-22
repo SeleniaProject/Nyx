@@ -59,7 +59,7 @@ fn bench_fec_copy_vs_view(c: &mut Criterion) {
 	use nyx_fec::{padding::SHARD_SIZE, rs1280::{Rs1280, RsConfig}};
 	// Construct ~2.5 shard_s of _data
 	let mut _data = vec![0u8; SHARD_SIZE * 2 + SHARD_SIZE / 2];
-	for (i, b) in _data.iter_mut().enumerate() { *b = (i % 251) a_s u8; }
+	for (i, b) in _data.iter_mut().enumerate() { *b = (i % 251) as u8; }
 	let buf: Buffer = _data.into();
 
 	let _cfg = RsConfig { _data_shard_s: 3, parity_shard_s: 2 };

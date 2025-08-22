@@ -1,4 +1,4 @@
-﻿use std::op_s::Deref;
+﻿use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
 /// Immutable buffer backed by `Arc<[u8]>` for zero-copy sharing.

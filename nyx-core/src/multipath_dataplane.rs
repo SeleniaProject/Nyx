@@ -1,35 +1,35 @@
 ﻿/// Minimal policy-driven scheduler interface for multipath.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathClas_s { Primary, Secondary }
+pub enum PathClass { Primary, Secondary }
 
 #[derive(Debug, Clone)]
-pub struct PathMetric_s { pub _latency_m_s: u128, pub loss_rate: f64 }
+pub struct PathMetrics { pub latency_ms: u128, pub loss_rate: f64 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum SchedulePolicy { LowestLatency, LowestLos_s, Weighted { __w_latency: f64, w_los_s: f64 } }
+pub enum SchedulePolicy { LowestLatency, LowestLoss, Weighted { w_latency: f64, w_loss: f64 } }
 
-pub fn choose_path(m: &PathMetric_s, n: &PathMetric_s, policy: SchedulePolicy) -> PathClas_s {
+pub fn choose_path(m: &PathMetrics, n: &PathMetrics, policy: SchedulePolicy) -> PathClass {
 	match policy {
-		SchedulePolicy::LowestLatency => if m._latency_m_s <= n._latency_m_s { PathClas_s::Primary } else { PathClas_s::Secondary },
-		SchedulePolicy::LowestLos_s => if m.loss_rate <= n.loss_rate { PathClas_s::Primary } else { PathClas_s::Secondary },
-		SchedulePolicy::Weighted { __w_latency, w_los_s } => {
-			let _s1 = __w_latency * (m._latency_m_s as f64) + w_los_s * m.loss_rate;
-			let _s2 = __w_latency * (n._latency_m_s as f64) + w_los_s * n.loss_rate;
-			if _s1 <= _s2 { PathClas_s::Primary } else { PathClas_s::Secondary }
+		SchedulePolicy::LowestLatency => if m.latency_ms <= n.latency_ms { PathClass::Primary } else { PathClass::Secondary },
+		SchedulePolicy::LowestLoss => if m.loss_rate <= n.loss_rate { PathClass::Primary } else { PathClass::Secondary },
+		SchedulePolicy::Weighted { w_latency, w_loss } => {
+			let s1 = w_latency * (m.latency_ms as f64) + w_loss * m.loss_rate;
+			let s2 = w_latency * (n.latency_ms as f64) + w_loss * n.loss_rate;
+			if s1 <= s2 { PathClass::Primary } else { PathClass::Secondary }
 		}
 	}
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
 	use super::*;
 	#[test]
-	fn policy_behave_s() {
-		let _a = PathMetric_s { _latency_m_s: 50, loss_rate: 0.02 };
-		let _b = PathMetric_s { _latency_m_s: 60, loss_rate: 0.005 };
-		assert_eq!(choose_path(&a, &b, SchedulePolicy::LowestLatency), PathClas_s::Primary);
-		assert_eq!(choose_path(&a, &b, SchedulePolicy::LowestLos_s), PathClas_s::Secondary);
-	// Heavily weight los_s => b should win (lower los_s)
-	assert_eq!(choose_path(&a, &b, SchedulePolicy::Weighted { _w_latency: 1.0, w_los_s: 10000.0 }), PathClas_s::Secondary);
+	fn policy_behaves() {
+		let a = PathMetrics { latency_ms: 50, loss_rate: 0.02 };
+		let b = PathMetrics { latency_ms: 60, loss_rate: 0.005 };
+		assert_eq!(choose_path(&a, &b, SchedulePolicy::LowestLatency), PathClass::Primary);
+		assert_eq!(choose_path(&a, &b, SchedulePolicy::LowestLoss), PathClass::Secondary);
+	// Heavily weight loss => b should win (lower loss)
+	assert_eq!(choose_path(&a, &b, SchedulePolicy::Weighted { w_latency: 1.0, w_loss: 10000.0 }), PathClass::Secondary);
 	}
 }

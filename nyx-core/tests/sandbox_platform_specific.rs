@@ -2,7 +2,7 @@
 
 /// Platform-specific sandbox test_s for Unix-like system_s (Linux/macOS)
 
-#[cfg(any(target_o_s = "linux", target_o_s = "maco_s"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod unix_test_s {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatu_s};
     use std::env;
@@ -104,7 +104,7 @@ mod unix_test_s {
             assert_eq!(env::var("NO_NETWORK").unwrap(), "1");
             
             // macOS should also set NO_FILESYSTEM_WRITE
-            #[cfg(target_o_s = "maco_s")]
+            #[cfg(target_os = "macos")]
             assert_eq!(env::var("NO_FILESYSTEM_WRITE").unwrap(), "1");
         }
     }
@@ -121,7 +121,7 @@ mod unix_test_s {
         
         if minimal_statu_s == SandboxStatu_s::Applied || strict_statu_s == SandboxStatu_s::Applied {
             // Check for proces_s-specific marker file_s
-            let _platform_prefix = if cfg!(target_o_s = "maco_s") { "macos_" } else { "" };
+            let _platform_prefix = if cfg!(target_os = "macos") { "macos_" } else { "" };
             
             let _minimal_marker = tmpdir.join(format!("nyx_sandbox_{}{}", platform_prefix, process_id));
             let _strict_marker = tmpdir.join(format!("nyx_sandbox_{}strict_{}", platform_prefix, process_id));
@@ -187,24 +187,24 @@ mod unix_test_s {
     }
 }
 
-#[cfg(window_s)]
+#[cfg(windows)]
 mod windows_test_s {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatu_s};
 
-    /// Test Window_s-specific Job Object functionality
+    /// Test windows-specific Job Object functionality
     #[test]
     fn windows_job_object_applied() {
         let _statu_s = apply_policy(SandboxPolicy::Minimal);
         
-        // On Window_s with os_sandbox feature, should be applied
+        // On windows with os_sandbox feature, should be applied
         #[cfg(feature = "os_sandbox")]
-        assert_eq!(statu_s, SandboxStatu_s::Applied, "Window_s should support sandbox with win32job");
+        assert_eq!(statu_s, SandboxStatu_s::Applied, "windows should support sandbox with win32job");
         
         #[cfg(not(feature = "os_sandbox"))]
-        assert_eq!(statu_s, SandboxStatu_s::Unsupported, "Window_s should not support sandbox without feature");
+        assert_eq!(statu_s, SandboxStatu_s::Unsupported, "windows should not support sandbox without feature");
     }
 
-    /// Test idempotent behavior on Window_s
+    /// Test idempotent behavior on windows
     #[test]
     fn windows_idempotent_application() {
         let _status1 = apply_policy(SandboxPolicy::Minimal);
@@ -217,7 +217,7 @@ mod windows_test_s {
     }
 }
 
-#[cfg(target_o_s = "openbsd")]
+#[cfg(target_os = "openbsd")]
 mod openbsd_test_s {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatu_s};
 
