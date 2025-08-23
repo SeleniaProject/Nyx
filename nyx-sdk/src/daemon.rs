@@ -129,6 +129,16 @@ impl DaemonClient {
         .await
     }
 
+    /// Update daemon configuration with the provided settings
+    /// 
+    /// # Arguments
+    /// * `settings` - Key-value pairs of configuration options to update
+    /// 
+    /// # Errors
+    /// Returns an error if:
+    /// - Failed to serialize settings to JSON
+    /// - Communication with daemon fails
+    /// - Daemon rejects the configuration update
     pub async fn update_config(
         &self,
         settings: serde_json::Map<String, serde_json::Value>,
@@ -143,6 +153,16 @@ impl DaemonClient {
         .await
     }
 
+    /// Rollback daemon configuration to a previous version
+    /// 
+    /// # Arguments
+    /// * `version` - The configuration version to rollback to
+    /// 
+    /// # Errors
+    /// Returns an error if:
+    /// - The specified version does not exist
+    /// - Communication with daemon fails
+    /// - Rollback operation fails on the daemon side
     pub async fn rollback_config(&self, version: u64) -> Result<ConfigResponse> {
         self.rpc_json::<ConfigResponse>(&RpcRequest {
             id: None,
@@ -152,6 +172,16 @@ impl DaemonClient {
         .await
     }
 
+    /// Create a snapshot of the current daemon configuration
+    /// 
+    /// # Arguments
+    /// * `description` - Optional description for the snapshot
+    /// 
+    /// # Errors
+    /// Returns an error if:
+    /// - Communication with daemon fails
+    /// - Snapshot creation fails on the daemon side
+    /// - Serialization of configuration fails
     pub async fn create_config_snapshot(
         &self,
         description: Option<String>,
@@ -164,6 +194,16 @@ impl DaemonClient {
         .await
     }
 
+    /// Subscribe to daemon events of specific types
+    /// 
+    /// # Arguments
+    /// * `types` - Optional list of event types to subscribe to. If None, subscribes to all events
+    /// 
+    /// # Errors
+    /// Returns an error if:
+    /// - Communication with daemon fails
+    /// - Event subscription setup fails
+    /// - Invalid event types are specified
     pub async fn subscribe_events(
         &self,
         types: Option<Vec<String>>,

@@ -1,5 +1,14 @@
 #![cfg(feature = "hybrid")]
 
+//! HPKE (Hybrid Public Key Encryption) Envelope Testing Suite
+//!
+//! This module provides comprehensive testing for HPKE envelope operations including:
+//! - Hybrid encryption combining X25519 ECDH and Kyber post-quantum cryptography
+//! - Message integrity and authenticity verification
+//! - Large message handling and performance characteristics
+//! - Security properties including tamper detection and wrong-recipient scenarios
+//! - Memory safety and proper error handling under adverse conditions
+
 use chacha20poly1305::{
     aead::{AeadInPlace, NewAead},
     ChaCha20Poly1305, Nonce,
@@ -7,11 +16,11 @@ use chacha20poly1305::{
 #[cfg(feature = "hybrid")]
 use nyx_crypto::hybrid::{KyberStaticKeypair, X25519StaticKeypair};
 
-/// HPKE Context for managing encryption/decryption state with sequence number_s
+/// HPKE Context for managing encryption/decryption state with sequence numbers
 ///
-/// This implement_s a stateful AEAD context where each encryption/decryption
-/// operation increment_s an internal sequence counter used for nonce generation.
-/// This ensu_re_s nonce uniquenes_s and prevent_s replay attack_s.
+/// This implements a stateful AEAD context where each encryption/decryption
+/// operation increments an internal sequence counter used for nonce generation.
+/// This ensures nonce uniqueness and prevents replay attacks.
 pub struct HpkeContext {
     cipher: ChaCha20Poly1305,
     sequence: u64,
@@ -20,12 +29,12 @@ pub struct HpkeContext {
 impl HpkeContext {
     /// Create a new HPKE context with the given encryption key
     ///
-    /// # Argument_s
+    /// # Arguments
     /// * `key` - 32-byte encryption key derived from HPKE key derivation
     ///
     /// # Security
     /// The key should be derived from a secure key derivation function
-    /// and should not be reused acros_s different context_s.
+    /// and should not be reused across different contexts.
     pub fn new(key: &[u8; 32]) -> Self {
         Self {
             cipher: ChaCha20Poly1305::new(key.into()),
@@ -35,16 +44,21 @@ impl HpkeContext {
 
     /// Encrypt plaintext with associated data
     ///
-    /// # Argument_s
+    /// # Arguments
     /// * `plaintext` - Data to encrypt
     /// * `associated_data` - Additional authenticated data (not encrypted)
     ///
-    /// # Return_s
+    /// # Returns
     /// Ciphertext with authentication tag appended
     ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Sequence counter would overflow (preventing nonce reuse)
+    /// - AEAD encryption fails
+    ///
     /// # Security
-    /// Each call increment_s the sequence counter, ensuring nonce uniquenes_s.
-    /// The sequence counter prevent_s nonce reuse attack_s.
+    /// Each call increments the sequence counter, ensuring nonce uniqueness.
+    /// The sequence counter prevents nonce reuse attacks.
     pub fn seal(&mut self, plaintext: &[u8], associated_data: &[u8]) -> Result<Vec<u8>, String> {
         // Prevent sequence overflow to avoid nonce reuse
         if self.sequence == u64::MAX {

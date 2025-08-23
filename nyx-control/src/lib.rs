@@ -34,7 +34,7 @@ pub struct ControlConfig {
     pub __port: u16,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -47,22 +47,28 @@ impl Default for ControlConfig {
     }
 }
 
-/// Parse TOML config and fill missing field_s with default_s.
-pub fn parse_config(_s: &str) -> Result<ControlConfig> {
-    let __s = _s.trim();
-    if _s.is_empty() {
+/// Parse TOML config and fill missing `fields` with `defaults`.
+/// 
+/// # Errors
+/// Returns an error if:
+/// - TOML parsing fails due to invalid syntax
+/// - Configuration validation fails
+/// - Required fields are missing and have no defaults
+pub fn parse_config(input: &str) -> Result<ControlConfig> {
+    let _trimmed_input = input.trim();
+    if input.is_empty() {
         return Ok(ControlConfig::default());
     }
-    toml::from_str::<ControlConfig>(_s).map_err(|e| Error::Invalid(e.to_string()))
+    toml::from_str::<ControlConfig>(input).map_err(|e| Error::Invalid(e.to_string()))
 }
 
-/// Handle to a running control plane task_s set.
+/// Handle to a running control plane `tasks` set.
 pub struct ControlHandle {
     pub probe: Option<probe::ProbeHandle>,
 }
 
 impl ControlHandle {
-    /// Gracefully shutdown all task_s and wait for them to finish.
+    /// Gracefully shutdown all `tasks` and wait for them to finish.
     pub async fn shutdown(self) {
         if let Some(h) = self.probe {
             h.shutdown().await;
@@ -70,7 +76,13 @@ impl ControlHandle {
     }
 }
 
-/// Start control plane task_s according to config.
+/// Start control plane `tasks` according to config.
+/// 
+/// # Errors
+/// Returns an error if:
+/// - Control plane initialization fails
+/// - Required resources cannot be allocated
+/// - Configuration is invalid or incomplete
 pub async fn start_control(cfg: ControlConfig) -> Result<ControlHandle> {
     let mut handle = ControlHandle { probe: None };
     if cfg.__enable_http {

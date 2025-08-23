@@ -120,7 +120,7 @@ pub struct ConnectionStats {
     pub last_error: Option<String>,
 }
 
-impl Default for ConnectionStat_s {
+impl Default for ConnectionStats {
     fn default() -> Self {
         Self {
             bytes_sent: 0,
@@ -205,7 +205,7 @@ pub struct QuicConnection {
     pub _next_stream_id: u64,
     pub established_at: Option<Instant>,
     pub _last_activity: Instant,
-    pub stat_s: Arc<TokioRwLock<ConnectionStat_s>>,
+    pub stat_s: Arc<TokioRwLock<ConnectionStats>>,
 }
 
 /// QUICストリーム
@@ -245,7 +245,7 @@ impl QuicConnection {
         connection_id: Bytes,
         peer_addr: SocketAddr,
         is_server: bool,
-        stat_s: ConnectionStat_s,
+        stat_s: ConnectionStats,
     ) -> Result<Self, QuicError> {
         let state = if is_server {
             ConnectionState::Connecting {
@@ -456,7 +456,7 @@ impl QuicEndpoint {
     pub async fn get_connection_stats(
         &self,
         connection_id: &Bytes,
-    ) -> Result<ConnectionStat_s, QuicError> {
+    ) -> Result<ConnectionStats, QuicError> {
         let connection_s = self.connection_s.read().await;
         let connection = connection_s
             .get(connection_id)

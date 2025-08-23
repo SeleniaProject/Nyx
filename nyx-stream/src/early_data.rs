@@ -162,6 +162,7 @@ pub struct EarlyDataHandler {
 }
 
 impl Default for EarlyDataHandler {
+    #[must_use]
     fn default() -> Self {
         Self::new()
     }

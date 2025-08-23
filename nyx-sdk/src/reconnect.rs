@@ -4,6 +4,7 @@
 pub mod backoff_policy {
     use std::time::Duration;
 
+    #[must_use]
     pub fn exponential_with_jitter(__attempt: u32, __base_m_s: u64, max_m_s: u64) -> Duration {
         let __pow = if __attempt >= 64 {
             0
@@ -20,6 +21,8 @@ pub mod backoff_policy {
 #[cfg(not(feature = "reconnect"))]
 pub mod backoff_policy {
     use std::time::Duration;
+    
+    #[must_use]
     pub fn exponential_with_jitter(___attempt: u32, ___base_m_s: u64, _max_m_s: u64) -> Duration {
         Duration::from_millis(0)
     }

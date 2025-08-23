@@ -22,8 +22,8 @@ pub enum Error {
     Disconnected,
     #[error("not found: {0}")]
     NotFound(&'static str),
-    /// Legacy gRPC error variant - kept for compatibility but gRPC i_s disabled
-    /// in favor of pure Rust JSON-RPC communication to avoid C dependencie_s.
+    /// Legacy gRPC error variant - kept for compatibility but gRPC `is` disabled
+    /// in favor of pure Rust JSON-RPC communication to avoid C `dependencies`.
     #[cfg(feature = "grpc-backup")]
     #[error("grpc functionality i_s disabled (use JSON-RPC instead)")]
     GrpcDisabled,
@@ -31,12 +31,12 @@ pub enum Error {
 
 impl Error {
     pub fn config(msg: impl Into<String>) -> Self {
-        Error::Config(msg.into())
+        Self::Config(msg.into())
     }
     pub fn protocol(msg: impl Into<String>) -> Self {
-        Error::Protocol(msg.into())
+        Self::Protocol(msg.into())
     }
     pub fn stream(msg: impl Into<String>) -> Self {
-        Error::Stream(msg.into())
+        Self::Stream(msg.into())
     }
 }

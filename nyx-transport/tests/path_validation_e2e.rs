@@ -106,7 +106,7 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
     let a_addr_short = a_addr;
     tokio::spawn(async move {
         let mut buf = [0u8; 64];
-        if let Ok((n, _from)) = b.recv_from(&mut buf).await {
+        if let Ok((_n, _from)) = b.recv_from(&mut buf).await {
             let frame_local = vec![PATH_RESPONSE_FRAME_TYPE, 0xAA, 0xBB]; // too short
             let _ = b.send_to(&frame_local, a_addr_short).await;
         }
