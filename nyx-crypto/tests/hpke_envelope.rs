@@ -472,9 +472,9 @@ fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
     let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let plaintext = b"Tamper-proof message";
-    let info = b"test-tampering";
+    let info_local = b"test-tampering";
 
-    let mut envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
+    let mut envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info_local)?;
 
     // Tamper with the ciphertext
     if let Some(last_byte) = envelope.ciphertext.last_mut() {

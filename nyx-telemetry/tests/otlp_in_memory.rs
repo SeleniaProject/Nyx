@@ -11,5 +11,4 @@ async fn otlp_init_smoke() {
     if let Err(e) = nyx_telemetry::init(&config_local) {
         eprintln!("Failed to initialize telemetry: {e}");
     }
-    }
 }

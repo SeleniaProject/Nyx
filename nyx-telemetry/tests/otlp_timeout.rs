@@ -22,8 +22,6 @@ async fn otlp_exporter_times_out_quickly_on_unreachable_endpoint() {
         eprintln!("Failed to initialize telemetry: {e}");
         return;
     }
-        return;
-    }
 
     // Emit a small span.
     let span = tracing::info_span!("timeout_test");

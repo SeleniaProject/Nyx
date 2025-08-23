@@ -19,7 +19,6 @@ pub struct PluginFrameSchema {
     #[schemars(with = "String")] // base64 as string for transport
     pub payload_b64: String,
 }
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Output path (workspace root relative)

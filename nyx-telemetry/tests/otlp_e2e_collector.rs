@@ -75,8 +75,6 @@ async fn otlp_exporter_flushes_to_mock_collector() -> Result<(), Box<dyn std::er
         eprintln!("Failed to initialize telemetry: {e}");
         return Ok(());
     }
-        return Ok(());
-    }
 
     let span = tracing::info_span!("otlp_e2e_test_span");
     let enter = span.enter();
@@ -96,7 +94,6 @@ async fn otlp_exporter_flushes_to_mock_collector() -> Result<(), Box<dyn std::er
             if received > 0 {
                 break;
             }
-        }
         }
     }
     let _ = shutdown_tx.send(());
