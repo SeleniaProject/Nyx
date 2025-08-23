@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
 use crate::plugin::PluginHeader;
+use crate::plugin_registry::{PluginInfo, PluginRegistry};
+use crate::plugin_sandbox::SandboxPolicy;
+use std::sync::Arc;
 
 /// Message structure for plugin communication
 #[derive(Debug, Clone)]
@@ -36,5 +39,38 @@ impl PluginMessage {
     /// Get the total size of the message
     pub fn size(&self) -> usize {
         self.payload.len() + self.header.data.len()
+    }
+}
+
+/// Plugin dispatcher for managing plugin execution
+#[derive(Debug)]
+pub struct PluginDispatcher {
+    #[allow(dead_code)]
+    registry: Arc<PluginRegistry>,
+    #[allow(dead_code)]
+    sandbox_policy: Option<SandboxPolicy>,
+}
+
+impl PluginDispatcher {
+    /// Create a new plugin dispatcher
+    pub fn new(registry: Arc<PluginRegistry>) -> Self {
+        Self {
+            registry,
+            sandbox_policy: None,
+        }
+    }
+
+    /// Create a new plugin dispatcher with sandbox policy
+    pub fn new_with_sandbox(registry: Arc<PluginRegistry>, policy: SandboxPolicy) -> Self {
+        Self {
+            registry,
+            sandbox_policy: Some(policy),
+        }
+    }
+
+    /// Load a plugin
+    pub async fn load_plugin(&self, _info: PluginInfo) -> Result<(), Box<dyn std::error::Error>> {
+        // Implementation would go here
+        Ok(())
     }
 }

@@ -410,10 +410,10 @@ pub enum AccumulatorError {
 impl std::fmt::Display for AccumulatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AccumulatorError::InvalidElement { reason } => write!(f, "Invalid element: {}", reason),
+            AccumulatorError::InvalidElement { reason } => write!(f, "Invalid element: {reason}"),
             AccumulatorError::DuplicateElement { .. } => write!(f, "Duplicate element"),
             AccumulatorError::VerificationFailed { .. } => write!(f, "Witness verification failed"),
-            AccumulatorError::ConfigError { message } => write!(f, "Configuration error: {}", message),
+            AccumulatorError::ConfigError { message } => write!(f, "Configuration error: {message}"),
         }
     }
 }

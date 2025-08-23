@@ -120,7 +120,7 @@ impl NetworkSimulator {
             let depart_m_s = if self.cfg.bandwidth_pp_s == 0 {
                 self.now_m_s
             } else {
-                let min_gap = (1000 / self.cfg.bandwidth_pp_s.max(1)) as u64;
+                let min_gap = 1000 / self.cfg.bandwidth_pp_s.max(1);
                 // Enforce FIFO departure schedule with limited queue
                 if self.queue_depth >= self.cfg.max_queue {
                     continue;

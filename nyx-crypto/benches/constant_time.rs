@@ -18,7 +18,7 @@ fn benchct_eq(c: &mut Criterion) {
         let a = vec![0u8; n];
         let mut b = vec![0u8; n];
         // equal buffer_s
-        c.bench_function(&format!("ct_eq_equal_{}", n), |bencher| {
+        c.bench_function(&format!("ct_eq_equal_{n}"), |bencher| {
             bencher.iter(|| {
                 let res = constant_time_eq(black_box(&a), black_box(&b));
                 black_box(res)
@@ -26,7 +26,7 @@ fn benchct_eq(c: &mut Criterion) {
         });
         // differ at start
         b[0] = 1;
-        c.bench_function(&format!("ct_eq_diff_start_{}", n), |bencher| {
+        c.bench_function(&format!("ct_eq_diff_start_{n}"), |bencher| {
             bencher.iter(|| {
                 let res = constant_time_eq(black_box(&a), black_box(&b));
                 black_box(res)
@@ -35,7 +35,7 @@ fn benchct_eq(c: &mut Criterion) {
         // differ at end
         b[0] = 0;
         b[n - 1] = 1;
-        c.bench_function(&format!("ct_eq_diff_end_{}", n), |bencher| {
+        c.bench_function(&format!("ct_eq_diff_end_{n}"), |bencher| {
             bencher.iter(|| {
                 let res = constant_time_eq(black_box(&a), black_box(&b));
                 black_box(res)

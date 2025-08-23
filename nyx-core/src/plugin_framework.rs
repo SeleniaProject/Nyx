@@ -1,5 +1,4 @@
 #[cfg(feature = "plugin_framework")]
-use cbor4ii::serde as cbor;
 use serde::{Deserialize, Serialize};
 
 /// Minimal plugin manifest and message schema (feature-gated for CBOR).

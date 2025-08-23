@@ -1,17 +1,18 @@
 #![forbid(unsafe_code)]
 
 use assert_cmd::prelude::*;
-use predicate_s::prelude::*;
-use std::proces_s::Command;
+use predicates::prelude::*;
+use std::process::Command;
 
 #[test]
-fn env_endpoint_is_trimmed() {
+fn env_endpoint_is_trimmed() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("nyx-cli")?;
     cmd.arg("config")
         .arg("show")
         .env("NYX_DAEMON_ENDPOINT", "  trim-me  ")
         .env("NYX_CONTROL_TOKEN", "dummy");
     cmd.assert()
-        .succes_s()
+        .success()
         .stdout(predicate::str::contains("\"daemon_endpoint\": \"trim-me\""));
+    Ok(())
 }

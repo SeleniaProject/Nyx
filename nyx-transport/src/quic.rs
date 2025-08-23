@@ -105,7 +105,7 @@ pub enum EncryptionLevel {
 
 /// 接続統計
 #[derive(Debug, Clone)]
-pub struct ConnectionStat_s {
+pub struct ConnectionStats {
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub packets_sent: u64,
@@ -141,7 +141,7 @@ impl Default for ConnectionStat_s {
 
 /// エンドポイント統計
 #[derive(Debug, Clone)]
-pub struct EndpointStatistic_s {
+pub struct EndpointStatistics {
     pub active_connection_s: u32,
     pub total_connection_s_created: u64,
     pub total_connection_s_closed: u64,
@@ -154,7 +154,7 @@ pub struct EndpointStatistic_s {
     pub performance_metrics: HashMap<String, f64>,
 }
 
-impl Default for EndpointStatistic_s {
+impl Default for EndpointStatistics {
     fn default() -> Self {
         Self {
             active_connection_s: 0,
@@ -225,7 +225,7 @@ pub struct QuicEndpoint {
     bind_addr: SocketAddr,
     config: QuicEndpointConfig,
     connection_s: Arc<TokioRwLock<HashMap<Bytes, QuicConnection>>>,
-    statistic_s: Arc<TokioRwLock<EndpointStatistic_s>>,
+    statistics: Arc<TokioRwLock<EndpointStatistics>>,
 }
 
 /// QUIC暗号化コンテキスト
@@ -396,6 +396,12 @@ impl QuicStream {
     }
 }
 
+impl Default for QuicCryptoContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QuicCryptoContext {
     /// 新しい暗号化コンテキスト作成
     pub fn new() -> Self {
@@ -435,14 +441,14 @@ impl QuicEndpoint {
             .await
             .map_err(|e| QuicError::Io(e.to_string()))?;
         let connection_s = Arc::new(TokioRwLock::new(HashMap::new()));
-        let statistic_s = Arc::new(TokioRwLock::new(EndpointStatistic_s::default()));
+        let statistics = Arc::new(TokioRwLock::new(EndpointStatistics::default()));
 
         Ok(Self {
             socket,
             bind_addr,
             config,
             connection_s,
-            statistic_s,
+            statistics,
         })
     }
 

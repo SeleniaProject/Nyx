@@ -78,9 +78,9 @@ pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
 #[cfg(feature = "runtime")]
 mod fsio {
     use super::*;
-    use std::fs;
     use std::io::Write;
 
+    #[allow(dead_code)]
     pub fn save(path: &str, password: &[u8], plaintext: &[u8]) -> Result<()> {
         let blob = encrypt_with_password(password, plaintext)?;
         let mut f = std::fs::File::create(path)
@@ -90,6 +90,7 @@ mod fsio {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn load(path: &str, password: &[u8]) -> Result<Vec<u8>> {
         let blob =
             std::fs::read(path).map_err(|e| Error::Protocol(format!("keystore read: {e}")))?;

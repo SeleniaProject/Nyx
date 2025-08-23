@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -153,7 +152,7 @@ impl BufferPool {
     #[inline(always)]
     pub fn acquire(&self, n: usize) -> Vec<u8> {
         // Ultra-high performance: size-classed allocation
-        let (buffer_class, counter) = self.get_buffer_class(n);
+        let (buffer_class, _counter) = self.get_buffer_class(n);
 
         // Try to get a buffer from the appropriate size class
         let mut buffers = match buffer_class.lock() {
@@ -256,11 +255,11 @@ mod performance_tests {
         }
 
         let elapsed = start.elapsed();
-        println!("Buffer pool benchmark completed in {:?}", elapsed);
+        println!("Buffer pool benchmark completed in {elapsed:?}");
 
         // 統計情報を確認
         let stats = pool.stats();
-        println!("Pool stats: {:?}", stats);
+        println!("Pool stats: {stats:?}");
 
         assert!(stats.allocated > 0);
         assert!(stats.recycled > 0);
@@ -315,11 +314,11 @@ mod test_s {
         let p = Arc::new(BufferPool::with_capacity(1024));
         // Poison the mutex in another thread while holding the lock
         let p_ref = Arc::clone(&p);
-        let handle = std::thread::spawn(move || {
-            let __guard = p_ref.free.lock()?;
-            return Err("intentional panic to poison mutex".into());
+        let handle = std::thread::spawn(move || -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            let _guard = p_ref.small_buffers.lock().map_err(|_| "mutex poisoned")?;
+            Err("intentional panic to poison mutex".into())
         });
-        let __ = handle.join(); // ignore panic result; mutex should now be poisoned
+        let _result = handle.join(); // ignore panic result; mutex should now be poisoned
 
         // After poisoning, acquire/release should still not panic due to recovery
         let v = p.acquire(16);

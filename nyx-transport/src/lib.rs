@@ -236,12 +236,7 @@ impl TransportManager {
 
     /// Determine the best available transport for a given scenario
     pub fn select_transport(&self, requirements: &TransportRequirements) -> Option<TransportKind> {
-        for &transport in self.preferred_transports() {
-            if self.transport_meets_requirements(transport, requirements) {
-                return Some(transport);
-            }
-        }
-        None
+        self.preferred_transports().iter().find(|&&transport| self.transport_meets_requirements(transport, requirements)).copied()
     }
 
     /// Determine the best available transport for a given scenario (optimized version)
@@ -348,6 +343,26 @@ impl Default for TransportRequirements {
         }
     }
 }
+
+// Re-export key types for convenience
+pub use teredo::{perform_nat_traversal, validate_address, AddressType, TeredoAddress};
+
+pub use stun_server::{
+    // Enhanced NAT traversal types
+    AdvancedNatTraversal,
+    BindingRequest,
+    BindingResponse,
+    DetectedNatType,
+    EnhancedStunServer,
+    HolePunchSession,
+    HolePunchState,
+    IceCandidate,
+    NatDetectionResult,
+    NatTraversal,
+    RelayStatistics,
+    // Classic STUN types
+    StunServer,
+};
 
 #[cfg(test)]
 mod tests {
@@ -467,23 +482,3 @@ mod tests {
         assert!(!available(TransportKind::Quic));
     }
 }
-
-// Re-export key types for convenience
-pub use teredo::{perform_nat_traversal, validate_address, AddressType, TeredoAddress};
-
-pub use stun_server::{
-    // Enhanced NAT traversal types
-    AdvancedNatTraversal,
-    BindingRequest,
-    BindingResponse,
-    DetectedNatType,
-    EnhancedStunServer,
-    HolePunchSession,
-    HolePunchState,
-    IceCandidate,
-    NatDetectionResult,
-    NatTraversal,
-    RelayStatistics,
-    // Classic STUN types
-    StunServer,
-};

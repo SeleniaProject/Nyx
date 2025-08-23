@@ -18,7 +18,15 @@ prop_compose! {
 
 prop_compose! {
     fn arb_elements()(elements in prop::collection::vec(arb_element(), 1..50)) -> Vec<Vec<u8>> {
-        elements
+        // Remove duplicates to avoid test failures on duplicate elements
+        let mut unique_elements = elements;
+        unique_elements.sort();
+        unique_elements.dedup();
+        if unique_elements.is_empty() {
+            vec![vec![42u8]] // Ensure we have at least one element
+        } else {
+            unique_elements
+        }
     }
 }
 

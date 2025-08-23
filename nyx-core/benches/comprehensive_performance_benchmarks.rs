@@ -1,13 +1,14 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use nyx_core::performance::RateLimiter;
+use std::sync::Arc;
+use std::thread;
 #[cfg(feature = "zero_copy")]
 use nyx_core::zero_copy::manager::BufferPool;
 #[cfg(feature = "zero_copy")]
-use nyx_core::zero_copy::Buffer;
+use nyx_core::zero_copy::manager::Buffer;
 
 /// Comprehensive performance benchmarks for Nyx Core
 /// This benchmark suite measures the performance improvements after optimization
-
 fn bench_rate_limiter_comprehensive(c: &mut Criterion) {
     let mut group = c.benchmark_group("rate_limiter");
 
@@ -42,7 +43,7 @@ fn bench_buffer_pool_comprehensive(c: &mut Criterion) {
     for &size in &sizes {
         group.throughput(criterion::Throughput::Elements(1000));
 
-        group.bench_with_input(BenchmarkId::new("acquire_release", size), &size, |b, &&size| {
+        group.bench_with_input(BenchmarkId::new("acquire_release", size), &size, |b, &size| {
             b.iter(|| {
                 let buf = pool.acquire(size);
                 black_box(buf.len());
@@ -50,7 +51,7 @@ fn bench_buffer_pool_comprehensive(c: &mut Criterion) {
             })
         });
 
-        group.bench_with_input(BenchmarkId::new("buffer_operations", size), &size, |b, &&size| {
+        group.bench_with_input(BenchmarkId::new("buffer_operations", size), &size, |b, &size| {
             let mut buf = pool.acquire(size);
             b.iter(|| {
                 buf.clear();
@@ -64,6 +65,7 @@ fn bench_buffer_pool_comprehensive(c: &mut Criterion) {
 }
 
 #[cfg(not(feature = "zero_copy"))]
+#[allow(dead_code)]
 fn bench_buffer_pool_comprehensive(_c: &mut Criterion) {
     // Skip buffer pool benchmarks when feature is not available
 }
@@ -109,6 +111,7 @@ fn bench_zero_copy_operations(c: &mut Criterion) {
 }
 
 #[cfg(not(feature = "zero_copy"))]
+#[allow(dead_code)]
 fn bench_zero_copy_operations(_c: &mut Criterion) {
     // Skip zero-copy benchmarks when feature is not available
 }
@@ -147,6 +150,7 @@ fn bench_concurrent_operations(c: &mut Criterion) {
 }
 
 #[cfg(not(feature = "zero_copy"))]
+#[allow(dead_code)]
 fn bench_concurrent_operations(_c: &mut Criterion) {
     // Skip concurrent benchmarks when feature is not available
 }

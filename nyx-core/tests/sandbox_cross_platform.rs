@@ -72,10 +72,10 @@ fn sandbox_file_system_restrictions() -> Result<(), Box<dyn std::error::Error>> 
     if status == SandboxStatus::Applied {
         // Check if sandbox creates restriction markers or logs
         let possible_markers = vec![
-            tmpdir.path().join(format!("nyx_sandbox_{}", process_id)),
+            tmpdir.path().join(format!("nyx_sandbox_{process_id}")),
             tmpdir
                 .path()
-                .join(format!("nyx_sandbox_macos_{}", process_id)),
+                .join(format!("nyx_sandbox_macos_{process_id}")),
         ];
 
         for marker_path in possible_markers {
@@ -104,10 +104,10 @@ fn sandbox_strict_file_system_restrictions() -> Result<(), Box<dyn std::error::E
         let possible_markers = vec![
             tmpdir
                 .path()
-                .join(format!("nyx_sandbox_strict_{}", process_id)),
+                .join(format!("nyx_sandbox_strict_{process_id}")),
             tmpdir
                 .path()
-                .join(format!("nyx_sandbox_macos_strict_{}", process_id)),
+                .join(format!("nyx_sandbox_macos_strict_{process_id}")),
         ];
 
         for marker_path in possible_markers {
@@ -199,7 +199,7 @@ fn sandbox_cross_platform_behavior() {
     #[cfg(target_os = "windows")]
     {
         // Windows might have limited sandbox support
-        println!("Windows sandbox status: {:?}", status);
+        println!("Windows sandbox status: {status:?}");
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -219,7 +219,6 @@ fn sandbox_performance_impact() {
     // Sandbox application should be fast
     assert!(
         duration.as_millis() < 100,
-        "Sandbox application took too long: {:?}",
-        duration
+        "Sandbox application took too long: {duration:?}"
     );
 }

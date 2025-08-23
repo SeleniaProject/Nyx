@@ -24,7 +24,7 @@ impl ProbeHandle {
         self.__stop.notify_waiters();
         // Hard abort to avoid Notify race
         self.__task.abort();
-        let ___ = self.__task.await;
+        let _task_result = self.__task.await;
     }
 }
 
@@ -34,7 +34,7 @@ pub async fn start_probe(port: u16) -> crate::Result<ProbeHandle> {
     // Bind only on loopback to avoid platform-specific firewall prompt_s in test_s
     let addr: SocketAddr = format!("127.0.0.1:{port}")
         .parse()
-        .map_err(|e| crate::Error::Invalid(format!("Invalid address: {}", e)))?;
+        .map_err(|e| crate::Error::Invalid(format!("Invalid address: {e}")))?;
     let __listener = TcpListener::bind(addr).await?;
     let __local_addr = __listener.local_addr()?;
     let __stop = Arc::new(Notify::new());
@@ -62,8 +62,8 @@ pub async fn start_probe(port: u16) -> crate::Result<ProbeHandle> {
                                     "HTTP/1.1 {__statu_s}\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
                                     body.len()
                                 );
-                                let ___ = sock.write_all(__resp.as_bytes()).await;
-                                let ___ = sock.shutdown().await;
+                                let _write_result = sock.write_all(__resp.as_bytes()).await;
+                                let _shutdown_result = sock.shutdown().await;
                             });
                         }
                         Err(_) => break,

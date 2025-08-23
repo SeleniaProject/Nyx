@@ -28,14 +28,14 @@ impl std::fmt::Display for CmixError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CmixError::TamperedBatch { batch_id, .. } => {
-                write!(f, "Batch verification failed - batch_id: {}", batch_id)
+                write!(f, "Batch verification failed - batch_id: {batch_id}")
             }
             CmixError::VdfTimeout { duration, max_allowed } => {
-                write!(f, "VDF computation timeout - duration: {:?}, max_allowed: {:?}", duration, max_allowed)
+                write!(f, "VDF computation timeout - duration: {duration:?}, max_allowed: {max_allowed:?}")
             }
             CmixError::InvalidWitness { .. } => write!(f, "Invalid witness for element"),
             CmixError::InvalidBatchSize { size, min, max } => {
-                write!(f, "Invalid batch size {}, expected between {} and {}", size, min, max)
+                write!(f, "Invalid batch size {size}, expected between {min} and {max}")
             }
         }
     }
@@ -465,7 +465,7 @@ mod tests {
 
         // Error report should contain details
         let report = b.generate_error_report();
-        println!("Generated report:\n{}", report); // Debug output
+        println!("Generated report:\n{report}"); // Debug output
         assert!(report.contains("cMix Batcher Security Audit Report"));
         assert!(report.contains("Verification failures: 1"));
         Ok(())
@@ -522,7 +522,7 @@ mod tests {
 
         // Create some successful batches
         for i in 0..3 {
-            b.push(format!("audit_test_{}", i).into_bytes())?;
+            b.push(format!("audit_test_{i}").into_bytes())?;
             b.force_flush()?;
         }
 
@@ -539,7 +539,7 @@ mod tests {
         assert!(report.contains("Average VDF time:"));
         assert!(report.contains("Recommendations"));
 
-        println!("Generated audit report:\n{}", report);
+        println!("Generated audit report:\n{report}");
         Ok(())
     }
 

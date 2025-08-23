@@ -58,7 +58,7 @@ fn adaptive_redundancy_benchmarks(c: &mut Criterion) {
         let mut tuner = AdaptiveRedundancyTuner::new();
 
         // Pre-fill with some data
-        for i in 0..100 {
+        for _i in 0..100 {
             let metrics = NetworkMetrics::new(100, 20, 0.05, 1000);
             tuner.update(metrics);
         }

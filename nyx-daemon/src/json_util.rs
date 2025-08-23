@@ -50,22 +50,24 @@ mod test_s {
     }
 
     #[test]
-    fn roundtrip_string_map() {
-        let _value = serde_json::json!({"k": "v", "n": 123});
-        let _byte_s = encode_to_vec(&value)?;
+    fn roundtrip_string_map() -> Result<(), Box<dyn std::error::Error>> {
+        let value = serde_json::json!({"k": "v", "n": 123});
+        let byte_s = encode_to_vec(&value)?;
         let decoded: serde_json::Value = decode_from_slice(&byte_s)?;
         assert_eq!(decoded, value);
+        Ok(())
     }
 
     #[test]
-    fn roundtrip_struct() {
-        let _v = Simple {
+    fn roundtrip_struct() -> Result<(), Box<dyn std::error::Error>> {
+        let v = Simple {
             _a: 7,
             _s: "ok".into(),
         };
-        let _line = encode_line(&v)?;
+        let line = encode_line(&v)?;
         assert!(line.ends_with(b"\n"));
         let decoded: Simple = decode_from_slice(&line[..line.len() - 1])?;
         assert_eq!(decoded, v);
+        Ok(())
     }
 }

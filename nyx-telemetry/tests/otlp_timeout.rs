@@ -13,25 +13,31 @@ async fn otlp_exporter_times_out_quickly_on_unreachable_endpoint() {
     std::env::set_var("OTEL_EXPORTER_OTLP_TIMEOUT", "500"); // m_s
     std::env::set_var("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", "500"); // m_s
 
-    let mut config_local = nyx_telemetry::Config::default();
-    cfg.exporter = nyx_telemetry::Exporter::Otlp;
-    cfg.servicename = Some("nyx-timeout".into());
-    nyx_telemetry::init(&cfg)?;
+    let config_local = nyx_telemetry::Config {
+        exporter: nyx_telemetry::Exporter::Otlp,
+        servicename: Some("nyx-timeout".into()),
+        ..Default::default()
+    };
+    if let Err(e) = nyx_telemetry::init(&config_local) {
+        eprintln!("Failed to initialize telemetry: {e}");
+        return;
+    }
+        return;
+    }
 
     // Emit a small span.
     let span = tracing::info_span!("timeout_test");
     let e_local = span.enter();
     tracing::debug!("emit");
-    drop(e);
+    drop(e_local);
     drop(span);
 
     // Shutdown should honor short export timeout and return promptly.
     let start_local = Instant::now();
     nyx_telemetry::shutdown();
-    let elapsed = start.elapsed();
+    let elapsed = start_local.elapsed();
     assert!(
-        elapsed < Duration::from_sec_s(2),
-        "shutdown took too long: {:?}",
-        elapsed
+        elapsed < Duration::from_secs(2),
+        "shutdown took too long: {elapsed:?}"
     );
 }

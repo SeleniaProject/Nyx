@@ -33,7 +33,7 @@ fn test_plugin_frame_type_validation() {
 
 // 2) header CBOR encode/decode roundtrip
 #[test]
-fn test_plugin_header_cbor_encoding() {
+fn test_plugin_header_cbor_encoding() -> Result<(), Box<dyn std::error::Error>> {
     let hdr = PluginHeader {
         id: PluginId(42),
         flags: 0b1010_0001,
@@ -45,11 +45,12 @@ fn test_plugin_header_cbor_encoding() {
     let got: PluginHeader = ciborium::de::from_reader(std::io::Cursor::new(&buf))?;
 
     assert_eq!(hdr, got);
+    Ok(())
 }
 
 // 3) frame build & parse roundtrip
 #[test]
-fn test_plugin_frame_building_and_parsing() {
+fn test_plugin_frame_building_and_parsing() -> Result<(), Box<dyn std::error::Error>> {
     let hdr = PluginHeader {
         id: PluginId(7),
         flags: 0,
@@ -69,13 +70,14 @@ fn test_plugin_frame_building_and_parsing() {
         assert_eq!(f, parsed, "roundtrip should keep frame identical");
         assert!(is_plugin_frame(parsed.frame_type));
     }
+    Ok(())
 }
 
 // 4) basic size limit_s (sanity): keep encoded size under a reasonable ceiling
 //    NOTE: Library doe_s not enforce a hard limit; this test assert_s we can
 //    encode/decode moderately large frame_s used by implementation_s.
 #[test]
-fn test_plugin_frame_size_limit_s() {
+fn test_plugin_frame_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
     let hdr = PluginHeader {
         id: PluginId(9),
         flags: 0,
@@ -93,22 +95,25 @@ fn test_plugin_frame_size_limit_s() {
     );
     let decoded = PluginFrame::from_cbor(&encoded)?;
     assert_eq!(f, decoded);
+    Ok(())
 }
 
 // 5) Test capability negotiation for plugin framework
 #[test]
-fn test_plugin_framework_capabilitynegotiation() {
+fn test_plugin_framework_capabilitynegotiation() -> Result<(), Box<dyn std::error::Error>> {
     let local_cap_s = get_local_capabilitie_s();
 
     // Should contain plugin framework capability
     let plugin_cap = local_cap_s
         .iter()
-        .find(|cap| cap.id == CAP_PLUGIN_FRAMEWORK)?;
+        .find(|cap| cap.__id == CAP_PLUGIN_FRAMEWORK)
+        .ok_or("Plugin framework capability not found")?;
 
     assert!(
         plugin_cap.is_optional(),
         "Plugin framework should be optional"
     );
+    Ok(())
 }
 
 // 6) Test negotiation succeed_s when peer support_s plugin framework

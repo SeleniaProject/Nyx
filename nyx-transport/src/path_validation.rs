@@ -15,7 +15,7 @@ fn safe_mutex_lock<'a, T>(
 ) -> Result<std::sync::MutexGuard<'a, T>> {
     mutex
         .lock()
-        .map_err(|_| Error::Internal(format!("Mutex poisoned during {}", operation)))
+        .map_err(|_| Error::Internal(format!("Mutex poisoned during {operation}")))
 }
 
 use crate::{Error, Result};
@@ -148,7 +148,7 @@ impl PathValidator {
     pub async fn new(local_addr: SocketAddr) -> Result<Self> {
         let __socket = UdpSocket::bind(local_addr)
             .await
-            .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {}", e)))?;
+            .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {e}")))?;
 
         Ok(Self {
             local_socket: Arc::new(__socket),
@@ -168,7 +168,7 @@ impl PathValidator {
     pub async fn new_with_timeout(__local_addr: SocketAddr, timeout: Duration) -> Result<Self> {
         let __socket = UdpSocket::bind(__local_addr)
             .await
-            .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {}", e)))?;
+            .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {e}")))?;
 
         Ok(Self {
             local_socket: Arc::new(__socket),
@@ -192,13 +192,13 @@ impl PathValidator {
     ) -> Result<Self> {
         let __socket = UdpSocket::bind(__local_addr)
             .await
-            .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {}", e)))?;
+            .map_err(|e| Error::Msg(format!("Failed to bind path validator socket: {e}")))?;
         Ok(Self {
             local_socket: Arc::new(__socket),
             active_challenge_s: Arc::new(Mutex::new(HashMap::new())),
             path_metric_s: Arc::new(Mutex::new(HashMap::new())),
             __validation_timeout: __timeout,
-            __max_retrie_s: __max_retrie_s,
+            __max_retrie_s,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             success_count: Arc::new(AtomicU64::new(0)),
             failure_count: Arc::new(AtomicU64::new(0)),
@@ -286,7 +286,7 @@ impl PathValidator {
         self.local_socket
             .send_to(&frame, challenge.__target_addr)
             .await
-            .map_err(|e| Error::Msg(format!("Failed to send PATH_CHALLENGE: {}", e)))?;
+            .map_err(|e| Error::Msg(format!("Failed to send PATH_CHALLENGE: {e}")))?;
 
         Ok(())
     }
@@ -434,7 +434,7 @@ impl PathValidator {
         self.local_socket
             .send_to(&frame, __target_addr)
             .await
-            .map_err(|e| Error::Msg(format!("Failed to send PATH_RESPONSE: {}", e)))?;
+            .map_err(|e| Error::Msg(format!("Failed to send PATH_RESPONSE: {e}")))?;
 
         Ok(())
     }
@@ -497,10 +497,8 @@ impl PathValidator {
 
             // Wait for all validation_s in thi_s chunk
             for handle in handle_s {
-                if let Ok((addr, result)) = handle.await {
-                    if let Ok(metric_s) = result {
-                        result_s.insert(addr, metric_s);
-                    }
+                if let Ok((addr, Ok(metric_s))) = handle.await {
+                    result_s.insert(addr, metric_s);
                 }
             }
         }
@@ -548,7 +546,7 @@ impl PathValidator {
     pub fn local_addr(&self) -> Result<SocketAddr> {
         self.local_socket
             .local_addr()
-            .map_err(|e| Error::Msg(format!("Failed to get local addres_s: {}", e)))
+            .map_err(|e| Error::Msg(format!("Failed to get local addres_s: {e}")))
     }
 }
 
@@ -609,7 +607,6 @@ pub async fn validate_bidirectional_path(
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod test_s {
     use super::*;
 
@@ -643,7 +640,7 @@ mod test_s {
         assert_eq!(challenge.token.len(), PATH_CHALLENGE_TOKEN_SIZE);
 
         // Check that challenge is not expired immediately - simplified check
-        assert!(true); // Replace with proper implementation when is_expired method exists
+        // Replace with proper implementation when is_expired method exists
         Ok(())
     }
 
@@ -663,7 +660,7 @@ mod test_s {
         assert_ne!(TimedOut, Pending);
 
         // Test Debug formatting
-        assert_eq!(format!("{:?}", Pending), "Pending");
-        assert_eq!(format!("{:?}", Validated), "Validated");
+        assert_eq!(format!("{Pending:?}"), "Pending");
+        assert_eq!(format!("{Validated:?}"), "Validated");
     }
 }

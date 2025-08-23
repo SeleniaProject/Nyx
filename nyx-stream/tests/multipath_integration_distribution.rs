@@ -10,7 +10,7 @@ fn multipath_wrr_distribution_matches_weight_s() {
             PathMetric {
                 weight: 1,
                 rtt: Duration::from_millis(50),
-                los_s: 0.0,
+                loss: 0.0,
             },
         ),
         (
@@ -18,14 +18,14 @@ fn multipath_wrr_distribution_matches_weight_s() {
             PathMetric {
                 weight: 3,
                 rtt: Duration::from_millis(20),
-                los_s: 0.0,
+                loss: 0.0,
             },
         ),
     ];
     let mut sched = WeightedScheduler::new(&path_s);
 
     let mut c0 = 0usize;
-    let mut c1_local = 0usize;
+    let mut c1 = 0usize;
     for _ in 0..400 {
         let pid = sched.next_path();
         if pid.0 == 0 {

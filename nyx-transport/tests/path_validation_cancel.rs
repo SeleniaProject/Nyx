@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 #[tokio::test]
-async fn path_validation_cancel_interrupts_wait() {
+async fn path_validation_cancel_interrupts_wait() -> Result<(), Box<dyn std::error::Error>> {
     use nyx_transport::path_validation::PathValidator;
 
     // Validator bound to ephemeral port
@@ -23,7 +23,7 @@ async fn path_validation_cancel_interrupts_wait() {
 
     assert!(
         matches!(result, Err(nyx_transport::Error::Msg(ref msg)) if msg.contains("cancelled")),
-        "expected cancellation error, got: {:?}",
-        result
+        "expected cancellation error, got: {result:?}"
     );
+    Ok(())
 }

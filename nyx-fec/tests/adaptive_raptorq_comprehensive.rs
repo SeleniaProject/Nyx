@@ -210,7 +210,7 @@ mod integration_tests {
             std::thread::sleep(Duration::from_millis(50));
             let metrics = NetworkMetrics::new(100, 20, 0.05, 800);
 
-            aggressive_tuner.update(metrics.clone());
+            aggressive_tuner.update(metrics);
             conservative_tuner.update(metrics);
         }
 
@@ -251,8 +251,7 @@ mod integration_tests {
 
         assert!(
             variance < 0.01,
-            "Redundancy should stabilize over long duration: variance = {}",
-            variance
+            "Redundancy should stabilize over long duration: variance = {variance}",
         );
 
         let stats = tuner.get_statistics();
@@ -300,8 +299,7 @@ fn comprehensive_performance_benchmark() {
     // Should complete 1000 updates quickly
     assert!(
         duration_elapsed < Duration::from_millis(100),
-        "Performance test took too long: {:?}",
-        duration_elapsed
+        "Performance test took too long: {duration_elapsed:?}",
     );
 
     let stats = tuner.get_statistics();

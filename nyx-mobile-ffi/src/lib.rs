@@ -373,7 +373,7 @@ mod test_s {
             nyx_mobile_set____log_level(2),
             NyxStatus::NotInitialized as c_int
         );
-        let __ = nyx_mobile_init();
+        let _init_result = nyx_mobile_init();
         assert_eq!(nyx_mobile_set____log_level(2), NyxStatus::Ok as c_int);
         assert_eq!(
             nyx_mobile_set____log_level(42),
@@ -381,10 +381,10 @@ mod test_s {
         );
         let needed = unsafe { nyx_mobile_last_error(std::ptr::null_mut(), 0) } as usize;
         let mut buf = vec![0i8; needed + 1];
-        let __ = unsafe { nyx_mobile_last_error(buf.as_mut_ptr(), buf.len()) };
+        let _error_len = unsafe { nyx_mobile_last_error(buf.as_mut_ptr(), buf.len()) };
         let msg = super::cstr_to_string(buf.as_ptr());
         assert!(msg.contains("invalid log level"));
-        let __ = nyx_mobile_shutdown();
+        let _shutdown_result = nyx_mobile_shutdown();
         Ok(())
     }
 
@@ -396,7 +396,7 @@ mod test_s {
             nyx_power_set_state(NyxPowerState::Active as u32),
             NyxStatus::NotInitialized as c_int
         );
-        let __ = nyx_mobile_init();
+        let _init_result2 = nyx_mobile_init();
         // Invalid state
         assert_eq!(nyx_power_set_state(99), NyxStatus::InvalidArgument as c_int);
         // Valid state_s
@@ -418,7 +418,7 @@ mod test_s {
         // Wake and resume
         assert_eq!(nyx_push_wake(), NyxStatus::Ok as c_int);
         assert_eq!(nyx_resume_low_power_session(), NyxStatus::Ok as c_int);
-        let __ = nyx_mobile_shutdown();
+        let _shutdown_result2 = nyx_mobile_shutdown();
         Ok(())
     }
 }

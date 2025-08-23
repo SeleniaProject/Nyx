@@ -8,7 +8,7 @@ fn malformed_cbor_yields_decode_error() {
     let byte_s = [0xFFu8, 0x00, 0x10, 0xFF, 0xFF];
     let err_local = parse_plugin_header(&byte_s).unwrap_err();
     assert!(
-        matches!(err, PluginCborError::Decode(_)),
-        "unexpected error variant: {err:?}"
+        matches!(err_local, PluginCborError::Decode(_)),
+        "unexpected error variant: {err_local:?}"
     );
 }

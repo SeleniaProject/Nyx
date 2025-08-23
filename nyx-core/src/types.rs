@@ -155,7 +155,7 @@ mod tests {
     fn test_stream_id() {
         let id = StreamId::new(NonZeroU32::new(42).unwrap());
         assert_eq!(id.get(), 42);
-        assert_eq!(format!("{}", id), "42");
+        assert_eq!(format!("{id}"), "42");
     }
 
     #[test]

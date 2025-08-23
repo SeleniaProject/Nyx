@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 7480267ebbba4c6a143c35597086f1c3f48954e471a054ed2b8bed23c81d0b33 # shrinks to element = [0]
 cc 3ec17eced1f6517ceab323ffe02594c1f2412ca1347893d26491913405caaa82 # shrinks to element = [0]
+cc a1986ca410db9919afc9644c4a215b3f7ab0d0449a42542181f6b63ac3d25f6b # shrinks to elements = [[1], [1]]

@@ -3,7 +3,7 @@ use nyx_stream::plugin_frame::PluginFrame;
 use proptest::prelude::*;
 
 prop_compose! {
-    fn arb_header()(id in 0u32..=u32::MAX, flag_s in any::<u8>(), data in proptest::collection::vec(any::<u8>(), 0..256)) -> PluginHeader {
+    fn arb_header()(id in 0u32..=u32::MAX, flags in any::<u8>(), data in proptest::collection::vec(any::<u8>(), 0..256)) -> PluginHeader {
         PluginHeader { id: PluginId(id), flags, data }
     }
 }

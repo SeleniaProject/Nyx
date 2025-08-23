@@ -56,11 +56,11 @@ proptest = "1.5"
 futures = "0.3"
 
 [[bench]]
-name = "performance_test"
+name = "simple_performance_test"
 harness = false
 
 [[bench]]
-name = "simple_performance_test"
+name = "performance_test_optimized"
 harness = false
 
 [features]

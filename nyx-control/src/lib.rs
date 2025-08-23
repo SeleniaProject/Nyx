@@ -94,7 +94,7 @@ mod test_s {
 
     #[test]
     fn parse_toml_partial() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let c = parse_config("port = 8080")?;
+        let c = parse_config("__port = 8080")?;
         assert!(c.__enable_http);
         assert_eq!(c.__port, 8080);
         Ok(())

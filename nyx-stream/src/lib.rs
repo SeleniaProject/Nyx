@@ -22,6 +22,7 @@ pub mod plugin_registry; // In-memory registry and permission_s
 pub mod plugin_sandbox; // Cooperative sandbox (policy + guard_s)
 pub mod plugin_settings; // Runtime setting_s for plugin_s // Rekey trigger helpers (test_s/integration use)
 
+pub use async_stream::{AsyncStream, AsyncStreamConfig, pair};
 pub use capability::{get_local_capabilitie_s, negotiate, Capability, CapabilityError};
 pub use errors::{Error, Result};
 pub use frame::{Frame, FrameHeader, FrameType};

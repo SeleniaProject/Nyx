@@ -264,8 +264,8 @@ mod test_s {
 
             eprintln!("AEAD performance benchmark:");
             eprintln!("  Operations: 10,000 (seal + open cycles)");
-            eprintln!("  Total time: {:?}", elapsed);
-            eprintln!("  Operations/second: {:.2}", operations_per_second);
+            eprintln!("  Total time: {elapsed:?}");
+            eprintln!("  Operations/second: {operations_per_second:.2}");
             eprintln!(
                 "  Average time per operation: {:.2} μs",
                 (elapsed.as_secs_f64() * 1_000_000.0) / 10000.0
@@ -274,8 +274,7 @@ mod test_s {
             // 最適化された実装では少なくとも1000操作/秒以上を期待
             assert!(
                 operations_per_second > 1000.0,
-                "Performance too low: {:.2} ops/sec",
-                operations_per_second
+                "Performance too low: {operations_per_second:.2} ops/sec"
             );
         }
     }

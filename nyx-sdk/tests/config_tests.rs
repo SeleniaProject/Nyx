@@ -6,7 +6,7 @@ use nyx_sdk::SdkConfig;
 fn sdk_config_defaults_are_sane() {
     let d = SdkConfig::default();
     assert!(!d.daemon_endpoint.trim().is_empty());
-    assert!(d.request_timeout_m_s >= 100);
+    assert!(d.request_timeout_ms >= 100);
 }
 
 #[test]

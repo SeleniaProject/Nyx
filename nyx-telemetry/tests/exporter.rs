@@ -4,11 +4,11 @@
 async fn http_metrics_server_smoke() -> anyhow::Result<()> {
     nyx_telemetry::init(&nyx_telemetry::Config::default())?;
     nyx_telemetry::record_counter("nyx_http_test_counter", 1);
-    // Use warp test harnes_s against the filter to avoid flakines_s of real socket_s on windows.
+    // Use warp test harness against the filter to avoid flakiness of real sockets on windows.
     let filter = nyx_telemetry::warp_metrics_filter();
     let resp = warp::test::request()
         .method("GET")
-        .path("/metric_s")
+        .path("/metrics")
         .reply(&filter)
         .await;
     assert_eq!(resp.status(), 200);

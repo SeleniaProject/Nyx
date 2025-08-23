@@ -5,14 +5,12 @@
 //! and that the control plane behave_s safely in it_s absence.
 //! and verify that DHT-related API_s return appropriate "not implemented" response_s.
 
-use nyx_control::*;
-
 /// Test that DHT functionality is properly stubbed out
 #[test]
 fn dhtnot_implemented() {
     // DHT functionality is not currently part of the Nyx implementation
     // This test verifie_s that we properly handle the absence of DHT featu_re_s
-    assert!(true, "DHT functionality is intentionally not implemented");
+    // No DHT module exists, so this test just documents that fact
 }
 
 /// Test that DHT-related configuration is handled gracefully
@@ -20,7 +18,7 @@ fn dhtnot_implemented() {
 fn dht_config_handling() {
     // If DHT configuration option_s exist, they should be safely ignored
     // or return appropriate error message_s
-    assert!(true, "DHT configuration handling is safe");
+    // Currently no DHT config exists, which is expected
 }
 
 /// Reserved for future DHT node discovery test_s
@@ -28,7 +26,7 @@ fn dht_config_handling() {
 #[ignore = "DHT not implemented"]
 fn dhtnode_discovery_future() {
     // 将来の実装待ち。現時点では仕様の存在のみを確認する軽量なプレースホルダ。
-    assert!(true);
+    // Placeholder for future implementation
 }
 
 /// Reserved for future DHT routing table test_s
@@ -36,7 +34,7 @@ fn dhtnode_discovery_future() {
 #[ignore = "DHT not implemented"]
 fn dht_routing_table_future() {
     // 将来の実装待ち。現時点では仕様の存在のみを確認する軽量なプレースホルダ。
-    assert!(true);
+    // Placeholder for future implementation
 }
 
 /// Reserved for future DHT key-value storage test_s
@@ -44,7 +42,7 @@ fn dht_routing_table_future() {
 #[ignore = "DHT not implemented"]
 fn dht_kv_store_future() {
     // 将来の実装待ち。現時点では仕様の存在のみを確認する軽量なプレースホルダ。
-    assert!(true);
+    // Placeholder for future implementation
 }
 
 /// Test that the control module build_s without DHT dependencie_s
@@ -52,5 +50,5 @@ fn dht_kv_store_future() {
 fn control_module_builds_without_dht() {
     // Verify that the control module can be built and used
     // without requiring DHT functionality
-    assert!(true, "Control module build_s successfully without DHT");
+    // The module compiles successfully, which proves this works
 }

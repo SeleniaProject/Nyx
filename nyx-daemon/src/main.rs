@@ -933,33 +933,29 @@ mod tests {
         assert!(resp.error.unwrap().contains("invalid request"));
     }
 
-    #[tokio::test]
-    async fn empty_env_token_is_treated_as_disabled() -> Result<(), Box<dyn std::error::Error>> {
-        // Serialize env-dependent behavior across tests
-        let _ = with_env_lock(|| {
-            // Ensure strict mode is not enabled (tests may run in parallel)
+    #[test]
+    fn empty_env_token_is_treated_as_disabled() -> Result<(), Box<dyn std::error::Error>> {
+        // Use environment lock to prevent test interference
+        with_env_lock(|| {
+            // Ensure strict mode is not enabled
             std::env::remove_var("NYX_DAEMON_STRICT_AUTH");
-        });
-        // Keep the rest under the same lock by immediately reacquiring
-        let _guard = {
-            use std::sync::{Mutex, OnceLock};
-            static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-            LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
-        };
-        // Simulate daemon started with empty token ("   ") which should disable auth
-        let state = make_state_with_token(Some("   "));
-        // ensure internal state reflects token provided but authorization treats it as None
-        let req = serde_json::json!({
-            "id": "r1",
-            "op": "reload_config"
+            
+            // Simulate daemon started with empty token ("   ") which should disable auth
+            let state = make_state_with_token(Some("   "));
+            
+            // Create a test request  
+            let req = serde_json::json!({
+                "id": "r1",
+                "op": "reload_config"
+            }).to_string();
+            
+            // Process request in async context
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let (resp, _rx, _filter) = rt.block_on(process_request(&req, &state));
+            
+            assert!(resp.ok, "auth should be disabled when token is empty/whitespace");
+            Ok(())
         })
-        .to_string();
-        let (resp, _rx, _filter) = process_request(&req, &state).await;
-        assert!(
-            resp.ok,
-            "auth should be disabled when token is empty/whitespace"
-        );
-        Ok(())
     }
 
     #[test]

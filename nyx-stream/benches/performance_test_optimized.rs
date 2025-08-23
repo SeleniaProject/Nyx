@@ -11,7 +11,6 @@ use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use futures::future;
 use nyx_stream::async_stream::{pair, AsyncStreamConfig};
-use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 /// Ultra-optimized stream pair creation benchmark with memory efficiency
@@ -38,7 +37,7 @@ fn bench_data_transfer(c: &mut Criterion) -> Result<(), Box<dyn std::error::Erro
             |b, &size| {
                 b.to_async(&rt).iter(|| async {
                     let config = AsyncStreamConfig::default();
-                    let (sender, mut receiver) = pair(config.clone(), config);
+                    let (sender, receiver) = pair(config.clone(), config);
                     let data = Bytes::from(vec![0u8; size]);
 
                     // Parallel send and receive for maximum performance
@@ -50,7 +49,7 @@ fn bench_data_transfer(c: &mut Criterion) -> Result<(), Box<dyn std::error::Erro
                     let recv_handle = tokio::spawn(async move { receiver.recv().await });
 
                     let (send_result, recv_result) = tokio::join!(send_handle, recv_handle);
-                    black_box((send_result.unwrap(), recv_result.unwrap()));
+                    let _ = black_box((send_result.unwrap(), recv_result.unwrap()));
                 });
             },
         );
@@ -60,8 +59,8 @@ fn bench_data_transfer(c: &mut Criterion) -> Result<(), Box<dyn std::error::Erro
 }
 
 /// Ultra-high performance concurrent stream operations with advanced parallelization
-fn bench_concurrent_streams(c: &mut Criterion) -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new()?;
+fn bench_concurrent_streams(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("concurrent_streams_optimized");
 
     // Test massive concurrency levels for world-class performance
@@ -76,7 +75,7 @@ fn bench_concurrent_streams(c: &mut Criterion) -> Result<(), Box<dyn std::error:
                     for _ in 0..stream_count {
                         let handle = tokio::spawn(async move {
                             let config = AsyncStreamConfig::default();
-                            let (sender, mut receiver) = pair(config.clone(), config);
+                            let (sender, receiver) = pair(config.clone(), config);
                             let data = Bytes::from_static(b"benchmark_data_optimized");
 
                             // Optimized concurrent send and receive pattern
@@ -99,18 +98,19 @@ fn bench_concurrent_streams(c: &mut Criterion) -> Result<(), Box<dyn std::error:
         );
     }
     group.finish();
-    Ok(())
 }
 
 /// Memory efficiency benchmark under sustained high load with buffer optimization
-fn bench_memory_efficiency(c: &mut Criterion) -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new()?;
+fn bench_memory_efficiency(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
 
     c.bench_function("sustained_load_2000_ops_optimized", |b| {
         b.to_async(&rt).iter(|| async {
-            let mut config = AsyncStreamConfig::default();
-            config.max_inflight = 1000; // Increased capacity for high-load testing
-            let (sender, mut receiver) = pair(config.clone(), config);
+            let config = AsyncStreamConfig {
+                max_inflight: 1000, // Increased capacity for high-load testing
+                ..Default::default()
+            };
+            let (sender, receiver) = pair(config.clone(), config);
             let data = Bytes::from(vec![42u8; 2048]); // Larger payload for memory testing
 
             // Parallel high-load processing with 2000 messages
@@ -140,15 +140,14 @@ fn bench_memory_efficiency(c: &mut Criterion) -> Result<(), Box<dyn std::error::
             });
 
             let (_, received_count) = tokio::join!(send_handle, recv_handle);
-            black_box(received_count);
+            let _ = black_box(received_count);
         });
     });
-    Ok(())
 }
 
 /// Advanced capacity impact benchmark with variable buffer sizes
-fn bench_capacity_impact(c: &mut Criterion) -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new()?;
+fn bench_capacity_impact(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("capacity_impact_optimized");
 
     // Test various capacity settings for optimal performance tuning
@@ -158,9 +157,11 @@ fn bench_capacity_impact(c: &mut Criterion) -> Result<(), Box<dyn std::error::Er
             capacity,
             |b, &capacity| {
                 b.to_async(&rt).iter(|| async {
-                    let mut config = AsyncStreamConfig::default();
-                    config.max_inflight = capacity;
-                    let (sender, mut receiver) = pair(config.clone(), config);
+                    let config = AsyncStreamConfig {
+                        max_inflight: capacity,
+                        ..Default::default()
+                    };
+                    let (sender, receiver) = pair(config.clone(), config);
                     let data = Bytes::from_static(b"capacity_test_data_optimized");
 
                     // Optimized batch processing based on capacity
@@ -191,44 +192,42 @@ fn bench_capacity_impact(c: &mut Criterion) -> Result<(), Box<dyn std::error::Er
                     });
 
                     let (_, count) = tokio::join!(send_handle, recv_handle);
-                    black_box(count);
+                    let _ = black_box(count);
                 });
             },
         );
     }
     group.finish();
-    Ok(())
 }
 
 /// Ultra-fast error scenario benchmarks optimized for resilience
-fn bench_error_scenarios(c: &mut Criterion) -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new()?;
+fn bench_error_scenarios(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
 
     c.bench_function("timeout_handling_optimized", |b| {
         b.to_async(&rt).iter(|| async {
             let config = AsyncStreamConfig::default();
-            let (_sender, mut receiver) = pair(config.clone(), config);
+            let (_sender, receiver) = pair(config.clone(), config);
 
             // Optimized timeout test with immediate return
             let result = receiver.try_recv().await;
-            black_box(result);
+            let _ = black_box(result);
         });
     });
 
     c.bench_function("closed_stream_handling_optimized", |b| {
         b.to_async(&rt).iter(|| async {
             let config = AsyncStreamConfig::default();
-            let (sender, mut receiver) = pair(config.clone(), config);
+            let (sender, receiver) = pair(config.clone(), config);
 
             // Drop sender to close the stream and test resilience
             drop(sender);
 
             // Optimized closed stream handling
             let result = receiver.recv().await;
-            black_box(result);
+            let _ = black_box(result);
         });
     });
-    Ok(())
 }
 
 criterion_group!(

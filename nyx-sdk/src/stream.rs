@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use bytes::Bytes;
-use nyx_stream::async_stream::{AsyncStream, AsyncStreamConfig};
+use nyx_stream::{AsyncStream, AsyncStreamConfig, pair};
 
 /// SDK wrapper for streams. Delegates to nyx-stream's AsyncStream, providing an adapter.
 #[derive(Clone)]
@@ -25,16 +25,33 @@ impl NyxStream {
         }
     }
 
+    /// Create a pair of connected streams for testing
+    pub fn pair(_buffer_size: usize) -> (Self, Self) {
+        let config1 = AsyncStreamConfig {
+            stream_id: 1,
+            ..AsyncStreamConfig::default()
+        };
+        let config2 = AsyncStreamConfig {
+            stream_id: 2,
+            ..AsyncStreamConfig::default()
+        };
+        let (inner1, inner2) = pair(config1, config2);
+        (
+            Self { __inner: inner1 },
+            Self { __inner: inner2 },
+        )
+    }
+
     /// Send data through the stream
-    pub async fn send(&mut self, data: Bytes) -> Result<()> {
+    pub async fn send<T: Into<Bytes>>(&mut self, data: T) -> Result<()> {
         self.__inner
-            .send(data)
+            .send(data.into())
             .await
             .map_err(|e| Error::Stream(e.to_string()))
     }
 
-    /// Receive data from the stream
-    pub async fn recv(&mut self) -> Result<Option<Bytes>> {
+    /// Receive data from the stream with timeout
+    pub async fn recv(&mut self, _timeout_ms: u64) -> Result<Option<Bytes>> {
         self.__inner
             .recv()
             .await

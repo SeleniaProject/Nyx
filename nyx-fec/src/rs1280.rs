@@ -180,7 +180,7 @@ mod tests {
         mix[2] = None;
         mix[4] = None;
         let err = rs.reconstruct(&mut mix).unwrap_err();
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("RS reconstruct failed") || msg.contains("reconstruct failed"));
         Ok(())
     }
@@ -228,7 +228,7 @@ mod tests {
         let rs = Rs1280::new(cfg)?;
         let mut shards: Vec<Option<[u8; SHARD_SIZE]>> = vec![None; 2]; // should be 3
         let err = rs.reconstruct(&mut shards).unwrap_err();
-        assert!(format!("{}", err).contains("shard count"));
+        assert!(format!("{err}").contains("shard count"));
         Ok(())
     }
 }

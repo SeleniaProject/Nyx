@@ -1,5 +1,7 @@
+#![cfg(feature = "zero_copy")]
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nyx_core::performance::RateLimiter;
+use nyx_core::zero_copy::manager::BufferPool;
 
 #[cfg(feature = "zero_copy")]
 fn bench_buffer_pool(c: &mut Criterion) {
@@ -17,13 +19,13 @@ fn bench_buffer_pool(c: &mut Criterion) {
 #[cfg(all(feature = "zero_copy", feature = "nyx-crypto"))]
 fn bench_aead_copy_vs_slice(c: &mut Criterion) {
     use nyx_core::zero_copy::manager::Buffer;
-    use nyx_crypto::aead::{AeadCipher, AeadKey, AeadNonce};
-    use rand::rng_s::StdRng;
+    use nyx_crypto::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
+    use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
     // Prepare AEAD cipher with a fixed key
     let key = AeadKey([7u8; 32]);
-    let cipher = AeadCipher::new(key);
+    let cipher = AeadCipher::new(AeadSuite::ChaCha20Poly1305, key);
     let aad = b"bench-aad";
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -94,20 +96,32 @@ fn bench_fec_copy_vs_view(c: &mut Criterion) {
 
     // Zero-copy view: reuse slices, copy only the last partial shard into temp
     c.bench_function("fec parity encode (zero-copy view)", |b| {
-        use nyx_core::zero_copy::integration::fec_views::shard_view;
+        // use nyx_core::zero_copy::integration::fec_views::shard_view;
         b.iter(|| {
-            let shards = shard_view(&buf);
-            let d0: &[u8; SHARD_SIZE] = shards[0].try_into().unwrap();
-            let d1: &[u8; SHARD_SIZE] = shards[1].try_into().unwrap();
-            let mut tmp = [0u8; SHARD_SIZE];
-            tmp[..shards[2].len()].copy_from_slice(shards[2]);
-            let d2: &[u8; SHARD_SIZE] = &tmp;
-            let data: [&[u8; SHARD_SIZE]; 3] = [d0, d1, d2];
-            let mut p0 = [0u8; SHARD_SIZE];
-            let mut p1 = [0u8; SHARD_SIZE];
-            let mut parity = [&mut p0, &mut p1];
-            rs.encode_parity(&data, &mut parity).unwrap();
-            black_box(parity[0][0]);
+            // let shards = shard_view(&buf);
+            black_box(&buf); // placeholder for now
+            // Temporary placeholder until fec_views is implemented
+            let buf_len = buf.len();
+            let shard_count = buf_len.div_ceil(SHARD_SIZE);
+            let mut temp_shards = Vec::new();
+            for i in 0..shard_count.min(3) {
+                let start = i * SHARD_SIZE;
+                let end = (start + SHARD_SIZE).min(buf_len);
+                temp_shards.push(&buf[start..end]);
+            }
+            if temp_shards.len() >= 3 {
+                let d0: &[u8; SHARD_SIZE] = temp_shards[0].try_into().unwrap_or(&[0u8; SHARD_SIZE]);
+                let d1: &[u8; SHARD_SIZE] = temp_shards[1].try_into().unwrap_or(&[0u8; SHARD_SIZE]);
+                let mut tmp = [0u8; SHARD_SIZE];
+                tmp[..temp_shards[2].len()].copy_from_slice(temp_shards[2]);
+                let d2: &[u8; SHARD_SIZE] = &tmp;
+                let data: [&[u8; SHARD_SIZE]; 3] = [d0, d1, d2];
+                let mut p0 = [0u8; SHARD_SIZE];
+                let mut p1 = [0u8; SHARD_SIZE];
+                let mut parity = [&mut p0, &mut p1];
+                rs.encode_parity(&data, &mut parity).unwrap();
+                black_box(parity[0][0]);
+            }
         })
     });
 }

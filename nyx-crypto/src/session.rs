@@ -252,15 +252,15 @@ mod test_s {
     }
 
     #[test]
-    fn refuses_too_long_input_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
+    fn refuses_too_long_inputs() -> core::result::Result<(), Box<dyn std::error::Error>> {
         let key = AeadKey([2u8; 32]);
         let base = [0u8; 12];
-        let mut ses_s =
+        let mut sess =
             AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(3);
-        let long_pt = vec![0u8; (AeadSession::MAX_PLAINTEXT_LEN + 1) as usize];
-        assert!(ses_s.sealnext(b"ok", &long_pt).is_err());
-        let long_aad = vec![0u8; (AeadSession::MAX_AAD_LEN + 1) as usize];
-        assert!(ses_s.sealnext(&long_aad, b"ok").is_err());
+        let long_pt = vec![0u8; AeadSession::MAX_PLAINTEXT_LEN + 1];
+        assert!(sess.sealnext(b"ok", &long_pt).is_err());
+        let long_aad = vec![0u8; AeadSession::MAX_AAD_LEN + 1];
+        assert!(sess.sealnext(&long_aad, b"ok").is_err());
         Ok(())
     }
 

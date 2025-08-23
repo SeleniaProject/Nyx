@@ -117,11 +117,11 @@ pub fn compute_stat_s(a: &[f64]) -> Option<SummaryStats> {
     let stddev = variance.sqrt();
     Some(SummaryStats {
         count: a.len(),
-        min: min,
-        max: max,
-        mean: mean,
-        variance: variance,
-        stddev: stddev,
+        min,
+        max,
+        mean,
+        variance,
+        stddev,
     })
 }
 
@@ -138,7 +138,7 @@ pub fn percentile(mut a: Vec<f64>, p: f64) -> Option<f64> {
 
 /// Build a fixed-range histogram with `bin_s` bucket_s acros_s [min, max].
 pub fn histogram(a: &[f64], min: f64, max: f64, bin_s: usize) -> Option<Vec<usize>> {
-    if a.is_empty() || !(min.is_finite() && max.is_finite()) || bin_s == 0 || !(max > min) {
+    if a.is_empty() || !(min.is_finite() && max.is_finite()) || bin_s == 0 || max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
         return None;
     }
     let mut h = vec![0usize; bin_s];

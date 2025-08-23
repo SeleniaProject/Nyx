@@ -203,6 +203,18 @@ impl SandboxPolicy {
         }
     }
 
+    /// Allow access to a specific path prefix
+    pub fn allow_path_prefix(mut self, path: &Path) -> Self {
+        self.filesystem_allowlist.push(path.to_string_lossy().to_string());
+        self
+    }
+
+    /// Allow connections to a specific host
+    pub fn allow_connect_host(mut self, host: &str) -> Self {
+        self.network_allowlist.push(host.to_string());
+        self
+    }
+
     /// Custom policy builder
     pub fn builder() -> SandboxPolicyBuilder {
         SandboxPolicyBuilder::default()

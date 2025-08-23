@@ -63,18 +63,16 @@ mod test_s {
                 match gwc.limiter.lock() {
                     Ok(_) => {}
                     Err(_) => {
-                        return Err(Box::new(std::io::Error::new(
-                            std::io::ErrorKind::Other,
+                        return Err(Box::new(std::io::Error::other(
                             "mutex poisoned",
                         )))
                     }
                 }
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(Box::new(std::io::Error::other(
                     "intentional poison",
-                )));
+                )))
             });
-        let __ = handle.join();
+        let _join_result = handle.join();
 
         // After poisoning, send should not panic and should return either true/false cleanly
         let r = gw.send("t", "a", "b").await;

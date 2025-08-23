@@ -191,6 +191,11 @@ impl AdaptiveRedundancyTuner {
         self.current_redundancy
     }
 
+    /// Update PID coefficients
+    pub fn update_coefficients(&mut self, coefficients: PidCoefficients) {
+        self.pid_coefficients = coefficients;
+    }
+
     /// Get recent loss rate trend (-1.0 to 1.0, negative = improving)
     pub fn loss_trend(&self) -> f32 {
         if self.loss_window.len() < 5 {

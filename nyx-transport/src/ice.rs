@@ -663,7 +663,7 @@ impl Candidate {
     /// Create a new host candidate
     pub fn new_host(component_id: u32, address: SocketAddr) -> Self {
         Self {
-            foundation: format!("host-{}", address),
+            foundation: format!("host-{address}"),
             component_id,
             transport: Transport::Udp,
             priority: Self::calculate_host_priority(address.ip()),
@@ -681,7 +681,7 @@ impl Candidate {
         related: SocketAddr,
     ) -> Self {
         Self {
-            foundation: format!("srflx-{}", address),
+            foundation: format!("srflx-{address}"),
             component_id,
             transport: Transport::Udp,
             priority: Self::calculate_srflx_priority(address.ip()),
@@ -695,7 +695,7 @@ impl Candidate {
     /// Create a new relay candidate
     pub fn new_relay(component_id: u32, address: SocketAddr, related: SocketAddr) -> Self {
         Self {
-            foundation: format!("relay-{}", address),
+            foundation: format!("relay-{address}"),
             component_id,
             transport: Transport::Udp,
             priority: Self::calculate_relay_priority(address.ip()),

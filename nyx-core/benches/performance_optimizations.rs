@@ -2,7 +2,6 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 // Performance benchmarks for ultra-optimized components
 use nyx_core::performance::RateLimiter;
-use std::time::Duration;
 
 /// Comprehensive performance benchmarks for core optimizations
 fn bench_core_optimizations(c: &mut Criterion) {

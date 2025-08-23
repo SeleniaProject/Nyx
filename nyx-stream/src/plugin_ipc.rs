@@ -164,7 +164,7 @@ mod test_s {
 
     #[test]
     fn noop_sender_always_ok() {
-        let s = NoopSender::default();
+        let s = NoopSender;
         assert!(s.send(&__header(1), 0x51, &[9, 9]).is_ok());
     }
 
@@ -204,7 +204,7 @@ mod test_s {
         let (hub, sender, _recv_initial) = InProcIpcHub::new(2);
         // Drop the initial __receiver (goe_s out of scope)
         // Send will now return Closed until a new __receiver connect_s
-        let ___ = sender.send(&__header(1), 0x51, &[1]);
+        let _send_result = sender.send(&__header(1), 0x51, &[1]);
         // Reconnect
         let mut recv2 = hub.reconnect_receiver();
         // After reconnection, send_s are accepted

@@ -27,11 +27,9 @@ fn test_power_state_lifecycle() {
         // Validate state ID_s are in expected range
         assert!(
             state_id <= 3,
-            "Power state {} ha_s invalid ID: {}",
-            name,
-            state_id
+            "Power state {name} ha_s invalid ID: {state_id}"
         );
-        println!("Power state {} -> ID: {}", name, state_id);
+        println!("Power state {name} -> ID: {state_id}");
     }
 }
 
@@ -45,7 +43,7 @@ fn test_screen_off_ratio_calculation() {
         screen_off_time_m_s: u64,
     }
 
-    let test_case_s = vec![
+    let test_case_s = [
         ScreenSession {
             total_time_m_s: 1000,
             screen_off_time_m_s: 100,
@@ -68,7 +66,7 @@ fn test_screen_off_ratio_calculation() {
         };
 
         // Verify ratio is in valid range [0.0, 1.0]
-        assert!(ratio >= 0.0 && ratio <= 1.0, "Invalid ratio: {}", ratio);
+        assert!((0.0..=1.0).contains(&ratio), "Invalid ratio: {ratio}");
 
         // Test power policy decision_s based on ratio
         let expected_power_mode = if ratio > 0.7 {
@@ -113,7 +111,7 @@ fn test_telemetry_label_s() -> Result<(), Box<dyn std::error::Error>> {
         assert!(!key_cstr.as_bytes().is_empty());
         assert!(!value_cstr.as_bytes().is_empty());
 
-        println!("Telemetry label: {} = {}", key, value);
+        println!("Telemetry label: {key} = {value}");
     }
     Ok(())
 }
@@ -123,7 +121,7 @@ fn test_telemetry_label_s() -> Result<(), Box<dyn std::error::Error>> {
 fn test_power_policy_adaptation() {
     // Test the logic that determine_s power state based on condition_s
 
-    let test_scenario_s = vec![
+    let test_scenario_s = [
         DeviceState {
             battery_level: 90.0,
             screen_off_ratio: 0.2,
@@ -148,7 +146,7 @@ fn test_power_policy_adaptation() {
         let power_level = determine_power_level(state);
 
         // Verify power level is in valid range
-        assert!(power_level <= 3, "Invalid power level: {}", power_level);
+        assert!(power_level <= 3, "Invalid power level: {power_level}");
 
         println!("Scenario {}: battery={:.1}%, screen_off={:.1}%, charging={}, power_save={} -> level={}",
                  i + 1, state.battery_level, state.screen_off_ratio * 100.0,
@@ -187,8 +185,7 @@ fn test_error_conditions() -> Result<(), Box<dyn std::error::Error>> {
     for invalid_state in invalid_states {
         assert!(
             invalid_state > 3,
-            "State {} should be invalid",
-            invalid_state
+            "State {invalid_state} should be invalid"
         );
     }
 
@@ -201,10 +198,8 @@ fn test_error_conditions() -> Result<(), Box<dyn std::error::Error>> {
     for ratio in ratios {
         let clamped = ratio.clamp(0.0, 1.0);
         assert!(
-            clamped >= 0.0 && clamped <= 1.0,
-            "Ratio should be clamped: {} -> {}",
-            ratio,
-            clamped
+            (0.0..=1.0).contains(&clamped),
+            "Ratio should be clamped: {ratio} -> {clamped}"
         );
     }
 

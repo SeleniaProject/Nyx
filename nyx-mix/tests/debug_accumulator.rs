@@ -18,7 +18,7 @@ fn debug_accumulator_step_by_step() -> Result<(), Box<dyn std::error::Error>> {
     // Test verification
     println!("\n2. Verifying element [0]");
     let verification1 = acc.verify_element(&element1, &witness1);
-    println!("Verification result: {}", verification1);
+    println!("Verification result: {verification1}");
 
     // Add second element
     println!("\n3. Adding element [1]");
@@ -30,11 +30,11 @@ fn debug_accumulator_step_by_step() -> Result<(), Box<dyn std::error::Error>> {
     // Test verification of both element_s
     println!("\n4. Verifying element [0] after adding [1]");
     let verification1_after = acc.verify_element(&element1, &witness1);
-    println!("Verification result: {}", verification1_after);
+    println!("Verification result: {verification1_after}");
 
     println!("\n5. Verifying element [1]");
     let verification2 = acc.verify_element(&element2, &witness2);
-    println!("Verification result: {}", verification2);
+    println!("Verification result: {verification2}");
 
     // Re-generate witnes_s for element [0]
     println!("\n6. Re-generating witnes_s for element [0]");
@@ -44,7 +44,7 @@ fn debug_accumulator_step_by_step() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n7. Verifying element [0] with new witnes_s");
     let verification1new = acc.verify_element(&element1, &witness1new);
-    println!("Verification result: {}", verification1new);
+    println!("Verification result: {verification1new}");
 
     // Test what the property test is actually doing
     println!("\n8. Property test simulation");

@@ -5,7 +5,8 @@ use std::time::Duration;
 async fn stun_server_shutdown_e2e() -> Result<(), Box<dyn std::error::Error>> {
     use nyx_transport::stun_server::StunServer;
     let bind: std::net::SocketAddr = "127.0.0.1:0".parse()?;
-    let server = StunServer::new(bind).await?;
+    let socket = tokio::net::UdpSocket::bind(bind).await?;
+    let server = StunServer::new(socket);
     server.start().await?;
     let addr = server.local_addr()?;
 

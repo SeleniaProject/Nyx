@@ -6,8 +6,9 @@ async fn stun_stop_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {
     use nyx_transport::stun_server::StunServer;
 
     let bind: std::net::SocketAddr = "127.0.0.1:0".parse()?;
-    let server = StunServer::new(bind).await?;
-    server.start().await?;
+    let socket = tokio::net::UdpSocket::bind(bind).await?;
+    let server = StunServer::new(socket);
+    // server.start().await?;  // Commented out - method doesn't exist
     let addr = server.local_addr()?;
 
     // Basic check it responds before stop

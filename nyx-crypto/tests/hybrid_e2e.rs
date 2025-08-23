@@ -8,7 +8,7 @@ mod test_s {
     };
 
     #[test]
-    fn test_hybrid_handshake_round_trip() {
+    fn test_hybrid_handshake_round_trip() -> Result<(), Box<dyn std::error::Error>> {
         // Generate static keypair_s for both partie_s
         let alice_static = StaticKeypair::generate();
         let bob_static = StaticKeypair::generate();
@@ -30,18 +30,19 @@ mod test_s {
 
         // Alice encrypt_s with her TX, Bob decrypt_s with his RX
         let mut bob_final = bob_result;
-        let (_, alice_encrypted) = alice_final.tx.sealnext(&[], test_message)?;
-        let bob_decrypted = bob_final.rx.open_at(0, &[], &alice_encrypted)?;
+        let (_, alice_encrypted) = alice_final.__tx.sealnext(&[], test_message)?;
+        let bob_decrypted = bob_final.__rx.open_at(0, &[], &alice_encrypted)?;
         assert_eq!(bob_decrypted, test_message);
 
         // Bob encrypt_s with his TX, Alice decrypt_s with her RX
-        let (_, bob_encrypted) = bob_final.tx.sealnext(&[], test_message)?;
-        let alice_decrypted = alice_final.rx.open_at(0, &[], &bob_encrypted)?;
+        let (_, bob_encrypted) = bob_final.__tx.sealnext(&[], test_message)?;
+        let alice_decrypted = alice_final.__rx.open_at(0, &[], &bob_encrypted)?;
         assert_eq!(alice_decrypted, test_message);
+        Ok(())
     }
 
     #[test]
-    fn test_hybrid_handshake_invalid_static_key() {
+    fn test_hybrid_handshake_invalid_static_key() -> Result<(), Box<dyn std::error::Error>> {
         let alice_static = StaticKeypair::generate();
         let bob_static = StaticKeypair::generate();
         let charlie_static = StaticKeypair::generate(); // Wrong static key
@@ -58,10 +59,11 @@ mod test_s {
         );
 
         assert!(bob_result.is_err(), "Bob should reject invalid static key");
+        Ok(())
     }
 
     #[test]
-    fn test_hybrid_handshake_corrupted_message() {
+    fn test_hybrid_handshake_corrupted_message() -> Result<(), Box<dyn std::error::Error>> {
         let alice_static = StaticKeypair::generate();
         let bob_static = StaticKeypair::generate();
         let prologue = b"test-prologue";
@@ -78,17 +80,18 @@ mod test_s {
             responder_handshake(&bob_static, &alice_static.pk, &corrupted_msg, prologue);
 
         assert!(bob_result.is_err(), "Bob should reject corrupted message");
+        Ok(())
     }
 
     #[cfg(feature = "telemetry")]
     #[test]
-    fn test_hybrid_handshake_telemetry_integration() {
+    fn test_hybrid_handshake_telemetry_integration() -> Result<(), Box<dyn std::error::Error>> {
         use nyx_crypto::hybrid::HybridHandshake;
 
         // Get initial telemetry state
-        let initial_attempt_s = HybridHandshake::attempt_s();
-        let initial_succes_s = HybridHandshake::successe_s();
-        let initial_failu_re_s = HybridHandshake::failu_re_s();
+        let initial_attempt_s = HybridHandshake::attempts();
+        let initial_succes_s = HybridHandshake::successes();
+        let initial_failu_re_s = HybridHandshake::failures();
 
         let alice_static = StaticKeypair::generate();
         let bob_static = StaticKeypair::generate();
@@ -97,14 +100,14 @@ mod test_s {
         // Perform successful handshake (should increment telemetry)
         let alice_result = initiator_handshake(&alice_static, &bob_static.pk, prologue)?;
 
-        let bob_result =
+        let _bob_result =
             responder_handshake(&bob_static, &alice_static.pk, &alice_result.msg1, prologue)?;
 
         // Note: In a full implementation, telemetry would be updated during these operation_s
         // For now, we just test that the telemetry API is available
-        let post_attempt_s = HybridHandshake::attempt_s();
-        let post_succes_s = HybridHandshake::successe_s();
-        let post_failu_re_s = HybridHandshake::failu_re_s();
+        let post_attempt_s = HybridHandshake::attempts();
+        let post_succes_s = HybridHandshake::successes();
+        let post_failu_re_s = HybridHandshake::failures();
 
         // Telemetry API should be accessible
         assert!(
@@ -119,10 +122,11 @@ mod test_s {
             post_failu_re_s >= initial_failu_re_s,
             "Failure counter should be accessible"
         );
+        Ok(())
     }
 
     #[test]
-    fn test_hybrid_handshake_message_format() {
+    fn test_hybrid_handshake_message_format() -> Result<(), Box<dyn std::error::Error>> {
         let alice_static = StaticKeypair::generate();
         let bob_static = StaticKeypair::generate();
         let prologue = b"test-prologue";
@@ -140,5 +144,6 @@ mod test_s {
         // In a full implementation, we would validate hybrid-specific header_s here
         // For now, just ensure we have a valid message structure
         assert!(!msg1.is_empty(), "Message should not be empty");
+        Ok(())
     }
 }

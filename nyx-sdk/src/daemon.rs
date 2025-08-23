@@ -91,7 +91,7 @@ impl DaemonClient {
     pub async fn new_with_auto_token(cfg: SdkConfig) -> Self {
         let tok = auto_discover_token().await;
         Self {
-            cfg: cfg,
+            cfg,
             auth_token: tok,
         }
     }

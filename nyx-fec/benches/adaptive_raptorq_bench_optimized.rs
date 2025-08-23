@@ -145,7 +145,7 @@ fn real_time_performance_benchmarks(c: &mut Criterion) {
                 tuner.update(metrics);
                 
                 // Test redundancy calculation performance
-                let redundancy = tuner.get_current_redundancy();
+                let redundancy = tuner.current_redundancy();
                 black_box(redundancy);
             }
         });
@@ -176,7 +176,7 @@ fn real_time_performance_benchmarks(c: &mut Criterion) {
                     );
                     
                     tuner.update(metrics);
-                    let redundancy = tuner.get_current_redundancy();
+                    let redundancy = tuner.current_redundancy();
                     black_box(redundancy);
                 }
             }
@@ -232,9 +232,9 @@ fn statistics_benchmarks(c: &mut Criterion) {
         
         b.iter(|| {
             // Test various analysis operations
-            let current_redundancy = tuner.get_current_redundancy();
+            let current_redundancy = tuner.current_redundancy();
             let stats = tuner.get_statistics();
-            let is_stable = stats.avg_redundancy > 0.0;
+            let is_stable = stats.current_redundancy.tx > 0.0;
             
             black_box((current_redundancy, stats, is_stable));
         });

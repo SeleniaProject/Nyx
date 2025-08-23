@@ -267,7 +267,7 @@ pub fn create_envelope(
 
     // Export key material for HPKE encryption
     let exported_key = handshake_result
-        .tx
+        .__tx
         .export_key_material(b"hpke-encryption", 32)
         .map_err(|e| format!("Key export failed: {:?}", e))?;
 
@@ -332,7 +332,7 @@ pub fn open_envelope(
 
     // Export the same key material (use rx instead of tx for responder)
     let exported_key = handshake_result
-        .rx
+        .__rx
         .export_key_material(b"hpke-encryption", 32)
         .map_err(|e| format!("Key export failed: {:?}", e))?;
 
@@ -354,7 +354,7 @@ fn test_hpke_basic() {
 #[test]
 fn test_key_generation() {
     let alice_x25519 = X25519StaticKeypair::generate();
-    let alice_kyber = KyberStaticKeypair::generate();
+    let alice_kyber = KyberStaticKeypair::generate().unwrap();
 
     assert_eq!(alice_x25519.pk.len(), 32);
     // Kyber1024 public key size is 1184 bytes in this implementation
@@ -370,7 +370,7 @@ fn test_handshake() -> Result<(), Box<dyn std::error::Error>> {
 
     let alice_x25519 = X25519StaticKeypair::generate();
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let init_result = initiator_handshake(&alice_x25519, &bob_x25519.pk, &bob_kyber.pk, b"test");
 
@@ -409,10 +409,10 @@ fn test_hpke_context() -> Result<(), Box<dyn std::error::Error>> {
 fn test_hpke_envelope_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     // Generate recipient keypairs
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let plaintext = b"This is a secret message for HPKE envelope encryption!";
-    let info_local = b"test-hpke-envelope";
+    let info = b"test-hpke-envelope";
 
     // Create envelope
     let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
@@ -448,20 +448,20 @@ fn test_hpke_envelope_serialization() -> Result<(), Box<dyn std::error::Error>> 
 fn test_hpke_wrong_recipient() -> Result<(), Box<dyn std::error::Error>> {
     // Generate recipient keypair_s
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     // Generate different recipient keypairs
     let charlie_x25519 = X25519StaticKeypair::generate();
-    let charlie_kyber = KyberStaticKeypair::generate();
+    let charlie_kyber = KyberStaticKeypair::generate().unwrap();
 
     let plaintext = b"Secret message";
     let info_local = b"test-wrong-recipient";
 
     // Create envelope for Bob
-    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info_local)?;
 
     // Try to open with Charlie's keys (should fail)
-    let result = open_envelope(&charlie_x25519, &charlie_kyber, &envelope, info);
+    let result = open_envelope(&charlie_x25519, &charlie_kyber, &envelope, info_local);
     assert!(result.is_err(), "Opening with wrong recipient should fail");
     Ok(())
 }
@@ -469,10 +469,10 @@ fn test_hpke_wrong_recipient() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let plaintext = b"Tamper-proof message";
-    let info_local = b"test-tampering";
+    let info = b"test-tampering";
 
     let mut envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
 
@@ -482,7 +482,7 @@ fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Try to open tampered envelope (should fail)
-    let result = open_envelope(&bob_x25519, &bob_kyber, &envelope, info);
+    let result = open_envelope(&bob_x25519, &bob_kyber, &envelope, info_local);
     assert!(result.is_err(), "Opening tampered envelope should fail");
     Ok(())
 }
@@ -490,15 +490,15 @@ fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_hpke_large_message() -> Result<(), Box<dyn std::error::Error>> {
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     // Create a large message (1MB)
     let plaintext = vec![42u8; 1024 * 1024];
     let info_local = b"test-large-message";
 
-    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info)?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info_local)?;
 
-    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info_local)?;
 
     assert_eq!(plaintext, decrypted);
     Ok(())
@@ -515,10 +515,10 @@ fn test_hpke_contextsequence_tracking() -> Result<(), Box<dyn std::error::Error>
     let plaintext = b"Test message";
     let aad = b"associated data";
 
-    let ct1 = context.seal(plaintext, aad)?;
+    let _ct1 = context.seal(plaintext, aad)?;
     assert_eq!(context.sequence(), 1);
 
-    let ct2 = context.seal(plaintext, aad)?;
+    let _ct2 = context.seal(plaintext, aad)?;
     assert_eq!(context.sequence(), 2);
 
     assert!(!context.needs_renewal(), "Should not need renewal yet");
@@ -551,13 +551,13 @@ fn test_hpke_contextsequence_overflow_protection() -> Result<(), Box<dyn std::er
 #[test]
 fn test_hpke_envelope_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     // Test plaintext size limit (this should be close to but under the limit)
     let large_plaintext = vec![42u8; 50 * 1024 * 1024]; // 50MB
     let info_local = b"test-size-limit";
 
-    let result = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &large_plaintext, info);
+    let result = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &large_plaintext, info_local);
     assert!(result.is_ok(), "50MB message should succeed");
 
     // Test serialization and size calculation
@@ -606,7 +606,7 @@ fn test_hpke_envelope_malformed_data() -> Result<(), Box<dyn std::error::Error>>
 #[test]
 fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Error>> {
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let message_s = [
         b"First message".as_slice(),
@@ -619,13 +619,13 @@ fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Er
 
     // Create multiple envelopes
     for msg in message_s.iter() {
-        let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, msg, info)?;
+        let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, msg, info_local)?;
         envelope_s.push(envelope);
     }
 
     // Decrypt all envelopes
     for (i, envelope) in envelope_s.iter().enumerate() {
-        let decrypted = open_envelope(&bob_x25519, &bob_kyber, envelope, info)?;
+        let decrypted = open_envelope(&bob_x25519, &bob_kyber, envelope, info_local)?;
         assert_eq!(decrypted, message_s[i], "Message {} should match", i);
     }
 
@@ -644,7 +644,7 @@ fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Er
 #[test]
 fn test_hpke_envelope_different_info_context_s() -> Result<(), Box<dyn std::error::Error>> {
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let plaintext = b"Same message, different contexts";
     let info1 = b"context-1";
@@ -666,15 +666,15 @@ fn test_hpke_envelope_different_info_context_s() -> Result<(), Box<dyn std::erro
 #[test]
 fn test_hpke_envelope_empty_data() -> Result<(), Box<dyn std::error::Error>> {
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     // Test empty plaintext
     let plaintext = b"";
     let info_local = b"test-empty";
 
-    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info)?;
+    let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, plaintext, info_local)?;
 
-    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
+    let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info_local)?;
 
     assert_eq!(decrypted, plaintext);
     assert_eq!(decrypted.len(), 0);
@@ -683,21 +683,19 @@ fn test_hpke_envelope_empty_data() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_hpke_performance_metric_s() -> Result<(), Box<dyn std::error::Error>> {
-    use std::time::Instant;
-
     let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate();
+    let bob_kyber = KyberStaticKeypair::generate().unwrap();
 
     let plaintext = vec![42u8; 64 * 1024]; // 64KB message
-    let info_local = b"performance-test";
+    let info = b"performance-test";
 
     // Measure encryption time
-    let start_local = Instant::now();
+    let start = std::time::Instant::now();
     let envelope = create_envelope(&bob_x25519.pk, &bob_kyber.pk, &plaintext, info)?;
     let encrypt_time = start.elapsed();
 
     // Measure decryption time
-    let start_local = Instant::now();
+    let start = std::time::Instant::now();
     let decrypted = open_envelope(&bob_x25519, &bob_kyber, &envelope, info)?;
     let decrypt_time = start.elapsed();
 

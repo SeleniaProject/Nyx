@@ -78,12 +78,13 @@ pub fn open_to_scatter(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zero_copy::manager::ZeroCopyManager;
+    use crate::zero_copy::manager::{BufferPool, Buffer};
 
     #[test]
     fn byte_view_single() {
-        let mut manager = ZeroCopyManager::new();
-        let buf = manager.allocate(16).unwrap();
+        let manager = BufferPool::with_capacity(1024);
+        let buf_vec = manager.acquire(16);
+        let buf = Buffer::from_vec(buf_vec);
         let view = ByteView::single(&buf);
         assert_eq!(view.total_len(), 16);
         assert_eq!(view.parts.len(), 1);
@@ -100,8 +101,9 @@ mod tests {
 
     #[test]
     fn into_bytes_conversion() {
-        let mut manager = ZeroCopyManager::new();
-        let buf = manager.allocate(8).unwrap();
+        let manager = BufferPool::with_capacity(1024);
+        let buf_vec = manager.acquire(8);
+        let buf = Buffer::from_vec(buf_vec);
         let bytes = into_bytes(&buf);
         assert_eq!(bytes.len(), 8);
     }

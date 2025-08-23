@@ -23,10 +23,7 @@ fn adaptive_cover_utilization_feedback_non_decreasing_lambda() {
         let cur = apply_utilization(&config, u.into(), false);
         assert!(
             cur >= prev,
-            "Monotonicity violation: u={} prev={} cur={}",
-            u,
-            prev,
-            cur
+            "Monotonicity violation: u={u} prev={prev} cur={cur}"
         );
         prev = cur;
     }
@@ -121,9 +118,7 @@ fn mathematical_correctness() {
         let expected = config.__base_cover_lambda * (1.0 + u);
         assert!(
             (normal - expected).abs() < f32::EPSILON,
-            "Normal mode formula mismatch: expected={} actual={}",
-            expected,
-            normal
+            "Normal mode formula mismatch: expected={expected} actual={normal}"
         );
 
         // Test low power mode: λ = base * low_ratio * (1 + u)
@@ -131,9 +126,7 @@ fn mathematical_correctness() {
         let expected_power = config.__base_cover_lambda * config.__low_power_ratio * (1.0 + u);
         assert!(
             (power - expected_power).abs() < f32::EPSILON,
-            "Low power mode formula mismatch: expected={} actual={}",
-            expected_power,
-            power
+            "Low power mode formula mismatch: expected={expected_power} actual={power}"
         );
     }
 }
@@ -168,9 +161,7 @@ fn poisson_statistical_properties() {
     let expected_mean = 1.0 / lambda as f64;
     assert!(
         (avg - expected_mean).abs() < 0.01,
-        "Exponential mean deviation: expected={} actual={}",
-        expected_mean,
-        avg
+        "Exponential mean deviation: expected={expected_mean} actual={avg}"
     );
 }
 
@@ -190,8 +181,7 @@ fn adaptive_cover_performance() {
     
     assert!(
         per_call_ns < 1_000,
-        "Performance regression: {}ns per call",
-        per_call_ns
+        "Performance regression: {per_call_ns}ns per call"
     );
 }
 
@@ -208,21 +198,4 @@ fn poisson_rate(lambda: f32, rng: &mut impl rand::Rng) -> f32 {
     // Simple exponential distribution to approximate Poisson inter-arrival times
     let u: f64 = rng.gen_range(0.000001..1.0); // Avoid log(0)
     (-u.ln() / lambda as f64) as f32
-}
-
-// Simple trait implementation for testing
-trait ValidateConfig {
-    fn validate_range_s(&self) -> Result<(), &'static str>;
-}
-
-impl ValidateConfig for MixConfig {
-    fn validate_range_s(&self) -> Result<(), &'static str> {
-        if self.__low_power_ratio < 0.0 || self.__low_power_ratio > 1.0 {
-            return Err("Invalid low power ratio");
-        }
-        if self.__base_cover_lambda <= 0.0 || self.__base_cover_lambda > 10000.0 {
-            return Err("Invalid base cover lambda");
-        }
-        Ok(())
-    }
 }

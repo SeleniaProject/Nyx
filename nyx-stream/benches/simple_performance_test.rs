@@ -47,8 +47,10 @@ fn bench_small_messages(c: &mut Criterion) {
 
     c.bench_function("small_message_batch_optimized", |b| {
         b.to_async(&rt).iter(|| async {
-            let mut config = AsyncStreamConfig::default();
-            config.max_inflight = 200; // Increased for better performance
+            let config = AsyncStreamConfig {
+                max_inflight: 200, // Increased for better performance
+                ..Default::default()
+            };
             let (sender, receiver) = pair(config.clone(), config);
             let data = Bytes::from_static(b"small");
 
