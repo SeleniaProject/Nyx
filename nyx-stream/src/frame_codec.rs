@@ -207,7 +207,10 @@ mod test_s {
         let err = FrameCodec::encode_with_limit(&f, &mut buf, 3).unwrap_err();
         match err {
             Error::Protocol(msg) => assert!(msg.contains("too large")),
-            _ => panic!("unexpected error: {err:?}"),
+            e => {
+                eprintln!("Unexpected error type: {e:?}");
+                assert!(false, "Expected Protocol error for oversized frame, got: {e:?}");
+            }
         }
 
         // Larger limit should accept

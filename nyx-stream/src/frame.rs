@@ -186,8 +186,17 @@ mod test_s {
         let bogus = [0xFF, 0x00, 0xAA];
         let err = Frame::from_cbor(&bogus).unwrap_err();
         match err {
-            Error::Cbor(_) => {}
-            e => panic!("unexpected error: {e:?}"),
+            Error::Cbor(_) => {
+                // Expected CBOR decoding error
+            }
+            e => {
+                // Log unexpected error for debugging but don't panic
+                eprintln!("Unexpected error type: {e:?}");
+                assert!(
+                    false,
+                    "Expected CBOR decoding error, got: {e:?}"
+                );
+            }
         }
     }
 }

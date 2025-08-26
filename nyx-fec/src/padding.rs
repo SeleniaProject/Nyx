@@ -5,11 +5,15 @@ pub const SHARD_SIZE: usize = 1280;
 
 /// Pack a payload into a fixed-size shard with length prefix.
 /// Layout: [len: u16 LE][data...][zero padding]
+/// 
+/// # Panics
+/// Panics if the payload exceeds the maximum size (SHARD_SIZE - 2).
+/// For fallible operation, use `try_pack_into_shard`.
 pub fn pack_into_shard(payload: &[u8]) -> [u8; SHARD_SIZE] {
     // Keep a panic in the infallible variant for internal callers expecting fast-fail.
     assert!(
         payload.len() <= SHARD_SIZE - 2,
-        "payload too large for shard"
+        "payload size {} exceeds maximum {} bytes", payload.len(), SHARD_SIZE - 2
     );
     let mut out = [0u8; SHARD_SIZE];
     let len: u16 = payload.len() as u16;

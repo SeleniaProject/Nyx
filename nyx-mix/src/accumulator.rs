@@ -216,14 +216,14 @@ impl Accumulator {
         Ok(__witnes_s)
     }
 
-    /// Recover __element byte_s from hash using stored mapping
-    /// Return_s empty vector if __element not found to avoid panic_s
+    /// Recover element bytes from hash using stored mapping
+    /// Returns empty vector if element not found to avoid panics
     #[allow(dead_code)]
     fn recover_element_from_hash(&self, element_hash: &[u8]) -> Vec<u8> {
-        if let Some(__element) = self.element_mapping.get(element_hash) {
-            __element.clone()
+        if let Some(element) = self.element_mapping.get(element_hash) {
+            element.clone()
         } else {
-            tracing::debug!("__element not found in mapping, returning empty vector");
+            tracing::debug!("element not found in mapping, returning empty vector");
             Vec::new()
         }
     }
@@ -677,10 +677,10 @@ mod test_s {
     #[test]
     fn empty_element_rejected() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
-        let __result = acc.add_element(b"");
-        assert!(__result.is_err());
+        let result = acc.add_element(b"");
+        assert!(result.is_err());
 
-        if let Err(AccumulatorError::InvalidElement { reason }) = __result {
+        if let Err(AccumulatorError::InvalidElement { reason }) = result {
             assert!(reason.contains("empty"));
         } else {
             return Err("Expected InvalidElement error".into());

@@ -191,8 +191,13 @@ impl UdpEndpoint {
             tracing::warn!("Failed to set socket to blocking mode: {}", e);
         }
         
-        // Note: set_send_buffer_size and set_recv_buffer_size are not available on UdpSocket
-        // These would be handled at the OS level through socket2 crate if needed
+        // Optimize socket buffer sizes for high throughput
+        if let Err(e) = sock.set_send_buffer_size(262144) { // 256KB send buffer
+            tracing::debug!("Failed to set send buffer size: {}", e);
+        }
+        if let Err(e) = sock.set_recv_buffer_size(262144) { // 256KB recv buffer
+            tracing::debug!("Failed to set recv buffer size: {}", e);
+        }
         
         Ok(())
     }
@@ -253,17 +258,13 @@ impl UdpEndpoint {
         self.send_buffer.clear();
         self.send_buffer.extend_from_slice(data);
         
-        // Create a temporary copy to avoid borrowing conflicts
-        let buffer_data = self.send_buffer.clone();
-        self.send_to(&buffer_data, to)
+        self.send_to(&self.send_buffer, to)
     }
 
     /// Optimized receive using internal buffer
     pub fn recv_from_buffered(&mut self) -> Result<(Vec<u8>, std::net::SocketAddr)> {
-        // Use a temporary buffer to avoid borrowing conflicts
-        let mut temp_buffer = vec![0u8; 65536];
-        let (bytes_recv, addr) = self.recv_from(&mut temp_buffer)?;
-        let data = temp_buffer[..bytes_recv].to_vec();
+        let (bytes_recv, addr) = self.recv_from(&mut self.recv_buffer)?;
+        let data = self.recv_buffer[..bytes_recv].to_vec();
         Ok((data, addr))
     }
 
@@ -371,10 +372,12 @@ impl TransportManager {
 
     /// Select optimal transport based on requirements
     pub fn select_transport(&self, requirements: &TransportRequirements) -> Option<TransportKind> {
-        self.preferred_transports
-            .iter()
-            .find(|&&transport| self.transport_meets_requirements(transport, requirements))
-            .copied()
+        for &transport in &self.preferred_transports {
+            if self.transport_meets_requirements(transport, requirements) {
+                return Some(transport);
+            }
+        }
+        None
     }
 
     /// Check if transport meets requirements

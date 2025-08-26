@@ -11,6 +11,7 @@ pub mod frame_codec;
 pub mod hpke_rekey;
 pub mod management; // Management frame_s and error code_s
 pub mod multipath;
+pub mod performance; // Performance optimization module
 pub mod plugin; // Plugin core type_s
 pub mod plugin_cbor; // CBOR header parsing helpers
 pub mod plugin_dispatch; // Dispatcher for plugin frame_s

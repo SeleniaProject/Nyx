@@ -471,16 +471,17 @@ mod test_s {
     }
 
     #[test]
-    fn testdirection_identifier_uniquenes_s() {
-        assertne!(DirectionId::I2R, DirectionId::R2I);
-        assertne!(DirectionId::I2R, DirectionId::BIDIRECTIONAL);
-        assertne!(DirectionId::R2I, DirectionId::BIDIRECTIONAL);
+    fn test_direction_identifier_uniqueness() {
+        assert_ne!(DirectionId::I2R, DirectionId::R2I);
+        assert_ne!(DirectionId::I2R, DirectionId::BIDIRECTIONAL);
+        assert_ne!(DirectionId::R2I, DirectionId::BIDIRECTIONAL);
     }
 
     #[test]
-    fn test_windowsize_power_of_two() {
+    fn test_window_size_power_of_two() {
         // Should work with power of 2
-        let ___window = AntiReplayWindow::with_size(DirectionId::I2R, 1024);
+        let window = AntiReplayWindow::with_size(DirectionId::I2R, 1024);
+        assert_eq!(window.window_size, 1024);
         
         // Should panic with non-power of 2
         std::panic::catch_unwind(|| {

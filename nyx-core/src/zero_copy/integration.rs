@@ -45,35 +45,8 @@ impl<'a> ByteView<'a> {
     }
 }
 
-/// AEAD暗号化用のヘルパー - scatter/gatherバッファを単一の暗号文にシール
-#[cfg(feature = "aead")]
-pub fn seal_scatter_gather(
-    cipher: &crate::aead::AeadCipher,
-    nonce: crate::aead::AeadNonce,
-    aad: &[u8],
-    view: &ByteView,
-) -> crate::Result<Vec<u8>> {
-    // 単一部分の場合は直接処理
-    if view.parts.len() == 1 {
-        return cipher.seal(nonce, aad, view.parts[0]);
-    }
-
-    // scatter/gatherの場合は一時的にコピー（将来的にはストリーミング実装）
-    let plaintext = view.to_vec();
-    cipher.seal(nonce, aad, &plaintext)
-}
-
-/// AEAD復号化用のヘルパー
-#[cfg(feature = "aead")]
-pub fn open_to_scatter(
-    cipher: &crate::aead::AeadCipher,
-    nonce: crate::aead::AeadNonce,
-    aad: &[u8],
-    ciphertext: &[u8],
-) -> crate::Result<Vec<u8>> {
-    // 現在は単純実装、将来的には指定されたバッファに直接復号
-    cipher.open(nonce, aad, ciphertext)
-}
+// Note: AEAD integration functions have been removed due to unavailable dependencies.
+// These would be implemented when proper AEAD support is available.
 
 #[cfg(test)]
 mod tests {

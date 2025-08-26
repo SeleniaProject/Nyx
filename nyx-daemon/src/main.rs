@@ -730,11 +730,12 @@ async fn process_request(
 }
 
 fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
-    // Strict auth mode: if NYX_DAEMON_STRICT_AUTH=1, require token to be set and provided
-    let strict = std::env::var("NYX_DAEMON_STRICT_AUTH")
+    // Auth mode: require token by default, allow disable via NYX_DAEMON_DISABLE_AUTH=1
+    let auth_disabled = std::env::var("NYX_DAEMON_DISABLE_AUTH")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+        
     // Treat empty or whitespace-only token as not set (disabled auth)
     let effective = state
         .token
@@ -743,17 +744,16 @@ fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
         .filter(|s| !s.is_empty());
 
     if effective.is_none() {
-        if strict {
-            warn!("authorization failed in strict mode: token not configured");
-            return false;
+        if auth_disabled {
+            // Emit a warning for security awareness
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                warn!("SECURITY WARNING: authentication disabled via NYX_DAEMON_DISABLE_AUTH=1")
+            });
+            return true;
         }
-        // if no token is set, allow all (development default)
-        // Emit a one-time startup warning to make the posture explicit
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| {
-            warn!("daemon started without auth token; NYX_DAEMON_STRICT_AUTH=1 will enforce token")
-        });
-        return true;
+        warn!("authorization failed: token not configured (set NYX_DAEMON_DISABLE_AUTH=1 to disable auth)");
+        return false;
     }
 
     let expected = effective.unwrap();
@@ -873,10 +873,11 @@ mod tests {
 
     #[tokio::test]
     async fn list_versions_after_snapshot() -> Result<(), Box<dyn std::error::Error>> {
-        let state = make_state_with_token(None);
+        let state = make_state_with_token(Some("test_token"));
         let _ = state.cfg.snapshot("t").await?;
         let req = serde_json::json!({
             "id": "v1",
+            "auth": "test_token",
             "op": "list_config_versions"
         })
         .to_string();
@@ -937,10 +938,10 @@ mod tests {
     fn empty_env_token_is_treated_as_disabled() -> Result<(), Box<dyn std::error::Error>> {
         // Use environment lock to prevent test interference
         with_env_lock(|| {
-            // Ensure strict mode is not enabled
-            std::env::remove_var("NYX_DAEMON_STRICT_AUTH");
+            // Set the new disable auth flag to simulate development mode
+            std::env::set_var("NYX_DAEMON_DISABLE_AUTH", "1");
             
-            // Simulate daemon started with empty token ("   ") which should disable auth
+            // Simulate daemon started with empty token ("   ") which should disable auth when flag is set
             let state = make_state_with_token(Some("   "));
             
             // Create a test request  
@@ -953,7 +954,10 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let (resp, _rx, _filter) = rt.block_on(process_request(&req, &state));
             
-            assert!(resp.ok, "auth should be disabled when token is empty/whitespace");
+            // Clean up environment
+            std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
+            
+            assert!(resp.ok, "auth should be disabled when token is empty/whitespace and disable flag is set");
             Ok(())
         })
     }
@@ -976,11 +980,49 @@ mod tests {
     #[test]
     fn strict_auth_blocks_without_token() {
         with_env_lock(|| {
-            std::env::set_var("NYX_DAEMON_STRICT_AUTH", "1");
+            // Remove disable auth flag to ensure default behavior (auth required)
+            std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
             let st = make_state_with_token(None);
             let ok = is_authorized(&st, None);
-            assert!(!ok);
-            std::env::remove_var("NYX_DAEMON_STRICT_AUTH");
+            assert!(!ok, "Should block access when no token is configured and auth is not explicitly disabled");
+        });
+    }
+
+    #[test]
+    fn auth_enabled_by_default() {
+        with_env_lock(|| {
+            // Remove environment variable to test default behavior
+            std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
+            
+            let state = make_state_with_token(None); // No token set
+            let is_auth = is_authorized(&state, None);
+            assert!(!is_auth, "Auth should be enabled by default when no token configured");
+        });
+    }
+
+    #[test]
+    fn auth_can_be_explicitly_disabled() {
+        with_env_lock(|| {
+            std::env::set_var("NYX_DAEMON_DISABLE_AUTH", "1");
+            
+            let state = make_state_with_token(None); // No token set
+            let is_auth = is_authorized(&state, None);
+            
+            // Cleanup
+            std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
+            
+            assert!(is_auth, "Auth should be disabled when NYX_DAEMON_DISABLE_AUTH=1");
+        });
+    }
+
+    #[test]
+    fn auth_with_valid_token_works() {
+        with_env_lock(|| {
+            std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
+            
+            let state = make_state_with_token(Some("valid_token"));
+            let is_auth = is_authorized(&state, Some("valid_token"));
+            assert!(is_auth, "Auth should succeed with valid token");
         });
     }
 }

@@ -53,12 +53,12 @@ impl RekeyHarness {
     ///
     /// # Example
     /// ```no_run
-    /// # use nyx_stream::hpke_rekey::RekeyHarnes_s;
-    /// let mut harnes_s = RekeyHarnes_s::new_with_record_threshold(100);
-    /// let __aad = b"associated _data";
-    /// let __plaintext = b"secret message";
+    /// # use nyx_stream::hpke_rekey::RekeyHarness;
+    /// let mut harness = RekeyHarness::new_with_record_threshold(100);
+    /// let aad = b"associated_data";
+    /// let plaintext = b"secret message";
     ///
-    /// match harnes_s.send_roundtrip(aad, plaintext) {
+    /// match harness.send_roundtrip(aad, plaintext) {
     ///     Ok(decrypted) => assert_eq!(decrypted, plaintext),
     ///     Err(e) => eprintln!("Roundtrip failed: {}", e),
     /// }
@@ -81,22 +81,5 @@ impl RekeyHarness {
             })?;
 
         Ok(__decrypted)
-    }
-
-    /// Send one message and open it on the receiver (legacy panic-on-error version)
-    ///
-    /// # Deprecated
-    /// Thi_s method i_s kept for backward compatibility but should be avoided
-    /// in production code. Use `send_roundtrip` instead for proper error handling.
-    ///
-    /// # Panic_s
-    /// Panic_s if encryption or decryption fail_s, which should not happen
-    /// in normal operation with properly configured session_s.
-    #[deprecated(since = "0.1.0", note = "Use send_roundtrip for proper error handling")]
-    pub fn send_roundtrip_unwrap(&mut self, aad: &[u8], pt: &[u8]) -> Vec<u8> {
-        match self.send_roundtrip(aad, pt) {
-            Ok(result) => result,
-            Err(error) => panic!("RekeyHarness roundtrip failed: {error}"),
-        }
     }
 }

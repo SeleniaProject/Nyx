@@ -1,7 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use nyx_core::performance::RateLimiter;
-use std::sync::Arc;
-use std::thread;
 #[cfg(feature = "zero_copy")]
 use nyx_core::zero_copy::manager::BufferPool;
 #[cfg(feature = "zero_copy")]

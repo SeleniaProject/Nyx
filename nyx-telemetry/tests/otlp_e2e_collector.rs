@@ -69,7 +69,6 @@ async fn otlp_exporter_flushes_to_mock_collector() -> Result<(), Box<dyn std::er
     let config_local = nyx_telemetry::Config {
         exporter: nyx_telemetry::Exporter::Otlp,
         servicename: Some("nyx-test".into()),
-        ..Default::default()
     };
     if let Err(e) = nyx_telemetry::init(&config_local) {
         eprintln!("Failed to initialize telemetry: {e}");

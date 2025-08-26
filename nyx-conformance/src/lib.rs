@@ -11,6 +11,7 @@
 //! ```
 //! use nyx_conformance::{NetworkSimulator, SimConfig, checknon_decreasing_ep_s};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Deterministic single-path network simulation
 //! let cfg = SimConfig { los_s: 0.01, latency_m_s: 40, jitter_m_s: 8, reorder: 0.1,
 //!     bandwidth_pp_s: 500, max_queue: 128,
@@ -24,6 +25,8 @@
 //! let times: Vec<f64> = event_s.iter().map(|e| e.delivery_m_s as f64).collect();
 //! // Allow equal millisecond timestamp_s due to finite resolution
 //! checknon_decreasing_ep_s(&times, 0.0)?;
+//! # Ok(())
+//! # }
 //! ```
 
 pub mod network_simulator;

@@ -48,5 +48,9 @@ nom = { version = "7", default-features = false, features = ["std"] }
 tracing-test = "0.2"
 criterion = { version = "0.5", features = ["html_reports"] }
 
+[[bench]]
+name = "transport_benchmarks"
+harness = false
+
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.27" }

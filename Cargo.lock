@@ -3166,6 +3166,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytes",
  "cbor4ii",
  "chrono",
  "ciborium",
@@ -3181,7 +3182,9 @@ dependencies = [
  "nyx-crypto",
  "nyx-fec",
  "nyx-mobile-ffi",
+ "nyx-stream",
  "nyx-telemetry",
+ "nyx-transport",
  "once_cell",
  "protoc-bin-vendored",
  "rand 0.8.5",

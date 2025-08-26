@@ -17,6 +17,14 @@ fn parse_valid_header_round_trip() {
 
 #[test]
 fn parse_invalid_bytes_returns_error() {
-	let __err = parse_plugin_header(&[0xFF, 0x00, 0x10]).unwrap_err();
-	match err { PluginCborError::Decode(_) => {}, _ => panic!("unexpected error type") }
+	let err = parse_plugin_header(&[0xFF, 0x00, 0x10]).unwrap_err();
+	match err { 
+		PluginCborError::Decode(_) => {
+			// Expected decode error
+		}, 
+		e => {
+			eprintln!("Unexpected error type: {e:?}");
+			assert!(false, "Expected Decode error, got: {e:?}");
+		}
+	}
 }

@@ -208,53 +208,94 @@ impl AdaptiveRedundancyTuner {
         (recent_avg - older_avg).clamp(-1.0, 1.0)
     }
 
-    /// Calculate adaptive redundancy using PID-style control
+    /// Calculate adaptive redundancy using optimized PID-style control
+    /// Enhanced with machine learning-inspired adaptive coefficients
     fn calculate_adaptive_redundancy(&self, current: &NetworkMetrics) -> Redundancy {
-        let target_loss_rate = 0.001; // Target 0.1% loss rate
+        let target_loss_rate = 0.0005; // Reduced target to 0.05% for better performance
         let current_loss = self.calculate_smoothed_loss_rate();
 
-        // PID error calculation
+        // Enhanced PID error calculation with dynamic coefficients
         let error = current_loss - target_loss_rate;
         let integral_error = self.calculate_integral_error();
         let derivative_error = self.calculate_derivative_error();
 
-        // PID output
-        let pid_output = self.pid_coefficients.kp * error
-            + self.pid_coefficients.ki * integral_error
-            + self.pid_coefficients.kd * derivative_error;
+        // Adaptive coefficient scaling based on network stability
+        let stability_factor = if current.is_stable() { 0.7 } else { 1.3 };
+        let dynamic_kp = self.pid_coefficients.kp * stability_factor;
+        let dynamic_ki = self.pid_coefficients.ki * (2.0 - stability_factor);
+        let dynamic_kd = self.pid_coefficients.kd * stability_factor;
 
-        // Base redundancy adjustment
-        let base_tx = self.current_redundancy.tx + pid_output;
-        let base_rx = self.current_redundancy.rx + pid_output * 0.8; // RX slightly less responsive
+        // Enhanced PID output with non-linear response for extreme conditions
+        let linear_output = dynamic_kp * error + dynamic_ki * integral_error + dynamic_kd * derivative_error;
+        let pid_output = if error.abs() > 0.05 {
+            // Non-linear response for high loss conditions
+            linear_output * (1.0 + error.abs() * 2.0)
+        } else {
+            linear_output
+        };
 
-        // Network condition modifiers
-        let quality_modifier = self.calculate_quality_modifier(current);
-        let bandwidth_modifier = self.calculate_bandwidth_modifier(current);
-        let stability_modifier = self.calculate_stability_modifier(current);
+        // Advanced base redundancy adjustment with momentum
+        let momentum_factor = 0.85; // Smooth adjustments
+        let base_tx = self.current_redundancy.tx * momentum_factor + pid_output * (1.0 - momentum_factor);
+        let base_rx = self.current_redundancy.rx * momentum_factor + (pid_output * 0.75) * (1.0 - momentum_factor);
 
-        // Apply all modifiers
-        let final_tx =
-            (base_tx * quality_modifier * bandwidth_modifier * stability_modifier).clamp(0.01, 0.9);
-        let final_rx =
-            (base_rx * quality_modifier * bandwidth_modifier * stability_modifier).clamp(0.01, 0.9);
+        // Enhanced network condition modifiers
+        let quality_modifier = self.calculate_enhanced_quality_modifier(current);
+        let bandwidth_modifier = self.calculate_enhanced_bandwidth_modifier(current);
+        let stability_modifier = self.calculate_enhanced_stability_modifier(current);
+        let trend_modifier = self.calculate_trend_modifier();
+
+        // Apply all modifiers with intelligent bounds
+        let final_tx = (base_tx * quality_modifier * bandwidth_modifier * stability_modifier * trend_modifier)
+            .clamp(0.005, 0.85); // Ultra-low minimum, slightly lower maximum
+        let final_rx = (base_rx * quality_modifier * bandwidth_modifier * stability_modifier * trend_modifier)
+            .clamp(0.005, 0.85);
 
         Redundancy::new(final_tx, final_rx)
     }
 
-    /// Calculate smoothed loss rate using exponential moving average
+    /// Calculate smoothed loss rate using optimized exponential moving average
+    /// Enhanced with outlier detection and adaptive smoothing
     fn calculate_smoothed_loss_rate(&self) -> f32 {
         if self.loss_window.is_empty() {
             return 0.0;
         }
 
-        let alpha = 0.3; // Smoothing factor
-        let mut ema = self.loss_window[0];
+        if self.loss_window.len() == 1 {
+            return self.loss_window[0];
+        }
 
+        // Adaptive smoothing factor based on variance
+        let variance = self.calculate_loss_variance();
+        let adaptive_alpha = if variance > 0.01 {
+            0.5 // High variance: more responsive
+        } else {
+            0.2 // Low variance: more stable
+        };
+
+        let mut ema = self.loss_window[0];
         for &loss in self.loss_window.iter().skip(1) {
-            ema = alpha * loss + (1.0 - alpha) * ema;
+            // Outlier detection: if loss is > 3x current EMA, reduce its impact
+            let outlier_factor = if loss > ema * 3.0 { 0.3 } else { 1.0 };
+            let effective_alpha = adaptive_alpha * outlier_factor;
+            ema = effective_alpha * loss + (1.0 - effective_alpha) * ema;
         }
 
         ema
+    }
+
+    /// Calculate loss rate variance for adaptive smoothing
+    fn calculate_loss_variance(&self) -> f32 {
+        if self.loss_window.len() < 2 {
+            return 0.0;
+        }
+
+        let mean = self.loss_window.iter().sum::<f32>() / self.loss_window.len() as f32;
+        let variance = self.loss_window.iter()
+            .map(|&x| (x - mean).powi(2))
+            .sum::<f32>() / self.loss_window.len() as f32;
+        
+        variance
     }
 
     /// Calculate integral error for PID controller
@@ -279,31 +320,85 @@ impl AdaptiveRedundancyTuner {
         recent - previous
     }
 
-    /// Calculate quality-based modifier [0.5, 2.0]
-    fn calculate_quality_modifier(&self, metrics: &NetworkMetrics) -> f32 {
+    /// Calculate enhanced quality-based modifier with non-linear response [0.4, 2.5]
+    fn calculate_enhanced_quality_modifier(&self, metrics: &NetworkMetrics) -> f32 {
         let quality = metrics.quality_score();
-        // Poor quality -> higher redundancy
-        (2.0 - quality).clamp(0.5, 2.0)
-    }
-
-    /// Calculate bandwidth-based modifier [0.8, 1.2]
-    fn calculate_bandwidth_modifier(&self, metrics: &NetworkMetrics) -> f32 {
-        // Higher bandwidth allows more redundancy
-        if metrics.bandwidth_kbps > 1000 {
-            1.2 // High bandwidth: allow more redundancy
-        } else if metrics.bandwidth_kbps < 100 {
-            0.8 // Low bandwidth: reduce redundancy
+        
+        // Non-linear response: poor quality gets exponentially more redundancy
+        if quality < 0.3 {
+            2.5 // Very poor quality: maximum redundancy
+        } else if quality < 0.6 {
+            2.0 - quality * 1.5 // Linear decrease in mid-range
         } else {
-            1.0 // Normal bandwidth: no modification
+            // Good quality: gentle reduction
+            (1.4 - quality * 0.6).max(0.4)
         }
     }
 
-    /// Calculate stability-based modifier [0.7, 1.1]
-    fn calculate_stability_modifier(&self, metrics: &NetworkMetrics) -> f32 {
-        if metrics.is_stable() {
-            0.9 // Stable network: can reduce redundancy slightly
+    /// Calculate enhanced bandwidth-based modifier with adaptive scaling [0.7, 1.4]
+    fn calculate_enhanced_bandwidth_modifier(&self, metrics: &NetworkMetrics) -> f32 {
+        let bw = metrics.bandwidth_kbps as f32;
+        
+        // More granular bandwidth-based scaling
+        if bw > 5000.0 {
+            1.4 // Very high bandwidth: allow maximum redundancy
+        } else if bw > 2000.0 {
+            1.2 // High bandwidth: good redundancy allowance
+        } else if bw > 500.0 {
+            1.0 // Medium bandwidth: baseline
+        } else if bw > 100.0 {
+            0.85 // Low bandwidth: slight reduction
         } else {
-            1.1 // Unstable network: increase redundancy
+            0.7 // Very low bandwidth: significant reduction
+        }
+    }
+
+    /// Calculate enhanced stability-based modifier with trend awareness [0.6, 1.3]
+    fn calculate_enhanced_stability_modifier(&self, metrics: &NetworkMetrics) -> f32 {
+        let base_stability: f32 = if metrics.is_stable() { 0.8 } else { 1.2 };
+        
+        // Factor in loss trend
+        let trend = self.loss_trend();
+        let trend_adjustment: f32 = if trend > 0.02 {
+            1.15 // Worsening trend: increase redundancy
+        } else if trend < -0.02 {
+            0.9 // Improving trend: can reduce redundancy
+        } else {
+            1.0 // Stable trend: no adjustment
+        };
+        
+        (base_stability * trend_adjustment).clamp(0.6_f32, 1.3_f32)
+    }
+
+    /// Calculate trend-based modifier for predictive redundancy adjustment
+    fn calculate_trend_modifier(&self) -> f32 {
+        if self.history.len() < 3 {
+            return 1.0;
+        }
+
+        // Analyze recent quality trend
+        let recent_qualities: Vec<f32> = self.history.iter()
+            .rev()
+            .take(5)
+            .map(|m| m.quality_score())
+            .collect();
+
+        if recent_qualities.len() < 3 {
+            return 1.0;
+        }
+
+        // Calculate quality trend
+        let quality_trend = recent_qualities.windows(2)
+            .map(|window| window[0] - window[1])
+            .sum::<f32>() / (recent_qualities.len() - 1) as f32;
+
+        // Proactive adjustment based on trend
+        if quality_trend < -0.1 {
+            1.15 // Quality degrading: preemptively increase redundancy
+        } else if quality_trend > 0.1 {
+            0.95 // Quality improving: can reduce redundancy
+        } else {
+            1.0 // Stable quality: no adjustment
         }
     }
 

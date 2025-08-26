@@ -7,14 +7,24 @@ use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use futures::future;
 use nyx_stream::async_stream::{pair, AsyncStreamConfig};
+use std::sync::OnceLock;
 use tokio::runtime::Runtime;
+
+/// Shared runtime for all benchmarks to avoid initialization overhead
+static SHARED_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+fn get_runtime() -> &'static Runtime {
+    SHARED_RUNTIME.get_or_init(|| {
+        Runtime::new().expect("Failed to create Tokio runtime for benchmarks")
+    })
+}
 
 /// Ultra-optimized benchmark for basic stream operations - maximum throughput design
 fn bench_basic_stream_ops(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = get_runtime();
 
     c.bench_function("basic_send_recv_optimized", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.to_async(rt).iter(|| async {
             let config = AsyncStreamConfig::default();
             let (sender, receiver) = pair(config.clone(), config);
             let data = Bytes::from_static(b"test_data");
@@ -30,10 +40,10 @@ fn bench_basic_stream_ops(c: &mut Criterion) {
 
 /// Memory-optimized stream pair creation benchmark
 fn bench_stream_pair_creation(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = get_runtime();
     
     c.bench_function("create_stream_pair_fast", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.to_async(rt).iter(|| async {
             let config = AsyncStreamConfig::default();
             let streams = black_box(pair(config.clone(), config));
             black_box(streams);
@@ -43,10 +53,10 @@ fn bench_stream_pair_creation(c: &mut Criterion) {
 
 /// High-frequency small message throughput benchmark - batch optimized
 fn bench_small_messages(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = get_runtime();
 
     c.bench_function("small_message_batch_optimized", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.to_async(rt).iter(|| async {
             let config = AsyncStreamConfig {
                 max_inflight: 200, // Increased for better performance
                 ..Default::default()
@@ -69,10 +79,10 @@ fn bench_small_messages(c: &mut Criterion) {
 
 /// Zero-copy optimized medium payload benchmark
 fn bench_medium_payload(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = get_runtime();
 
     c.bench_function("medium_payload_4kb_optimized", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.to_async(rt).iter(|| async {
             let config = AsyncStreamConfig::default();
             let (sender, receiver) = pair(config.clone(), config);
             let data = Bytes::from(vec![0u8; 4096]); // 4KB for better performance testing
@@ -87,10 +97,10 @@ fn bench_medium_payload(c: &mut Criterion) {
 
 /// High-performance concurrent execution benchmark
 fn bench_concurrent_optimized(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = get_runtime();
 
     c.bench_function("concurrent_16_streams_optimized", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.to_async(rt).iter(|| async {
             let mut handles = Vec::with_capacity(16); // Pre-allocate for performance
 
             for _ in 0..16 {

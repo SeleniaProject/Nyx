@@ -16,7 +16,6 @@ async fn otlp_exporter_times_out_quickly_on_unreachable_endpoint() {
     let config_local = nyx_telemetry::Config {
         exporter: nyx_telemetry::Exporter::Otlp,
         servicename: Some("nyx-timeout".into()),
-        ..Default::default()
     };
     if let Err(e) = nyx_telemetry::init(&config_local) {
         eprintln!("Failed to initialize telemetry: {e}");

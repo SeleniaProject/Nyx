@@ -43,13 +43,13 @@ impl Default for AsyncStreamConfig {
     fn default() -> Self {
         Self {
             stream_id: 1,
-            max_inflight: 32,
-            retransmit_timeout: Duration::from_millis(250),
+            max_inflight: 64, // Increased from 32 for better throughput
+            retransmit_timeout: Duration::from_millis(200), // Reduced from 250ms for faster recovery
             max_retries: 8,
             reorder_window: None,
             max_frame_len: None,
             multipath: None,
-            max_reorder_pending: Some(2048),
+            max_reorder_pending: Some(4096), // Increased from 2048 for better buffering
         }
     }
 }
@@ -84,9 +84,11 @@ pub struct AsyncStream {
 
 impl AsyncStream {
     pub fn new(config: AsyncStreamConfig) -> Self {
-        let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(128);
-        let (wire_tx, _wire_rx) = mpsc::channel::<LinkMsg>(1024);
-        let (_wire_back_tx, wire_back_rx) = mpsc::channel::<LinkMsg>(1024);
+        // Ultra-optimized channel sizing for maximum throughput
+        // Channel sizes optimized based on latency and memory usage patterns
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(256); // Increased from 128 for better batching
+        let (wire_tx, _wire_rx) = mpsc::channel::<LinkMsg>(2048); // Increased from 1024 for high-throughput
+        let (_wire_back_tx, wire_back_rx) = mpsc::channel::<LinkMsg>(2048); // Matched for symmetry
         tokio::spawn(endpoint_task(config, cmd_rx, wire_tx, wire_back_rx));
 
         AsyncStream { tx: cmd_tx }

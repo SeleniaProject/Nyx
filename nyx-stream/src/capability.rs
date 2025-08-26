@@ -236,7 +236,10 @@ mod test_s {
             Err(CapabilityError::UnsupportedRequired(id)) => {
                 assert_eq!(id, CAP_PLUGIN_FRAMEWORK);
             }
-            _ => panic!("Expected UnsupportedRequired error"),
+            other => {
+                eprintln!("Expected UnsupportedRequired error, got: {:?}", other);
+                assert!(false, "Expected UnsupportedRequired error for CAP_PLUGIN_FRAMEWORK");
+            }
         }
     }
 

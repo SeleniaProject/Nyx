@@ -56,26 +56,23 @@ mod test_s {
             }
         }
         let gw = Arc::new(PushGateway::new(Arc::new(NoopPush), 1000.0));
+        
         // Intentionally poison the mutex by panicking while holding the lock
         let gwc = gw.clone();
-        let handle =
-            std::thread::spawn(move || -> Result<(), Box<dyn std::error::Error + Send>> {
-                match gwc.limiter.lock() {
-                    Ok(_) => {}
-                    Err(_) => {
-                        return Err(Box::new(std::io::Error::other(
-                            "mutex poisoned",
-                        )))
-                    }
-                }
-                Err(Box::new(std::io::Error::other(
-                    "intentional poison",
-                )))
-            });
-        let _join_result = handle.join();
+        let handle = std::thread::spawn(move || {
+            let _guard = gwc.limiter.lock().expect("should get lock before poisoning");
+            panic!("intentional panic to poison mutex");
+        });
+        
+        // Wait for the thread to panic and poison the mutex
+        let join_result = handle.join();
+        assert!(join_result.is_err(), "Thread should have panicked");
 
-        // After poisoning, send should not panic and should return either true/false cleanly
-        let r = gw.send("t", "a", "b").await;
-        assert!(r.is_ok());
+        // After poisoning, send should not panic and should handle poison recovery gracefully
+        let result = gw.send("t", "a", "b").await;
+        assert!(result.is_ok(), "Gateway should handle poisoned mutex gracefully");
+        
+        // Additional cleanup - reset the rate limiter if needed
+        // The PushGateway should handle poison recovery internally
     }
 }

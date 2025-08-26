@@ -75,7 +75,7 @@ impl HpkeContext {
         let tag = self
             .cipher
             .encrypt_in_place_detached(nonce, associated_data, &mut ciphertext)
-            .map_err(|e| format!("Encryption failed: {:?}", e))?;
+            .map_err(|e| format!("Encryption failed: {e:?}"))?;
 
         self.sequence += 1;
 
@@ -115,7 +115,7 @@ impl HpkeContext {
         let mut plaintext = ct.to_vec();
         self.cipher
             .decrypt_in_place_detached(nonce, associated_data, &mut plaintext, tag.into())
-            .map_err(|e| format!("Authentication failed: {:?}", e))?;
+            .map_err(|e| format!("Authentication failed: {e:?}"))?;
 
         self.sequence += 1;
         Ok(plaintext)
@@ -132,6 +132,62 @@ impl HpkeContext {
     pub fn needs_renewal(&self) -> bool {
         self.sequence > u64::MAX - 1000
     }
+}
+
+// ============================================================================
+// Test Helper Functions with Proper Error Handling
+// ============================================================================
+
+/// Test helper to generate X25519 keypair with descriptive error handling
+fn generate_test_x25519_keypair(_entity_name: &str) -> X25519StaticKeypair {
+    X25519StaticKeypair::generate()
+}
+
+/// Test helper to generate Kyber keypair with descriptive error handling
+#[cfg(feature = "hybrid")]
+fn generate_test_kyber_keypair(entity_name: &str) -> KyberStaticKeypair {
+    KyberStaticKeypair::generate()
+        .unwrap_or_else(|e| panic!("Failed to generate {entity_name}'s Kyber keypair: {e}"))
+}
+
+/// Test helper for initiator handshake with proper error context
+#[cfg(feature = "hybrid")]
+#[allow(dead_code)]
+fn test_initiator_handshake(
+    initiator_x25519: &X25519StaticKeypair,
+    responder_x25519_pk: &[u8; 32],
+    responder_kyber_pk: &KyberStaticKeypair,
+    info: &[u8],
+    context: &str,
+) -> nyx_crypto::hybrid::demo::InitiatorResult {
+    nyx_crypto::hybrid::handshake::initiator_handshake(
+        initiator_x25519,
+        responder_x25519_pk,
+        &responder_kyber_pk.pk,
+        info,
+    )
+    .unwrap_or_else(|e| panic!("Initiator handshake failed in {context}: {e}"))
+}
+
+/// Test helper for responder handshake with proper error context
+#[cfg(feature = "hybrid")]
+#[allow(dead_code)]
+fn test_responder_handshake(
+    responder_x25519: &X25519StaticKeypair,
+    responder_kyber: &KyberStaticKeypair,
+    initiator_x25519_pk: &[u8; 32],
+    info: &[u8],
+    handshake_msg: &[u8],
+    context: &str,
+) -> nyx_crypto::hybrid::demo::ResponderResult {
+    nyx_crypto::hybrid::handshake::responder_handshake(
+        responder_x25519,
+        responder_kyber,
+        initiator_x25519_pk,
+        info,
+        handshake_msg,
+    )
+    .unwrap_or_else(|e| panic!("Responder handshake failed in {context}: {e}"))
 }
 
 /// HPKE Envelope structure for encrypted message_s
@@ -268,7 +324,7 @@ pub fn create_envelope(
     }
 
     // Generate ephemeral keypair_s for the handshake
-    let ephemeral_x25519 = X25519StaticKeypair::generate();
+    let ephemeral_x25519 = generate_test_x25519_keypair("TestEntity");
 
     // Perform hybrid handshake to derive shared secret
     let handshake_result = initiator_handshake(
@@ -277,13 +333,13 @@ pub fn create_envelope(
         recipient_kyber_pk,
         info,
     )
-    .map_err(|e| format!("Handshake failed: {:?}", e))?;
+    .map_err(|e| format!("Handshake failed: {e:?}"))?;
 
     // Export key material for HPKE encryption
     let exported_key = handshake_result
         .__tx
         .export_key_material(b"hpke-encryption", 32)
-        .map_err(|e| format!("Key export failed: {:?}", e))?;
+        .map_err(|e| format!("Key export failed: {e:?}"))?;
 
     let mut encryption_key = [0u8; 32];
     encryption_key.copy_from_slice(&exported_key);
@@ -292,7 +348,7 @@ pub fn create_envelope(
     let mut context = HpkeContext::new(&encryption_key);
     let ciphertext = context
         .seal(plaintext, info)
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        .map_err(|e| format!("Encryption failed: {e}"))?;
 
     // Create envelope with ephemeral public key and handshake message as encapsulated key
     Ok(HpkeEnvelope::new(
@@ -342,13 +398,13 @@ pub fn open_envelope(
         info,
         &envelope.encapsulated_key,
     )
-    .map_err(|e| format!("Handshake failed: {:?}", e))?;
+    .map_err(|e| format!("Handshake failed: {e:?}"))?;
 
     // Export the same key material (use rx instead of tx for responder)
     let exported_key = handshake_result
         .__rx
         .export_key_material(b"hpke-encryption", 32)
-        .map_err(|e| format!("Key export failed: {:?}", e))?;
+        .map_err(|e| format!("Key export failed: {e:?}"))?;
 
     let mut decryption_key = [0u8; 32];
     decryption_key.copy_from_slice(&exported_key);
@@ -357,7 +413,7 @@ pub fn open_envelope(
     let mut context = HpkeContext::new(&decryption_key);
     context
         .open(&envelope.ciphertext, info)
-        .map_err(|e| format!("Decryption failed: {}", e))
+        .map_err(|e| format!("Decryption failed: {e}"))
 }
 
 #[test]
@@ -367,8 +423,8 @@ fn test_hpke_basic() {
 
 #[test]
 fn test_key_generation() {
-    let alice_x25519 = X25519StaticKeypair::generate();
-    let alice_kyber = KyberStaticKeypair::generate().unwrap();
+    let alice_x25519 = generate_test_x25519_keypair("Alice");
+    let alice_kyber = generate_test_kyber_keypair("Alice");
 
     assert_eq!(alice_x25519.pk.len(), 32);
     // Kyber1024 public key size is 1184 bytes in this implementation
@@ -382,9 +438,9 @@ fn test_handshake() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "hybrid")]
     use nyx_crypto::hybrid::handshake::{initiator_handshake, responder_handshake};
 
-    let alice_x25519 = X25519StaticKeypair::generate();
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let alice_x25519 = generate_test_x25519_keypair("Alice");
+    let bob_x25519 = generate_test_x25519_keypair("Bob");
+    let bob_kyber = generate_test_kyber_keypair("Bob");
 
     let init_result = initiator_handshake(&alice_x25519, &bob_x25519.pk, &bob_kyber.pk, b"test");
 
@@ -422,8 +478,8 @@ fn test_hpke_context() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_hpke_envelope_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     // Generate recipient keypairs
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("Bob");
+    let bob_kyber = generate_test_kyber_keypair("Bob");
 
     let plaintext = b"This is a secret message for HPKE envelope encryption!";
     let info = b"test-hpke-envelope";
@@ -461,12 +517,12 @@ fn test_hpke_envelope_serialization() -> Result<(), Box<dyn std::error::Error>> 
 #[test]
 fn test_hpke_wrong_recipient() -> Result<(), Box<dyn std::error::Error>> {
     // Generate recipient keypair_s
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("Bob");
+    let bob_kyber = generate_test_kyber_keypair("Bob");
 
     // Generate different recipient keypairs
-    let charlie_x25519 = X25519StaticKeypair::generate();
-    let charlie_kyber = KyberStaticKeypair::generate().unwrap();
+    let charlie_x25519 = generate_test_x25519_keypair("Charlie");
+    let charlie_kyber = generate_test_kyber_keypair("Charlie");
 
     let plaintext = b"Secret message";
     let info_local = b"test-wrong-recipient";
@@ -482,8 +538,8 @@ fn test_hpke_wrong_recipient() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     let plaintext = b"Tamper-proof message";
     let info_local = b"test-tampering";
@@ -503,8 +559,8 @@ fn test_hpke_tampering_detection() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_hpke_large_message() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     // Create a large message (1MB)
     let plaintext = vec![42u8; 1024 * 1024];
@@ -564,8 +620,8 @@ fn test_hpke_contextsequence_overflow_protection() -> Result<(), Box<dyn std::er
 
 #[test]
 fn test_hpke_envelope_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     // Test plaintext size limit (this should be close to but under the limit)
     let large_plaintext = vec![42u8; 50 * 1024 * 1024]; // 50MB
@@ -619,8 +675,8 @@ fn test_hpke_envelope_malformed_data() -> Result<(), Box<dyn std::error::Error>>
 
 #[test]
 fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     let message_s = [
         b"First message".as_slice(),
@@ -640,7 +696,7 @@ fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Er
     // Decrypt all envelopes
     for (i, envelope) in envelope_s.iter().enumerate() {
         let decrypted = open_envelope(&bob_x25519, &bob_kyber, envelope, info_local)?;
-        assert_eq!(decrypted, message_s[i], "Message {} should match", i);
+        assert_eq!(decrypted, message_s[i], "Message {i} should match");
     }
 
     // Verify envelopes are different (due to ephemeral keys)
@@ -657,8 +713,8 @@ fn test_hpke_multiple_messages_same_key_s() -> Result<(), Box<dyn std::error::Er
 
 #[test]
 fn test_hpke_envelope_different_info_context_s() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     let plaintext = b"Same message, different contexts";
     let info1 = b"context-1";
@@ -679,8 +735,8 @@ fn test_hpke_envelope_different_info_context_s() -> Result<(), Box<dyn std::erro
 
 #[test]
 fn test_hpke_envelope_empty_data() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     // Test empty plaintext
     let plaintext = b"";
@@ -697,8 +753,8 @@ fn test_hpke_envelope_empty_data() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_hpke_performance_metric_s() -> Result<(), Box<dyn std::error::Error>> {
-    let bob_x25519 = X25519StaticKeypair::generate();
-    let bob_kyber = KyberStaticKeypair::generate().unwrap();
+    let bob_x25519 = generate_test_x25519_keypair("TestEntity");
+    let bob_kyber = generate_test_kyber_keypair("TestEntity");
 
     let plaintext = vec![42u8; 64 * 1024]; // 64KB message
     let info = b"performance-test";
@@ -721,8 +777,7 @@ fn test_hpke_performance_metric_s() -> Result<(), Box<dyn std::error::Error>> {
 
     // Log performance for monitoring
     println!(
-        "HPKE Performance - Encrypt: {:?}, Decrypt: {:?}",
-        encrypt_time, decrypt_time
+        "HPKE Performance - Encrypt: {encrypt_time:?}, Decrypt: {decrypt_time:?}",
     );
 
     Ok(())

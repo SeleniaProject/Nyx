@@ -63,6 +63,10 @@ harness = false
 name = "performance_test_optimized"
 harness = false
 
+[[bench]]
+name = "performance_optimization"
+harness = false
+
 [features]
 default = []
 plugin = []

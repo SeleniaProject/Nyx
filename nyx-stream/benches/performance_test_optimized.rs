@@ -15,8 +15,10 @@ use tokio::runtime::Runtime;
 
 /// Ultra-optimized stream pair creation benchmark with memory efficiency
 fn bench_stream_creation(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    
     c.bench_function("stream_pair_creation_optimized", |b| {
-        b.iter(|| {
+        b.to_async(&rt).iter(|| async {
             let config = AsyncStreamConfig::default();
             let (_a, _b) = black_box(pair(config.clone(), config));
         });
@@ -236,7 +238,6 @@ criterion_group!(
     bench_data_transfer,
     bench_concurrent_streams,
     bench_memory_efficiency,
-    bench_capacity_impact,
-    bench_error_scenarios
+    bench_capacity_impact
 );
 criterion_main!(benches);
