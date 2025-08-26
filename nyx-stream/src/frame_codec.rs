@@ -209,7 +209,7 @@ mod test_s {
             Error::Protocol(msg) => assert!(msg.contains("too large")),
             e => {
                 eprintln!("Unexpected error type: {e:?}");
-                assert!(false, "Expected Protocol error for oversized frame, got: {e:?}");
+                panic!("Expected Protocol error for oversized frame, got: {e:?}");
             }
         }
 

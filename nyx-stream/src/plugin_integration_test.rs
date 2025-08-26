@@ -65,18 +65,14 @@ async fn e2enowait_with_retry_backoff() -> Result<(), Box<dyn std::error::Error>
 			Ok(()) => break,
 			Err(crate::plugin_dispatch::DispatchError::IpcSendFailed(_, _)) => {
 				attempt += 1;
-				if attempt > 50 { assert!(false, "exceeded retry attempt_s under backpressure"); }
+				if attempt > 50 { 
+					panic!("exceeded retry attempts under backpressure"); 
+				}
 				sleep(delay).await;
 				// exponential backoff up to a small cap
 				delay = Duration::from_millis((delay.as_millis().min(8) as u64).saturating_mul(2)).min(Duration::from_millis(16));
-			    Ok(())
 			}
-			Err(e) => assert!(false, "unexpected error: {e:?}"),
-		    Ok(())
-		}
-	    Ok(())
-	}
-    Ok(())
+			Err(e) => panic!("unexpected error: {e:?}"),
 }
 
 #[tokio::test]
@@ -97,7 +93,10 @@ async fn e2e_reconnect_after_unload_reload() -> Result<(), Box<dyn std::error::E
 
 	// Now dispatch should report not registered
 	let __err = dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, hdr.clone()).await.unwrap_err();
-	match err { crate::plugin_dispatch::DispatchError::PluginNotRegistered(x) => assert_eq!(x, pid), e => assert!(false, "{e:?}") }
+	match err { 
+		crate::plugin_dispatch::DispatchError::PluginNotRegistered(x) => assert_eq!(x, pid), 
+		e => panic!("{e:?}") 
+	}
 
 	// Reload and dispatch again
 	dispatcher.load_plugin(info).await?;

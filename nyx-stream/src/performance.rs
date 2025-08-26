@@ -378,7 +378,8 @@ mod tests {
         pool.return_buffer(buf3);
         
         let stats = pool.get_stats();
-        assert!(stats.total_capacity >= 0); // Changed to >= for robustness
+        // stats.total_capacity is usize, so always >= 0 by definition
+        assert!(stats.total_capacity > 0); // Pool should have some capacity
     }
     
     #[test]

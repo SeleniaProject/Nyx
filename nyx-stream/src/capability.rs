@@ -238,7 +238,7 @@ mod test_s {
             }
             other => {
                 eprintln!("Expected UnsupportedRequired error, got: {:?}", other);
-                assert!(false, "Expected UnsupportedRequired error for CAP_PLUGIN_FRAMEWORK");
+                panic!("Expected UnsupportedRequired error for CAP_PLUGIN_FRAMEWORK");
             }
         }
     }

@@ -24,7 +24,7 @@ fn parse_invalid_bytes_returns_error() {
 		}, 
 		e => {
 			eprintln!("Unexpected error type: {e:?}");
-			assert!(false, "Expected Decode error, got: {e:?}");
+			panic!("Expected Decode error, got: {e:?}");
 		}
 	}
 }

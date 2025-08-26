@@ -192,10 +192,7 @@ mod test_s {
             e => {
                 // Log unexpected error for debugging but don't panic
                 eprintln!("Unexpected error type: {e:?}");
-                assert!(
-                    false,
-                    "Expected CBOR decoding error, got: {e:?}"
-                );
+                panic!("Expected CBOR decoding error, got: {e:?}");
             }
         }
     }
