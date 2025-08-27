@@ -35,6 +35,6 @@ pub enum Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-// Feature-gated Kyber KEM wrapper (pure Rust implementation via pqc_kyber)
+// Feature-gated ML-KEM wrapper (secure NIST-standardized post-quantum cryptography)
 #[cfg(feature = "kyber")]
 pub mod kyber;

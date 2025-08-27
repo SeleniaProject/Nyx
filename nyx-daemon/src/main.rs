@@ -8,7 +8,7 @@ mod json_util;
 #[cfg(feature = "telemetry")]
 use nyx_telemetry as telemetry;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use nyx_daemon::event_system::{Event, EventSystem};
 #[cfg(feature = "low_power")]
@@ -362,7 +362,9 @@ async fn handle_unix_client(
     let json = json_util::encode_to_vec(&resp).unwrap_or_else(|e| {
         #[cfg(feature = "telemetry")]
         telemetry::record_counter("nyx_daemon_serde_error", 1);
-        serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(resp_id, 500, e))?
+        // Fixed: Use unwrap_or_default instead of ? in closure
+        serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(resp_id, 500, e))
+            .unwrap_or_default()
     });
     stream.write_all(&json).await?;
     stream.write_all(b"\n").await?;

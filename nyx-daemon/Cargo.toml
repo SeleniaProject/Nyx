@@ -157,6 +157,7 @@ petgraph = "0.6"
 geo = "0.27"
 
 # DNS resolver (Pure Rust)
+# Secure DNS resolution using hickory-dns (modern, maintained replacement for trust-dns)
 hickory-resolver = "0.24"
 
 # Database for peer persistence (Pure Rust alternative)
@@ -164,7 +165,7 @@ redb = { version = "2.1", features = ["logging"] }
 
 # DHT and networking - Pure Rust implementation (100% Pure Rust, no C/C++ deps)
 # Avoiding ALL ring dependencies; use plain TCP and application-level crypto only
-trust-dns-resolver = "0.23"
+# trust-dns-resolver = "0.23" # REMOVED: replaced with hickory-resolver for security
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"

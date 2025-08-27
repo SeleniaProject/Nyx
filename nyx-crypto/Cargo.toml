@@ -16,11 +16,9 @@ telemetry = ["dep:nyx-telemetry"]
 # Classic (Elliptic Curve) X25519 only build
 classic = ["x25519-dalek"]
 
-# Kyber post-quantum build (pure Rust implementation)
-kyber = ["pqc_kyber"]
-
-# ML-KEM post-quantum build (NIST standardized) - REMOVED due to C dependencies
-# ml-kem = ["dep:ml-kem"]
+# ML-KEM post-quantum build (NIST standardized) - replaces pqc_kyber for security
+kyber = ["ml-kem"]
+ml-kem = ["dep:ml-kem"]
 
 # Convenience flag: build with hybrid classic/PQ algorithms
 hybrid = ["classic", "kyber"]
@@ -40,7 +38,8 @@ runtime = ["tokio"]
 x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets"], optional = true }
 
 # Pure Rust post-quantum implementations
-pqc_kyber = { version = "0.7", optional = true }
+ml-kem = { version = "0.3.0-pre", optional = true }
+# pqc_kyber = { version = "0.7", optional = true } # REMOVED due to KyberSlash vulnerability
 # ml-kem = { version = "0.2", optional = true } # REMOVED due to C dependencies
 
 # Symmetric primitives
@@ -51,6 +50,8 @@ hkdf = "0.12"
 rand_core = { version = "0.9", features = ["std"] }
 rand_core_06 = { package = "rand_core", version = "0.6", features=["std","getrandom"] }
 rand = { version = "0.8", default-features = false, features=["std", "std_rng"] }
+# ChaCha20 RNG for deterministic key generation in ML-KEM
+rand_chacha = "0.3"
 
 # HPKE RFC9180 implementation (optional)
 hpke = { version = "0.11", optional = true }

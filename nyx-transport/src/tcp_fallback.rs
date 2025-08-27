@@ -4,6 +4,7 @@
 //! keep-alive optimization, and automatic retry logic.
 
 use crate::{Error, Result};
+use socket2::SockRef; // Safe socket operations
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}};
@@ -108,38 +109,41 @@ impl TcpConnectionPool {
         Ok(stream)
     }
 
+    /// Apply platform-specific socket optimizations using safe Rust APIs only.
+    /// This replaces unsafe libc calls with safe cross-platform alternatives.
     #[cfg(unix)]
     fn optimize_unix_socket(&self, stream: &TcpStream) {
-        use std::os::unix::io::AsRawFd;
-        let fd = stream.as_raw_fd();
+        // Use safe Rust APIs instead of unsafe libc calls
+        // These are cross-platform optimizations that work on Unix-like systems
+        let socket2_stream = SockRef::from(stream);
         
-        // These are platform-specific optimizations
-        unsafe {
-            let send_buf_size: libc::c_int = 262144; // 256KB
-            let recv_buf_size: libc::c_int = 262144; // 256KB
-            
-            libc::setsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_SNDBUF,
-                &send_buf_size as *const _ as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            );
-            
-            libc::setsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_RCVBUF,
-                &recv_buf_size as *const _ as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            );
+        // Set larger send/receive buffers for better throughput
+        // These are safe alternatives to the unsafe libc setsockopt calls
+        let _ = socket2_stream.set_send_buffer_size(262144); // 256KB
+        let _ = socket2_stream.set_recv_buffer_size(262144); // 256KB
+        
+        // Enable keep-alive for connection health monitoring
+        let _ = socket2_stream.set_keepalive(true);
+        
+        // Additional TCP optimizations available through socket2
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            // Enable TCP_USER_TIMEOUT for better connection management
+            let _ = socket2_stream.set_tcp_user_timeout(Some(Duration::from_secs(30)));
         }
     }
 
     #[cfg(windows)]
-    fn optimize_windows_socket(&self, _stream: &TcpStream) {
-        // Windows-specific socket optimizations could go here
-        // For now, we rely on the cross-platform settings above
+    fn optimize_windows_socket(&self, stream: &TcpStream) {
+        // Windows-specific socket optimizations using safe APIs
+        let socket2_stream = SockRef::from(stream);
+        
+        // Set larger send/receive buffers for better throughput
+        let _ = socket2_stream.set_send_buffer_size(262144); // 256KB
+        let _ = socket2_stream.set_recv_buffer_size(262144); // 256KB
+        
+        // Enable keep-alive for connection health monitoring
+        let _ = socket2_stream.set_keepalive(true);
     }
 
     /// Check if connection is still healthy

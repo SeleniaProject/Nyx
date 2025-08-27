@@ -7,7 +7,8 @@ description = "Comprehensive telemetry with OpenTelemetry OTLP and Prometheus su
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-prometheus = "0.13"
+# Updated to latest version to fix protobuf vulnerability (RUSTSEC-2024-0437)
+prometheus = "0.14"
 hyper = { version = "0.14", features = ["full"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1"
@@ -68,4 +69,5 @@ ureq = { version = "2.9", default-features = false, features = ["json"] }
 tokio-stream = "0.1"
 
 [target.'cfg(unix)'.dependencies]
-pprof = { version = "0.11", optional = true }
+# Updated to latest version to fix memory safety vulnerabilities (RUSTSEC-2024-0408)
+pprof = { version = "0.15", optional = true }

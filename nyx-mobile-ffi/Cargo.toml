@@ -30,4 +30,5 @@ telemetry-otlp = ["telemetry", "nyx-telemetry/otlp"]
 telemetry-otlp_exporter = ["telemetry", "nyx-telemetry/otlp_exporter"]
 
 [build-dependencies]
-cbindgen = "0.26"
+# Updated to latest version to resolve dependency vulnerabilities
+cbindgen = "0.29"

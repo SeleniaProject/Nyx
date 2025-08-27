@@ -59,8 +59,14 @@ pub fn encrypt_with_password(password: &[u8], plaintext: &[u8]) -> Result<Vec<u8
 
     let mut salt = [0u8; SALT_LEN];
     let mut nonce = [0u8; NONCE_LEN];
-    getrandom(&mut salt).map_err(|e| Error::Protocol(format!("rng: {e}")))?;
-    getrandom(&mut nonce).map_err(|e| Error::Protocol(format!("rng: {e}")))?;
+    
+    // SECURITY ENHANCEMENT: Use secure random number generation with explicit error handling
+    getrandom(&mut salt).map_err(|e| {
+        Error::Protocol(format!("secure random generation failed: {e}"))
+    })?;
+    getrandom(&mut nonce).map_err(|e| {
+        Error::Protocol(format!("secure random generation failed: {e}"))
+    })?;
 
     let mut key = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password, &salt, PBKDF2_ITERS, &mut key);

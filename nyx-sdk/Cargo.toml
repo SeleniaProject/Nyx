@@ -47,7 +47,9 @@ futures-util = "0.3"
 pin-project-lite = "0.2"
 
 # Reconnection and backoff
-backoff = { version = "0.4", features = ["tokio"], optional = true }
+# Replaced unmaintained backoff with actively maintained tokio-retry
+tokio-retry = { version = "0.3", optional = true }
+# backoff = { version = "0.4", features = ["tokio"], optional = true } # REMOVED: unmaintained
 humantime-serde = "1.1"
 
 # Stream utilities
@@ -72,8 +74,8 @@ tracing-subscriber = "0.3.19"
 
 [features]
 default = []
-# Enable stream reconnection with automatic retry
-reconnect = ["backoff"]
+# Enable stream reconnection with automatic retry using tokio-retry
+reconnect = ["tokio-retry"]
 # Enable comprehensive error propagation
 error-propagation = []
 # Enable metrics collection
