@@ -1,5 +1,5 @@
-/// Utilitie_s to help detect whether we're running under a foreign function interface
-/// (FFI) boundary such as mobile embedding. Thi_s i_s best-effort and purely heuristic.
+/// Utilities to help detect whether we're running under a foreign function interface
+/// (FFI) boundary such as mobile embedding. This is best-effort and purely heuristic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiEnvironment {
     Native,
@@ -7,15 +7,15 @@ pub enum FfiEnvironment {
     Unknown,
 }
 
-/// Heuristic based on common environment variable_s set by mobile or embedded host_s.
+/// Heuristic based on common environment variables set by mobile or embedded hosts.
 pub fn detect() -> FfiEnvironment {
-    let _var_s = [
+    let vars = [
         "ANDROID_ARGUMENT",    // python-for-android
-        "JNI_WRAPPER",         // custom JNI bridge_s
-        "IOS_BUNDLE",          // hypothetical marker_s
+        "JNI_WRAPPER",         // custom JNI bridges
+        "IOS_BUNDLE",          // hypothetical markers
         "NYX_MOBILE_EMBEDDED", // project-specific
     ];
-    for k in _var_s {
+    for k in vars {
         if std::env::var_os(k).is_some() {
             return FfiEnvironment::Mobile;
         }

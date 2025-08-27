@@ -12,11 +12,21 @@ use zeroize::Zeroize;
 
 /// Noise_Nyx defense size limit adjustment according to spec
 const MAX_NOISE_MSG_LEN: usize = 32 * 1024; // 32 KiB
+/// Minimum message length for security (prevents trivial attacks)
+const MIN_NOISE_MSG_LEN: usize = 8;
 
 /// Hybrid message minimum length validation stub function
 /// Originally should perform strict Noise_Nyx handshake analysis with length/tag integrity checks
+/// 
+/// # Security Considerations
+/// - Enforces strict message size limits to prevent buffer overflow attacks
+/// - Validates minimum message length to prevent trivial protocol manipulation
+/// - Resistant to DoS attacks through oversized messages
+/// 
+/// # Errors
+/// Returns `Error::Protocol` if message length is outside acceptable bounds
 pub fn validate_hybrid_message_len(msg: &[u8]) -> Result<()> {
-    if msg.len() < 8 {
+    if msg.len() < MIN_NOISE_MSG_LEN {
         return Err(Error::Protocol("hybrid message too short".into()));
     }
     if msg.len() > MAX_NOISE_MSG_LEN {

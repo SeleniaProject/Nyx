@@ -16,12 +16,47 @@ use zeroize::Zeroize;
 
 use crate::{Error, Result};
 
-const PBKDF2_ITERS: u32 = 120_000; // Balanced for test_s; tune in product build_s
+// SECURITY ENHANCEMENT: Increased PBKDF2 iterations to meet current security standards
+// OWASP recommendation: minimum 120,000 for PBKDF2-HMAC-SHA256 (2021)
+// NIST SP 800-63B: minimum 10,000, but industry best practice recommends 600,000+
+const PBKDF2_ITERS: u32 = 600_000; // Enhanced security against rainbow table and brute force attacks
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12; // AES-GCM standard 96-bit
 
-/// Envelope format: [salt(16) | nonce(12) | ciphertext+tag]
+/// Encrypt plaintext with password-based key derivation
+/// 
+/// # Security Considerations
+/// - Uses PBKDF2-HMAC-SHA256 with 600,000 iterations to resist brute force attacks
+/// - Generates cryptographically secure random salt and nonce for each encryption
+/// - Employs AES-256-GCM for authenticated encryption
+/// - Automatically zeroizes sensitive key material after use
+/// 
+/// # Errors
+/// Returns `Error::Protocol` if:
+/// - Random number generation fails
+/// - Encryption operation fails
+/// - Memory allocation fails
+/// 
+/// # Examples
+/// ```no_run
+/// # use nyx_crypto::keystore::encrypt_with_password;
+/// let password = b"secure_password_123";
+/// let plaintext = b"secret_data";
+/// let encrypted = encrypt_with_password(password, plaintext)?;
+/// # Ok::<(), nyx_crypto::Error>(())
+/// ```
 pub fn encrypt_with_password(password: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+    // SECURITY ENHANCEMENT: Input validation to prevent DoS attacks
+    if password.is_empty() {
+        return Err(Error::Protocol("password cannot be empty".into()));
+    }
+    if password.len() > 1024 {
+        return Err(Error::Protocol("password too long (max 1024 bytes)".into()));
+    }
+    if plaintext.len() > 10 * 1024 * 1024 {
+        return Err(Error::Protocol("plaintext too large (max 10MB)".into()));
+    }
+
     let mut salt = [0u8; SALT_LEN];
     let mut nonce = [0u8; NONCE_LEN];
     getrandom(&mut salt).map_err(|e| Error::Protocol(format!("rng: {e}")))?;
@@ -47,7 +82,42 @@ pub fn encrypt_with_password(password: &[u8], plaintext: &[u8]) -> Result<Vec<u8
     Ok(out)
 }
 
+/// Decrypt password-encrypted data
+/// 
+/// # Security Considerations
+/// - Validates minimum blob size to prevent buffer underflow attacks
+/// - Uses constant-time operations where possible
+/// - Automatically zeroizes sensitive key material after use
+/// - Resistant to padding oracle attacks due to AES-GCM authentication
+/// 
+/// # Errors
+/// Returns `Error::Protocol` if:
+/// - Blob is too short to contain valid encrypted data
+/// - Salt or nonce extraction fails
+/// - Decryption or authentication fails
+/// - Invalid blob format detected
+/// 
+/// # Examples
+/// ```no_run
+/// # use nyx_crypto::keystore::{encrypt_with_password, decrypt_with_password};
+/// let password = b"secure_password_123";
+/// let plaintext = b"secret_data";
+/// let encrypted = encrypt_with_password(password, plaintext)?;
+/// let decrypted = decrypt_with_password(password, &encrypted)?;
+/// assert_eq!(decrypted, plaintext);
+/// # Ok::<(), nyx_crypto::Error>(())
+/// ```
 pub fn decrypt_with_password(password: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
+    // SECURITY ENHANCEMENT: Comprehensive input validation
+    if password.is_empty() {
+        return Err(Error::Protocol("password cannot be empty".into()));
+    }
+    if password.len() > 1024 {
+        return Err(Error::Protocol("password too long (max 1024 bytes)".into()));
+    }
+    if blob.len() > 10 * 1024 * 1024 + SALT_LEN + NONCE_LEN + 16 {
+        return Err(Error::Protocol("encrypted blob too large".into()));
+    }
     if blob.len() < SALT_LEN + NONCE_LEN + 16 {
         // at least one tag
         return Err(Error::Protocol("keystore blob too short".into()));

@@ -219,7 +219,7 @@ mod test_s {
         assert_eq!(s.max, 4.0);
         assert!((s.mean - 2.5).abs() < 1e-9);
         let p50 = percentile(v.clone(), 50.0).ok_or("Failed to compute percentile").unwrap();
-        assert!(p50 >= 2.0 && p50 <= 3.0);
+        assert!((2.0..=3.0).contains(&p50));
     }
 
     #[test]

@@ -1,15 +1,15 @@
 //! 0-RTT Early Data and Anti-Replay Protection
 //!
-//! Thi_s module implement_s the 0-RTT early _data handling and anti-replay protection
-//! as specified in Nyx Protocol v1.0 Section 2.1: Early-Data and 0-RTT Reception Requirement_s.
+//! This module implements the 0-RTT early data handling and anti-replay protection
+//! as specified in Nyx Protocol v1.0 Section 2.1: Early-Data and 0-RTT Reception Requirements.
 //!
-//! ## Key Featu_re_s
+//! ## Key Features
 //!
-//! - **Direction Identifier**: 32-bit ID_s prevent nonce overlap between direction_s
+//! - **Direction Identifier**: 32-bit IDs prevent nonce overlap between directions
 //! - **Anti-Replay Window**: 2^20 sliding window for per-direction nonce tracking
-//! - **Early Data Scope**: 0-RTT _data accepted after first CRYPTO message
-//! - **Rekey Interaction**: Window reset on rekey to avoid false positive_s
-//! - **Telemetry Integration**: Counter_s for replay drop_s and early-_data acceptance
+//! - **Early Data Scope**: 0-RTT data accepted after first CRYPTO message
+//! - **Rekey Interaction**: Window reset on rekey to avoid false positives
+//! - **Telemetry Integration**: Counters for replay drops and early-data acceptance
 
 #![forbid(unsafe_code)]
 
@@ -18,12 +18,12 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 /// Anti-replay window size as specified in the protocol (2^20 = 1,048,576)
-pub const ANTI_REPLAY_windowsIZE: usize = 1 << 20;
+pub const ANTI_REPLAY_WINDOW_SIZE: usize = 1 << 20;
 
-/// Maximum early _data payload size (64KB)
+/// Maximum early data payload size (64KB)
 pub const MAX_EARLY_DATA_SIZE: usize = 64 * 1024;
 
-/// Direction identifier_s for preventing nonce overlap
+/// Direction identifiers for preventing nonce overlap
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DirectionId(pub u32);
 
@@ -32,25 +32,25 @@ impl DirectionId {
     pub const I2R: DirectionId = DirectionId(1);
     /// Responder to Initiator direction  
     pub const R2I: DirectionId = DirectionId(2);
-    /// Bidirectional (for symmetric protocol_s)
+    /// Bidirectional (for symmetric protocols)
     pub const BIDIRECTIONAL: DirectionId = DirectionId(0);
 }
 
 /// Anti-replay protection using a sliding window
 #[derive(Debug, Clone)]
 pub struct AntiReplayWindow {
-    /// Direction identifier for thi_s window
-    _direction_id: DirectionId,
-    /// Sliding window of seen nonce_s
-    seennonce_s: VecDeque<u64>,
+    /// Direction identifier for this window
+    direction_id: DirectionId,
+    /// Sliding window of seen nonces
+    seen_nonces: VecDeque<u64>,
     /// Highest nonce value seen so far
-    __highestnonce: u64,
+    highest_nonce: u64,
     /// Window size (must be power of 2)
-    __windowsize: usize,
-    /// Number of nonce_s seen
-    __total_seen: u64,
-    /// Number of replay attempt_s blocked
-    __replay_block_s: u64,
+    window_size: usize,
+    /// Number of nonces seen
+    total_seen: u64,
+    /// Number of replay attempts blocked
+    replay_blocks: u64,
     /// Timestamp of last rekey (for window reset)
     last_rekey: Option<Instant>,
 }
@@ -58,66 +58,66 @@ pub struct AntiReplayWindow {
 impl AntiReplayWindow {
     /// Create new anti-replay window for a direction
     pub fn new(direction_id: DirectionId) -> Self {
-        Self::with_size(direction_id, ANTI_REPLAY_windowsIZE)
+        Self::with_size(direction_id, ANTI_REPLAY_WINDOW_SIZE)
     }
 
     /// Create anti-replay window with custom size (for testing)
-    pub fn with_size(_direction_id: DirectionId, windowsize: usize) -> Self {
-        // Ensure window size i_s power of 2 for efficiency
-        assert!(windowsize.is_power_of_two(), "Window size must be power of 2");
+    pub fn with_size(direction_id: DirectionId, window_size: usize) -> Self {
+        // Ensure window size is power of 2 for efficiency
+        assert!(window_size.is_power_of_two(), "Window size must be power of 2");
         
         Self {
             direction_id,
-            seennonce_s: VecDeque::with_capacity(windowsize),
-            __highestnonce: 0,
-            windowsize,
-            __total_seen: 0,
-            __replay_block_s: 0,
-            __last_rekey: None,
+            seen_nonces: VecDeque::with_capacity(window_size),
+            highest_nonce: 0,
+            window_size,
+            total_seen: 0,
+            replay_blocks: 0,
+            last_rekey: None,
         }
     }
 
-    /// Check if nonce i_s acceptable (not a replay)
+    /// Check if nonce is acceptable (not a replay)
     ///
-    /// Return_s `true` if the nonce i_s new and should be accepted,
-    /// `false` if it'_s a replay and should be rejected.
-    pub fn checknonce(&mut self, nonce: u64) -> bool {
+    /// Returns `true` if the nonce is new and should be accepted,
+    /// `false` if it's a replay and should be rejected.
+    pub fn check_nonce(&mut self, nonce: u64) -> bool {
         self.total_seen += 1;
 
         // Nonce must be greater than highest seen
-        if nonce <= self.highestnonce {
-            // Check if it'_s within the window and not already seen
-            let __windowstart = self.highestnonce.saturating_sub(self.windowsize as u64);
+        if nonce <= self.highest_nonce {
+            // Check if it's within the window and not already seen
+            let window_start = self.highest_nonce.saturating_sub(self.window_size as u64);
             
-            if nonce > windowstart {
+            if nonce > window_start {
                 // Within window - check if already seen
-                if self.seennonce_s.contains(&nonce) {
-                    self.replay_block_s += 1;
-                    return false; // Replay detected
-                }
-                
-                // New nonce within window - accept but don't update highest
-                self.seennonce_s.push_back(nonce);
+                if self.seen_nonces.contains(&nonce) {
+                self.replay_blocks += 1;
+                return false; // Replay detected
+            }
+            
+            // New nonce within window - accept but don't update highest
+            self.seen_nonces.push_back(nonce);
                 self.trim_window();
                 return true;
             } else {
                 // Outside window (too old) - reject
-                self.replay_block_s += 1;
+                self.replay_blocks += 1;
                 return false;
             }
         }
 
         // New highest nonce - accept and update window
-        self.highestnonce = nonce;
-        self.seennonce_s.push_back(nonce);
+        self.highest_nonce = nonce;
+        self.seen_nonces.push_back(nonce);
         self.trim_window();
         true
     }
 
     /// Reset window on rekey (as required by spec)
     pub fn reset_for_rekey(&mut self) {
-        self.seennonce_s.clear();
-        self.highestnonce = 0;
+        self.seen_nonces.clear();
+        self.highest_nonce = 0;
         self.last_rekey = Some(Instant::now());
     }
 
@@ -126,39 +126,37 @@ impl AntiReplayWindow {
         self.direction_id
     }
 
-    /// Get replay statistic_s
-    pub fn stat_s(&self) -> AntiReplayStat_s {
-        AntiReplayStat_s {
+    /// Get replay statistics
+    pub fn stats(&self) -> AntiReplayStats {
+        AntiReplayStats {
             direction_id: self.direction_id,
-            totalnonces_seen: self.total_seen,
-            replay_block_s: self.replay_block_s,
-            current_windowsize: self.seennonce_s.len(),
-            highestnonce: self.highestnonce,
+            total_nonces_seen: self.total_seen,
+            replay_blocks: self.replay_blocks,
+            current_window_size: self.seen_nonces.len(),
+            highest_nonce: self.highest_nonce,
             last_rekey: self.last_rekey,
         }
-    }
-
-    /// Trim window to maintain size limit
+    }    /// Trim window to maintain size limit
     fn trim_window(&mut self) {
-        while self.seennonce_s.len() > self.windowsize {
-            self.seennonce_s.pop_front();
+        while self.seen_nonces.len() > self.window_size {
+            self.seen_nonces.pop_front();
         }
     }
 }
 
-/// Early _data handler for 0-RTT support
+/// Early data handler for 0-RTT support
 #[derive(Debug, Clone)]
 pub struct EarlyDataHandler {
     /// Anti-replay windows per direction
     replay_windows: std::collections::HashMap<DirectionId, AntiReplayWindow>,
-    /// Maximum early _data size _allowed
-    __max_early_data_size: usize,
-    /// Number of early _data frame_s accepted
-    __early_data_accepted: u64,
-    /// Number of early _data frame_s rejected
-    __early_data_rejected: u64,
-    /// Total byte_s of early _data processed
-    __early_data_byte_s: u64,
+    /// Maximum early data size allowed
+    max_early_data_size: usize,
+    /// Number of early data frames accepted
+    early_data_accepted: u64,
+    /// Number of early data frames rejected
+    early_data_rejected: u64,
+    /// Total bytes of early data processed
+    early_data_bytes: u64,
 }
 
 impl Default for EarlyDataHandler {
@@ -169,7 +167,7 @@ impl Default for EarlyDataHandler {
 }
 
 impl EarlyDataHandler {
-    /// Create new early _data handler
+    /// Create new early data handler
     pub fn new() -> Self {
         let mut replay_windows = std::collections::HashMap::new();
         replay_windows.insert(DirectionId::I2R, AntiReplayWindow::new(DirectionId::I2R));
@@ -177,48 +175,48 @@ impl EarlyDataHandler {
 
         Self {
             replay_windows,
-            __max_early_data_size: MAX_EARLY_DATA_SIZE,
-            __early_data_accepted: 0,
-            __early_data_rejected: 0,
-            __early_data_byte_s: 0,
+            max_early_data_size: MAX_EARLY_DATA_SIZE,
+            early_data_accepted: 0,
+            early_data_rejected: 0,
+            early_data_bytes: 0,
         }
     }
 
-    /// Proces_s early _data frame with anti-replay protection
+    /// Process early data frame with anti-replay protection
     ///
-    /// Return_s `Ok(())` if the frame should be accepted,
+    /// Returns `Ok(())` if the frame should be accepted,
     /// `Err(EarlyDataError)` if it should be rejected.
     pub fn process_early_data(
         &mut self,
-        _direction: DirectionId,
-        _nonce: u64,
-        _data: &[u8],
+        direction: DirectionId,
+        nonce: u64,
+        data: &[u8],
     ) -> Result<(), EarlyDataError> {
         // Size check
-        if _data.len() > self.max_early_data_size {
+        if data.len() > self.max_early_data_size {
             self.early_data_rejected += 1;
             return Err(EarlyDataError::PayloadTooLarge {
-                size: _data.len(),
+                size: data.len(),
                 max_size: self.max_early_data_size,
             });
         }
 
         // Anti-replay check
-        let __window = self.replay_windows.get_mut(&direction)
+        let window = self.replay_windows.get_mut(&direction)
             .ok_or(EarlyDataError::InvalidDirection(direction))?;
 
-        if !window.checknonce(nonce) {
+        if !window.check_nonce(nonce) {
             self.early_data_rejected += 1;
             return Err(EarlyDataError::ReplayDetected {
                 direction,
                 nonce,
-                highest_seen: window.highestnonce,
+                highest_seen: window.highest_nonce,
             });
         }
 
-        // Accept early _data
+        // Accept early data
         self.early_data_accepted += 1;
-        self.early_data_byte_s += _data.len() as u64;
+        self.early_data_bytes += data.len() as u64;
         Ok(())
     }
 
@@ -240,46 +238,46 @@ impl EarlyDataHandler {
     }
 
     /// Add custom direction window
-    pub fn adddirection(&mut self, direction: DirectionId) {
+    pub fn add_direction(&mut self, direction: DirectionId) {
         self.replay_windows.insert(direction, AntiReplayWindow::new(direction));
     }
 
-    /// Get telemetry _data for monitoring
+    /// Get telemetry data for monitoring
     pub fn telemetry_data(&self) -> EarlyDataTelemetry {
-        let total_replay_block_s: u64 = self.replay_windows.value_s()
-            .map(|w| w.replay_block_s)
+        let total_replay_blocks: u64 = self.replay_windows.values()
+            .map(|w| w.replay_blocks)
             .sum();
 
-        let totalnonces_seen: u64 = self.replay_windows.value_s()
+        let total_nonces_seen: u64 = self.replay_windows.values()
             .map(|w| w.total_seen)
             .sum();
 
         EarlyDataTelemetry {
             early_data_accepted: self.early_data_accepted,
             early_data_rejected: self.early_data_rejected,
-            early_data_byte_s: self.early_data_byte_s,
-            total_replay_block_s,
-            totalnonces_seen,
-            direction_s: self.replay_windows.value_s()
-                .map(|w| w.stat_s())
+            early_data_bytes: self.early_data_bytes,
+            total_replay_blocks,
+            total_nonces_seen,
+            directions: self.replay_windows.values()
+                .map(|w| w.stats())
                 .collect(),
         }
     }
 }
 
-/// Error_s that can occur during early _data processing
+/// Errors that can occur during early data processing
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EarlyDataError {
-    /// Payload exceed_s maximum size
-    #[error("Early _data payload too large: {size} byte_s (max: {max_size})")]
-    PayloadTooLarge { __size: usize, max_size: usize },
+    /// Payload exceeds maximum size
+    #[error("Early data payload too large: {size} bytes (max: {max_size})")]
+    PayloadTooLarge { size: usize, max_size: usize },
 
     /// Replay attack detected
     #[error("Replay detected on direction {direction:?}: nonce {nonce} (highest seen: {highest_seen})")]
     ReplayDetected {
-        _direction: DirectionId,
-        _nonce: u64,
-        __highest_seen: u64,
+        direction: DirectionId,
+        nonce: u64,
+        highest_seen: u64,
     },
 
     /// Invalid direction identifier
@@ -287,60 +285,60 @@ pub enum EarlyDataError {
     InvalidDirection(DirectionId),
 
     /// Frame outside anti-replay window
-    #[error("Frame outside anti-replay window: nonce {nonce} (window start: {windowstart})")]
-    OutsideWindow { _nonce: u64, windowstart: u64 },
+    #[error("Frame outside anti-replay window: nonce {nonce} (window start: {window_start})")]
+    OutsideWindow { nonce: u64, window_start: u64 },
 }
 
-/// Statistic_s for anti-replay protection
+/// Statistics for anti-replay protection
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AntiReplayStat_s {
+pub struct AntiReplayStats {
     /// Direction identifier
-    pub _direction_id: DirectionId,
-    /// Total nonce_s seen
-    pub __totalnonces_seen: u64,
-    /// Number of replay attempt_s blocked
-    pub __replay_block_s: u64,
+    pub direction_id: DirectionId,
+    /// Total nonces seen
+    pub total_nonces_seen: u64,
+    /// Number of replay attempts blocked
+    pub replay_blocks: u64,
     /// Current window size
-    pub __current_windowsize: usize,
+    pub current_window_size: usize,
     /// Highest nonce value seen
-    pub __highestnonce: u64,
+    pub highest_nonce: u64,
     /// Timestamp of last rekey
     pub last_rekey: Option<Instant>,
 }
 
-/// Telemetry _data for early _data and anti-replay monitoring
+/// Telemetry data for early data and anti-replay monitoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EarlyDataTelemetry {
-    /// Number of early _data frame_s accepted
-    pub __early_data_accepted: u64,
-    /// Number of early _data frame_s rejected
-    pub __early_data_rejected: u64,
-    /// Total byte_s of early _data processed
-    pub __early_data_byte_s: u64,
-    /// Total replay attempt_s blocked acros_s all direction_s
-    pub __total_replay_block_s: u64,
-    /// Total nonce_s seen acros_s all direction_s
-    pub __totalnonces_seen: u64,
-    /// Per-direction statistic_s
-    pub direction_s: Vec<AntiReplayStat_s>,
+    /// Number of early data frames accepted
+    pub early_data_accepted: u64,
+    /// Number of early data frames rejected
+    pub early_data_rejected: u64,
+    /// Total bytes of early data processed
+    pub early_data_bytes: u64,
+    /// Total replay attempts blocked across all directions
+    pub total_replay_blocks: u64,
+    /// Total nonces seen across all directions
+    pub total_nonces_seen: u64,
+    /// Per-direction statistics
+    pub directions: Vec<AntiReplayStats>,
 }
 
 /// Nonce construction helper with direction identifier
-pub fn constructnonce_withdirection(
-    basenonce: &[u8; 12],
-    _direction_id: DirectionId,
-    _sequence: u64,
+pub fn construct_nonce_with_direction(
+    base_nonce: &[u8; 12],
+    direction_id: DirectionId,
+    sequence: u64,
 ) -> [u8; 12] {
-    let mut nonce = *basenonce;
+    let mut nonce = *base_nonce;
     
     // XOR direction ID into first 4 bytes to prevent overlap
-    let _dir_bytes = direction_id.0.to_be_bytes();
+    let dir_bytes = direction_id.0.to_be_bytes();
     for (i, &b) in dir_bytes.iter().enumerate() {
         nonce[i] ^= b;
     }
     
     // XOR sequence into last 8 bytes
-    let _seq_bytes = sequence.to_be_bytes();
+    let seq_bytes = sequence.to_be_bytes();
     for (i, &b) in seq_bytes.iter().enumerate() {
         nonce[4 + i] ^= b;
     }
@@ -349,7 +347,7 @@ pub fn constructnonce_withdirection(
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
 
     #[test]
@@ -357,69 +355,69 @@ mod test_s {
         let mut window = AntiReplayWindow::with_size(DirectionId::I2R, 16);
         
         // First nonce should be accepted
-        assert!(window.checknonce(1));
-        assert_eq!(window.highestnonce, 1);
+        assert!(window.check_nonce(1));
+        assert_eq!(window.highest_nonce, 1);
         
         // Higher nonce should be accepted
-        assert!(window.checknonce(5));
-        assert_eq!(window.highestnonce, 5);
+        assert!(window.check_nonce(5));
+        assert_eq!(window.highest_nonce, 5);
         
         // Replay should be rejected
-        assert!(!window.checknonce(5));
-        assert_eq!(window.replay_block_s, 1);
+        assert!(!window.check_nonce(5));
+        assert_eq!(window.replay_blocks, 1);
     }
 
     #[test]
-    fn test_anti_replay_windowsliding() {
+    fn test_anti_replay_window_sliding() {
         let mut window = AntiReplayWindow::with_size(DirectionId::I2R, 4);
         
         // Fill window
-        assert!(window.checknonce(10));
-        assert!(window.checknonce(11));
-        assert!(window.checknonce(12));
-        assert!(window.checknonce(13));
-        assert!(window.checknonce(14));
+        assert!(window.check_nonce(10));
+        assert!(window.check_nonce(11));
+        assert!(window.check_nonce(12));
+        assert!(window.check_nonce(13));
+        assert!(window.check_nonce(14));
         
         // Old nonce outside window should be rejected
-        assert!(!window.checknonce(9));
+        assert!(!window.check_nonce(9));
         
         // Recent nonce within window should be accepted
-        assert!(window.checknonce(11)); // Wa_s seen before but within window
+        assert!(window.check_nonce(11)); // Was seen before but within window
     }
 
     #[test]
     fn test_anti_replay_window_rekey() {
         let mut window = AntiReplayWindow::with_size(DirectionId::I2R, 16);
         
-        // Add some nonce_s
-        assert!(window.checknonce(100));
-        assert!(window.checknonce(101));
+        // Add some nonces
+        assert!(window.check_nonce(100));
+        assert!(window.check_nonce(101));
         
         // Reset for rekey
         window.reset_for_rekey();
         
-        // Previou_s nonce_s should now be acceptable again
-        assert!(window.checknonce(100));
-        assert!(window.checknonce(101));
-        assert_eq!(window.highestnonce, 101);
+        // Previous nonces should now be acceptable again
+        assert!(window.check_nonce(100));
+        assert!(window.check_nonce(101));
+        assert_eq!(window.highest_nonce, 101);
     }
 
     #[test]
     fn test_early_data_handler() {
         let mut handler = EarlyDataHandler::new();
         
-        let __data = b"test early _data";
+        let data = b"test early data";
         
-        // First early _data should be accepted
-        assert!(handler.process_early_data(DirectionId::I2R, 1, _data).is_ok());
+        // First early data should be accepted
+        assert!(handler.process_early_data(DirectionId::I2R, 1, data).is_ok());
         assert_eq!(handler.early_data_accepted, 1);
         
         // Replay should be rejected
-        assert!(handler.process_early_data(DirectionId::I2R, 1, _data).is_err());
+        assert!(handler.process_early_data(DirectionId::I2R, 1, data).is_err());
         assert_eq!(handler.early_data_rejected, 1);
         
         // Different direction should be independent
-        assert!(handler.process_early_data(DirectionId::R2I, 1, _data).is_ok());
+        assert!(handler.process_early_data(DirectionId::R2I, 1, data).is_ok());
         assert_eq!(handler.early_data_accepted, 2);
     }
 
@@ -428,46 +426,47 @@ mod test_s {
         let mut handler = EarlyDataHandler::new();
         
         // Large payload should be rejected
-        let __large_data = vec![0u8; MAX_EARLY_DATA_SIZE + 1];
-        let __result = handler.process_early_data(DirectionId::I2R, 1, &large_data);
+        let large_data = vec![0u8; MAX_EARLY_DATA_SIZE + 1];
+        let result = handler.process_early_data(DirectionId::I2R, 1, &large_data);
         
         assert!(matches!(result, Err(EarlyDataError::PayloadTooLarge { .. })));
         assert_eq!(handler.early_data_rejected, 1);
     }
 
     #[test]
-    fn testnonce_construction_withdirection() {
-        let __basenonce = [0u8; 12];
+    fn test_nonce_construction_with_direction() {
+        let base_nonce = [0u8; 12];
         
-        let _nonce1 = constructnonce_withdirection(&basenonce, DirectionId::I2R, 100);
-        let _nonce2 = constructnonce_withdirection(&basenonce, DirectionId::R2I, 100);
+        let nonce1 = construct_nonce_with_direction(&base_nonce, DirectionId::I2R, 100);
+        let nonce2 = construct_nonce_with_direction(&base_nonce, DirectionId::R2I, 100);
         
-        // Different direction_s should produce different nonce_s
-        assertne!(nonce1, nonce2);
+        // Different directions should produce different nonces
+        assert_ne!(nonce1, nonce2);
         
         // Same direction and sequence should produce same nonce
-        let _nonce3 = constructnonce_withdirection(&basenonce, DirectionId::I2R, 100);
+        let nonce3 = construct_nonce_with_direction(&base_nonce, DirectionId::I2R, 100);
         assert_eq!(nonce1, nonce3);
     }
 
     #[test]
-    fn test_telemetry_data() {
+    fn test_telemetry_data() -> Result<(), Box<dyn std::error::Error>> {
         let mut handler = EarlyDataHandler::new();
         
-        let __data = b"test";
+        let data = b"test";
         
-        // Proces_s some _data
-        handler.process_early_data(DirectionId::I2R, 1, _data)?;
-        handler.process_early_data(DirectionId::I2R, 1, _data).unwrap_err(); // Replay
-        handler.process_early_data(DirectionId::R2I, 1, _data)?;
+        // Process some data
+        handler.process_early_data(DirectionId::I2R, 1, data)?;
+        handler.process_early_data(DirectionId::I2R, 1, data).unwrap_err(); // Replay
+        handler.process_early_data(DirectionId::R2I, 1, data)?;
         
-        let __telemetry = handler.telemetry_data();
+        let telemetry = handler.telemetry_data();
         
         assert_eq!(telemetry.early_data_accepted, 2);
         assert_eq!(telemetry.early_data_rejected, 1);
-        assert_eq!(telemetry.early_data_byte_s, 8); // 2 * 4 byte_s
-        assert_eq!(telemetry.total_replay_block_s, 1);
-        assert_eq!(telemetry.direction_s.len(), 2);
+        assert_eq!(telemetry.early_data_bytes, 8); // 2 * 4 bytes
+        assert_eq!(telemetry.total_replay_blocks, 1);
+        assert_eq!(telemetry.directions.len(), 2);
+        Ok(())
     }
 
     #[test]

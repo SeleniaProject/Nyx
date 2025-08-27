@@ -12,8 +12,8 @@ use rand::thread_rng;
 #[test]
 fn adaptive_cover_utilization_feedback_non_decreasing_lambda() {
     let config = MixConfig {
-        __base_cover_lambda: 10.0,
-        __low_power_ratio: 0.5,
+        base_cover_lambda: 10.0,
+        low_power_ratio: 0.5,
         ..Default::default()
     };
     let mut prev = f32::MIN;
@@ -34,8 +34,8 @@ fn adaptive_cover_utilization_feedback_non_decreasing_lambda() {
 #[test]
 fn low_power_reduces_base_rate() {
     let config = MixConfig {
-        __base_cover_lambda: 12.0,
-        __low_power_ratio: 0.3,
+        base_cover_lambda: 12.0,
+        low_power_ratio: 0.3,
         ..Default::default()
     };
     let u = 0.4;
@@ -47,16 +47,16 @@ fn low_power_reduces_base_rate() {
     let lo0 = apply_utilization(&config, 0.0, true);
     
     // Test edge cases
-    let expected_ratio = config.__low_power_ratio;
-    assert!((lo0 / config.__base_cover_lambda - expected_ratio).abs() < 1e-6);
+    let expected_ratio = config.low_power_ratio;
+    assert!((lo0 / config.base_cover_lambda - expected_ratio).abs() < 1e-6);
 }
 
 /// Test boundary conditions to prevent overflow/underflow attacks
 #[test]
 fn boundary_conditions_respected() {
     let config = MixConfig {
-        __base_cover_lambda: 5.0,
-        __low_power_ratio: 0.5,
+        base_cover_lambda: 5.0,
+        low_power_ratio: 0.5,
         ..Default::default()
     };
 
@@ -81,21 +81,21 @@ fn config_validation_ranges() -> Result<(), Box<dyn std::error::Error>> {
 
     // Invalid configuration should fail (high ratio)
     let invalid_config = MixConfig {
-        __low_power_ratio: 1.2,
+        low_power_ratio: 1.2,
         ..Default::default()
     };
     assert!(invalid_config.validate_range_s().is_err());
 
     // Invalid configuration should fail (high lambda)
     let invalid_config2 = MixConfig {
-        __base_cover_lambda: 100_000.0,
+        base_cover_lambda: 100_000.0,
         ..Default::default()
     };
     assert!(invalid_config2.validate_range_s().is_err());
 
     // Invalid configuration should fail (negative ratio)
     let invalid_config3 = MixConfig {
-        __low_power_ratio: -0.1,
+        low_power_ratio: -0.1,
         ..Default::default()
     };
     assert!(
@@ -115,7 +115,7 @@ fn mathematical_correctness() {
 
         // Test normal mode: λ = base * (1 + u)
         let normal = apply_utilization(&config, u.into(), false);
-        let expected = config.__base_cover_lambda * (1.0 + u);
+        let expected = config.base_cover_lambda * (1.0 + u);
         assert!(
             (normal - expected).abs() < f32::EPSILON,
             "Normal mode formula mismatch: expected={expected} actual={normal}"
@@ -123,7 +123,7 @@ fn mathematical_correctness() {
 
         // Test low power mode: λ = base * low_ratio * (1 + u)
         let power = apply_utilization(&config, u.into(), true);
-        let expected_power = config.__base_cover_lambda * config.__low_power_ratio * (1.0 + u);
+        let expected_power = config.base_cover_lambda * config.low_power_ratio * (1.0 + u);
         assert!(
             (power - expected_power).abs() < f32::EPSILON,
             "Low power mode formula mismatch: expected={expected_power} actual={power}"
@@ -186,9 +186,9 @@ fn adaptive_cover_performance() {
 }
 
 fn apply_utilization(config: &MixConfig, utilization: f64, low_power: bool) -> f32 {
-    let base = config.__base_cover_lambda;
+    let base = config.base_cover_lambda;
     if low_power {
-        base * config.__low_power_ratio * (1.0 + utilization as f32)
+        base * config.low_power_ratio * (1.0 + utilization as f32)
     } else {
         base * (1.0 + utilization as f32)
     }

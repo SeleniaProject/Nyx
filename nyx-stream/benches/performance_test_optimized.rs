@@ -1,3 +1,5 @@
+#![allow(unused_must_use)]
+
 //! World-Class Nyx Stream Performance Benchmarks
 //!
 //! Ultimate performance testing suite for core streaming operations optimized for maximum efficiency:
@@ -200,36 +202,6 @@ fn bench_capacity_impact(c: &mut Criterion) {
         );
     }
     group.finish();
-}
-
-/// Ultra-fast error scenario benchmarks optimized for resilience
-fn bench_error_scenarios(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-
-    c.bench_function("timeout_handling_optimized", |b| {
-        b.to_async(&rt).iter(|| async {
-            let config = AsyncStreamConfig::default();
-            let (_sender, receiver) = pair(config.clone(), config);
-
-            // Optimized timeout test with immediate return
-            let result = receiver.try_recv().await;
-            let _ = black_box(result);
-        });
-    });
-
-    c.bench_function("closed_stream_handling_optimized", |b| {
-        b.to_async(&rt).iter(|| async {
-            let config = AsyncStreamConfig::default();
-            let (sender, receiver) = pair(config.clone(), config);
-
-            // Drop sender to close the stream and test resilience
-            drop(sender);
-
-            // Optimized closed stream handling
-            let result = receiver.recv().await;
-            let _ = black_box(result);
-        });
-    });
 }
 
 criterion_group!(

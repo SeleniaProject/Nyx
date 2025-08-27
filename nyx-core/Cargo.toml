@@ -124,19 +124,11 @@ nyx-stream = { path = "../nyx-stream" }
 bytes = "1.5"
 
 [[bench]]
-name = "zero_copy_benchmarks"
-harness = false
-
-[[bench]]
-name = "realistic_production_benchmark"
-harness = false
-
-[[bench]]
-name = "mobile_iot_benchmark"
-harness = false
-
-[[bench]]
 name = "security_scalability_benchmark"
+harness = false
+
+[[bench]]
+name = "push_gateway_enhanced"
 harness = false
 
 [build-dependencies]

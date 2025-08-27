@@ -4,7 +4,7 @@ use super::scheduler::{PathId, PathMetric, WeightedScheduler};
 
 #[derive(Debug, Clone, Default)]
 pub struct MprConfig {
-    pub __enabled: bool,
+    pub enabled: bool,
 }
 
 #[derive(Debug)]

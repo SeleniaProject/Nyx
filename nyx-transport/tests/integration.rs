@@ -1,6 +1,6 @@
 #[test]
-fn udp_example_run_s() -> Result<(), Box<dyn std::error::Error>> {
-    // Ensu_re_s example code pattern work_s without panic_s
+fn udp_example_runs() -> Result<(), Box<dyn std::error::Error>> {
+    // Ensures example code pattern works without panics
     use nyx_transport::UdpEndpoint;
     let mut a = UdpEndpoint::bind_loopback()?;
     let mut b = UdpEndpoint::bind_loopback()?;

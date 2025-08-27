@@ -58,11 +58,11 @@ impl CoreConfig {
         Ok(())
     }
 
-    /// Write thi_s configuration to a TOML file.
+    /// Write this configuration to a TOML file.
     pub fn write_to_file(&self, path: impl AsRef<Path>) -> Result<()> {
-        let _toml = toml::to_string_pretty(self)
-            .map_err(|e| Error::config(format!("_toml serialize error: {e}")))?;
-        fs::write(path, _toml)?;
+        let toml = toml::to_string_pretty(self)
+            .map_err(|e| Error::config(format!("toml serialize error: {e}")))?;
+        fs::write(path, toml)?;
         Ok(())
     }
 

@@ -2,7 +2,7 @@ use nyx_stream::multipath::scheduler::{PathId, PathMetric, WeightedScheduler};
 use std::time::Duration;
 
 #[test]
-fn multipath_wrr_distribution_matches_weight_s() {
+fn multipath_wrr_distribution_matches_weights() {
     // Two path_s with weight_s 1 and 3 should roughly produce 1:3 distribution.
     let path_s: Vec<(PathId, PathMetric)> = vec![
         (

@@ -10,20 +10,20 @@ pub struct WindowsSandbox;
 impl WindowsSandbox {
 	pub fn new() -> Self { Self }
 
-	/// windows Job Object ‚ğ—˜—p‚µ‚ÄŠî–{“I‚ÈƒTƒ“ƒhƒ{ƒbƒNƒX§ŒÀ‚ğ“K—p‚µ‚Ü‚·B
-	/// Œ»ó‚ÍˆÀ‘S‚È”ÍˆÍ‚Å Kill-on-job-close ‚Ì‚İ‚ğ“K—p‚µ‚Ü‚·B
-	/// - Kill-on-job-close ‚ğ—LŒø‰»ieƒvƒƒZƒXI—¹‚Éq‚àI—¹j
-	/// - ActiveProcessLimit “™‚Ì‹­‚¢§ŒÀ‚Í `win32job` ƒNƒŒ[ƒg‚ÌˆÀ‘SAPI’ñ‹Ÿó‹µ‚ğŒ©‚Ä’iŠK“I‚É“±“ü—\’èB
-	///   ‚»‚ÌŠÔ‚ÍAƒvƒ‰ƒOƒCƒ“‘¤‚Å‚ÍƒTƒuƒvƒƒZƒX¶¬‚ğ‹Ö~‚·‚éƒR[ƒfƒBƒ“ƒO‹K–ñ‚ÆƒŒƒrƒ…[‚Å•âŠ®‚µ‚Ü‚·B
-	pub fn apply_job_limit_s(&self) {
-		// ƒvƒƒZƒX‘¶‘±’†‚É Job ‚ğˆÛ‚·‚é‚½‚ßAƒOƒ[ƒoƒ‹‚É•Û
+	/// windows Job Object ï¿½ğ—˜—pï¿½ï¿½ï¿½ÄŠï¿½{ï¿½Iï¿½ÈƒTï¿½ï¿½ï¿½hï¿½{ï¿½bï¿½Nï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Kï¿½pï¿½ï¿½ï¿½Ü‚ï¿½ï¿½B
+	/// ï¿½ï¿½ï¿½ï¿½Íˆï¿½ï¿½Sï¿½È”ÍˆÍ‚ï¿½ Kill-on-job-close ï¿½Ì‚İ‚ï¿½Kï¿½pï¿½ï¿½ï¿½Ü‚ï¿½ï¿½B
+	/// - Kill-on-job-close ï¿½ï¿½Lï¿½ï¿½ï¿½ï¿½ï¿½iï¿½eï¿½vï¿½ï¿½ï¿½Zï¿½Xï¿½Iï¿½ï¿½ï¿½ï¿½ï¿½Éqï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½j
+	/// - ActiveProcessLimit ï¿½ï¿½ï¿½Ì‹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ `win32job` ï¿½Nï¿½ï¿½ï¿½[ï¿½gï¿½Ìˆï¿½ï¿½SAPIï¿½ñ‹Ÿó‹µ‚ï¿½ï¿½ï¿½ï¿½Ä’iï¿½Kï¿½Iï¿½É“ï¿½ï¿½ï¿½ï¿½\ï¿½ï¿½B
+	///   ï¿½ï¿½ï¿½ÌŠÔ‚ÍAï¿½vï¿½ï¿½ï¿½Oï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Å‚ÍƒTï¿½uï¿½vï¿½ï¿½ï¿½Zï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö~ï¿½ï¿½ï¿½ï¿½Rï¿½[ï¿½fï¿½Bï¿½ï¿½ï¿½Oï¿½Kï¿½ï¿½Æƒï¿½ï¿½rï¿½ï¿½ï¿½[ï¿½Å•âŠ®ï¿½ï¿½ï¿½Ü‚ï¿½ï¿½B
+	pub fn apply_job_limits(&self) {
+		// ï¿½vï¿½ï¿½ï¿½Zï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Job ï¿½ï¿½ï¿½Ûï¿½ï¿½ï¿½ï¿½é‚½ï¿½ßAï¿½Oï¿½ï¿½ï¿½[ï¿½oï¿½ï¿½ï¿½É•Ûï¿½
 		static JOB: OnceCell<Job> = OnceCell::new();
 
 		if JOB.get().is_some() {
-			return; // ‚·‚Å‚É“K—pÏ‚İ
+			return; // ï¿½ï¿½ï¿½Å‚É“Kï¿½pï¿½Ï‚ï¿½
 		}
 
-		let __job = match Job::create() {
+		let job = match Job::create() {
 			Ok(j) => j,
 			Err(e) => {
 				warn!(error = %e, "failed to create windows Job Object for plugin sandbox");
@@ -32,7 +32,7 @@ impl WindowsSandbox {
 		};
 
 		let mut limit_s = ExtendedLimitInfo::new();
-		// ƒWƒ‡ƒuƒnƒ“ƒhƒ‹‚ª•Â‚¶‚ç‚ê‚½Û‚ÉQ‰ÁƒvƒƒZƒX‚ğ‹­§I—¹
+		// ï¿½Wï¿½ï¿½ï¿½uï¿½nï¿½ï¿½ï¿½hï¿½ï¿½ï¿½ï¿½ï¿½Â‚ï¿½ï¿½ï¿½ê‚½ï¿½Û‚ÉQï¿½ï¿½ï¿½vï¿½ï¿½ï¿½Zï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Iï¿½ï¿½
 		limit_s.limit_kill_on_job_close();
 
 		if let Err(e) = job.set_extended_limit_info(&limit_s) {
@@ -40,7 +40,7 @@ impl WindowsSandbox {
 			return;
 		}
 
-		if let Err(e) = job.assign_current_proces_s() {
+		if let Err(e) = job.assign_current_process() {
 			warn!(error = %e, "failed to assign current proces_s to Job Object (plugin sandbox)");
 			return;
 		}

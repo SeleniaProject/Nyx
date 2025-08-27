@@ -192,7 +192,7 @@ struct TxEntry {
 
 async fn endpoint_task(
     config: AsyncStreamConfig,
-    mut cmd_s: mpsc::Receiver<Cmd>,
+    mut cmds: mpsc::Receiver<Cmd>,
     wire_tx: mpsc::Sender<LinkMsg>,
     mut wire_rx: mpsc::Receiver<LinkMsg>,
 ) {
@@ -270,7 +270,7 @@ async fn endpoint_task(
         tokio::select! {
             biased;
             // Commands first to avoid starvation
-            Some(cmd) = cmd_s.recv() => {
+            Some(cmd) = cmds.recv() => {
                 match cmd {
                     Cmd::Send { data, ack } => {
                         // Early exit if stream is already closed locally

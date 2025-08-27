@@ -24,7 +24,7 @@ pub mod plugin_sandbox; // Cooperative sandbox (policy + guard_s)
 pub mod plugin_settings; // Runtime setting_s for plugin_s // Rekey trigger helpers (test_s/integration use)
 
 pub use async_stream::{AsyncStream, AsyncStreamConfig, pair};
-pub use capability::{get_local_capabilitie_s, negotiate, Capability, CapabilityError};
+pub use capability::{get_local_capabilities, negotiate, Capability, CapabilityError};
 pub use errors::{Error, Result};
 pub use frame::{Frame, FrameHeader, FrameType};
 pub use frame_codec::FrameCodec;

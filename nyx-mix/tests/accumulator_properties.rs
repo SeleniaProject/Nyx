@@ -41,7 +41,7 @@ proptest! {
         assert!(acc.verify_element(&element, &witness));
 
         // For backward compatibility with existing cMix code, verify using generated witness
-        let generated_witness = acc.generate_witnes_s(&element)?;
+        let generated_witness = acc.generate_witness(&element)?;
         assert!(acc.verify_element(&element, &generated_witness));
     }
 
@@ -56,7 +56,7 @@ proptest! {
 
         // Create wrong witness from random bytes
         let wrong_witness = nyx_mix::accumulator::convert_legacy_accumulator(&wrong_witness_bytes);
-        let correct_witness = acc.generate_witnes_s(&element)?;
+        let correct_witness = acc.generate_witness(&element)?;
 
         if wrong_witness != correct_witness {
             assert!(!acc.verify_element(&element, &wrong_witness), "Wrong witness should not verify");
@@ -80,7 +80,7 @@ proptest! {
         // Individual verification should work for all added elements
         // Use fresh witnesses generated after all elements are added
         for element in &unique_elements {
-            let fresh_witness = acc.generate_witnes_s(element)?;
+            let fresh_witness = acc.generate_witness(element)?;
             assert!(acc.verify_element(element, &fresh_witness), "Each element should verify individually");
         }
     }
@@ -92,8 +92,8 @@ proptest! {
         acc.add_element(&element)?;
 
         // Generate witness twice
-        let witness1 = acc.generate_witnes_s(&element)?;
-        let witness2 = acc.generate_witnes_s(&element)?;
+        let witness1 = acc.generate_witness(&element)?;
+        let witness2 = acc.generate_witness(&element)?;
 
         // Should be identical
         assert_eq!(witness1, witness2, "Cached witness should be identical");
@@ -107,27 +107,27 @@ proptest! {
     #[test]
     fn accumulator_state_consistency(elements in arb_elements()) {
         let mut acc = Accumulator::new();
-        let initial_value = acc.__value.clone();
+        let initial_value = acc.value.clone();
 
         // Add elements one by one
         for element in &elements {
-            let old_value = acc.__value.clone();
+            let old_value = acc.value.clone();
             acc.add_element(element)?;
 
             // Value should change after each addition
             if !element.is_empty() {
-                assert_ne!(acc.__value, old_value, "Accumulator value should change");
+                assert_ne!(acc.value, old_value, "Accumulator value should change");
             }
         }
 
         // Final value should be different from initial (if we added elements)
         if !elements.is_empty() && elements.iter().any(|e| !e.is_empty()) {
-            assert_ne!(acc.__value, initial_value, "Final value should differ from initial");
+            assert_ne!(acc.value, initial_value, "Final value should differ from initial");
         }
 
         // Statistics should be consistent
         assert_eq!(
-            acc.stats.__elements_added,
+            acc.stats.elements_added,
             elements.len(),
             "Element count should match additions"
         );
@@ -163,8 +163,8 @@ mod unit_tests {
         ));
 
         if let Err(AccumulatorError::VerificationFailed {
-            __element: e,
-            witnes_s: w,
+            element: e,
+            witness: w,
         }) = result
         {
             assert_eq!(e, element);
@@ -212,17 +212,17 @@ mod unit_tests {
 
         // First generation
         let start_time = std::time::Instant::now();
-        let _witness1 = acc.generate_witnes_s(element)?;
+        let _witness1 = acc.generate_witness(element)?;
         let _first_duration = start_time.elapsed();
 
         // Second generation (should hit cache)
         let start_time = std::time::Instant::now();
-        let _witness2 = acc.generate_witnes_s(element)?;
+        let _witness2 = acc.generate_witness(element)?;
         let _second_duration = start_time.elapsed();
 
         // Cache hit should be faster (though this may not always be true in tests)
         // At minimum, cache statistics should update
-        assert!(acc.stats.__cache_hits > 0, "Cache should have been hit");
+        assert!(acc.stats.cache_hits > 0, "Cache should have been hit");
         Ok(())
     }
 }

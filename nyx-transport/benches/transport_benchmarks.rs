@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use nyx_transport::{UdpEndpoint, tcp_fallback};
-use std::net::SocketAddr;
+// use std::net::SocketAddr; // Currently unused
 use std::time::Duration;
 
 fn udp_loopback_benchmark(c: &mut Criterion) {

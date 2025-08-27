@@ -1,33 +1,33 @@
 /// Simple path latency monitor using a fixed-size window.
 #[derive(Debug, Clone)]
 pub struct LatencyWindow {
-    sample_s: std::collections::VecDeque<u128>,
-    __cap: usize,
+    samples: std::collections::VecDeque<u128>,
+    cap: usize,
 }
 
 impl LatencyWindow {
-    pub fn new(_cap: usize) -> Self {
+    pub fn new(cap: usize) -> Self {
         Self {
-            sample_s: std::collections::VecDeque::with_capacity(_cap),
-            __cap: _cap,
+            samples: std::collections::VecDeque::with_capacity(cap),
+            cap,
         }
     }
-    pub fn push(&mut self, v_m_s: u128) {
-        if self.sample_s.len() == self.__cap {
-            self.sample_s.pop_front();
+    pub fn push(&mut self, v_ms: u128) {
+        if self.samples.len() == self.cap {
+            self.samples.pop_front();
         }
-        self.sample_s.push_back(v_m_s);
+        self.samples.push_back(v_ms);
     }
     pub fn avg(&self) -> Option<f64> {
-        if self.sample_s.is_empty() {
+        if self.samples.is_empty() {
             return None;
         }
-        let sum: u128 = self.sample_s.iter().copied().sum();
-        Some(sum as f64 / self.sample_s.len() as f64)
+        let sum: u128 = self.samples.iter().copied().sum();
+        Some(sum as f64 / self.samples.len() as f64)
     }
-    pub fn is_degraded(&self, _baseline_m_s: u128, factor: f64) -> bool {
+    pub fn is_degraded(&self, baseline_ms: u128, factor: f64) -> bool {
         match self.avg() {
-            Some(avg) => avg >= _baseline_m_s as f64 * factor,
+            Some(avg) => avg >= baseline_ms as f64 * factor,
             None => false,
         }
     }

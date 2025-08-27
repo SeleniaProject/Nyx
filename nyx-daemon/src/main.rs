@@ -759,9 +759,29 @@ fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
     let expected = effective.unwrap();
     match auth {
         Some(provided) => {
-            let ok = provided == expected;
+            // SECURITY ENHANCEMENT: Use constant-time comparison to prevent timing attacks
+            // This prevents attackers from deducing token characters through timing analysis
+            
+            let provided_bytes = provided.as_bytes();
+            let expected_bytes = expected.as_bytes();
+            
+            // Ensure both strings are compared in constant time regardless of length
+            let max_len = std::cmp::max(provided_bytes.len(), expected_bytes.len());
+            let mut result = 0u8;
+            
+            // Always compare the full length to prevent early termination timing attacks
+            for i in 0..max_len {
+                let p_byte = provided_bytes.get(i).copied().unwrap_or(0);
+                let e_byte = expected_bytes.get(i).copied().unwrap_or(0);
+                result |= p_byte ^ e_byte;
+            }
+            
+            // Additional length check in constant time
+            let length_match = provided_bytes.len() == expected_bytes.len();
+            let ok = result == 0 && length_match;
+            
             if !ok {
-                warn!("authorization failed: wrong token");
+                warn!("authorization failed: invalid token");
             }
             ok
         }

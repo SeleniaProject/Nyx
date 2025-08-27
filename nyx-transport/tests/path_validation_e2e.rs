@@ -41,7 +41,7 @@ async fn path_validation_success() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate path to B
     let metrics = validator.validate_path(b_addr).await?;
-    assert!(metrics.__round_trip_time > Duration::from_micros(0));
+    assert!(metrics.round_trip_time > Duration::from_micros(0));
     Ok(())
 }
 
@@ -79,7 +79,7 @@ async fn path_validation_ignores_response_from_wrong_addr() -> Result<(), Box<dy
 
     // Expect timeout because response came from wrong addr
     let err = validator.validate_path(b_addr).await.err().ok_or("Expected error")?;
-    let msg = format!("{}", err);
+    let msg = format!("{err}");
     assert!(
         msg.to_lowercase().contains("timed")
             || msg.to_lowercase().contains("no valid path_response")
@@ -145,7 +145,7 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
-async fn multiple_paths_concurrent_validation_succeed_s() -> Result<(), Box<dyn std::error::Error>>
+async fn multiple_paths_concurrent_validation_succeeds() -> Result<(), Box<dyn std::error::Error>>
 {
     // One validator socket (ephemeral)
     let validator = PathValidator::new_with_timeout(
@@ -181,16 +181,16 @@ async fn multiple_paths_concurrent_validation_succeed_s() -> Result<(), Box<dyn 
     spawn_resp(r2, a_addr);
     spawn_resp(r3, a_addr);
 
-    let target_s = vec![r1_addr, r2_addr, r3_addr];
-    let result_s = validator.validate_multiple_path_s(&target_s).await?;
-    assert_eq!(result_s.len(), 3);
+    let targets = vec![r1_addr, r2_addr, r3_addr];
+    let results = validator.validate_multiple_paths(&targets).await?;
+    assert_eq!(results.len(), 3);
     Ok(())
 }
 
 #[tokio::test]
 async fn retry_eventual_success_on_second_attempt() -> Result<(), Box<dyn std::error::Error>> {
     // Validator with small timeout and 2 retrie_s to allow second attempt to succeed
-    let validator = nyx_transport::path_validation::PathValidator::new_with_timeout_and_retrie_s(
+    let validator = nyx_transport::path_validation::PathValidator::new_with_timeout_and_retries(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
         Duration::from_millis(120),
         2,
@@ -198,7 +198,7 @@ async fn retry_eventual_success_on_second_attempt() -> Result<(), Box<dyn std::e
     .await?;
     let a_addr = validator.local_addr()?;
 
-    // Responder that igno_re_s first challenge and respond_s to the second
+    // Responder that ignores first challenge and responds to the second
     let sock = bind_loopback().await?;
     let target = sock.local_addr()?;
     tokio::spawn(async move {
@@ -216,7 +216,7 @@ async fn retry_eventual_success_on_second_attempt() -> Result<(), Box<dyn std::e
         }
     });
 
-    let metric_s = validator.validate_path(target).await?;
-    assert!(metric_s.__round_trip_time > Duration::from_micros(0));
+    let metrics = validator.validate_path(target).await?;
+    assert!(metrics.round_trip_time > Duration::from_micros(0));
     Ok(())
 }

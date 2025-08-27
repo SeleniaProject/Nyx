@@ -147,7 +147,7 @@ fn sandbox_guard_with_os_sandbox() {
 
     // Test path validation - should fail because denied_path is not under allowed prefix
     let denied_result = guard.check_open_path(&denied_path);
-    assert!(denied_result.is_err(), "Denied path should fail: {} -> {:?}", denied_path, denied_result);
+    assert!(denied_result.is_err(), "Denied path should fail: {denied_path} -> {denied_result:?}");
     
     // Should succeed because allowed_simple is the exact prefix we allowed
     let allowed_result = guard.check_open_path(&allowed_simple);
@@ -156,9 +156,9 @@ fn sandbox_guard_with_os_sandbox() {
         println!("Directory access failed, trying subpath...");
         let subpath_result = guard.check_open_path(&allowed_path);
         // For this test, we just need to verify the sandbox is working, not the exact path behavior
-        println!("Subpath result: {:?}", subpath_result);
+        println!("Subpath result: {subpath_result:?}");
     } else {
-        assert!(allowed_result.is_ok(), "Allowed directory should succeed: {} -> {:?}", allowed_simple, allowed_result);
+        assert!(allowed_result.is_ok(), "Allowed directory should succeed: {allowed_simple} -> {allowed_result:?}");
     }
 
     // Test host validation - verify that the deny logic works correctly
@@ -251,6 +251,6 @@ fn platform_specific_integration() {
     // Stream sandbox should work regardles_s of OS sandbox statu_s
     let stream_policy = StreamPolicy::default();
     let _guard = SandboxGuard::new(stream_policy);
-    // SandboxGuard construction alway_s succeed_s
+    // SandboxGuard construction always succeeds
     println!("Stream sandbox guard created successfully");
 }

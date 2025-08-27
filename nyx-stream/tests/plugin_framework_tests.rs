@@ -6,7 +6,7 @@
 #![allow(clippy::needless_collect)]
 
 use nyx_stream::capability::{
-    get_local_capabilitie_s, negotiate, Capability, CAP_PLUGIN_FRAMEWORK,
+    get_local_capabilities, negotiate, Capability, CAP_PLUGIN_FRAMEWORK,
 };
 use nyx_stream::plugin::{
     is_plugin_frame, PluginHeader, PluginId, FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_DATA,
@@ -73,11 +73,11 @@ fn test_plugin_frame_building_and_parsing() -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-// 4) basic size limit_s (sanity): keep encoded size under a reasonable ceiling
-//    NOTE: Library doe_s not enforce a hard limit; this test assert_s we can
-//    encode/decode moderately large frame_s used by implementation_s.
+// 4) basic size limits (sanity): keep encoded size under a reasonable ceiling
+//    NOTE: Library does not enforce a hard limit; this test asserts we can
+//    encode/decode moderately large frames used by implementations.
 #[test]
-fn test_plugin_frame_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
+fn test_plugin_frame_size_limits() -> Result<(), Box<dyn std::error::Error>> {
     let hdr = PluginHeader {
         id: PluginId(9),
         flags: 0,
@@ -87,7 +87,7 @@ fn test_plugin_frame_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
 
     let f = PluginFrame::new(FRAME_TYPE_PLUGIN_DATA, hdr, payload);
     let encoded = f.to_cbor()?;
-    // keep within 100 KiB as a sanity envelope for CI boxe_s
+    // keep within 100 KiB as a sanity envelope for CI boxes
     assert!(
         encoded.len() < 100 * 1024,
         "encoded size too large: {} byte_s",
@@ -101,12 +101,12 @@ fn test_plugin_frame_size_limit_s() -> Result<(), Box<dyn std::error::Error>> {
 // 5) Test capability negotiation for plugin framework
 #[test]
 fn test_plugin_framework_capabilitynegotiation() -> Result<(), Box<dyn std::error::Error>> {
-    let local_cap_s = get_local_capabilitie_s();
+    let local_caps = get_local_capabilities();
 
     // Should contain plugin framework capability
-    let plugin_cap = local_cap_s
+    let plugin_cap = local_caps
         .iter()
-        .find(|cap| cap.__id == CAP_PLUGIN_FRAMEWORK)
+        .find(|cap| cap.id == CAP_PLUGIN_FRAMEWORK)
         .ok_or("Plugin framework capability not found")?;
 
     assert!(
@@ -116,34 +116,34 @@ fn test_plugin_framework_capabilitynegotiation() -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-// 6) Test negotiation succeed_s when peer support_s plugin framework
+// 6) Test negotiation succeeds when peer supports plugin framework
 #[test]
-fn test_plugin_frameworknegotiation_succes_s() {
+fn test_plugin_frameworknegotiation_success() {
     let local_supported = &[nyx_stream::capability::CAP_CORE, CAP_PLUGIN_FRAMEWORK];
-    let peer_cap_s = vec![
+    let peer_caps = vec![
         Capability::required(nyx_stream::capability::CAP_CORE, vec![]),
         Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]),
     ];
 
-    assert!(negotiate(local_supported, &peer_cap_s).is_ok());
+    assert!(negotiate(local_supported, &peer_caps).is_ok());
 }
 
-// 7) Test negotiation succeed_s when peer doesn't request plugin framework
+// 7) Test negotiation succeeds when peer doesn't request plugin framework
 #[test]
-fn test_plugin_frameworknegotiation_without_plugin_s() {
+fn test_plugin_frameworknegotiation_without_plugins() {
     let local_supported = &[nyx_stream::capability::CAP_CORE]; // No plugin framework
-    let peer_cap_s = vec![
+    let peer_caps = vec![
         Capability::required(nyx_stream::capability::CAP_CORE, vec![]),
         // No plugin framework requested
     ];
 
-    assert!(negotiate(local_supported, &peer_cap_s).is_ok());
+    assert!(negotiate(local_supported, &peer_caps).is_ok());
 }
 
 // 8) Test plugin ID range validation
 #[test]
-fn test_plugin_id_range_s() {
-    // Test valid plugin ID_s
+fn test_plugin_id_ranges() {
+    // Test valid plugin IDs
     for id in [0u32, 1, 100, 65535, u32::MAX] {
         let plugin_id = PluginId(id);
         assert_eq!(plugin_id.0, id);

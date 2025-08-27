@@ -25,7 +25,7 @@ fn clamp_limit(n: usize) -> usize {
 }
 
 fn default_max_frame_len() -> usize {
-    // On __first use, read env if present, then stick to the atomic value afterward_s.
+    // On first use, read env if present, then stick to the atomic value afterwards.
     ENV_INIT.call_once(|| {
         if let Ok(v) = std::env::var("NYX_FRAME_MAX_LEN") {
             if let Ok(n) = v.trim().parse::<usize>() {
@@ -95,10 +95,10 @@ impl Encoder<Frame> for FrameCodec {
     type Error = Error;
     fn encode(
         &mut self,
-        __item: Frame,
+        item: Frame,
         dst: &mut BytesMut,
     ) -> core::result::Result<(), Self::Error> {
-        Self::encode(&__item, dst)
+        Self::encode(&item, dst)
     }
 }
 
@@ -158,10 +158,10 @@ mod test_s {
         acc.put_u32(u32::MAX);
         // Supply a small body; decode should reject early on length check
         acc.extend_from_slice(&[0u8; 4]);
-        let __err = FrameCodec::decode(&mut acc).unwrap_err();
-        match __err {
+        let err = FrameCodec::decode(&mut acc).unwrap_err();
+        match err {
             Error::Protocol(msg) => assert!(msg.contains("too large")),
-            _ => panic!("unexpected error: {__err:?}"),
+            _ => panic!("unexpected error: {err:?}"),
         }
     }
 

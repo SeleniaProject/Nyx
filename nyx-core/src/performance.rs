@@ -41,6 +41,8 @@ impl Ewma {
     /// 
     /// # Panics
     /// Panics if alpha is not in the range (0.0, 1.0]
+    /// Create a new EWMA with the given smoothing factor
+    #[must_use]
     pub fn new(alpha: f64) -> Self {
         assert!(
             alpha > 0.0 && alpha <= 1.0,
@@ -72,6 +74,8 @@ impl Ewma {
     /// # Returns
     /// * `Some(value)` if at least one update has been performed
     /// * `None` if no values have been processed yet
+    /// Get the current EWMA value
+    #[must_use]
     pub fn get(&self) -> Option<f64> {
         self.value
     }
@@ -421,7 +425,7 @@ mod tests {
         assert_eq!(limiter.refill_rate(), 2.0);
         // Check available tokens - should be very close to 0 (might have tiny refill)
         let tokens = limiter.available_tokens();
-        assert!(tokens < 0.1, "Should have very few tokens, got: {}", tokens);
+        assert!(tokens < 0.1, "Should have very few tokens, got: {tokens}");
     }
 
     #[test]
@@ -473,8 +477,7 @@ mod tests {
         let tokens_after_reset = limiter.available_tokens();
         assert!(
             (tokens_after_reset - 3.0).abs() < 0.1,
-            "Should have close to full capacity after reset, got: {}",
-            tokens_after_reset
+            "Should have close to full capacity after reset, got: {tokens_after_reset}"
         );
     }
 
@@ -541,7 +544,7 @@ mod tests {
             }
         }
         
-        assert!(success_count >= 995, "Should allow most tokens, got: {}", success_count);
+        assert!(success_count >= 995, "Should allow most tokens, got: {success_count}");
         
         // Try a few more - should eventually be denied
         let mut denied = false;

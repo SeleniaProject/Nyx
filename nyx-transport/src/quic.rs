@@ -7,8 +7,7 @@ use bytes::Bytes;
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock as TokioRwLock;
 
-/// QUIC固有のエラー型
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// QUIC固有�Eエラー垁E#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuicError {
     Transport(String),
     Protocol(String),
@@ -54,8 +53,7 @@ pub enum QuicError {
     StreamClosed,
 }
 
-/// 接続の状態管理を行うための列挙型
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 接続�E状態管琁E��行うための列挙垁E#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionState {
     Connecting {
         peer: SocketAddr,
@@ -72,7 +70,7 @@ pub enum ConnectionState {
         peer: SocketAddr,
         close_reason: String,
         started_at: Instant,
-        remaining_stream_s: u32,
+        remaining_streams: u32,
     },
     Closed {
         close_reason: String,
@@ -80,15 +78,13 @@ pub enum ConnectionState {
     },
 }
 
-/// ストリームタイプ
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ストリームタイチE#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamType {
     Bidirectional,
     Unidirectional,
 }
 
-/// ストリーム状態
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// ストリーム状慁E#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamState {
     Open,
     HalfClosed,
@@ -103,8 +99,7 @@ pub enum EncryptionLevel {
     Application,
 }
 
-/// 接続統計
-#[derive(Debug, Clone)]
+/// 接続統訁E#[derive(Debug, Clone)]
 pub struct ConnectionStats {
     pub bytes_sent: u64,
     pub bytes_received: u64,
@@ -139,10 +134,9 @@ impl Default for ConnectionStats {
     }
 }
 
-/// エンドポイント統計
-#[derive(Debug, Clone)]
+/// エンド�Eイント統訁E#[derive(Debug, Clone)]
 pub struct EndpointStatistics {
-    pub active_connection_s: u32,
+    pub active_connections: u32,
     pub total_connection_s_created: u64,
     pub total_connection_s_closed: u64,
     pub total_bytes_sent: u64,
@@ -157,7 +151,7 @@ pub struct EndpointStatistics {
 impl Default for EndpointStatistics {
     fn default() -> Self {
         Self {
-            active_connection_s: 0,
+            active_connections: 0,
             total_connection_s_created: 0,
             total_connection_s_closed: 0,
             total_bytes_sent: 0,
@@ -171,10 +165,9 @@ impl Default for EndpointStatistics {
     }
 }
 
-/// QUIC設定
-#[derive(Debug, Clone)]
+/// QUIC設宁E#[derive(Debug, Clone)]
 pub struct QuicEndpointConfig {
-    pub max_connection_s: u32,
+    pub max_connections: u32,
     pub connection_timeout: Duration,
     pub idle_timeout: Duration,
     pub max_stream_s_per_connection: u32,
@@ -185,7 +178,7 @@ pub struct QuicEndpointConfig {
 impl Default for QuicEndpointConfig {
     fn default() -> Self {
         Self {
-            max_connection_s: 1000,
+            max_connections: 1000,
             connection_timeout: Duration::from_secs(10),
             idle_timeout: Duration::from_secs(30),
             max_stream_s_per_connection: 256,
@@ -195,17 +188,16 @@ impl Default for QuicEndpointConfig {
     }
 }
 
-/// QUIC接続
-#[derive(Clone)]
+/// QUIC接綁E#[derive(Clone)]
 pub struct QuicConnection {
     pub _connection_id: Bytes,
     pub _peer_addr: SocketAddr,
     pub state: Arc<TokioRwLock<ConnectionState>>,
-    pub stream_s: Arc<TokioRwLock<HashMap<u64, QuicStream>>>,
+    pub streams: Arc<TokioRwLock<HashMap<u64, QuicStream>>>,
     pub _next_stream_id: u64,
     pub established_at: Option<Instant>,
     pub _last_activity: Instant,
-    pub stat_s: Arc<TokioRwLock<ConnectionStats>>,
+    pub stats: Arc<TokioRwLock<ConnectionStats>>,
 }
 
 /// QUICストリーム
@@ -224,12 +216,11 @@ pub struct QuicEndpoint {
     socket: UdpSocket,
     bind_addr: SocketAddr,
     config: QuicEndpointConfig,
-    connection_s: Arc<TokioRwLock<HashMap<Bytes, QuicConnection>>>,
+    connections: Arc<TokioRwLock<HashMap<Bytes, QuicConnection>>>,
     statistics: Arc<TokioRwLock<EndpointStatistics>>,
 }
 
-/// QUIC暗号化コンテキスト
-#[allow(dead_code)]
+/// QUIC暗号化コンチE��スチE#[allow(dead_code)]
 pub struct QuicCryptoContext {
     initial_secret: [u8; 32],
     handshake_secret: [u8; 32],
@@ -240,12 +231,12 @@ pub struct QuicCryptoContext {
 }
 
 impl QuicConnection {
-    /// 新しいQUIC接続を作成
+    /// 新しいQUIC接続を作�E
     pub fn new(
         connection_id: Bytes,
         peer_addr: SocketAddr,
         is_server: bool,
-        stat_s: ConnectionStats,
+        stats: ConnectionStats,
     ) -> Result<Self, QuicError> {
         let state = if is_server {
             ConnectionState::Connecting {
@@ -265,25 +256,24 @@ impl QuicConnection {
             _connection_id: connection_id,
             _peer_addr: peer_addr,
             state: Arc::new(TokioRwLock::new(state)),
-            stream_s: Arc::new(TokioRwLock::new(HashMap::new())),
+            streams: Arc::new(TokioRwLock::new(HashMap::new())),
             _next_stream_id: if is_server { 1 } else { 0 },
             established_at: None,
             _last_activity: Instant::now(),
-            stat_s: Arc::new(TokioRwLock::new(stat_s)),
+            stats: Arc::new(TokioRwLock::new(stat_s)),
         })
     }
 
-    /// Connection ID取得
-    pub fn connection_id(&self) -> Bytes {
+    /// Connection ID取征E    pub fn connection_id(&self) -> Bytes {
         self._connection_id.clone()
     }
 
-    /// 接続が確立されているかチェック
+    /// 接続が確立されてぁE��かチェチE��
     pub async fn is_established(&self) -> bool {
         matches!(*self.state.read().await, ConnectionState::Connected { .. })
     }
 
-    /// 新しいストリーム作成
+    /// 新しいストリーム作�E
     pub async fn create_stream(&mut self, stream_type: StreamType) -> Result<u64, QuicError> {
         if !self.is_established().await {
             return Err(QuicError::Protocol(String::new()));
@@ -293,7 +283,7 @@ impl QuicConnection {
         self._next_stream_id += 1;
 
         let stream = QuicStream::new(stream_id, stream_type);
-        self.stream_s.write().await.insert(stream_id, stream);
+        self.streams.write().await.insert(stream_id, stream);
         self._last_activity = Instant::now();
 
         Ok(stream_id)
@@ -301,7 +291,7 @@ impl QuicConnection {
 
     /// ストリーム書き込み
     pub async fn write_stream(&mut self, stream_id: u64, _data: Bytes) -> Result<(), QuicError> {
-        let mut stream_s = self.stream_s.write().await;
+        let mut stream_s = self.streams.write().await;
         let stream = stream_s
             .get_mut(&stream_id)
             .ok_or(QuicError::StreamNotFound(String::from("Stream not found")))?;
@@ -314,7 +304,7 @@ impl QuicConnection {
 
     /// ストリーム読み込み
     pub async fn read_stream(&mut self, stream_id: u64) -> Result<Option<Bytes>, QuicError> {
-        let mut stream_s = self.stream_s.write().await;
+        let mut stream_s = self.streams.write().await;
         let stream = stream_s
             .get_mut(&stream_id)
             .ok_or(QuicError::StreamNotFound(String::from("Stream not found")))?;
@@ -325,14 +315,13 @@ impl QuicConnection {
         Ok(_data)
     }
 
-    /// 接続を閉じる
-    pub async fn close(&mut self) -> Result<(), QuicError> {
+    /// 接続を閉じめE    pub async fn close(&mut self) -> Result<(), QuicError> {
         let mut state = self.state.write().await;
         *state = ConnectionState::Closing {
             peer: self._peer_addr,
             close_reason: String::new(),
             started_at: Instant::now(),
-            remaining_stream_s: self.stream_s.read().await.len() as u32,
+            remaining_streams: self.streams.read().await.len() as u32,
         };
 
         Ok(())
@@ -359,7 +348,7 @@ impl QuicConnection {
 }
 
 impl QuicStream {
-    /// 新しいストリーム作成
+    /// 新しいストリーム作�E
     pub fn new(stream_id: u64, stream_type: StreamType) -> Self {
         Self {
             stream_id,
@@ -372,7 +361,7 @@ impl QuicStream {
         }
     }
 
-    /// データ書き込み
+    /// チE�Eタ書き込み
     pub async fn write_data(&mut self, _data: Bytes) -> Result<(), QuicError> {
         if self.state == StreamState::Closed {
             return Err(QuicError::StreamClosed);
@@ -382,7 +371,7 @@ impl QuicStream {
         Ok(())
     }
 
-    /// データ読み込み
+    /// チE�Eタ読み込み
     pub async fn read_data(&mut self) -> Result<Option<Bytes>, QuicError> {
         if self.recv_buffer.is_empty() {
             return Ok(None);
@@ -403,7 +392,7 @@ impl Default for QuicCryptoContext {
 }
 
 impl QuicCryptoContext {
-    /// 新しい暗号化コンテキスト作成
+    /// 新しい暗号化コンチE��スト作�E
     pub fn new() -> Self {
         Self {
             initial_secret: [0u8; 32],
@@ -415,8 +404,7 @@ impl QuicCryptoContext {
         }
     }
 
-    /// パケット暗号化
-    pub async fn encrypt_packet(
+    /// パケチE��暗号匁E    pub async fn encrypt_packet(
         &self,
         packet: &[u8],
         _packetnumber: u64,
@@ -424,8 +412,7 @@ impl QuicCryptoContext {
         Ok(Bytes::copy_from_slice(packet))
     }
 
-    /// パケット復号化
-    pub async fn decrypt_packet(
+    /// パケチE��復号匁E    pub async fn decrypt_packet(
         &self,
         encrypted_packet: &[u8],
         _packetnumber: u64,
@@ -435,12 +422,12 @@ impl QuicCryptoContext {
 }
 
 impl QuicEndpoint {
-    /// 新しいQUIC Endpoint作成
+    /// 新しいQUIC Endpoint作�E
     pub async fn new(bind_addr: SocketAddr, config: QuicEndpointConfig) -> Result<Self, QuicError> {
         let socket = UdpSocket::bind(bind_addr)
             .await
             .map_err(|e| QuicError::Io(e.to_string()))?;
-        let connection_s = Arc::new(TokioRwLock::new(HashMap::new()));
+        let connections = Arc::new(TokioRwLock::new(HashMap::new()));
         let statistics = Arc::new(TokioRwLock::new(EndpointStatistics::default()));
 
         Ok(Self {
@@ -452,29 +439,26 @@ impl QuicEndpoint {
         })
     }
 
-    /// 接続統計取得
-    pub async fn get_connection_stats(
+    /// 接続統計取征E    pub async fn get_connection_stats(
         &self,
         connection_id: &Bytes,
     ) -> Result<ConnectionStats, QuicError> {
-        let connection_s = self.connection_s.read().await;
+        let connections = self.connections.read().await;
         let connection = connection_s
             .get(connection_id)
             .ok_or_else(|| QuicError::ConnectionNotFound(connection_id.clone()))?;
 
-        let stat_s = connection.stat_s.read().await.clone();
+        let stats = connection.stats.read().await.clone();
 
         Ok(stat_s)
     }
 
-    /// アクティブな接続一覧取得
-    pub async fn active_connection_s(&self) -> Vec<Bytes> {
-        self.connection_s.read().await.keys().cloned().collect()
+    /// アクチE��ブな接続一覧取征E    pub async fn active_connection_s(&self) -> Vec<Bytes> {
+        self.connections.read().await.keys().cloned().collect()
     }
 
-    /// 接続取得
-    pub async fn get_connection(&self, connection_id: &Bytes) -> Result<QuicConnection, QuicError> {
-        let connection_s = self.connection_s.read().await;
+    /// 接続取征E    pub async fn get_connection(&self, connection_id: &Bytes) -> Result<QuicConnection, QuicError> {
+        let connections = self.connections.read().await;
         connection_s
             .get(connection_id)
             .cloned()
@@ -483,15 +467,15 @@ impl QuicEndpoint {
 
     /// 接続削除
     pub async fn remove_connection(&self, connection_id: &Bytes) -> Result<(), QuicError> {
-        let mut connection_s = self.connection_s.write().await;
+        let mut connection_s = self.connections.write().await;
         connection_s.remove(connection_id);
 
         Ok(())
     }
 
-    /// アイドル接続をクリーンアップ
+    /// アイドル接続をクリーンアチE�E
     pub async fn cleanup_idle_connection_s(&self) -> Result<(), QuicError> {
-        let mut connection_s = self.connection_s.write().await;
+        let mut connection_s = self.connections.write().await;
         let timeout_duration = self.config.idle_timeout;
         let current_time = Instant::now();
 
@@ -513,9 +497,9 @@ impl QuicEndpoint {
         Ok(())
     }
 
-    /// データ送信
+    /// チE�Eタ送信
     pub async fn send_data(&self, connection_id: &Bytes) -> Result<(), QuicError> {
-        let connection_s = self.connection_s.read().await;
+        let connections = self.connections.read().await;
         connection_s
             .get(connection_id)
             .ok_or_else(|| QuicError::ConnectionNotFound(connection_id.clone()))?;

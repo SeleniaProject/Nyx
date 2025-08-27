@@ -2,36 +2,36 @@ use crate::errors::{Error, Result};
 
 #[derive(Debug, Default, Clone)]
 pub struct StreamConfig {
-    pub __max_buffer: usize,
+    pub max_buffer: usize,
 }
 
 impl StreamConfig {
     pub fn new() -> Self {
         Self {
-            __max_buffer: 64 * 1024,
+            max_buffer: 64 * 1024,
         }
     }
 }
 
 #[derive(Debug, Default)]
 pub struct StreamBuilder {
-    __cfg: StreamConfig,
+    cfg: StreamConfig,
 }
 
 impl StreamBuilder {
     pub fn new() -> Self {
         Self {
-            __cfg: StreamConfig::new(),
+            cfg: StreamConfig::new(),
         }
     }
     pub fn max_buffer(mut self, sz: usize) -> Self {
-        self.__cfg.__max_buffer = sz;
+        self.cfg.max_buffer = sz;
         self
     }
     pub fn build(self) -> Result<StreamConfig> {
-        if self.__cfg.__max_buffer == 0 {
+        if self.cfg.max_buffer == 0 {
             return Err(Error::config("max_buffer must be > 0"));
         }
-        Ok(self.__cfg)
+        Ok(self.cfg)
     }
 }

@@ -1,21 +1,21 @@
-//! Management frame handling and error code_s for Nyx Protocol
+//! Management frame handling and error codes for Nyx Protocol
 //!
-//! Thi_s module provide_s utilitie_s for building CLOSE frame_s with specific
-//! error code_s, particularly for capability negotiation failu_re_s as defined
+//! This module provides utilities for building CLOSE frames with specific
+//! error codes, particularly for capability negotiation failures as defined
 //! in `spec/Capability_Negotiation_Policy.md`.
 
 use crate::capability::ERR_UNSUPPORTED_CAP;
 
 /// Build a CLOSE frame for unsupported capability error
 ///
-/// Create_s a CLOSE frame with `ERR_UNSUPPORTED_CAP = 0x07` error code
-/// and include_s the unsupported capability ID in the reason field.
+/// Creates a CLOSE frame with `ERR_UNSUPPORTED_CAP = 0x07` error code
+/// and includes the unsupported capability ID in the reason field.
 ///
-/// # Argument_s
+/// # Arguments
 /// * `id` - The unsupported capability ID (32-bit, stored as 4-byte big-endian)
 ///
-/// # Return_s
-/// Vector containing the CLOSE frame byte_s with error code and capability ID
+/// # Returns
+/// Vector containing the CLOSE frame bytes with error code and capability ID
 pub fn build_close_unsupported_cap(id: u32) -> Vec<u8> {
     let mut frame = Vec::with_capacity(6);
 
@@ -30,14 +30,14 @@ pub fn build_close_unsupported_cap(id: u32) -> Vec<u8> {
 
 /// Extract capability ID from CLOSE frame reason
 ///
-/// Parse_s a CLOSE frame reason to extract the unsupported capability ID.
-/// Expect_s exactly 6 byte_s: 2 byte_s error code + 4 byte_s capability ID.
+/// Parses a CLOSE frame reason to extract the unsupported capability ID.
+/// Expects exactly 6 bytes: 2 bytes error code + 4 bytes capability ID.
 ///
-/// # Argument_s
-/// * `reason` - The CLOSE frame reason byte_s
+/// # Arguments
+/// * `reason` - The CLOSE frame reason bytes
 ///
-/// # Return_s
-/// The capability ID if parsing succeed_s, None if format i_s invalid
+/// # Returns
+/// The capability ID if parsing succeeds, None if format is invalid
 pub fn parse_close_unsupported_cap(reason: &[u8]) -> Option<u32> {
     if reason.len() != 6 {
         return None;
@@ -54,8 +54,8 @@ pub fn parse_close_unsupported_cap(reason: &[u8]) -> Option<u32> {
     Some(cap_id)
 }
 
-/// Management frame type_s and utilitie_s
-pub mod frame_type_s {
+/// Management frame types and utilities
+pub mod frame_types {
     /// CLOSE frame type identifier
     pub const CLOSE_FRAME: u8 = 0x00;
 
@@ -66,8 +66,8 @@ pub mod frame_type_s {
     pub const PONG_FRAME: u8 = 0x02;
 }
 
-/// Common error code_s for management frame_s
-pub mod _error_code_s {
+/// Common error codes for management frames
+pub mod error_codes {
     /// Protocol error
     pub const ERR_PROTOCOL_ERROR: u16 = 0x01;
 
@@ -77,7 +77,7 @@ pub mod _error_code_s {
     /// Flow control error
     pub const ERR_FLOW_CONTROL_ERROR: u16 = 0x03;
 
-    /// Setting_s timeout
+    /// Settings timeout
     pub const ERR_SETTINGS_TIMEOUT: u16 = 0x04;
 
     /// Stream closed
@@ -86,12 +86,12 @@ pub mod _error_code_s {
     /// Frame size error
     pub const ERR_FRAME_SIZE_ERROR: u16 = 0x06;
 
-    /// Unsupported capability (from capability.r_s)
+    /// Unsupported capability (from capability.rs)
     pub const ERR_UNSUPPORTED_CAP: u16 = super::ERR_UNSUPPORTED_CAP;
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
     use crate::capability::CAP_PLUGIN_FRAMEWORK;
 

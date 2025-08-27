@@ -7,7 +7,7 @@ fn x25519_key_agreement_basic() {
     let bob_sk = StaticSecret::from([9u8; 32]);
     let alice_pk = PublicKey::from(&alice_sk);
     let bob_pk = PublicKey::from(&bob_sk);
-    let alice_s_s = alice_sk.diffie_hellman(&bob_pk);
-    let bob_s_s = bob_sk.diffie_hellman(&alice_pk);
-    assert_eq!(alice_s_s.as_bytes(), bob_s_s.as_bytes());
+    let alice_ss = alice_sk.diffie_hellman(&bob_pk);
+    let bob_ss = bob_sk.diffie_hellman(&alice_pk);
+    assert_eq!(alice_ss.as_bytes(), bob_ss.as_bytes());
 }

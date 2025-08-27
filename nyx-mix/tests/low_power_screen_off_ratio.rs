@@ -3,8 +3,8 @@ use nyx_mix::MixConfig;
 #[test]
 fn low_power_screen_off_cover_ratio_applied() {
     let config = MixConfig {
-        __base_cover_lambda: 20.0,
-        __low_power_ratio: 0.25,
+        base_cover_lambda: 20.0,
+        low_power_ratio: 0.25,
         ..Default::default()
     };
     let normal = apply_utilization(&config, 0.2, false);
@@ -16,9 +16,9 @@ fn low_power_screen_off_cover_ratio_applied() {
 }
 
 fn apply_utilization(config: &MixConfig, utilization: f64, low_power: bool) -> f64 {
-    let base = config.__base_cover_lambda as f64;
+    let base = config.base_cover_lambda as f64;
     if low_power {
-        base * config.__low_power_ratio as f64 * (1.0 + utilization)
+        base * config.low_power_ratio as f64 * (1.0 + utilization)
     } else {
         base * (1.0 + utilization)
     }

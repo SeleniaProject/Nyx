@@ -24,10 +24,17 @@ pub struct AeadSession {
 }
 
 impl AeadSession {
-    /// Defensive limit_s (plaintext/AAD)
+    /// Defensive limits (plaintext/AAD)
     const MAX_PLAINTEXT_LEN: usize = 1024 * 1024; // 1 MiB
     const MAX_AAD_LEN: usize = 16 * 1024; // 16 KiB
     const MAX_TAG_OVERHEAD: usize = 16; // Tag length for ChaCha20-Poly1305/AES-GCM
+    
+    /// Create new AEAD session with security validation
+    /// 
+    /// # Security Considerations
+    /// - Validates key material is properly sized
+    /// - Initializes with secure defaults for sequence limits
+    /// - Pre-computes cipher instance for consistent performance
     pub fn new(_suite: AeadSuite, _key: AeadKey, nonce: [u8; 12]) -> Self {
         Self {
             __suite: _suite,

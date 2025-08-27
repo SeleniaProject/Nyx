@@ -44,8 +44,7 @@ fn test_dht_node_discovery() {
     // assert_eq!(node_info.node_id(), &node1);
     // assert!(node_info.is_reachable());
     
-    // For now, just pass the test
-    assert!(true);
+    // For now, just pass the test - TODO: implement proper verification
 }
 
 /// Test DHT routing table functionality
@@ -59,8 +58,7 @@ fn test_dht_routing_table() {
     // let mut routing_table = RoutingTable::new();
     // let test_node = NodeId::generate();
     
-    // For now, just pass the test
-    assert!(true);
+    // For now, just pass the test - TODO: implement proper DHT operations
     
     // Test route entry creation and insertion
     // let route = RouteEntry::new(test_node, 1, 100); // hop count: 1, latency: 100ms
@@ -74,8 +72,7 @@ fn test_dht_routing_table() {
     // assert!(routing_table.remove_route(&test_node));
     // assert!(routing_table.find_route(&test_node).is_none());
     
-    // For now, just pass the test
-    assert!(true);
+    // For now, just pass the test - TODO: implement proper route entry tests
 }
 
 /// Test DHT key-value storage functionality
@@ -104,8 +101,7 @@ fn test_dht_kv_store() {
     // assert!(storage.capacity() > 0);
     // assert_eq!(storage.len(), 0);
     
-    // For now, just pass the test
-    assert!(true);
+    // For now, just pass the test - TODO: implement proper KV store tests
 }
 
 /// Test that the control module build_s without DHT dependencie_s

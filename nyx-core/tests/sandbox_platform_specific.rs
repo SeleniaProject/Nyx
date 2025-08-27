@@ -3,7 +3,7 @@
 /// Platform-specific sandbox test_s for Unix-like system_s (Linux/macOS)
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-mod unix_test_s {
+mod unix_tests {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatu_s};
     use std::env;
     use std::f_s;
@@ -98,7 +98,7 @@ mod unix_test_s {
 
     /// Test environment variable propagation for cooperative restriction_s
     #[test]
-    fn cooperative_environment_variable_s() {
+    fn cooperative_environment_variables() {
         // Clear environment first
         for var in &[
             "SANDBOX_POLICY",
@@ -130,18 +130,18 @@ mod unix_test_s {
         }
     }
 
-    /// Test that sandbox marker_s are created with correct proces_s ID
+    /// Test that sandbox markers are created with correct process ID
     #[test]
-    fn process_specific_marker_s() {
+    fn process_specific_markers() {
         let tmpdir = env::tempdir();
-        let process_id = proces_s::id();
+        let process_id = process::id();
 
-        // Apply both policie_s and check marker_s
-        let minimal_statu_s = apply_policy(SandboxPolicy::Minimal);
-        let strict_statu_s = apply_policy(SandboxPolicy::Strict);
+        // Apply both policies and check markers
+        let minimal_status = apply_policy(SandboxPolicy::Minimal);
+        let strict_status = apply_policy(SandboxPolicy::Strict);
 
-        if minimal_statu_s == SandboxStatu_s::Applied || strict_statu_s == SandboxStatu_s::Applied {
-            // Check for proces_s-specific marker file_s
+        if minimal_status == SandboxStatus::Applied || strict_status == SandboxStatus::Applied {
+            // Check for process-specific marker files
             let platform_prefix = if cfg!(target_os = "macos") {
                 "macos_"
             } else {
@@ -224,7 +224,7 @@ mod unix_test_s {
 }
 
 #[cfg(windows)]
-mod windows_test_s {
+mod windows_tests {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatus};
 
     /// Test windows-specific Job Object functionality
@@ -262,7 +262,7 @@ mod windows_test_s {
 }
 
 #[cfg(target_os = "openbsd")]
-mod openbsd_test_s {
+mod openbsd_tests {
     use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatu_s};
 
     /// Test OpenBSD pledge/unveil functionality

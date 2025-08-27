@@ -213,6 +213,66 @@ impl NetworkSimulator {
     }
 }
 
+/// Multi-path simulator that fan_s out a flow over N path_s and merge_s delivery schedule.
+pub struct MultiPathSimulator {
+    path_s: Vec<NetworkSimulator>,
+    weight_s: Vec<f64>,
+    rr_cursor: usize,
+}
+
+impl MultiPathSimulator {
+    /// Construct a multipath simulator from N identical config_s but different seed_s.
+    pub fn newn(cfg: SimConfig, seed_s: &[u64], weight_s: Option<Vec<f64>>) -> Self {
+        let path_s = seed_s
+            .iter()
+            .copied()
+            .map(|_s| NetworkSimulator::new(cfg, _s))
+            .collect::<Vec<_>>();
+        let w = weight_s.unwrap_or_else(|| vec![1.0; seed_s.len()]);
+        assert_eq!(path_s.len(), w.len());
+        Self {
+            path_s,
+            weight_s: w,
+            rr_cursor: 0,
+        }
+    }
+
+    /// Send `n` packet_s split acros_s path_s by weighted round-robin.
+    pub fn send_burst(&mut self, n: usize) -> Vec<DeliveryEvent> {
+        if self.path_s.is_empty() || n == 0 {
+            return Vec::new();
+        }
+        // Precompute integer quota_s by normalized weight_s
+        let sum_w: f64 = self.weight_s.iter().sum();
+        let mut quota_s = self
+            .weight_s
+            .iter()
+            .map(|w| ((*w / sum_w) * n as f64).floor() as usize)
+            .collect::<Vec<_>>();
+        let mut assigned: usize = quota_s.iter().sum();
+        // Distribute remaining via round-robin starting from rr_cursor
+        let mut idx = self.rr_cursor % self.path_s.len();
+        while assigned < n {
+            quota_s[idx] += 1;
+            assigned += 1;
+            idx = (idx + 1) % self.path_s.len();
+        }
+        self.rr_cursor = idx;
+
+        // Collect per-path event_s and merge by (time, seq-within-path-id, path-index)
+        let mut merged: Vec<(u64, u64, usize, DeliveryEvent)> = Vec::with_capacity(n);
+        for (pi, (p, q)) in self.path_s.iter_mut().zip(quota_s.into_iter()).enumerate() {
+            let mut events = p.send_burst(q);
+            for e in events.drain(..) {
+                // Make sequence globally unique using path index in the tiebreak key only
+                merged.push((e.delivery_m_s, e.seq, pi, e.clone()));
+            }
+        }
+        merged.sort_by_key(|k| (k.0, k.1, k.2));
+        merged.into_iter().map(|(_, _, _, e)| e).collect()
+    }
+}
+
 #[cfg(test)]
 mod test_s {
     use super::*;
@@ -373,65 +433,5 @@ mod test_s {
         assert!(events
             .windows(2)
             .all(|w| w[0].delivery_m_s <= w[1].delivery_m_s));
-    }
-}
-
-/// Multi-path simulator that fan_s out a flow over N path_s and merge_s delivery schedule.
-pub struct MultiPathSimulator {
-    path_s: Vec<NetworkSimulator>,
-    weight_s: Vec<f64>,
-    rr_cursor: usize,
-}
-
-impl MultiPathSimulator {
-    /// Construct a multipath simulator from N identical config_s but different seed_s.
-    pub fn newn(cfg: SimConfig, seed_s: &[u64], weight_s: Option<Vec<f64>>) -> Self {
-        let path_s = seed_s
-            .iter()
-            .copied()
-            .map(|_s| NetworkSimulator::new(cfg, _s))
-            .collect::<Vec<_>>();
-        let w = weight_s.unwrap_or_else(|| vec![1.0; seed_s.len()]);
-        assert_eq!(path_s.len(), w.len());
-        Self {
-            path_s,
-            weight_s: w,
-            rr_cursor: 0,
-        }
-    }
-
-    /// Send `n` packet_s split acros_s path_s by weighted round-robin.
-    pub fn send_burst(&mut self, n: usize) -> Vec<DeliveryEvent> {
-        if self.path_s.is_empty() || n == 0 {
-            return Vec::new();
-        }
-        // Precompute integer quota_s by normalized weight_s
-        let sum_w: f64 = self.weight_s.iter().sum();
-        let mut quota_s = self
-            .weight_s
-            .iter()
-            .map(|w| ((*w / sum_w) * n as f64).floor() as usize)
-            .collect::<Vec<_>>();
-        let mut assigned: usize = quota_s.iter().sum();
-        // Distribute remaining via round-robin starting from rr_cursor
-        let mut idx = self.rr_cursor % self.path_s.len();
-        while assigned < n {
-            quota_s[idx] += 1;
-            assigned += 1;
-            idx = (idx + 1) % self.path_s.len();
-        }
-        self.rr_cursor = idx;
-
-        // Collect per-path event_s and merge by (time, seq-within-path-id, path-index)
-        let mut merged: Vec<(u64, u64, usize, DeliveryEvent)> = Vec::with_capacity(n);
-        for (pi, (p, q)) in self.path_s.iter_mut().zip(quota_s.into_iter()).enumerate() {
-            let mut events = p.send_burst(q);
-            for e in events.drain(..) {
-                // Make sequence globally unique using path index in the tiebreak key only
-                merged.push((e.delivery_m_s, e.seq, pi, e.clone()));
-            }
-        }
-        merged.sort_by_key(|k| (k.0, k.1, k.2));
-        merged.into_iter().map(|(_, _, _, e)| e).collect()
     }
 }

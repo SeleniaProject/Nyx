@@ -7,21 +7,21 @@ use nyx_stream::{AsyncStream, AsyncStreamConfig, pair};
 /// SDK wrapper for streams. Delegates to nyx-stream's AsyncStream, providing an adapter.
 #[derive(Clone)]
 pub struct NyxStream {
-    __inner: AsyncStream,
+    inner: AsyncStream,
 }
 
 impl NyxStream {
     /// Create a new stream with default configuration
     pub fn new() -> Self {
         Self {
-            __inner: AsyncStream::new(AsyncStreamConfig::default()),
+            inner: AsyncStream::new(AsyncStreamConfig::default()),
         }
     }
 
     /// Create a stream with custom configuration
     pub fn with_config(config: AsyncStreamConfig) -> Self {
         Self {
-            __inner: AsyncStream::new(config),
+            inner: AsyncStream::new(config),
         }
     }
 
@@ -37,14 +37,14 @@ impl NyxStream {
         };
         let (inner1, inner2) = pair(config1, config2);
         (
-            Self { __inner: inner1 },
-            Self { __inner: inner2 },
+            Self { inner: inner1 },
+            Self { inner: inner2 },
         )
     }
 
     /// Send data through the stream
     pub async fn send<T: Into<Bytes>>(&mut self, data: T) -> Result<()> {
-        self.__inner
+        self.inner
             .send(data.into())
             .await
             .map_err(|e| Error::Stream(e.to_string()))
@@ -52,7 +52,7 @@ impl NyxStream {
 
     /// Receive data from the stream with timeout
     pub async fn recv(&mut self, _timeout_ms: u64) -> Result<Option<Bytes>> {
-        self.__inner
+        self.inner
             .recv()
             .await
             .map_err(|e| Error::Stream(e.to_string()))
@@ -60,7 +60,7 @@ impl NyxStream {
 
     /// Close the stream
     pub async fn close(&mut self) -> Result<()> {
-        self.__inner
+        self.inner
             .close()
             .await
             .map_err(|e| Error::Stream(e.to_string()))
@@ -68,7 +68,7 @@ impl NyxStream {
 
     /// Check if the stream is closed
     pub fn is_closed(&self) -> bool {
-        self.__inner.is_closed()
+        self.inner.is_closed()
     }
 }
 

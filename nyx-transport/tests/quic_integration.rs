@@ -1,14 +1,14 @@
 #![cfg(feature = "quic")]
-//! Comprehensive QUIC Transport Integration Test_s
+//! Comprehensive QUIC Transport Integration Tests
 //!
 //! This test suite validates the production-grade QUIC implementation with:
 //! - Connection establishment and lifecycle management
-//! - Stream multiplexing with different type_s and prioritie_s
+//! - Stream multiplexing with different types and priorities
 //! - Datagram transmission with reliability guarantees
 //! - Flow control and congestion management
-//! - Error handling and recovery scenario_s
-//! - Performance metric_s and monitoring
-//! - Security and DoS protection mechanism_s
+//! - Error handling and recovery scenarios
+//! - Performance metrics and monitoring
+//! - Security and DoS protection mechanisms
 
 use std::{
     net::SocketAddr,
@@ -16,7 +16,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use byte_s::Byte_s;
+use bytes::Bytes;
 use tokio::{
     sync::mpsc,
     time::{sleep, timeout},
@@ -148,9 +148,9 @@ async fn test_bidirectional_stream_communication() -> TestResult<()> {
     // Client send_s data
     client_conn.send_on_stream(stream_id, test_data).await?;
 
-    // Server receive_s incoming stream
+    // Server receives incoming stream
     let incoming_result =
-        timeout(Duration::from_sec_s(5), server_conn.connection.accept_bi()).await;
+        timeout(Duration::from_secs(5), server_conn.connection.accept_bi()).await;
 
     assert!(
         incoming_result.is_ok(),
@@ -158,21 +158,21 @@ async fn test_bidirectional_stream_communication() -> TestResult<()> {
     );
 
     if let Ok(Ok((mut send, mut recv))) = incoming_result {
-        // Server read_s data
+        // Server reads data
         let received = recv.read_chunk(1024, false).await??;
 
         assert_eq!(
-            received.byte_s, test_data,
+            received.bytes, test_data,
             "Received data should match sent data"
         );
 
-        // Server echoe_s back
-        send.write_all(&received.byte_s).await?;
+        // Server echoes back
+        send.write_all(&received.bytes).await?;
         send.finish().await?;
 
-        // Client receive_s echo
+        // Client receives echo
         let echo = client_conn
-            .recv_from_stream(stream_id, Duration::from_sec_s(5))
+            .recv_from_stream(stream_id, Duration::from_secs(5))
             .await??;
 
         assert_eq!(echo, test_data, "Echo should match original data");
@@ -197,9 +197,9 @@ async fn test_unidirectional_stream() -> TestResult<()> {
     // Client send_s data
     client_conn.send_on_stream(stream_id, test_data).await?;
 
-    // Server receive_s incoming stream
+    // Server receives incoming stream
     let incoming_result =
-        timeout(Duration::from_sec_s(5), server_conn.connection.accept_uni()).await;
+        timeout(Duration::from_secs(5), server_conn.connection.accept_uni()).await;
 
     assert!(
         incoming_result.is_ok(),
@@ -207,11 +207,11 @@ async fn test_unidirectional_stream() -> TestResult<()> {
     );
 
     if let Ok(Ok(mut recv)) = incoming_result {
-        // Server read_s data
+        // Server reads data
         let received = recv.read_chunk(1024, false).await??;
 
         assert_eq!(
-            received.byte_s, test_data,
+            received.bytes, test_data,
             "Received data should match sent data"
         );
     }
@@ -227,11 +227,11 @@ async fn test_datagram_transmission() -> TestResult<()> {
 
     let test_data = b"Datagram message";
 
-    // Client send_s datagram
+    // Client sends datagram
     client_conn.send_datagram(test_data).await?;
 
-    // Server receive_s datagram
-    let received = server_conn.recv_datagram(Duration::from_sec_s(5)).await??;
+    // Server receives datagram
+    let received = server_conn.recv_datagram(Duration::from_secs(5)).await??;
 
     assert_eq!(
         received, test_data,
@@ -244,10 +244,10 @@ async fn test_datagram_transmission() -> TestResult<()> {
 
 #[tokio::test]
 #[traced_test]
-async fn test_multiple_stream_type_s() -> TestResult<()> {
+async fn test_multiple_stream_types() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(10, 11).await?;
 
-    // Open multiple stream_s of different type_s
+    // Open multiple streams of different types
     let control_stream = client_conn
         .open_bidirectional_stream(StreamType::Control, 1)
         .await?;
@@ -341,31 +341,31 @@ async fn test_stream_flow_control() -> TestResult<()> {
 
 #[tokio::test]
 #[traced_test]
-async fn test_connection_statistic_s() -> TestResult<()> {
+async fn test_connection_statistics() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(14, 15).await?;
 
-    // Get initial stat_s
-    let initial_stat_s = client_conn.get_stat_s();
-    assert_eq!(initial_stat_s.bytes_sent, 0);
-    assert_eq!(initial_stat_s.streams_opened, 0);
+    // Get initial stats
+    let initial_stats = client_conn.get_stats();
+    assert_eq!(initial_stats.bytes_sent, 0);
+    assert_eq!(initial_stats.streams_opened, 0);
 
     // Open a stream and send data
     let stream_id = client_conn
         .open_bidirectional_stream(StreamType::Control, 1)
         .await?;
 
-    let test_data = b"Statistic_s test data";
+    let test_data = b"Statistics test data";
     client_conn.send_on_stream(stream_id, test_data).await?;
 
-    // Check updated stat_s
-    let updated_stat_s = client_conn.get_stat_s();
-    assert!(updated_stat_s.bytes_sent >= test_data.len() as u64);
-    assert_eq!(updated_stat_s.streams_opened, 1);
-    assert!(updated_stat_s.connection_duration > Duration::ZERO);
+    // Check updated stats
+    let updated_stats = client_conn.get_stats();
+    assert!(updated_stats.bytes_sent >= test_data.len() as u64);
+    assert_eq!(updated_stats.streams_opened, 1);
+    assert!(updated_stats.connection_duration > Duration::ZERO);
 
     info!(
-        "Connection statistic_s test passed - sent {} byte_s, opened {} stream_s",
-        updated_stat_s.bytes_sent, updated_stat_s.streams_opened
+        "Connection statistics test passed - sent {} bytes, opened {} streams",
+        updated_stats.bytes_sent, updated_stats.streams_opened
     );
     Ok(())
 }
@@ -392,12 +392,12 @@ async fn test_stream_lifecycle() -> TestResult<()> {
     client_conn.close_stream(stream_id).await?;
 
     // Verify stream is removed
-    assert!(!client_conn.stream_s.read().await.contains_key(&stream_id));
+    assert!(!client_conn.streams.read().await.contains_key(&stream_id));
 
-    // Verify stat_s updated
-    let stat_s = client_conn.get_stat_s();
-    assert_eq!(stat_s.streams_opened, 1);
-    assert_eq!(stat_s.streams_closed, 1);
+    // Verify stats updated
+    let stats = client_conn.get_stats();
+    assert_eq!(stats.streams_opened, 1);
+    assert_eq!(stats.streams_closed, 1);
 
     info!("Stream lifecycle test passed");
     Ok(())
@@ -428,19 +428,19 @@ async fn test_large_datagram_rejection() -> TestResult<()> {
 
 #[tokio::test]
 #[traced_test]
-async fn test_max_concurrent_stream_s() -> TestResult<()> {
+async fn test_max_concurrent_streams() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(20, 21).await?;
 
-    let max_stream_s = client_conn.max_stream_s;
-    let mut opened_stream_s = Vec::new();
+    let max_streams = client_conn.max_streams;
+    let mut opened_streams = Vec::new();
 
-    // Open stream_s up to the limit
-    for i in 0..max_stream_s {
+    // Open streams up to the limit
+    for i in 0..max_streams {
         let stream_id = client_conn
             .open_unidirectional_stream(StreamType::Telemetry, 1)
             .await
             .map_err(|e| format!("Failed to open stream {}: {}", i, e))?;
-        opened_stream_s.push(stream_id);
+        opened_streams.push(stream_id);
     }
 
     // Try to open one more stream (should fail)
@@ -448,18 +448,18 @@ async fn test_max_concurrent_stream_s() -> TestResult<()> {
         .open_unidirectional_stream(StreamType::Telemetry, 1)
         .await;
 
-    assert!(result.is_err(), "Should not be able to exceed max stream_s");
+    assert!(result.is_err(), "Should not be able to exceed max streams");
 
     match result.unwrap_err() {
         QuicError::ResourceExhausted { resource } => {
-            assert!(resource.contains("Maximum stream_s"));
+            assert!(resource.contains("Maximum streams"));
         }
         e => return Err(format!("Expected ResourceExhausted, got {:?}", e).into()),
     }
 
     info!(
-        "Max concurrent stream_s test passed - opened {} stream_s",
-        opened_stream_s.len()
+        "Max concurrent streams test passed - opened {} streams",
+        opened_streams.len()
     );
 }
 
@@ -505,9 +505,9 @@ async fn test_connection_timeout() -> TestResult<()> {
 async fn test_idle_connection_cleanup() -> TestResult<()> {
     let server_config = QuicConfig {
         bind_addr: "127.0.0.1:9023".parse()?,
-        idle_timeout_sec_s: 2, // Short timeout for testing
-        keep_alive_interval_sec_s: 1,
-        max_concurrent_stream_s: 10,
+        idle_timeout_secs: 2, // Short timeout for testing
+        keep_alive_interval_secs: 1,
+        max_concurrent_streams: 10,
     };
     let mut server_transport = QuicTransport::new(server_config).await?;
 
@@ -515,9 +515,9 @@ async fn test_idle_connection_cleanup() -> TestResult<()> {
 
     let client_config = QuicConfig {
         bind_addr: "127.0.0.1:9024".parse()?,
-        idle_timeout_sec_s: 2,
-        keep_alive_interval_sec_s: 1,
-        max_concurrent_stream_s: 10,
+        idle_timeout_secs: 2,
+        keep_alive_interval_secs: 1,
+        max_concurrent_streams: 10,
     };
     let client_transport = QuicTransport::new(client_config).await?;
 
@@ -532,7 +532,7 @@ async fn test_idle_connection_cleanup() -> TestResult<()> {
     assert!(client_conn.is_active());
 
     // Wait for idle timeout (add buffer time)
-    sleep(Duration::from_sec_s(4)).await;
+    sleep(Duration::from_secs(4)).await;
 
     // Connection should eventually be marked as inactive due to idle timeout
     // Note: This test might be flaky depending on timing and quinn's internal behavior
@@ -542,14 +542,14 @@ async fn test_idle_connection_cleanup() -> TestResult<()> {
 
 #[tokio::test]
 #[traced_test]
-async fn test_concurrent_operation_s() -> TestResult<()> {
+async fn test_concurrent_operations() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(25, 26).await?;
 
     let client_conn_clone = client_conn.clone();
     let server_conn_clone = server_conn.clone();
 
-    // Spawn multiple concurrent operation_s
-    let handle_s: Vec<_> = (0..5)
+    // Spawn multiple concurrent operations
+    let handles: Vec<_> = (0..5)
         .map(|i| {
             let client = client_conn_clone.clone();
             tokio::spawn(async move {
@@ -569,19 +569,19 @@ async fn test_concurrent_operation_s() -> TestResult<()> {
         })
         .collect();
 
-    // Wait for all operation_s to complete
-    let stream_id_s: Vec<_> = futu_re_s::future::try_join_all(handle_s)
+    // Wait for all operations to complete
+    let stream_ids: Vec<_> = futures::future::try_join_all(handles)
         .await?
         .into_iter()
         .collect();
 
-    // Verify all stream_s were created
-    assert_eq!(stream_id_s.len(), 5);
-    let active_stream_s = client_conn.stream_s.read().await.len();
-    assert_eq!(active_stream_s, 5);
+    // Verify all streams were created
+    assert_eq!(stream_ids.len(), 5);
+    let active_streams = client_conn.streams.read().await.len();
+    assert_eq!(active_streams, 5);
 
-    // Send datagram_s concurrently
-    let datagram_handle_s: Vec<_> = (0..3)
+    // Send datagrams concurrently
+    let datagram_handles: Vec<_> = (0..3)
         .map(|i| {
             let client = client_conn_clone.clone();
             tokio::spawn(async move {
@@ -591,15 +591,15 @@ async fn test_concurrent_operation_s() -> TestResult<()> {
         })
         .collect();
 
-    // Wait for all datagram_s
-    let datagram_result_s: Vec<_> = futu_re_s::future::try_join_all(datagram_handle_s).await?;
+    // Wait for all datagrams
+    let datagram_results: Vec<_> = futures::future::try_join_all(datagram_handles).await?;
 
-    // All datagram_s should succeed
-    for result in datagram_result_s {
+    // All datagrams should succeed
+    for result in datagram_results {
         result?;
     }
 
-    info!("Concurrent operation_s test passed");
+    info!("Concurrent operations test passed");
     Ok(())
 }
 
@@ -637,7 +637,7 @@ async fn test_error_recovery() -> TestResult<()> {
 
     // Try to receive from closed stream (should fail)
     let result = client_conn
-        .recv_from_stream(stream_id, Duration::from_sec_s(1))
+        .recv_from_stream(stream_id, Duration::from_secs(1))
         .await;
 
     assert!(
@@ -651,16 +651,16 @@ async fn test_error_recovery() -> TestResult<()> {
 
 #[tokio::test]
 #[traced_test]
-async fn test_transport_statistic_s() -> TestResult<()> {
+async fn test_transport_statistics() -> TestResult<()> {
     let config = create_test_config(29);
     let transport = QuicTransport::new(config).await?;
 
-    // Get initial transport stat_s
-    let initial_stat_s = transport.get_transport_stat_s().await;
-    assert_eq!(initial_stat_s.total_connection_s, 0);
-    assert_eq!(initial_stat_s.active_connection_s, 0);
+    // Get initial transport stats
+    let initial_stats = transport.get_transport_stats().await;
+    assert_eq!(initial_stats.total_connections, 0);
+    assert_eq!(initial_stats.active_connections, 0);
 
-    info!("Transport statistic_s test passed");
+    info!("Transport statistics test passed");
     Ok(())
 }
 

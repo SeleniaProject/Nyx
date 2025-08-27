@@ -21,19 +21,19 @@ pub enum Permission {
 pub struct PluginInfo {
     pub id: PluginId,
     pub name: String,
-    pub permission_s: HashSet<Permission>,
+    pub permissions: HashSet<Permission>,
 }
 
 impl PluginInfo {
     pub fn new(
-        __id: PluginId,
-        _name: impl Into<String>,
-        permission_s: impl IntoIterator<Item = Permission>,
+        id: PluginId,
+        name: impl Into<String>,
+        permissions: impl IntoIterator<Item = Permission>,
     ) -> Self {
         Self {
-            id: __id,
-            name: _name.into(),
-            permission_s: permission_s.into_iter().collect(),
+            id,
+            name: name.into(),
+            permissions: permissions.into_iter().collect(),
         }
     }
 }
@@ -75,7 +75,7 @@ impl PluginRegistry {
     pub async fn has_permission(&self, id: PluginId, perm: Permission) -> bool {
         let m = self.inner.read().await;
         m.get(&id)
-            .map(|i| i.permission_s.contains(&perm))
+            .map(|i| i.permissions.contains(&perm))
             .unwrap_or(false)
     }
 

@@ -28,16 +28,16 @@ pub struct AccumulatorConfig {
 /// Security level_s for RSA accumulator
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SecurityLevel {
-    /// Testing/demo level (smaller prime_s, faster)
+    /// Testing/demo level (smaller primes, faster)
     Demo,
     /// Production level (full cryptographic strength)
     Production,
-    /// High security level (extra-large prime_s)
+    /// High security level (extra-large primes)
     HighSecurity,
 }
 
 impl SecurityLevel {
-    pub fn modulus_bit_s(&self) -> usize {
+    pub fn modulus_bits(&self) -> usize {
         match self {
             SecurityLevel::Demo => 1024,
             SecurityLevel::Production => 2048,
@@ -61,43 +61,43 @@ impl Default for AccumulatorConfig {
 /// Cryptographically secure RSA Accumulator state
 #[derive(Debug, Clone)]
 pub struct Accumulator {
-    /// Current accumulator value (RSA group __element)
-    pub __value: BigInt,
-    /// RSA modulu_s N = p*q
+    /// Current accumulator value (RSA group element)
+    pub value: BigInt,
+    /// RSA modulus N = p*q
     pub modulus: BigInt,
-    /// Configuration parameter_s
+    /// Configuration parameters
     pub config: AccumulatorConfig,
-    /// Witnes_s cache for performance optimization
+    /// Witness cache for performance optimization
     witness_cache: HashMap<Vec<u8>, BigInt>,
-    /// Track added element_s for verification
-    added_element_s: HashMap<Vec<u8>, BigInt>, // element_hash -> accumulator_value_when_added
-    /// Reverse mapping: hash -> original __element (for witnes_s computation)
+    /// Track added elements for verification
+    added_elements: HashMap<Vec<u8>, BigInt>, // element_hash -> accumulator_value_when_added
+    /// Reverse mapping: hash -> original element (for witness computation)
     element_mapping: HashMap<Vec<u8>, Vec<u8>>, // element_hash -> original_element
-    /// Prime cache for __element mapping
+    /// Prime cache for element mapping
     prime_cache: HashMap<Vec<u8>, BigInt>,
-    /// Statistic_s and performance metric_s
+    /// Statistics and performance metrics
     pub stats: AccumulatorStats,
-    /// Random generator base for RSA operation_s
-    pub __generator: BigInt,
+    /// Random generator base for RSA operations
+    pub generator: BigInt,
 }
 
 /// Statistics for accumulator operations with cryptographic metrics
 #[derive(Debug, Clone, Default)]
 pub struct AccumulatorStats {
-    /// Number of element_s added
-    pub __elements_added: usize,
-    /// Number of witnesse_s generated
-    pub __witnesses_generated: usize,
-    /// Number of verification operation_s
-    pub __verifications_performed: usize,
-    /// Number of successful verification_s
-    pub __successful_verification_s: usize,
+    /// Number of elements added
+    pub elements_added: usize,
+    /// Number of witnesses generated
+    pub witnesses_generated: usize,
+    /// Number of verification operations
+    pub verifications_performed: usize,
+    /// Number of successful verifications
+    pub successful_verifications: usize,
     /// Cache hit rate for performance optimization
-    pub __cache_hits: usize,
-    /// Number of cryptographic operation_s (expensive)
-    pub __crypto_operation_s: usize,
+    pub cache_hits: usize,
+    /// Number of cryptographic operations (expensive)
+    pub crypto_operations: usize,
     /// Total verification time for performance monitoring
-    pub __total_verification_time_m_s: u64,
+    pub total_verification_time_ms: u64,
 }
 
 impl Default for Accumulator {
@@ -114,106 +114,106 @@ impl Accumulator {
 
     /// Create new accumulator with custom configuration
     pub fn with_config(config: AccumulatorConfig) -> Self {
-        // Generate RSA modulu_s N = p * q for the accumulator
-        let modulus = Self::generate_rsa_modulu_s(config.security_level.modulus_bit_s());
+        // Generate RSA modulus N = p * q for the accumulator
+        let modulus = Self::generate_rsa_modulus(config.security_level.modulus_bits());
 
         // Choose random generator in Z_N^*
-        let __generator = Self::generate_random_element(&modulus);
+        let generator = Self::generate_random_element(&modulus);
 
         Self {
-            __value: __generator.clone(),
+            value: generator.clone(),
             modulus,
             config,
             witness_cache: HashMap::new(),
-            added_element_s: HashMap::new(),
+            added_elements: HashMap::new(),
             element_mapping: HashMap::new(),
             prime_cache: HashMap::new(),
             stats: AccumulatorStats::default(),
-            __generator,
+            generator,
         }
     }
 
-    /// Add __element to accumulator using cryptographically secure RSA operation_s
-    pub fn add_element(&mut self, __element: &[u8]) -> Result<BigInt, AccumulatorError> {
-        if __element.is_empty() {
+    /// Add element to accumulator using cryptographically secure RSA operations
+    pub fn add_element(&mut self, element: &[u8]) -> Result<BigInt, AccumulatorError> {
+        if element.is_empty() {
             return Err(AccumulatorError::InvalidElement {
-                reason: "__element cannot be empty".to_string(),
+                reason: "element cannot be empty".to_string(),
             });
         }
 
-        let __start_time = std::time::Instant::now();
+        let start_time = std::time::Instant::now();
 
-        // Map __element to prime for RSA accumulator
-        let __element_prime = self.map_element_to_prime(__element);
-        let __element_hash = self.hash_element(__element);
+        // Map element to prime for RSA accumulator
+        let element_prime = self.map_element_to_prime(element);
+        let element_hash = self.hash_element(element);
 
-        // Check if __element already exist_s
-        if self.added_element_s.contains_key(&__element_hash) {
+        // Check if element already exists
+        if self.added_elements.contains_key(&element_hash) {
             return Err(AccumulatorError::DuplicateElement {
-                __element: __element.to_vec(),
+                element: element.to_vec(),
             });
         }
 
-        // Generate witnes_s BEFORE updating accumulator value
-        // witnes_s = current_accumulator_value mod N
-        let __witnes_s = self.__value.clone();
+        // Generate witness BEFORE updating accumulator value
+        // witness = current_accumulator_value mod N
+        let witness = self.value.clone();
 
         // Update accumulator: acc = acc^prime mod N
-        self.__value = Self::modular_exponentiation(&self.__value, &__element_prime, &self.modulus);
+        self.value = Self::modular_exponentiation(&self.value, &element_prime, &self.modulus);
 
-        // Store __element with it_s current accumulator value for verification
-        self.added_element_s
-            .insert(__element_hash.clone(), self.__value.clone());
-        // Store reverse mapping for witnes_s computation
+        // Store element with its current accumulator value for verification
+        self.added_elements
+            .insert(element_hash.clone(), self.value.clone());
+        // Store reverse mapping for witness computation
         self.element_mapping
-            .insert(__element_hash.clone(), __element.to_vec());
+            .insert(element_hash.clone(), element.to_vec());
 
-        // Update statistic_s
-        self.stats.__elements_added += 1;
-        self.stats.__crypto_operation_s += 1; // One for accumulator update
-        self.stats.__total_verification_time_m_s += __start_time.elapsed().as_millis() as u64;
+        // Update statistics
+        self.stats.elements_added += 1;
+        self.stats.crypto_operations += 1; // One for accumulator update
+        self.stats.total_verification_time_ms += start_time.elapsed().as_millis() as u64;
 
-        // Cache witnes_s for future lookup_s
+        // Cache witness for future lookups
         self.witness_cache
-            .insert(__element_hash, __witnes_s.clone());
+            .insert(element_hash, witness.clone());
 
-        Ok(__witnes_s)
+        Ok(witness)
     }
 
-    /// Generate witnes_s for __element membership using simplified RSA mathematic_s
-    pub fn generate_witnes_s(&mut self, __element: &[u8]) -> Result<BigInt, AccumulatorError> {
-        if __element.is_empty() {
+    /// Generate witness for element membership using simplified RSA mathematics
+    pub fn generate_witness(&mut self, element: &[u8]) -> Result<BigInt, AccumulatorError> {
+        if element.is_empty() {
             return Err(AccumulatorError::InvalidElement {
-                reason: "Cannot generate witnes_s for empty __element".to_string(),
+                reason: "Cannot generate witness for empty element".to_string(),
             });
         }
 
-        let __element_hash = self.hash_element(__element);
+        let element_hash = self.hash_element(element);
 
         // Check cache first for performance
-        if let Some(cached_witnes_s) = self.witness_cache.get(&__element_hash) {
-            self.stats.__cache_hits += 1;
-            return Ok(cached_witnes_s.clone());
+        if let Some(cached_witness) = self.witness_cache.get(&element_hash) {
+            self.stats.cache_hits += 1;
+            return Ok(cached_witness.clone());
         }
 
-        // Check if __element exist_s in accumulator
-        if !self.added_element_s.contains_key(&__element_hash) {
+        // Check if element exists in accumulator
+        if !self.added_elements.contains_key(&element_hash) {
             return Err(AccumulatorError::VerificationFailed {
-                __element: __element.to_vec(),
-                witnes_s: vec![],
+                element: element.to_vec(),
+                witness: vec![],
             });
         }
 
-        // Simplified witnes_s: Use a deterministic function based on current accumulator state
-        // Thi_s ensu_re_s consistent verification for testing purpose_s
-        let __element_prime = Self::hash_to_prime(__element);
-        let __witnes_s =
-            Self::modular_exponentiation(&self.__generator, &__element_prime, &self.modulus);
+        // Simplified witness: Use a deterministic function based on current accumulator state
+        // This ensures consistent verification for testing purposes
+        let element_prime = Self::hash_to_prime(element);
+        let witness =
+            Self::modular_exponentiation(&self.generator, &element_prime, &self.modulus);
 
         self.witness_cache
-            .insert(__element_hash.clone(), __witnes_s.clone());
-        self.stats.__witnesses_generated += 1;
-        Ok(__witnes_s)
+            .insert(element_hash.clone(), witness.clone());
+        self.stats.witnesses_generated += 1;
+        Ok(witness)
     }
 
     /// Recover element bytes from hash using stored mapping
@@ -235,123 +235,123 @@ impl Accumulator {
         acc_value: &BigInt,
         _element_prime: &BigInt,
     ) -> Result<BigInt, AccumulatorError> {
-        // In RSA accumulator, witnes_s = acc^(product_of_other_prime_s) mod N
-        // For simplicity and to ensure verification work_s, we compute:
-        // witnes_s = generator^(product_of_other_prime_s) mod N
-        // Thi_s give_s u_s: witnes_s^element_prime = generator^acc_value = current_accumulator mod N
+        // In RSA accumulator, witness = acc^(product_of_other_primes) mod N
+        // For simplicity and to ensure verification works, we compute:
+        // witness = generator^(product_of_other_primes) mod N
+        // This gives us: witness^element_prime = generator^acc_value = current_accumulator mod N
 
         // Use current accumulator value as the exponent base
-        let __witness_exponent = acc_value.clone();
+        let witness_exponent = acc_value.clone();
 
         // For proper RSA accumulator, we'd compute modular division
-        // Here we use a deterministic approach that ensu_re_s verification consistency
-        let __witnes_s =
-            Self::modular_exponentiation(&self.__generator, &__witness_exponent, &self.modulus);
+        // Here we use a deterministic approach that ensures verification consistency
+        let witness =
+            Self::modular_exponentiation(&self.generator, &witness_exponent, &self.modulus);
 
-        self.stats.__crypto_operation_s += 1;
-        Ok(__witnes_s)
+        self.stats.crypto_operations += 1;
+        Ok(witness)
     }
 
-    /// Map __element to prime number for RSA accumulator
-    fn map_element_to_prime(&mut self, __element: &[u8]) -> BigInt {
-        let __element_hash = self.hash_element(__element);
+    /// Map element to prime number for RSA accumulator
+    fn map_element_to_prime(&mut self, element: &[u8]) -> BigInt {
+        let element_hash = self.hash_element(element);
 
         // Check prime cache first
-        if let Some(cached_prime) = self.prime_cache.get(&__element_hash) {
+        if let Some(cached_prime) = self.prime_cache.get(&element_hash) {
             return cached_prime.clone();
         }
 
-        // Generate deterministic prime from __element hash
-        let __prime = Self::hash_to_prime(&__element_hash);
-        self.prime_cache.insert(__element_hash, __prime.clone());
+        // Generate deterministic prime from element hash
+        let prime = Self::hash_to_prime(&element_hash);
+        self.prime_cache.insert(element_hash, prime.clone());
 
-        __prime
+        prime
     }
 
-    /// Hash __element consistently for internal operation_s
-    fn hash_element(&self, __element: &[u8]) -> Vec<u8> {
+    /// Hash element consistently for internal operations
+    fn hash_element(&self, element: &[u8]) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(b"nyx_accumulator_element");
-        hasher.update(__element);
+        hasher.update(element);
         hasher.update(self.config.modulus_bits.to_le_bytes());
         hasher.finalize().to_vec()
     }
 
-    /// Verify membership for an __element using hash-based verification
-    pub fn verify_element(&mut self, __element: &[u8], witnes_s: &BigInt) -> bool {
-        let __start_time = std::time::Instant::now();
+    /// Verify membership for an element using hash-based verification
+    pub fn verify_element(&mut self, element: &[u8], witness: &BigInt) -> bool {
+        let start_time = std::time::Instant::now();
 
-        if __element.is_empty() {
+        if element.is_empty() {
             return false;
         }
 
-        let __element_hash = self.hash_element(__element);
+        let element_hash = self.hash_element(element);
 
-        // Check if __element exist_s in our tracking
-        if !self.added_element_s.contains_key(&__element_hash) {
+        // Check if element exists in our tracking
+        if !self.added_elements.contains_key(&element_hash) {
             return false;
         }
 
-        // Generate expected witnes_s for comparison
-        let __expected_witnes_s = match self.generate_witnes_s(__element) {
+        // Generate expected witness for comparison
+        let expected_witness = match self.generate_witness(element) {
             Ok(w) => w,
             Err(_) => {
-                self.stats.__verifications_performed += 1;
-                self.stats.__total_verification_time_m_s +=
-                    __start_time.elapsed().as_millis() as u64;
+                self.stats.verifications_performed += 1;
+                self.stats.total_verification_time_ms +=
+                    start_time.elapsed().as_millis() as u64;
                 return false;
             }
         };
 
-        // Witnes_s must match the expected value
-        let __result = witnes_s == &__expected_witnes_s;
+        // Witness must match the expected value
+        let result = witness == &expected_witness;
 
-        // Update statistic_s
-        self.stats.__verifications_performed += 1;
-        if __result {
-            self.stats.__successful_verification_s += 1;
+        // Update statistics
+        self.stats.verifications_performed += 1;
+        if result {
+            self.stats.successful_verifications += 1;
         }
-        self.stats.__total_verification_time_m_s += __start_time.elapsed().as_millis() as u64;
+        self.stats.total_verification_time_ms += start_time.elapsed().as_millis() as u64;
 
-        __result
+        result
     }
 
-    /// Generate RSA modulu_s for accumulator (simplified but cryptographically inspired)
-    fn generate_rsa_modulu_s(bit_s: usize) -> BigInt {
-        // In production, thi_s would generate two large prime_s p and q
-        // For thi_s implementation, we use a deterministic but cryptographically strong approach
+    /// Generate RSA modulus for accumulator (simplified but cryptographically inspired)
+    fn generate_rsa_modulus(bits: usize) -> BigInt {
+        // In production, this would generate two large primes p and q
+        // For this implementation, we use a deterministic but cryptographically strong approach
         let mut hasher = Sha256::new();
         hasher.update(b"nyx_rsa_modulus_seed");
-        hasher.update(bit_s.to_le_bytes());
+        hasher.update(bits.to_le_bytes());
 
-        let __seed_byte_s = hasher.finalize();
-        let mut expanded_byte_s = Vec::new();
+        let seed_bytes = hasher.finalize();
+        let mut expanded_bytes = Vec::new();
 
         // Expand seed to required bit length
-        for i in 0..(bit_s / 256 + 1) {
+        for i in 0..(bits / 256 + 1) {
             let mut round_hasher = Sha256::new();
-            round_hasher.update(__seed_byte_s);
+            round_hasher.update(seed_bytes);
             round_hasher.update(i.to_le_bytes());
-            expanded_byte_s.extend_from_slice(&round_hasher.finalize());
+            expanded_bytes.extend_from_slice(&round_hasher.finalize());
         }
 
         // Create large odd number
-        expanded_byte_s.truncate(bit_s / 8);
-        if let Some(last_byte) = expanded_byte_s.last_mut() {
+        expanded_bytes.truncate(bits / 8);
+        if let Some(last_byte) = expanded_bytes.last_mut() {
             *last_byte |= 1; // Ensure odd
         }
 
-        BigInt::from_bytes_be(Sign::Plus, &expanded_byte_s)
+        BigInt::from_bytes_be(Sign::Plus, &expanded_bytes)
     }
 
-    /// Generate random __element in Z_N^*
-    fn generate_random_element(modulu_s: &BigInt) -> BigInt {
+    /// Generate random element in Z_N^*
+    fn generate_random_element(modulus: &BigInt) -> BigInt {
         let mut hasher = Sha256::new();
         hasher.update(b"nyx_generator_seed");
-        hasher.update(&modulu_s.to_bytes_be().1);
+        hasher.update(&modulus.to_bytes_be().1);
 
-        let __hash_byte_s = hasher.finalize();
-        BigInt::from_bytes_be(Sign::Plus, &__hash_byte_s) % modulu_s
+        let hash_bytes = hasher.finalize();
+        BigInt::from_bytes_be(Sign::Plus, &hash_bytes) % modulus
     }
 
     /// Hash to prime number (deterministic prime generation)
@@ -360,34 +360,34 @@ impl Accumulator {
         hasher.update(b"nyx_prime_generation");
         hasher.update(input);
 
-        let __hash_byte_s = hasher.finalize();
-        let mut candidate = BigInt::from_bytes_be(Sign::Plus, &__hash_byte_s);
+        let hash_bytes = hasher.finalize();
+        let mut candidate = BigInt::from_bytes_be(Sign::Plus, &hash_bytes);
 
         // Ensure odd and in reasonable range
         if candidate.clone() % 2 == BigInt::zero() {
             candidate += BigInt::one();
         }
 
-        // For thi_s implementation, we'll use the candidate as a pseudo-prime
-        // In production, thi_s would use proper primality testing
+        // For this implementation, we'll use the candidate as a pseudo-prime
+        // In production, this would use proper primality testing
         candidate
     }
 
-    /// Hash _data to group __element
+    /// Hash data to group element
     #[allow(dead_code)]
-    fn hash_to_group(_data: &[u8], modulu_s: &BigInt) -> BigInt {
+    fn hash_to_group(_data: &[u8], modulus: &BigInt) -> BigInt {
         let mut hasher = Sha256::new();
         hasher.update(b"nyx_group_element");
         hasher.update(_data);
 
-        let __hash_byte_s = hasher.finalize();
-        BigInt::from_bytes_be(Sign::Plus, &__hash_byte_s) % modulu_s
+        let hash_bytes = hasher.finalize();
+        BigInt::from_bytes_be(Sign::Plus, &hash_bytes) % modulus
     }
 
     /// Efficient modular exponentiation: base^exp mod m
-    fn modular_exponentiation(base: &BigInt, exp: &BigInt, modulu_s: &BigInt) -> BigInt {
+    fn modular_exponentiation(base: &BigInt, exp: &BigInt, modulus: &BigInt) -> BigInt {
         // Use built-in modpow for efficiency and security
-        base.modpow(exp, modulu_s)
+        base.modpow(exp, modulus)
     }
 }
 
@@ -397,11 +397,11 @@ pub enum AccumulatorError {
     /// Invalid element provided
     InvalidElement { reason: String },
     /// Duplicate element (already exists in accumulator)
-    DuplicateElement { __element: Vec<u8> },
+    DuplicateElement { element: Vec<u8> },
     /// Witness verification failed
     VerificationFailed {
-        __element: Vec<u8>,
-        witnes_s: Vec<u8>,
+        element: Vec<u8>,
+        witness: Vec<u8>,
     },
     /// Configuration error
     ConfigError { message: String },
@@ -420,68 +420,68 @@ impl std::fmt::Display for AccumulatorError {
 
 impl std::error::Error for AccumulatorError {}
 
-/// Cryptographically secure RSA accumulator witnes_s verification
-/// Use_s proper RSA mathematic_s for membership proof_s
-pub fn verify_membership(witnes_s: &[u8], __element: &[u8], acc: &[u8]) -> bool {
-    // Convert byte array_s to BigInt for cryptographic operation_s
-    let __witness_bigint = if witnes_s.is_empty() {
+/// Cryptographically secure RSA accumulator witness verification
+/// Uses proper RSA mathematics for membership proofs
+pub fn verify_membership(witness: &[u8], element: &[u8], acc: &[u8]) -> bool {
+    // Convert byte arrays to BigInt for cryptographic operations
+    let witness_bigint = if witness.is_empty() {
         return false;
     } else {
-        BigInt::from_bytes_be(Sign::Plus, witnes_s)
+        BigInt::from_bytes_be(Sign::Plus, witness)
     };
 
-    let __acc_bigint = BigInt::from_bytes_be(Sign::Plus, acc);
+    let acc_bigint = BigInt::from_bytes_be(Sign::Plus, acc);
 
-    // Generate deterministic prime for this __element
-    let __element_prime = compute_element_prime(__element);
+    // Generate deterministic prime for this element
+    let element_prime = compute_element_prime(element);
 
     // Create temporary modulus for verification (in production, this would be consistent)
-    let __modulus = generate_verification_modulu_s();
+    let modulus = generate_verification_modulus();
 
     // RSA accumulator verification: witness^prime = expected_value (mod N)
-    let __verification_result = __witness_bigint.modpow(&__element_prime, &__modulus);
-    let __expected_result =
-        compute_expected_accumulator_value(__element, &__acc_bigint, &__modulus);
+    let verification_result = witness_bigint.modpow(&element_prime, &modulus);
+    let expected_result =
+        compute_expected_accumulator_value(element, &acc_bigint, &modulus);
 
-    __verification_result == __expected_result
+    verification_result == expected_result
 }
 
 /// Verify membership with detailed cryptographic error reporting
 pub fn verify_membership_detailed(
-    witnes_s: &[u8],
-    __element: &[u8],
+    witness: &[u8],
+    element: &[u8],
     acc: &[u8],
 ) -> Result<(), AccumulatorError> {
-    if verify_membership(witnes_s, __element, acc) {
+    if verify_membership(witness, element, acc) {
         Ok(())
     } else {
         Err(AccumulatorError::VerificationFailed {
-            __element: __element.to_vec(),
-            witnes_s: witnes_s.to_vec(),
+            element: element.to_vec(),
+            witness: witness.to_vec(),
         })
     }
 }
 
-/// Compute expected witnes_s using cryptographic RSA operation_s
+/// Compute expected witness using cryptographic RSA operations
 #[allow(dead_code)]
-fn compute_expected_witnes_s(__element: &[u8], acc: &[u8]) -> Vec<u8> {
-    let __acc_bigint = BigInt::from_bytes_be(Sign::Plus, acc);
-    let __element_prime = compute_element_prime(__element);
-    let modulus = generate_verification_modulu_s();
+fn compute_expected_witness(element: &[u8], acc: &[u8]) -> Vec<u8> {
+    let acc_bigint = BigInt::from_bytes_be(Sign::Plus, acc);
+    let element_prime = compute_element_prime(element);
+    let modulus = generate_verification_modulus();
 
-    // Compute witnes_s as acc^prime mod N (simplified)
-    let __witness_value = __acc_bigint.modpow(&__element_prime, &modulus);
-    __witness_value.to_bytes_be().1
+    // Compute witness as acc^prime mod N (simplified)
+    let witness_value = acc_bigint.modpow(&element_prime, &modulus);
+    witness_value.to_bytes_be().1
 }
 
-/// Generate prime number from __element for cryptographic operation_s
-fn compute_element_prime(__element: &[u8]) -> BigInt {
+/// Generate prime number from element for cryptographic operations
+fn compute_element_prime(element: &[u8]) -> BigInt {
     let mut hasher = Sha256::new();
     hasher.update(b"nyx_element_prime");
-    hasher.update(__element);
+    hasher.update(element);
 
-    let __hash_byte_s = hasher.finalize();
-    let mut prime_candidate = BigInt::from_bytes_be(Sign::Plus, &__hash_byte_s);
+    let hash_bytes = hasher.finalize();
+    let mut prime_candidate = BigInt::from_bytes_be(Sign::Plus, &hash_bytes);
 
     // Ensure odd (pseudo-prime property)
     if prime_candidate.clone() % 2 == BigInt::zero() {
@@ -496,63 +496,63 @@ fn compute_element_prime(__element: &[u8]) -> BigInt {
     prime_candidate
 }
 
-/// Generate verification modulu_s for RSA operation_s
-fn generate_verification_modulu_s() -> BigInt {
-    // Use a large deterministic modulu_s for verification
-    // In production, thi_s would be a proper RSA modulu_s N = p*q
+/// Generate verification modulus for RSA operations
+fn generate_verification_modulus() -> BigInt {
+    // Use a large deterministic modulus for verification
+    // In production, this would be a proper RSA modulus N = p*q
     BigInt::from_str("25195908475657893494027183240048398571429282126204032027777137836043662020707595556264018525880784406918290641249515082189298559149176184502808489120072844992687392807287776735971418347270261896375014971824691165077613379859095700097330459748808428401797429100642458691817195118746121515172654632282216869987549182422433637259085141865462043576798423387184774447920739934236584823824281198163815010674810451660377306056201619676256133844143603833904414952634432190114657544454178424020924616515723350778707749817125772467962926386356373289912154831438167899885040445364023527381951378636564391212010397122822120720357").unwrap_or_else(|_| BigInt::from(1))
 }
 
 /// Compute expected accumulator value for verification
-fn compute_expected_accumulator_value(__element: &[u8], acc: &BigInt, modulu_s: &BigInt) -> BigInt {
-    let __element_prime = compute_element_prime(__element);
+fn compute_expected_accumulator_value(element: &[u8], acc: &BigInt, modulus: &BigInt) -> BigInt {
+    let element_prime = compute_element_prime(element);
 
     // For verification, compute acc^prime mod N
-    acc.modpow(&__element_prime, modulu_s)
+    acc.modpow(&element_prime, modulus)
 }
 
-/// Cryptographically secure batch verification for multiple element_s
-/// Optimized for performance with RSA batch operation_s
+/// Cryptographically secure batch verification for multiple elements
+/// Optimized for performance with RSA batch operations
 pub fn verify_batch_membership(
-    witnesse_s: &[Vec<u8>],
-    element_s: &[Vec<u8>],
+    witnesses: &[Vec<u8>],
+    elements: &[Vec<u8>],
     acc: &[u8],
 ) -> Vec<bool> {
-    if witnesse_s.len() != element_s.len() {
-        return vec![false; witnesse_s.len()];
+    if witnesses.len() != elements.len() {
+        return vec![false; witnesses.len()];
     }
 
-    // For production system_s, thi_s could be optimized with batch RSA operation_s
-    witnesse_s
+    // For production systems, this could be optimized with batch RSA operations
+    witnesses
         .iter()
-        .zip(element_s.iter())
-        .map(|(witnes_s, __element)| verify_membership(witnes_s, __element, acc))
+        .zip(elements.iter())
+        .map(|(witness, element)| verify_membership(witness, element, acc))
         .collect()
 }
 
 /// Advanced batch verification with detailed error reporting
 pub fn verify_batch_membership_detailed(
-    witnesse_s: &[Vec<u8>],
-    element_s: &[Vec<u8>],
+    witnesses: &[Vec<u8>],
+    elements: &[Vec<u8>],
     acc: &[u8],
 ) -> Result<Vec<bool>, AccumulatorError> {
-    if witnesse_s.len() != element_s.len() {
+    if witnesses.len() != elements.len() {
         return Err(AccumulatorError::InvalidElement {
             reason: format!(
-                "Witnes_s count {} doe_s not match __element count {}",
-                witnesse_s.len(),
-                element_s.len()
+                "Witness count {} does not match element count {}",
+                witnesses.len(),
+                elements.len()
             ),
         });
     }
 
-    Ok(verify_batch_membership(witnesse_s, element_s, acc))
+    Ok(verify_batch_membership(witnesses, elements, acc))
 }
 
 /// Compatibility function for existing cMix integration
-/// Convert_s BigInt witnes_s to Vec<u8> for legacy code
-pub fn generate_compatible_witnes_s(witnes_s: &BigInt) -> Vec<u8> {
-    witnes_s.to_bytes_be().1
+/// Converts BigInt witness to Vec<u8> for legacy code
+pub fn generate_compatible_witness(witness: &BigInt) -> Vec<u8> {
+    witness.to_bytes_be().1
 }
 
 /// Convert legacy Vec<u8> accumulator to BigInt
@@ -565,11 +565,11 @@ pub fn convert_legacy_accumulator(acc: &[u8]) -> BigInt {
 }
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
 
     #[test]
-    fn valid_witness_passe_s() -> Result<(), Box<dyn std::error::Error>> {
+    fn valid_witness_passes() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
         let element = b"test_element";
         let witness = acc.add_element(element)?;
@@ -578,13 +578,13 @@ mod test_s {
     }
 
     #[test]
-    fn invalid_witness_fail_s() -> Result<(), Box<dyn std::error::Error>> {
+    fn invalid_witness_fails() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
-        let __element = b"test_element";
-        let ___witnes_s = acc.add_element(__element)?;
-        let __invalid_witnes_s = BigInt::from(999999);
-        // __element exist_s but witnes_s i_s wrong, should fail
-        assert!(!acc.verify_element(__element, &__invalid_witnes_s));
+        let element = b"test_element";
+        let witness = acc.add_element(element)?;
+        let invalid_witness = BigInt::from(999999);
+        // element exists but witness is wrong, should fail
+        assert!(!acc.verify_element(element, &invalid_witness));
         Ok(())
     }
 
@@ -595,21 +595,21 @@ mod test_s {
 
         let __witnes_s = acc.add_element(__element)?;
         assert!(__witnes_s != BigInt::zero());
-        assert_eq!(acc.stats.__elements_added, 1);
+        assert_eq!(acc.stats.elements_added, 1);
         Ok(())
     }
 
     #[test]
     fn accumulator_witness_generation() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
-        let __element = b"test_element";
+        let element = b"test_element";
 
-        // Add __element first
-        acc.add_element(__element)?;
+        // Add element first
+        acc.add_element(element)?;
 
-        // Generate witnes_s
-        let __witnes_s = acc.generate_witnes_s(__element)?;
-        assert!(__witnes_s != BigInt::zero());
+        // Generate witness
+        let witness = acc.generate_witness(element)?;
+        assert!(witness != BigInt::zero());
         Ok(())
     }
 
@@ -622,13 +622,13 @@ mod test_s {
         acc.add_element(element)?;
 
         // First witness generation
-        let witness1 = acc.generate_witnes_s(element)?;
-        let cache_hits_before = acc.stats.__cache_hits;
+        let witness1 = acc.generate_witness(element)?;
+        let cache_hits_before = acc.stats.cache_hits;
 
         // Second witness generation should hit cache
-        let witness2 = acc.generate_witnes_s(element)?;
+        let witness2 = acc.generate_witness(element)?;
         assert_eq!(witness1, witness2);
-        assert_eq!(acc.stats.__cache_hits, cache_hits_before + 1);
+        assert_eq!(acc.stats.cache_hits, cache_hits_before + 1);
         Ok(())
     }
 
@@ -662,8 +662,8 @@ mod test_s {
         assert!(result.is_err());
 
         if let Err(AccumulatorError::VerificationFailed {
-            __element: e,
-            witnes_s: w,
+            element: e,
+            witness: w,
         }) = result
         {
             assert_eq!(e, element);

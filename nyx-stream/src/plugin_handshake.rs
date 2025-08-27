@@ -8,64 +8,64 @@ use crate::plugin::{PluginHeader, PluginId, FRAME_TYPE_PLUGIN_HANDSHAKE};
 /// A minimal versioned handshake payload exchanged between host and plugin.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HandshakeInfo {
-    pub __version: u16,
-    pub _name: String,
+    pub version: u16,
+    pub name: String,
 }
 
 impl HandshakeInfo {
-    pub fn new(__version: u16, _name: impl Into<String>) -> Self {
+    pub fn new(version: u16, name: impl Into<String>) -> Self {
         Self {
-            __version,
-            _name: _name.into(),
+            version,
+            name: name.into(),
         }
     }
 }
 
-/// Build a CBOR-encoded plugin handshake frame (header byte_s only).
-/// The caller wrap_s thi_s with plugin frame framing as needed.
-pub fn build_handshake_header_byte_s(__id: PluginId, info: &HandshakeInfo) -> Result<Vec<u8>> {
-    // Optional basic validation to avoid oversized _name_s flooding memory
-    if info._name.len() > 1024 {
-        return Err(Error::protocol("handshake _name too long"));
+/// Build a CBOR-encoded plugin handshake frame (header bytes only).
+/// The caller wraps this with plugin frame framing as needed.
+pub fn build_handshake_header_bytes(id: PluginId, info: &HandshakeInfo) -> Result<Vec<u8>> {
+    // Optional basic validation to avoid oversized names flooding memory
+    if info.name.len() > 1024 {
+        return Err(Error::protocol("handshake name too long"));
     }
     let mut payload = Vec::new();
     ciborium::ser::into_writer(info, &mut payload).map_err(Error::CborSer)?;
-    let __header = PluginHeader {
-        id: __id,
+    let header = PluginHeader {
+        id,
         flags: 0,
         data: payload,
     };
     let mut out = Vec::new();
-    ciborium::ser::into_writer(&__header, &mut out).map_err(Error::CborSer)?;
+    ciborium::ser::into_writer(&header, &mut out).map_err(Error::CborSer)?;
     Ok(out)
 }
 
-/// Constant for convenience in test_s/dispatch
+/// Constant for convenience in tests/dispatch
 pub const HANDSHAKE_FRAME_TYPE: u8 = FRAME_TYPE_PLUGIN_HANDSHAKE;
 
 #[cfg(test)]
-mod test_s {
+mod tests {
     use super::*;
 
     #[test]
     fn round_trip_handshake_header() -> Result<(), Box<dyn std::error::Error>> {
-        let __info = HandshakeInfo::new(1, "geo");
-        let __byte_s = build_handshake_header_byte_s(PluginId(7), &__info)?;
-        let __header: crate::plugin::PluginHeader = ciborium::de::from_reader(__byte_s.as_slice())?;
-        let __info2: HandshakeInfo = ciborium::de::from_reader(__header.data.as_slice())?;
-        assert_eq!(__info2, __info);
+        let info = HandshakeInfo::new(1, "geo");
+        let bytes = build_handshake_header_bytes(PluginId(7), &info)?;
+        let header: crate::plugin::PluginHeader = ciborium::de::from_reader(bytes.as_slice())?;
+        let info2: HandshakeInfo = ciborium::de::from_reader(header.data.as_slice())?;
+        assert_eq!(info2, info);
         Ok(())
     }
 
     #[test]
-    fn _name_too_long_is_rejected() {
+    fn name_too_long_is_rejected() {
         let long = "a".repeat(1025);
         let info = HandshakeInfo {
-            __version: 1,
-            _name: long,
+            version: 1,
+            name: long,
         };
-        let err = build_handshake_header_byte_s(PluginId(1), &info).unwrap_err();
+        let err = build_handshake_header_bytes(PluginId(1), &info).unwrap_err();
         let s = format!("{err}");
-        assert!(s.contains("handshake _name too long"));
+        assert!(s.contains("handshake name too long"));
     }
 }

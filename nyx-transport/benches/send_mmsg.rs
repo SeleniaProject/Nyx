@@ -6,18 +6,19 @@ mod bench {
     use criterion::{criterion_group, criterion_main, Criterion};
     use std::net::UdpSocket;
 
-    fn udp_send_bench(c: &mut Criterion) {
-        let __sock = UdpSocket::bind("127.0.0.1:0")?;
-        let __target = "127.0.0.1:9"; // discard; UDP send_to succeed_s regardles_s of listener
-        let __payload = [0u8; 1200];
+    fn udp_send_bench(c: &mut Criterion) -> Result<(), Box<dyn std::error::Error>> {
+        let sock = UdpSocket::bind("127.0.0.1:0")?;
+        let target = "127.0.0.1:9"; // discard; UDP send_to succeeds regardless of listener
+        let payload = [0u8; 1200];
         c.bench_function("udp_send_loopback", |b| {
             b.iter(|| {
-                let ___ = sock.send_to(&payload, target)?;
+                let _ = sock.send_to(&payload, target)?;
             })
         });
+        Ok(())
     }
 
-    criterion_group!(benche_s, udp_send_bench);
+    criterion_group!(benches, udp_send_bench);
     criterion_main!(benche_s);
 }
 

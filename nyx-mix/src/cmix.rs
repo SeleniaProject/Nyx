@@ -169,7 +169,7 @@ impl Batcher {
         // For testing purposes, we'll create a temporary accumulator and verify membership
         let mut temp_acc = accumulator::Accumulator::new();
         let _ = temp_acc.add_element(&batch.id.to_le_bytes());
-        let generated_witness = temp_acc.generate_witnes_s(&batch.id.to_le_bytes())
+        let generated_witness = temp_acc.generate_witness(&batch.id.to_le_bytes())
             .map_err(|_| CmixError::InvalidWitness {
                 element: batch.id.to_le_bytes().to_vec(),
                 witness: batch.accumulator_witness.clone(),

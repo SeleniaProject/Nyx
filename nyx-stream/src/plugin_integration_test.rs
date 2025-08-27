@@ -7,57 +7,56 @@ use tokio::time::{sleep, Duration};
 use crate::plugin_registry::{PluginRegistry, PluginInfo, Permission};
 use crate::plugin_dispatch::PluginDispatcher;
 use crate::plugin::{PluginId, PluginHeader, FRAME_TYPE_PLUGIN_DATA, FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_ERROR};
-use crate::plugin_handshake::{HandshakeInfo, build_handshake_header_byte_s, HANDSHAKE_FRAME_TYPE};
+use crate::plugin_handshake::{HandshakeInfo, build_handshake_header_bytes, HANDSHAKE_FRAME_TYPE};
 
 #[tokio::test]
 async fn e2e_load_and_dispatch() -> Result<(), Box<dyn std::error::Error>> {
-	let __registry = Arc::new(PluginRegistry::new());
-	let __dispatcher = PluginDispatcher::new(registry.clone());
+	let registry = Arc::new(PluginRegistry::new());
+	let dispatcher = PluginDispatcher::new(registry.clone());
 
-	let __pid = PluginId(42);
-	let __info = PluginInfo::new(pid, "geo", [Permission::Handshake, Permission::DataAcces_s]);
+	let pid = PluginId(42);
+	let info = PluginInfo::new(pid, "geo", [Permission::Handshake, Permission::DataAccess]);
 	// load will register and spawn runtime
 	dispatcher.load_plugin(info).await?;
 
 	// handshake
-	let __h = HandshakeInfo::new(1, "geo");
-	let __header_byte_s = build_handshake_header_byte_s(pid, &h)?;
-	dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, header_byte_s).await?;
+	let h = HandshakeInfo::new(1, "geo");
+	let header_bytes = build_handshake_header_bytes(pid, &h)?;
+	dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, header_bytes).await?;
 
-	// _data (reuse empty _data header)
+	// data (reuse empty data header)
 	let mut header_bytes2 = Vec::new();
-	let __header = crate::plugin::PluginHeader { __id: pid, __flag_s: 0, _data: vec![] };
+	let header = crate::plugin::PluginHeader { id: pid, flags: 0, data: vec![] };
 	ciborium::ser::into_writer(&header, &mut header_bytes2)?;
 	dispatcher.dispatch_plugin_frame(crate::plugin::FRAME_TYPE_PLUGIN_DATA, header_bytes2).await?;
 
-	// small delay to let runtime proces_s queued message_s
+	// small delay to let runtime process queued messages
 	sleep(Duration::from_millis(10)).await;
     Ok(())
 }
 
-fn empty_header_byte_s(id: PluginId) -> Vec<u8> {
-	let __header = PluginHeader { __id: id, __flag_s: 0, _data: vec![] };
+fn empty_header_bytes(id: PluginId) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
+	let header = PluginHeader { id, flags: 0, data: vec![] };
 	let mut out = Vec::new();
 	ciborium::ser::into_writer(&header, &mut out)?;
-	out
-    Ok(())
+	Ok(out)
 }
 
 #[tokio::test]
 async fn e2enowait_with_retry_backoff() -> Result<(), Box<dyn std::error::Error>> {
-	let __registry = Arc::new(PluginRegistry::new());
-	let __dispatcher = PluginDispatcher::new(registry.clone());
-	let __pid = PluginId(55);
-	let __info = PluginInfo::new(pid, "retry", [Permission::DataAcces_s]);
+	let registry = Arc::new(PluginRegistry::new());
+	let dispatcher = PluginDispatcher::new(registry.clone());
+	let pid = PluginId(55);
+	let info = PluginInfo::new(pid, "retry", [Permission::DataAccess]);
 	registry.register(info.clone()).await?;
 	// Capacity 1 to force backpressure easily
 	dispatcher.load_plugin_with_capacity(info, 1).await?;
 
-	let __byte_s = empty_header_byte_s(pid);
+	let bytes = empty_header_bytes(pid)?;
 	// First nowait should succeed and fill queue
-	dispatcher.dispatch_plugin_framenowait(FRAME_TYPE_PLUGIN_DATA, byte_s.clone()).await?;
+	dispatcher.dispatch_plugin_framenowait(FRAME_TYPE_PLUGIN_DATA, bytes.clone()).await?;
 
-	// Second nowait may fail; implement simple retry with backoff until it succeed_s
+	// Second nowait may fail; implement simple retry with backoff until it succeeds
 	let mut attempt = 0u32;
 	let mut delay = Duration::from_millis(1);
 	loop {
@@ -77,22 +76,22 @@ async fn e2enowait_with_retry_backoff() -> Result<(), Box<dyn std::error::Error>
 
 #[tokio::test]
 async fn e2e_reconnect_after_unload_reload() -> Result<(), Box<dyn std::error::Error>> {
-	let __registry = Arc::new(PluginRegistry::new());
-	let __dispatcher = PluginDispatcher::new(registry.clone());
-	let __pid = PluginId(66);
-	let __info = PluginInfo::new(pid, "h_s", [Permission::Handshake]);
+	let registry = Arc::new(PluginRegistry::new());
+	let dispatcher = PluginDispatcher::new(registry.clone());
+	let pid = PluginId(66);
+	let info = PluginInfo::new(pid, "hs", [Permission::Handshake]);
 
 	dispatcher.load_plugin(info.clone()).await?;
 	// Dispatch handshake ok
-	let __h_s = HandshakeInfo::new(1, "h_s");
-	let __hdr = build_handshake_header_byte_s(pid, &h_s)?;
+	let hs = HandshakeInfo::new(1, "hs");
+	let hdr = build_handshake_header_bytes(pid, &hs)?;
 	dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, hdr.clone()).await?;
 
-	// Unload runtime (also unregister_s)
+	// Unload runtime (also unregisters)
 	dispatcher.unload_plugin(pid).await?;
 
 	// Now dispatch should report not registered
-	let __err = dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, hdr.clone()).await.unwrap_err();
+	let err = dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, hdr.clone()).await.unwrap_err();
 	match err { 
 		crate::plugin_dispatch::DispatchError::PluginNotRegistered(x) => assert_eq!(x, pid), 
 		e => panic!("{e:?}") 
@@ -105,13 +104,13 @@ async fn e2e_reconnect_after_unload_reload() -> Result<(), Box<dyn std::error::E
 }
 
 #[tokio::test]
-async fn e2e_all_frame_types_with_permission_s() -> Result<(), Box<dyn std::error::Error>> {
-	let __registry = Arc::new(PluginRegistry::new());
-	let __dispatcher = PluginDispatcher::new(registry.clone());
-	let __pid = PluginId(77);
-	let __info = PluginInfo::new(pid, "all", [
+async fn e2e_all_frame_types_with_permissions() -> Result<(), Box<dyn std::error::Error>> {
+	let registry = Arc::new(PluginRegistry::new());
+	let dispatcher = PluginDispatcher::new(registry.clone());
+	let pid = PluginId(77);
+	let info = PluginInfo::new(pid, "all", [
 		Permission::Handshake,
-		Permission::DataAcces_s,
+		Permission::DataAccess,
 		Permission::Control,
 		Permission::ErrorReporting,
 	]);
@@ -119,12 +118,12 @@ async fn e2e_all_frame_types_with_permission_s() -> Result<(), Box<dyn std::erro
 	dispatcher.load_plugin(info).await?;
 
 	// Handshake
-	let __h_s = HandshakeInfo::new(1, "all");
-	let __hdr_h_s = build_handshake_header_byte_s(pid, &h_s)?;
-	dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, hdr_h_s).await?;
+	let hs = HandshakeInfo::new(1, "all");
+	let hdr_hs = build_handshake_header_bytes(pid, &hs)?;
+	dispatcher.dispatch_plugin_frame(HANDSHAKE_FRAME_TYPE, hdr_hs).await?;
 
-	// Data/Control/Error frame_s use empty header payload for simplicity
-	let __empty = empty_header_byte_s(pid);
+	// Data/Control/Error frames use empty header payload for simplicity
+	let empty = empty_header_bytes(pid)?;
 	dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_DATA, empty.clone()).await?;
 	dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_CONTROL, empty.clone()).await?;
 	dispatcher.dispatch_plugin_frame(FRAME_TYPE_PLUGIN_ERROR, empty.clone()).await?;
