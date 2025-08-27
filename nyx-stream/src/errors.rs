@@ -20,6 +20,12 @@ pub enum Error {
     Timeout,
     #[error("channel closed")]
     ChannelClosed,
+    #[error("invalid frame: {0}")]
+    InvalidFrame(String),
+    #[error("processing timeout")]
+    ProcessingTimeout,
+    #[error("stream error: {0}")]
+    StreamError(String),
 }
 
 impl Error {

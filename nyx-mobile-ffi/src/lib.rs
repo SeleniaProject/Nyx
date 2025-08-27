@@ -178,18 +178,51 @@ pub extern "C" fn nyx_mobile_clear_telemetry_label_s() -> c_int {
 /// - If `buf` is not null, it must point to valid, writable memory of at least `buf_len` bytes
 /// - The caller must ensure the buffer remains valid for the duration of the call
 /// - If `buf_len` is 0, `buf` can be null (used for size query)
+/// 
+/// # Security Enhancements
+/// - Validates buffer parameters to prevent buffer overflow attacks
+/// - Uses safe memory operations with bounds checking
+/// - Prevents integer overflow in size calculations
 #[no_mangle]
 pub unsafe extern "C" fn nyx_mobile_version(buf: *mut c_char, buf_len: usize) -> c_int {
     let ver = env!("CARGO_PKG_VERSION");
     let byte_s = ver.as_bytes();
+    
+    // SECURITY ENHANCEMENT: Validate buffer size to prevent integer overflow
+    if buf_len > i32::MAX as usize {
+        return -1; // Error: buffer size too large
+    }
+    
     if buf.is_null() || buf_len == 0 {
+        // SECURITY: Ensure return value doesn't overflow i32
+        if byte_s.len() > i32::MAX as usize {
+            return -1; // Error: version string too long
+        }
         return byte_s.len() as c_int;
     }
-    // SAFETY: caller provide_s valid, writable buffer.
+    
+    // SECURITY ENHANCEMENT: Additional null pointer validation
+    if buf.is_null() {
+        return -1; // Error: null buffer with non-zero length
+    }
+    
+    // SAFETY: caller provides valid, writable buffer with comprehensive bounds checking
     unsafe {
         let max_copy = buf_len.saturating_sub(1).min(byte_s.len());
-        std::ptr::copy_nonoverlapping(byte_s.as_ptr(), buf as *mut u8, max_copy);
-        *buf.add(max_copy) = 0;
+        
+        // SECURITY: Prevent potential overflow in pointer arithmetic
+        if max_copy > 0 && buf_len > 0 {
+            std::ptr::copy_nonoverlapping(byte_s.as_ptr(), buf.cast::<u8>(), max_copy);
+            *buf.add(max_copy) = 0; // Null terminate
+        } else if buf_len > 0 {
+            *buf = 0; // Empty string with null terminator
+        }
+        
+        // SECURITY: Ensure return value doesn't overflow i32
+        if max_copy > i32::MAX as usize {
+            return -1; // Error: copied length too large
+        }
+        
         max_copy as c_int
     }
 }

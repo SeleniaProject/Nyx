@@ -44,6 +44,11 @@ int nyx_mobile_clear_telemetry_label_s(void);
  * - If `buf` is not null, it must point to valid, writable memory of at least `buf_len` bytes
  * - The caller must ensure the buffer remains valid for the duration of the call
  * - If `buf_len` is 0, `buf` can be null (used for size query)
+ *
+ * # Security Enhancements
+ * - Validates buffer parameters to prevent buffer overflow attacks
+ * - Uses safe memory operations with bounds checking
+ * - Prevents integer overflow in size calculations
  */
 int nyx_mobile_version(char *buf, uintptr_t buf_len);
 

@@ -131,7 +131,7 @@ impl MultipathManager {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn with_config(config_json: &str) -> Result<MultipathManager, JsValue> {
         let config: MultipathConfig = serde_json::from_str(config_json)
-            .map_err(|e| JsValue::from_str(&format!("Invalid config: {e}")))?;
+            .map_err(|e| JsValue::from_string(&format!("Invalid config: {e}")))?;
 
         Ok(MultipathManager {
             config,
@@ -146,7 +146,7 @@ impl MultipathManager {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn add_path(&mut self, path_id: &str, initial_quality: f64) -> Result<(), JsValue> {
         if self.paths.len() >= self.config.max_paths {
-            return Err(JsValue::from_str("Maximum number of paths reached"));
+            return Err(JsValue::from_string("Maximum number of paths reached"));
         }
 
         let path_info = PathInfo {
@@ -163,7 +163,7 @@ impl MultipathManager {
         self.paths.insert(path_id.to_string(), path_info);
 
         #[cfg(target_arch = "wasm32")]
-        console::log_1(&JsValue::from_str(&format!("Added path: {path_id}")));
+        console::log_1(&JsValue::from_string(&format!("Added path: {path_id}")));
 
         Ok(())
     }
@@ -175,7 +175,7 @@ impl MultipathManager {
         
         if removed {
             #[cfg(target_arch = "wasm32")]
-            console::log_1(&JsValue::from_str(&format!("Removed path: {path_id}")));
+            console::log_1(&JsValue::from_string(&format!("Removed path: {path_id}")));
         }
 
         removed
@@ -229,15 +229,13 @@ impl MultipathManager {
         bandwidth_mbps: f64,
         packet_loss: f64,
     ) -> Result<(), JsValue> {
-        let current_time = self.get_current_timestamp();
-        
         let path = self.paths.get_mut(path_id)
-            .ok_or_else(|| JsValue::from_str("Path not found"))?;
+            .ok_or_else(|| JsValue::from_string("Path not found"))?;
 
         // Update basic metrics
         path.latency_ms = latency_ms;
         path.bandwidth_mbps = bandwidth_mbps;
-        path.last_updated = current_time;
+        path.last_updated = self.get_current_timestamp();
 
         // Calculate updated quality score based on metrics
         let latency_score = (1.0 - (latency_ms / 1000.0).min(1.0)).max(0.0);
@@ -247,6 +245,7 @@ impl MultipathManager {
         path.quality = (latency_score * 0.4 + bandwidth_score * 0.4 + loss_score * 0.2).max(0.1);
 
         // Update path status based on quality
+        let current_time = self.get_current_timestamp();
         path.status = if path.quality >= self.config.quality_threshold {
             PathStatus::Active
         } else if path.quality >= 0.3 {
@@ -255,7 +254,7 @@ impl MultipathManager {
             PathStatus::Unavailable
         };
 
-        // Calculate jitter before recording performance history
+        // Record performance history
         let jitter_ms = self.calculate_jitter(path_id, latency_ms);
         let record = PathPerformanceRecord {
             path_id: path_id.to_string(),

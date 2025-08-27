@@ -30,13 +30,13 @@ mod test_s {
 
         // Alice encrypts with her TX, Bob decrypts with his RX
         let mut bob_final = bob_result;
-        let (_, alice_encrypted) = alice_final.tx.sealnext(&[], test_message)?;
-        let bob_decrypted = bob_final.rx.open_at(0, &[], &alice_encrypted)?;
+        let (_, alice_encrypted) = alice_final.__tx.sealnext(&[], test_message)?;
+        let bob_decrypted = bob_final.__rx.open_at(0, &[], &alice_encrypted)?;
         assert_eq!(bob_decrypted, test_message);
 
         // Bob encrypts with his TX, Alice decrypts with her RX
-        let (_, bob_encrypted) = bob_final.tx.sealnext(&[], test_message)?;
-        let alice_decrypted = alice_final.rx.open_at(0, &[], &bob_encrypted)?;
+        let (_, bob_encrypted) = bob_final.__tx.sealnext(&[], test_message)?;
+        let alice_decrypted = alice_final.__rx.open_at(0, &[], &bob_encrypted)?;
         assert_eq!(alice_decrypted, test_message);
         Ok(())
     }

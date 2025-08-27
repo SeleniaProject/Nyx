@@ -25,6 +25,7 @@ use nyx_mobile_ffi::{
 
 /// Background task handle for the low-power bridge.
 pub struct LowPowerBridge {
+    #[allow(dead_code)]
     handle: JoinHandle<()>,
 }
 
@@ -41,7 +42,7 @@ impl LowPowerBridge {
         }
 
         // Optional log level from env: error|warn|info|debug|trace or numeric 0..4
-        if let Some(lv) = std::env::var("NYX_MOBILE_LOG_LEVEL").ok() {
+        if let Ok(lv) = std::env::var("NYX_MOBILE_LOG_LEVEL") {
             let code = match lv.to_ascii_lowercase().as_str() {
                 "error" => 0,
                 "warn" | "warning" => 1,
@@ -156,7 +157,7 @@ impl LowPowerBridge {
                     .collect();
                 if slice.len() >= 2 {
                     let ratio = screen_off_ratio(&slice);
-                    metrics::gauge!("nyx.power.screen_off_ratio_1m").set(ratio as f64);
+                    metrics::gauge!("nyx.power.screen_off_ratio_1m").set(ratio);
                     debug!("screen_off_ratio_1m = {:.3}", ratio);
                 }
 

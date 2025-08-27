@@ -217,12 +217,18 @@ impl Default for IceAgentConfig {
             role: IceRole::Controlling,
             stun_servers: vec![
                 StunServerConfig {
-                    address: "8.8.8.8:3478".parse().expect("Failed to parse STUN server address"),
+                    address: "8.8.8.8:3478".parse().unwrap_or_else(|_| {
+                        eprintln!("Failed to parse default STUN server address, using fallback");
+                        SocketAddr::from(([8, 8, 8, 8], 3478))
+                    }),
                     timeout: Duration::from_secs(5),
                     max_retries: 3,
                 },
                 StunServerConfig {
-                    address: "8.8.4.4:3478".parse().expect("Failed to parse STUN server address"),
+                    address: "8.8.4.4:3478".parse().unwrap_or_else(|_| {
+                        eprintln!("Failed to parse default STUN server address, using fallback");
+                        SocketAddr::from(([8, 8, 4, 4], 3478))
+                    }),
                     timeout: Duration::from_secs(5),
                     max_retries: 3,
                 },

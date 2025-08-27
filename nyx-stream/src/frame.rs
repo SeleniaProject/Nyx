@@ -46,9 +46,9 @@ impl FrameBuilder {
         }
     }
 
-    /// Build frame with zero-copy payload when possible
-    pub fn build_data_frame(&self, stream_id: u32, seq: u64, payload: impl Into<Bytes>) -> Frame {
-        let payload_bytes: Bytes = payload.into();
+    /// Build frame with zero-copy payload when possible (accepts various byte slice types)
+    pub fn build_data_frame<T: AsRef<[u8]>>(&self, stream_id: u32, seq: u64, payload: T) -> Frame {
+        let payload_bytes = Bytes::copy_from_slice(payload.as_ref());
         
         Frame {
             header: FrameHeader {

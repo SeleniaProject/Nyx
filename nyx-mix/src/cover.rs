@@ -2,6 +2,51 @@
 
 use rand::Rng;
 use rand_distr::{Distribution, Poisson};
+use serde::{Deserialize, Serialize};
+use std::time::Instant;
+use crate::errors::Result;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoverTrafficConfig {
+    pub target_bandwidth: u64, // bytes per second
+    pub poisson_lambda: f64,
+    pub min_packet_size: usize,
+    pub max_packet_size: usize,
+    pub burst_probability: f64,
+}
+
+impl Default for CoverTrafficConfig {
+    fn default() -> Self {
+        Self {
+            target_bandwidth: 100_000, // 100 KB/s
+            poisson_lambda: 1.0,
+            min_packet_size: 64,
+            max_packet_size: 1280,
+            burst_probability: 0.1,
+        }
+    }
+}
+
+pub struct CoverTrafficGenerator {
+    config: CoverTrafficConfig,
+    _last_update: Instant,      // Prefix with underscore to avoid unused warning
+    _packets_generated: u64,    // Prefix with underscore to avoid unused warning
+}
+
+impl CoverTrafficGenerator {
+    pub fn new(config: CoverTrafficConfig) -> Result<Self> {
+        Ok(Self {
+            config,
+            _last_update: Instant::now(),
+            _packets_generated: 0,
+        })
+    }
+
+    pub fn update_target_bandwidth(&mut self, new_bandwidth: u64) -> Result<()> {
+        self.config.target_bandwidth = new_bandwidth;
+        Ok(())
+    }
+}
 
 /// Generate dummy packet count per second using Poisson distribution
 pub fn poisson_rate(lambda: f32, rng: &mut impl Rng) -> u32 {

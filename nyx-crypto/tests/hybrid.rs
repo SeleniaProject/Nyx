@@ -26,13 +26,13 @@ fn hybrid_demo_handshake_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     // Session roundtrip both directions
     let aad = b"aad";
     let pt_i2r = b"hello";
-    let (seq0, ct0) = init.tx.sealnext(aad, pt_i2r)?;
-    let open0 = resp.rx.open_at(seq0, aad, &ct0)?;
+    let (seq0, ct0) = init.__tx.sealnext(aad, pt_i2r)?;
+    let open0 = resp.__rx.open_at(seq0, aad, &ct0)?;
     assert_eq!(open0.as_slice(), pt_i2r);
 
     let pt_r2i = b"world";
-    let (seq1, ct1) = resp.tx.sealnext(aad, pt_r2i)?;
-    let open1 = init.rx.open_at(seq1, aad, &ct1)?;
+    let (seq1, ct1) = resp.__tx.sealnext(aad, pt_r2i)?;
+    let open1 = init.__rx.open_at(seq1, aad, &ct1)?;
     assert_eq!(open1.as_slice(), pt_r2i);
     Ok(())
 }

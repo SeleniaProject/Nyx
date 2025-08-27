@@ -74,7 +74,6 @@ impl Ewma {
     /// # Returns
     /// * `Some(value)` if at least one update has been performed
     /// * `None` if no values have been processed yet
-    /// Get the current EWMA value
     #[must_use]
     pub fn get(&self) -> Option<f64> {
         self.value
@@ -387,19 +386,19 @@ mod tests {
     #[test]
     #[should_panic(expected = "Alpha must be in range (0.0, 1.0]")]
     fn ewma_invalid_alpha_zero() {
-        Ewma::new(0.0);
+        let _ = Ewma::new(0.0);
     }
 
     #[test]
     #[should_panic(expected = "Alpha must be in range (0.0, 1.0]")]
     fn ewma_invalid_alpha_negative() {
-        Ewma::new(-0.1);
+        let _ = Ewma::new(-0.1);
     }
 
     #[test]
     #[should_panic(expected = "Alpha must be in range (0.0, 1.0]")]
     fn ewma_invalid_alpha_too_large() {
-        Ewma::new(1.1);
+        let _ = Ewma::new(1.1);
     }
 
     #[test]

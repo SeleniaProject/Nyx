@@ -38,7 +38,7 @@ runtime = ["tokio"]
 x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets"], optional = true }
 
 # Pure Rust post-quantum implementations
-ml-kem = { version = "0.3.0-pre", optional = true }
+ml-kem = { version = "0.2", optional = true }
 # pqc_kyber = { version = "0.7", optional = true } # REMOVED due to KyberSlash vulnerability
 # ml-kem = { version = "0.2", optional = true } # REMOVED due to C dependencies
 

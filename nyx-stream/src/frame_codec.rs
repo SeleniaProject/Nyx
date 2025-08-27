@@ -72,19 +72,58 @@ impl FrameCodec {
     }
 
     /// Decode with a custom maximum payload length.
+    /// 
+    /// # Security Enhancements
+    /// - Validates frame length against both maximum size and minimum size
+    /// - Prevents integer overflow in length calculations
+    /// - Checks for potential DoS attacks via zero-length or malformed frames
+    /// - Implements safe buffer splitting with bounds verification
     pub fn decode_with_limit(src: &mut BytesMut, max_len: usize) -> Result<Option<Frame>> {
         if src.len() < 4 {
             return Ok(None);
         }
+        
         let mut len_bytes = &src[..4];
         let len = len_bytes.get_u32() as usize;
+        
+        // SECURITY ENHANCEMENT: Comprehensive frame length validation
+        
+        // Check maximum size limit to prevent DoS attacks
         if len > max_len {
-            return Err(Error::protocol("frame too large"));
+            return Err(Error::protocol(format!(
+                "frame length {len} exceeds maximum allowed {max_len} bytes (potential DoS attack)",
+            )));
         }
+        
+        // SECURITY: Prevent zero-length frames that could cause parsing issues
+        if len == 0 {
+            return Err(Error::protocol(
+                "zero-length frame detected (potential protocol confusion attack)"
+            ));
+        }
+        
+        // SECURITY: Sanity check for absurdly large frames that could cause memory exhaustion
+        if len > 1_000_000_000 {  // 1GB sanity limit
+            return Err(Error::protocol(format!(
+                "frame length {len} exceeds sanity limit (potential memory exhaustion attack)",
+            )));
+        }
+        
+        // Ensure we have the complete frame before processing
         if src.len() < 4 + len {
             return Ok(None);
         }
+        
+        // SECURITY: Safe buffer operations with explicit bounds checking
         src.advance(4);
+        
+        // Verify we can safely split the requested length
+        if src.len() < len {
+            return Err(Error::protocol(
+                "insufficient buffer data for declared frame length (potential buffer attack)"
+            ));
+        }
+        
         let data = src.split_to(len);
         let f = Frame::from_cbor(&data)?;
         Ok(Some(f))
@@ -160,7 +199,7 @@ mod test_s {
         acc.extend_from_slice(&[0u8; 4]);
         let err = FrameCodec::decode(&mut acc).unwrap_err();
         match err {
-            Error::Protocol(msg) => assert!(msg.contains("too large")),
+            Error::Protocol(msg) => assert!(msg.contains("exceeds maximum")),
             _ => panic!("unexpected error: {err:?}"),
         }
     }
@@ -206,7 +245,7 @@ mod test_s {
         let mut buf = BytesMut::new();
         let err = FrameCodec::encode_with_limit(&f, &mut buf, 3).unwrap_err();
         match err {
-            Error::Protocol(msg) => assert!(msg.contains("too large")),
+            Error::Protocol(msg) => assert!(msg.contains("exceeds maximum") || msg.contains("too large")),
             e => {
                 eprintln!("Unexpected error type: {e:?}");
                 panic!("Expected Protocol error for oversized frame, got: {e:?}");

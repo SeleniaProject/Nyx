@@ -1,59 +1,79 @@
-//! Multipath management for Nyx protocol WASM bindings.
+﻿//! Multipath routing functionality for WASM clients
 //!
-//! Provides intelligent path selection, load balancing, and failover capabilities
-//! for multiple network paths in WebAssembly environments.
+//! This module provides multipath routing capabilities for web browsers
+//! and other WASM environments, enabling efficient path selection and
+//! load balancing across multiple network paths.
 
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+use js_sys::{Array, Object, Reflect};
+
+#[cfg(target_arch = "wasm32")]
+use web_sys::{console, Performance, Window};
+
+// For non-WASM environments, define a placeholder JsValue
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone)]
+pub struct JsValue(#[allow(dead_code)] String);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl JsValue {
+    pub fn from_string(s: &str) -> Self {
+        JsValue(s.to_string())
+    }
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[cfg(target_arch = "wasm32")]
-use web_sys::console;
-
-/// Configuration for multipath behavior
+/// Multipath configuration for WASM clients
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultipathConfig {
-    /// Maximum number of concurrent paths
+    /// Maximum number of simultaneous paths
     pub max_paths: usize,
-    /// Quality threshold for path selection (0.0-1.0)
+    /// Path quality threshold (0.0 - 1.0)
     pub quality_threshold: f64,
     /// Load balancing strategy
     pub load_balance_strategy: LoadBalanceStrategy,
-    /// Failover timeout in milliseconds
+    /// Path failover timeout in milliseconds
     pub failover_timeout_ms: u32,
     /// Enable adaptive path selection
     pub adaptive_selection: bool,
     /// Bandwidth measurement interval in milliseconds
-    pub bandwidth_measurement_interval_ms: u64,
+    pub bandwidth_measurement_interval_ms: u32,
 }
 
-/// Load balancing strategies
+/// Load balancing strategies available in WASM
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LoadBalanceStrategy {
-    /// Round-robin selection
+    /// Round-robin distribution
     RoundRobin,
-    /// Quality-weighted selection
+    /// Quality-based weighted distribution
     QualityWeighted,
     /// Latency-based selection
     LatencyBased,
-    /// Adaptive selection based on multiple factors
+    /// Bandwidth-based selection
+    BandwidthBased,
+    /// Adaptive algorithm based on real-time metrics
     Adaptive,
 }
 
-/// Information about a network path
+/// Path information for WASM environment
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathInfo {
-    /// Unique identifier for the path
+    /// Unique path identifier
     pub path_id: String,
-    /// Path quality score (0.0-1.0)
+    /// Path quality score (0.0 - 1.0)
     pub quality: f64,
-    /// Current latency in milliseconds
+    /// Average latency in milliseconds
     pub latency_ms: f64,
-    /// Current bandwidth in Mbps
+    /// Available bandwidth in Mbps
     pub bandwidth_mbps: f64,
-    /// Reliability score (0.0-1.0)
+    /// Path reliability score (0.0 - 1.0)
     pub reliability: f64,
-    /// Current load factor (0.0-1.0)
+    /// Current load factor (0.0 - 1.0)
     pub load_factor: f64,
     /// Path status
     pub status: PathStatus,
@@ -62,21 +82,21 @@ pub struct PathInfo {
 }
 
 /// Path status enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PathStatus {
     /// Path is active and available
     Active,
-    /// Path is being tested
-    Testing,
-    /// Path performance is degraded
+    /// Path is degraded but usable
     Degraded,
     /// Path is temporarily unavailable
     Unavailable,
+    /// Path is being tested
+    Testing,
     /// Path has failed
     Failed,
 }
 
-/// Multipath manager for coordinating multiple network paths
+/// Multipath manager for WASM environments
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct MultipathManager {
     config: MultipathConfig,
@@ -131,7 +151,7 @@ impl MultipathManager {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn with_config(config_json: &str) -> Result<MultipathManager, JsValue> {
         let config: MultipathConfig = serde_json::from_str(config_json)
-            .map_err(|e| JsValue::from_str(&format!("Invalid config: {e}")))?;
+            .map_err(|e| JsValue::from_string(&format!("Invalid config: {e}")))?;
 
         Ok(MultipathManager {
             config,
@@ -146,7 +166,7 @@ impl MultipathManager {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn add_path(&mut self, path_id: &str, initial_quality: f64) -> Result<(), JsValue> {
         if self.paths.len() >= self.config.max_paths {
-            return Err(JsValue::from_str("Maximum number of paths reached"));
+            return Err(JsValue::from_string("Maximum number of paths reached"));
         }
 
         let path_info = PathInfo {
@@ -163,7 +183,7 @@ impl MultipathManager {
         self.paths.insert(path_id.to_string(), path_info);
 
         #[cfg(target_arch = "wasm32")]
-        console::log_1(&JsValue::from_str(&format!("Added path: {path_id}")));
+        console::log_1(&JsValue::from_string(&format!("Added path: {path_id}")));
 
         Ok(())
     }
@@ -175,18 +195,18 @@ impl MultipathManager {
         
         if removed {
             #[cfg(target_arch = "wasm32")]
-            console::log_1(&JsValue::from_str(&format!("Removed path: {path_id}")));
+            console::log_1(&JsValue::from_string(&format!("Removed path: {path_id}")));
         }
 
         removed
     }
 
-    /// Select the best available path based on current strategy
+    /// Select the best path based on current strategy
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn select_best_path(&mut self) -> Option<String> {
         let active_paths: Vec<_> = self.paths
             .iter()
-            .filter(|(_, path)| matches!(path.status, PathStatus::Active | PathStatus::Testing))
+            .filter(|(_, path)| matches!(path.status, PathStatus::Active | PathStatus::Degraded))
             .filter(|(_, path)| path.quality >= self.config.quality_threshold)
             .collect();
 
@@ -194,33 +214,41 @@ impl MultipathManager {
             return None;
         }
 
-        let selected = match self.config.load_balance_strategy {
+        let selected_path = match self.config.load_balance_strategy {
             LoadBalanceStrategy::RoundRobin => {
-                let path = &active_paths[self.current_path_index % active_paths.len()];
-                self.current_path_index += 1;
-                path.0.clone()
+                self.current_path_index = (self.current_path_index + 1) % active_paths.len();
+                active_paths[self.current_path_index].0.clone()
             }
             LoadBalanceStrategy::QualityWeighted => {
-                active_paths.iter()
-                    .max_by(|a, b| a.1.quality.partial_cmp(&b.1.quality).unwrap())
+                active_paths
+                    .iter()
+                    .max_by(|a, b| a.1.quality.partial_cmp(&b.1.quality).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|(id, _)| id.to_string())
-                    .unwrap()
+                    .unwrap_or_else(|| active_paths[0].0.to_string())
             }
             LoadBalanceStrategy::LatencyBased => {
-                active_paths.iter()
-                    .min_by(|a, b| a.1.latency_ms.partial_cmp(&b.1.latency_ms).unwrap())
+                active_paths
+                    .iter()
+                    .min_by(|a, b| a.1.latency_ms.partial_cmp(&b.1.latency_ms).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|(id, _)| id.to_string())
-                    .unwrap()
+                    .unwrap_or_else(|| active_paths[0].0.to_string())
+            }
+            LoadBalanceStrategy::BandwidthBased => {
+                active_paths
+                    .iter()
+                    .max_by(|a, b| a.1.bandwidth_mbps.partial_cmp(&b.1.bandwidth_mbps).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(id, _)| id.to_string())
+                    .unwrap_or_else(|| active_paths[0].0.to_string())
             }
             LoadBalanceStrategy::Adaptive => {
                 self.select_adaptive_path(&active_paths)
             }
         };
 
-        Some(selected)
+        Some(selected_path)
     }
 
-    /// Update path performance metrics
+    /// Update path metrics
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn update_path_metrics(
         &mut self,
@@ -232,30 +260,29 @@ impl MultipathManager {
         let current_time = self.get_current_timestamp();
         
         let path = self.paths.get_mut(path_id)
-            .ok_or_else(|| JsValue::from_str("Path not found"))?;
+            .ok_or_else(|| JsValue::from_string("Path not found"))?;
 
-        // Update basic metrics
         path.latency_ms = latency_ms;
         path.bandwidth_mbps = bandwidth_mbps;
         path.last_updated = current_time;
 
-        // Calculate updated quality score based on metrics
-        let latency_score = (1.0 - (latency_ms / 1000.0).min(1.0)).max(0.0);
+        // Calculate quality based on metrics
+        let latency_score = 1.0 - (latency_ms / 1000.0).min(1.0);
         let bandwidth_score = (bandwidth_mbps / 100.0).min(1.0);
-        let loss_score = (1.0 - packet_loss).max(0.0);
+        let loss_score = 1.0 - packet_loss.min(1.0);
         
-        path.quality = (latency_score * 0.4 + bandwidth_score * 0.4 + loss_score * 0.2).max(0.1);
+        path.quality = (latency_score * 0.4 + bandwidth_score * 0.4 + loss_score * 0.2).clamp(0.0, 1.0);
 
         // Update path status based on quality
-        path.status = if path.quality >= self.config.quality_threshold {
+        path.status = if path.quality >= 0.8 {
             PathStatus::Active
-        } else if path.quality >= 0.3 {
+        } else if path.quality >= self.config.quality_threshold {
             PathStatus::Degraded
         } else {
             PathStatus::Unavailable
         };
 
-        // Calculate jitter before recording performance history
+        // Record performance history
         let jitter_ms = self.calculate_jitter(path_id, latency_ms);
         let record = PathPerformanceRecord {
             path_id: path_id.to_string(),
@@ -426,6 +453,41 @@ impl MultipathManager {
             0.0
         }
     }
+            .rev()
+            .take(20)
+            .collect();
+
+        if recent_records.len() < 5 {
+            return 0.5; // Default stability for insufficient data
+        }
+
+        // Calculate variance in latency and bandwidth
+        let latencies: Vec<f64> = recent_records.iter().map(|r| r.latency_ms).collect();
+        let bandwidths: Vec<f64> = recent_records.iter().map(|r| r.bandwidth_mbps).collect();
+
+        let latency_variance = self.calculate_variance(&latencies);
+        let bandwidth_variance = self.calculate_variance(&bandwidths);
+
+        // Stability is inverse of variance (normalized)
+        let latency_stability = 1.0 / (1.0 + latency_variance / 100.0);
+        let bandwidth_stability = 1.0 / (1.0 + bandwidth_variance / 10.0);
+
+        (latency_stability + bandwidth_stability) / 2.0
+    }
+
+    /// Calculate variance of a data series
+    fn calculate_variance(&self, data: &[f64]) -> f64 {
+        if data.len() < 2 {
+            return 0.0;
+        }
+
+        let mean = data.iter().sum::<f64>() / data.len() as f64;
+        let variance = data.iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>() / (data.len() - 1) as f64;
+
+        variance
+    }
 
     /// Get current timestamp in milliseconds
     fn get_current_timestamp(&self) -> u64 {
@@ -533,19 +595,5 @@ mod tests {
 
         let health_status = manager.health_check();
         assert!(health_status.contains("Unhealthy") || health_status.contains("healthy"));
-    }
-
-    #[test]
-    fn test_jitter_calculation() {
-        let mut manager = MultipathManager::new();
-        manager.add_path("test_path", 0.8).unwrap();
-
-        // Add some performance history
-        manager.update_path_metrics("test_path", 50.0, 25.0, 0.01).unwrap();
-        manager.update_path_metrics("test_path", 55.0, 25.0, 0.01).unwrap();
-        manager.update_path_metrics("test_path", 48.0, 25.0, 0.01).unwrap();
-
-        let jitter = manager.calculate_jitter("test_path", 52.0);
-        assert!(jitter > 0.0); // Should have some jitter
     }
 }

@@ -16,6 +16,44 @@ use zeroize::Zeroize;
 
 use crate::{Error, Result};
 
+/// Simple password-based keystore implementation with enhanced security
+struct Keystore;
+
+impl Keystore {
+    /// Check for common weak password patterns
+    /// 
+    /// # Security Considerations
+    /// - Detects all-same-character passwords
+    /// - Identifies sequential character patterns
+    /// - Blocks common weak passwords
+    /// - Prevents trivial dictionary attacks
+    fn is_weak_password(password: &[u8]) -> bool {
+        // Convert to string for pattern analysis (assuming UTF-8)
+        let pass_str = match std::str::from_utf8(password) {
+            Ok(s) => s.to_lowercase(),
+            Err(_) => return false, // Binary passwords are assumed strong
+        };
+        
+        // Check for all same characters
+        if pass_str.chars().all(|c| c == pass_str.chars().next().unwrap_or('\0')) {
+            return true;
+        }
+        
+        // Check for sequential patterns
+        if pass_str == "12345678" || pass_str == "abcdefgh" || pass_str == "87654321" {
+            return true;
+        }
+        
+        // Check for common weak passwords
+        const WEAK_PASSWORDS: &[&str] = &[
+            "password", "123456", "qwerty", "admin", "root", "user", "test",
+            "changeme", "default", "guest", "login", "pass", "secret"
+        ];
+        
+        WEAK_PASSWORDS.iter().any(|&weak| pass_str.contains(weak))
+    }
+}
+
 // SECURITY ENHANCEMENT: Increased PBKDF2 iterations to meet current security standards
 // OWASP recommendation: minimum 120,000 for PBKDF2-HMAC-SHA256 (2021)
 // NIST SP 800-63B: minimum 10,000, but industry best practice recommends 600,000+
@@ -46,15 +84,33 @@ const NONCE_LEN: usize = 12; // AES-GCM standard 96-bit
 /// # Ok::<(), nyx_crypto::Error>(())
 /// ```
 pub fn encrypt_with_password(password: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-    // SECURITY ENHANCEMENT: Input validation to prevent DoS attacks
+    // SECURITY ENHANCEMENT: Comprehensive input validation to prevent DoS attacks
     if password.is_empty() {
-        return Err(Error::Protocol("password cannot be empty".into()));
+        return Err(Error::Protocol(
+            "SECURITY: password cannot be empty (authentication bypass prevention)".into()
+        ));
+    }
+    if password.len() < 8 {
+        return Err(Error::Protocol(
+            "SECURITY: password too short, minimum 8 bytes required (brute force prevention)".into()
+        ));
     }
     if password.len() > 1024 {
-        return Err(Error::Protocol("password too long (max 1024 bytes)".into()));
+        return Err(Error::Protocol(
+            "SECURITY: password too long, maximum 1024 bytes allowed (DoS prevention)".into()
+        ));
     }
     if plaintext.len() > 10 * 1024 * 1024 {
-        return Err(Error::Protocol("plaintext too large (max 10MB)".into()));
+        return Err(Error::Protocol(
+            "SECURITY: plaintext too large, maximum 10MB allowed (memory exhaustion prevention)".into()
+        ));
+    }
+
+    // SECURITY ENHANCEMENT: Check for weak passwords (basic patterns)
+    if Keystore::is_weak_password(password) {
+        return Err(Error::Protocol(
+            "SECURITY: weak password detected, please use a stronger password".into()
+        ));
     }
 
     let mut salt = [0u8; SALT_LEN];
@@ -62,10 +118,10 @@ pub fn encrypt_with_password(password: &[u8], plaintext: &[u8]) -> Result<Vec<u8
     
     // SECURITY ENHANCEMENT: Use secure random number generation with explicit error handling
     getrandom(&mut salt).map_err(|e| {
-        Error::Protocol(format!("secure random generation failed: {e}"))
+        Error::Protocol(format!("SECURITY: secure random generation failed: {e}"))
     })?;
     getrandom(&mut nonce).map_err(|e| {
-        Error::Protocol(format!("secure random generation failed: {e}"))
+        Error::Protocol(format!("SECURITY: secure random generation failed: {e}"))
     })?;
 
     let mut key = [0u8; 32];
@@ -180,7 +236,7 @@ mod test_s {
 
     #[test]
     fn roundtrip() -> core::result::Result<(), Box<dyn std::error::Error>> {
-        let pw = b"password";
+        let pw = b"StrongP@ssw0rd123!";
         let data = b"top-secret";
         let blob = encrypt_with_password(pw, data)?;
         assert!(blob.len() > SALT_LEN + NONCE_LEN);
@@ -191,8 +247,8 @@ mod test_s {
 
     #[test]
     fn wrong_password_fail_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
-        let blob = encrypt_with_password(b"pw1", b"data")?;
-        assert!(decrypt_with_password(b"pw2", &blob).is_err());
+        let blob = encrypt_with_password(b"StrongP@ssw0rd123!", b"data")?;
+        assert!(decrypt_with_password(b"DifferentStr0ngP@ss!", &blob).is_err());
         Ok(())
     }
 }

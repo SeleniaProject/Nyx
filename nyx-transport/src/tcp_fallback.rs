@@ -59,7 +59,9 @@ impl TcpConnectionPool {
 
     /// Try to reuse an existing connection from the pool
     fn try_reuse_connection(&self, addr: SocketAddr) -> Result<Option<TcpStream>> {
-        let mut pool = self.pool.lock().unwrap();
+        let mut pool = self.pool.lock().map_err(|_| {
+            Error::Internal("TCP connection pool mutex poisoned".to_string())
+        })?;
         
         if let Some(connections) = pool.get_mut(&addr) {
             // Remove and return the most recently used connection
@@ -155,7 +157,9 @@ impl TcpConnectionPool {
 
     /// Return a connection to the pool for reuse
     pub fn return_connection(&self, addr: SocketAddr, stream: TcpStream) -> Result<()> {
-        let mut pool = self.pool.lock().unwrap();
+        let mut pool = self.pool.lock().map_err(|_| {
+            Error::Internal("TCP connection pool mutex poisoned".to_string())
+        })?;
         
         let connections = pool.entry(addr).or_default();
         
@@ -173,23 +177,30 @@ impl TcpConnectionPool {
 
     /// Clean up idle connections from the pool
     pub fn cleanup_idle_connections(&self) {
-        let mut pool = self.pool.lock().unwrap();
-        let now = Instant::now();
-        
-        pool.retain(|_, connections| {
-            connections.retain(|conn| now.duration_since(conn.last_used) < self.idle_timeout);
-            !connections.is_empty()
-        });
+        if let Ok(mut pool) = self.pool.lock() {
+            let now = Instant::now();
+            
+            pool.retain(|_, connections| {
+                connections.retain(|conn| now.duration_since(conn.last_used) < self.idle_timeout);
+                !connections.is_empty()
+            });
+        }
+        // If mutex is poisoned, just skip cleanup - not critical
     }
 
     /// Get performance statistics
     pub fn get_stats(&self) -> TcpPoolStats {
-        let pool = self.pool.lock().unwrap();
-        let total_pooled = pool.values().map(|v| v.len()).sum();
+        let (total_pooled, addresses_in_pool) = if let Ok(pool) = self.pool.lock() {
+            let total_pooled = pool.values().map(|v| v.len()).sum();
+            (total_pooled, pool.len())
+        } else {
+            // If mutex is poisoned, return default values
+            (0, 0)
+        };
         
         TcpPoolStats {
             total_pooled_connections: total_pooled,
-            addresses_in_pool: pool.len(),
+            addresses_in_pool,
             connections_created: TCP_CONNECTIONS_CREATED.load(Ordering::Relaxed),
             connections_reused: TCP_CONNECTIONS_REUSED.load(Ordering::Relaxed),
             bytes_sent: TCP_BYTES_SENT.load(Ordering::Relaxed),

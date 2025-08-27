@@ -66,7 +66,20 @@ pub fn record_counter(name: &str, v: u64) {
                     );
                     IntCounter::new("fallback_counter", "").unwrap_or_else(|_| {
                         IntCounter::new("error_counter", "Critical error").unwrap_or_else(|_| {
-                            IntCounter::new("total_errors", "Total error count").unwrap()
+                            // Final fallback - use a simple default counter if all else fails
+                            IntCounter::new("total_errors", "Total error count").unwrap_or_else(|_| {
+                                // Last resort: log error and return a dummy counter that does nothing
+                                tracing::error!("Critical: Unable to create any metrics counter - system metrics disabled");
+                                // Create a minimal working counter as the ultimate fallback
+                                IntCounter::new("disabled_counter", "Metrics disabled due to creation failure")
+                                    .unwrap_or_else(|_| {
+                                        // If even this fails, something is seriously wrong with the metrics system
+                                        // Return a counter that will work but log the critical error
+                                        tracing::error!("Metrics system failure - counter creation completely broken");
+                                        // This should never fail as it's the most basic possible counter
+                                        IntCounter::new("", "").expect("Basic counter creation failed - metrics system corrupted")
+                                    })
+                            })
                         })
                     })
                 })

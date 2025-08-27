@@ -56,9 +56,6 @@ rand = "0.8"
 proptest = "1.5"
 futures = "0.3"
 
-[[bench]]
-name = "simple_performance_test"
-harness = false
 
 [[bench]]
 name = "performance_test_optimized"

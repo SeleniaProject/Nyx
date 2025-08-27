@@ -1,6 +1,28 @@
-//! Helper_s to pack variable payload_s into fixed-size shard_s and back.
+//! Helper_s to pack variable payload_s int/// Unpack a payload from a padded shard. 
+/// Returns an empty slice if the shard is invalid.
+/// 
+/// # Security Enhancements
+/// - Validates length prefix to prevent buffer overflow attacks
+/// - Returns empty slice instead of panicking for graceful error handling
+/// - For explicit error handling, use `try_unpack_from_shard`
+pub fn unpack_from_shard(shard: &[u8; SHARD_SIZE]) -> &[u8] {
+    let len = u16::from_le_bytes([shard[0], shard[1]]) as usize;
+    
+    // SECURITY ENHANCEMENT: Runtime bounds checking to prevent buffer overflow
+    // Returns empty slice instead of panicking for more robust error handling
+    if len > SHARD_SIZE - 2 {
+        eprintln!(
+            "SECURITY: Invalid shard length {} exceeds maximum allowed {} bytes. \
+             This indicates potential data corruption or malicious input. Returning empty slice.",
+            len, SHARD_SIZE - 2
+        );
+        return &[];
+    }
+    
+    &shard[2..2 + len]
+}
 
-/// Fixed IP packet-ish MTU used acros_s Nyx.
+/// Fixed IP packet-ish MTU used across Nyx.
 pub const SHARD_SIZE: usize = 1280;
 
 /// Pack a payload into a fixed-size shard with length prefix.
@@ -34,13 +56,7 @@ pub fn try_pack_into_shard(payload: &[u8]) -> Option<[u8; SHARD_SIZE]> {
     Some(out)
 }
 
-/// Unpack a shard created by `pack_into_shard` and return the original payload slice.
-pub fn unpack_from_shard(shard: &[u8; SHARD_SIZE]) -> &[u8] {
-    let len = u16::from_le_bytes([shard[0], shard[1]]) as usize;
-    debug_assert!(len <= SHARD_SIZE - 2, "encoded length out of bounds");
-    &shard[2..2 + len]
-}
-
+/// Unpack payload from a fixed-size shard (panics if length is invalid).
 /// Fallible unpack that validates the length prefix and returns None if invalid.
 pub fn try_unpack_from_shard(shard: &[u8; SHARD_SIZE]) -> Option<&[u8]> {
     let len = u16::from_le_bytes([shard[0], shard[1]]) as usize;

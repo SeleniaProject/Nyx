@@ -211,7 +211,7 @@ mod tests {
         mix[4] = None; // lose one
         rs.reconstruct(&mut mix)?;
         for (i, o) in mix.into_iter().enumerate() {
-            let a = o.unwrap();
+            let a = o.expect("Reconstructed shard should exist");
             if i != 4 {
                 assert_eq!(a, before[i]);
             }

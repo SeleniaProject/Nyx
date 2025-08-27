@@ -31,6 +31,8 @@ pub enum Error {
     AuthenticationFailed(String),
     #[error("Post-quantum operation failed: {0}")]
     PostQuantumError(String),
+    #[error("Feature not implemented: {0}")]
+    NotImplemented(String),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

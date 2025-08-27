@@ -188,15 +188,15 @@ impl UdpEndpoint {
     fn configure_socket(sock: &std::net::UdpSocket) -> Result<()> {
         // Set to blocking mode for simplicity
         if let Err(e) = sock.set_nonblocking(false) {
-            tracing::warn!("Failed to set socket to blocking mode: {}", e);
+            eprintln!("Failed to set socket to blocking mode: {}", e);
         }
         
         // Optimize socket buffer sizes for high throughput
         if let Err(e) = sock.set_send_buffer_size(262144) { // 256KB send buffer
-            tracing::debug!("Failed to set send buffer size: {}", e);
+            eprintln!("Failed to set send buffer size: {}", e);
         }
         if let Err(e) = sock.set_recv_buffer_size(262144) { // 256KB recv buffer
-            tracing::debug!("Failed to set recv buffer size: {}", e);
+            eprintln!("Failed to set recv buffer size: {}", e);
         }
         
         Ok(())

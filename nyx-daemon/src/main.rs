@@ -4,11 +4,11 @@ use std::{io, path::PathBuf, sync::Arc, time::Instant};
 
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use tracing::{info, warn, error};
 mod json_util;
 #[cfg(feature = "telemetry")]
 use nyx_telemetry as telemetry;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{info, warn};
 
 use nyx_daemon::event_system::{Event, EventSystem};
 #[cfg(feature = "low_power")]

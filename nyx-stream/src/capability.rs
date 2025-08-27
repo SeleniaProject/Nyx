@@ -153,12 +153,32 @@ pub fn get_local_capabilities() -> Vec<Capability> {
     ]
 }
 
-/// Validate capability structure and data bounds
+/// Validate capability structure and data bounds with comprehensive security checks
+/// 
+/// # Security Enhancements
+/// - Prevents DoS attacks through oversized capability data
+/// - Validates data format and structure integrity
+/// - Implements strict bounds checking for all capability types
+/// - Detects malformed capabilities that could cause parsing issues
 pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
-    // Check data size limits (prevent DoS)
+    // SECURITY ENHANCEMENT: Comprehensive data size validation
     if cap.data.len() > 1024 {
         return Err(CapabilityError::InvalidData(
-            "Capability data too large".to_string(),
+            format!("SECURITY: Capability data size {} exceeds maximum 1024 bytes (DoS prevention)", cap.data.len())
+        ));
+    }
+    
+    // SECURITY: Prevent zero-size data when data is expected
+    if cap.data.is_empty() && matches!(cap.id, CAP_PLUGIN_FRAMEWORK) {
+        return Err(CapabilityError::InvalidData(
+            "SECURITY: Plugin framework capability requires non-empty data".to_string(),
+        ));
+    }
+    
+    // SECURITY: Validate capability ID range to prevent invalid IDs
+    if cap.id > 0xFFFF {
+        return Err(CapabilityError::InvalidData(
+            format!("SECURITY: Invalid capability ID {} exceeds maximum allowed value", cap.id)
         ));
     }
 
@@ -168,16 +188,35 @@ pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
             // Core capability should have empty data for v1.0
             if !cap.data.is_empty() {
                 return Err(CapabilityError::InvalidData(
-                    "Core capability should have empty data".to_string(),
+                    "SECURITY: Core capability must have empty data for v1.0 (protocol compliance)".to_string(),
                 ));
             }
         }
         CAP_PLUGIN_FRAMEWORK => {
-            // Plugin framework can have version data
-            // No specific validation for now - future extension point
+            // SECURITY ENHANCEMENT: Validate plugin framework data format
+            if cap.data.len() < 4 {
+                return Err(CapabilityError::InvalidData(
+                    "SECURITY: Plugin framework capability data too short (minimum 4 bytes required)".to_string(),
+                ));
+            }
+            
+            // Basic sanity check for version information
+            let version = u32::from_le_bytes([cap.data[0], cap.data[1], cap.data[2], cap.data[3]]);
+            if version > 1000 {  // Reasonable version number limit
+                return Err(CapabilityError::InvalidData(
+                    format!("SECURITY: Plugin framework version {version} exceeds reasonable limit")
+                ));
+            }
         }
         _ => {
             // Unknown capabilities are allowed (forward compatibility)
+            // But we still enforce basic security constraints
+            if cap.data.len() > 512 {  // Stricter limit for unknown capabilities
+                return Err(CapabilityError::InvalidData(
+                    format!("SECURITY: Unknown capability {} data size {} exceeds limit for unknown types", 
+                            cap.id, cap.data.len())
+                ));
+            }
         }
     }
 

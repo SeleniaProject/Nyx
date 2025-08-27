@@ -12,14 +12,14 @@ mod bench {
         let payload = [0u8; 1200];
         c.bench_function("udp_send_loopback", |b| {
             b.iter(|| {
-                let _ = sock.send_to(&payload, target)?;
+                let _ = sock.send_to(&payload, target).unwrap_or(0);
             })
         });
         Ok(())
     }
 
     criterion_group!(benches, udp_send_bench);
-    criterion_main!(benche_s);
+    criterion_main!(benches);
 }
 
 #[cfg(not(unix))]

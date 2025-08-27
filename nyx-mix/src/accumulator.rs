@@ -581,7 +581,7 @@ mod tests {
     fn invalid_witness_fails() -> Result<(), Box<dyn std::error::Error>> {
         let mut acc = Accumulator::new();
         let element = b"test_element";
-        let witness = acc.add_element(element)?;
+        let _witness = acc.add_element(element)?;
         let invalid_witness = BigInt::from(999999);
         // element exists but witness is wrong, should fail
         assert!(!acc.verify_element(element, &invalid_witness));

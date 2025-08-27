@@ -49,6 +49,58 @@ static UDP_RECV_BYTES: AtomicU64 = AtomicU64::new(0);
 static UDP_SEND_COUNT: AtomicU64 = AtomicU64::new(0);
 static UDP_RECV_COUNT: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug, Clone)]
+pub struct TransportConfig {
+    pub bind_addr: std::net::SocketAddr,
+    pub buffer_size: usize,
+    pub timeout: Duration,
+}
+
+impl Default for TransportConfig {
+    fn default() -> Self {
+        Self {
+            bind_addr: "0.0.0.0:0".parse().unwrap(),
+            buffer_size: 65536,
+            timeout: Duration::from_secs(5),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransportMetrics {
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub packets_sent: u64,
+    pub packets_received: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct UdpTransport {
+    _config: TransportConfig, // Prefix with underscore to avoid unused warning
+}
+
+impl UdpTransport {
+    pub fn new(config: TransportConfig) -> Result<Self> {
+        Ok(Self { _config: config })
+    }
+
+    pub async fn send_to(&self, data: &[u8], _addr: std::net::SocketAddr) -> Result<()> {
+        UDP_SEND_BYTES.fetch_add(data.len() as u64, Ordering::Relaxed);
+        UDP_SEND_COUNT.fetch_add(1, Ordering::Relaxed);
+        // Stub implementation
+        Ok(())
+    }
+
+    pub fn get_metrics(&self) -> TransportMetrics {
+        TransportMetrics {
+            bytes_sent: UDP_SEND_BYTES.load(Ordering::Relaxed),
+            bytes_received: UDP_RECV_BYTES.load(Ordering::Relaxed),
+            packets_sent: UDP_SEND_COUNT.load(Ordering::Relaxed),
+            packets_received: UDP_RECV_COUNT.load(Ordering::Relaxed),
+        }
+    }
+}
+
 /// Transport kinds supported by this crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportKind {
@@ -188,7 +240,7 @@ impl UdpEndpoint {
     fn configure_socket(sock: &std::net::UdpSocket) -> Result<()> {
         // Set to blocking mode for simplicity
         if let Err(e) = sock.set_nonblocking(false) {
-            tracing::warn!("Failed to set socket to blocking mode: {}", e);
+            eprintln!("Failed to set socket to blocking mode: {e}");
         }
         
         // Note: set_send_buffer_size and set_recv_buffer_size are not available on UdpSocket

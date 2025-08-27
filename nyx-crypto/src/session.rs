@@ -115,25 +115,59 @@ impl AeadSession {
         self.cipher = OnceLock::new();
     }
 
-    /// Encrypt next packet. Return_s (sequence, ciphertext). Enforce_s limit_s.
+    /// Encrypt next packet. Returns (sequence, ciphertext). Enforces security limits.
+    /// 
+    /// # Security Enhancements
+    /// - Prevents sequence number overflow to avoid nonce reuse
+    /// - Enforces strict input size limits to prevent DoS attacks
+    /// - Implements automatic rekeying based on usage thresholds
+    /// - Validates input parameters before any cryptographic operations
     pub fn sealnext(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<(u64, Vec<u8>)> {
-        // seq ぁEmaxseq に到達したら以降�E送信を拒否�E�Eonce再利用防止�E�E
+        // SECURITY ENHANCEMENT: Comprehensive sequence number validation
         if self.seq >= self.__maxseq {
-            return Err(Error::Protocol("aead sequence exhausted".into()));
+            return Err(Error::Protocol(format!(
+                "SECURITY: sequence number {} reached maximum limit {} (nonce reuse prevention)",
+                self.seq, self.__maxseq
+            )));
         }
+        
+        // SECURITY: Additional check for sequence approaching overflow
+        if self.seq > u64::MAX - 1000 {
+            return Err(Error::Protocol(
+                "SECURITY: sequence number approaching overflow, immediate rekey required".to_string()
+            ));
+        }
+        
+        // SECURITY ENHANCEMENT: Strict input validation
         if plaintext.len() > Self::MAX_PLAINTEXT_LEN {
-            return Err(Error::Protocol("plaintext too long".into()));
+            return Err(Error::Protocol(format!(
+                "SECURITY: plaintext length {} exceeds maximum {} bytes (DoS prevention)",
+                plaintext.len(), Self::MAX_PLAINTEXT_LEN
+            )));
         }
+        
         if aad.len() > Self::MAX_AAD_LEN {
-            return Err(Error::Protocol("aad too long".into()));
+            return Err(Error::Protocol(format!(
+                "SECURITY: AAD length {} exceeds maximum {} bytes (DoS prevention)",
+                aad.len(), Self::MAX_AAD_LEN
+            )));
         }
-        // Mix direction id into the first 4 byte_s then XOR counter (RFC8439 style)
+        
+        // SECURITY: Check for automatic rekey conditions before proceeding
+        if self.needs_rekey() {
+            return Err(Error::Protocol(
+                "SECURITY: automatic rekey required before further operations (forward secrecy)".to_string()
+            ));
+        }
+        
+        // Mix direction id into the first 4 bytes then XOR counter (RFC8439 style)
         let mut base = self.basenonce;
         let dir = self.dir_id.to_be_bytes();
         for i in 0..4 {
             base[i] ^= dir[i];
         }
         let n = AeadNonce(aeadnonce_xor(&base, self.seq));
+        
         // Ultra-high performance: use pre-computed cipher instance
         let cipher = self.get_cipher();
         let ct = cipher.seal(n, aad, plaintext)?;

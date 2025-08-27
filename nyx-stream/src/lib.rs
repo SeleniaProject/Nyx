@@ -22,8 +22,17 @@ pub mod plugin_manifest; // Manifest loader (TOML)
 pub mod plugin_registry; // In-memory registry and permission_s
 pub mod plugin_sandbox; // Cooperative sandbox (policy + guard_s)
 pub mod plugin_settings; // Runtime setting_s for plugin_s // Rekey trigger helpers (test_s/integration use)
+pub mod integrated_frame_processor; // Integrated frame processing with reordering and flow control
+
+// Test modules  
+#[cfg(test)]
+pub mod tests {
+    pub mod frame_handler_tests;
+    pub mod integrated_frame_processor_tests;
+}
 
 pub use async_stream::{AsyncStream, AsyncStreamConfig, pair};
+pub use integrated_frame_processor::{IntegratedFrameProcessor, ProcessorConfig};
 pub use capability::{get_local_capabilities, negotiate, Capability, CapabilityError};
 pub use errors::{Error, Result};
 pub use frame::{Frame, FrameHeader, FrameType};

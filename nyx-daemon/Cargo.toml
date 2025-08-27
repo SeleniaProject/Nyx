@@ -45,6 +45,7 @@ async-trait = "0.1"
 prost = "0.12"
 prost-types = "0.12"
 tokio = { version = "1.37", features = ["full"] }
+thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # tonic = { version = "0.10", default-features = false, features = ["transport", "prost", "codegen"] } # DISABLED: uses ring/openssl
@@ -81,7 +82,6 @@ futures = "0.3"
 futures-util = "0.3"
 pin-project = "1.1"
 bytes = "1.5"
-thiserror = "1.0"
 anyhow = "1.0"
 once_cell = "1.19"
 

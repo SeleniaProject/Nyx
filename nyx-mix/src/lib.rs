@@ -10,10 +10,12 @@
 //! - VDF stack (for future cMix integration)
 
 pub mod accumulator;
+pub mod adaptive; // Adaptive mixing strategies
 pub mod anonymity;
 pub mod cmix;
 pub mod cover;
 pub mod cover_adaptive;
+pub mod errors; // Error types for mix module
 pub mod larmix;
 pub mod vdf;
 pub mod vdf_calib;
