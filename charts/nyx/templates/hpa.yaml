@@ -1,4 +1,5 @@
-{{- if .Values.hpa.enabled }}
+{{- $hpa := (default (dict) .Values.hpa) -}}
+{{- if $hpa.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -10,22 +11,22 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "nyx.fullname" . }}
-  minReplicas: {{ .Values.hpa.minReplicas }}
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  minReplicas: {{ $hpa.minReplicas | default 1 }}
+  maxReplicas: {{ $hpa.maxReplicas | default 3 }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
-{{- if .Values.hpa.enableCustomPodsMetric }}
+          averageUtilization: {{ $hpa.targetCPUUtilizationPercentage | default 80 }}
+{{- if $hpa.enableCustomPodsMetric }}
     - type: Pods
       pods:
         metric:
           name: nyx_bytes_sent_total
         target:
           type: AverageValue
-          averageValue: {{ .Values.hpa.targetBytesPerSecond }}
+          averageValue: {{ $hpa.targetBytesPerSecond | default "10k" }}
 {{- end }}
 {{- end }} 

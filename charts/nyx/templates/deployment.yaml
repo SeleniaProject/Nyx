@@ -15,9 +15,10 @@ spec:
 {{ include "nyx.selectorLabels" . | indent 8 }}
       annotations:
 {{ toYaml .Values.podAnnotations | indent 8 }}
-    spec:
-{{- if or .Values.serviceAccount.create .Values.serviceAccount.name }}
-      serviceAccountName: {{ default (include "nyx.fullname" .) .Values.serviceAccount.name }}
+  spec:
+{{- $sa := (default (dict) .Values.serviceAccount) -}}
+{{- if or $sa.create $sa.name }}
+    serviceAccountName: {{ default (include "nyx.fullname" .) $sa.name }}
 {{- end }}
       securityContext:
 {{- if .Values.podSecurity.seccompProfile.type }}
@@ -50,50 +51,53 @@ spec:
             - name: NYX_CONFIG
               value: "{{ .Values.config.mountPath }}/{{ .Values.config.fileName }}"
           envFrom:
-{{- if .Values.secrets.create }}
+{{- $sec := (default (dict) .Values.secrets) -}}
+{{- if $sec.create }}
             - secretRef:
-                name: {{ default (printf "%s-secret" (include "nyx.fullname" .)) .Values.secrets.name }}
+                name: {{ default (printf "%s-secret" (include "nyx.fullname" .)) $sec.name }}
 {{- end }}
 {{- range .Values.extraEnvFrom }}
             - {{ toYaml . | nindent 14 }}
 {{- end }}
-{{- if .Values.probes.liveness.enabled }}
+{{- $probes := (default (dict) .Values.probes) -}}
+{{- if (and $probes.liveness ($probes.liveness.enabled)) }}
           livenessProbe:
             tcpSocket:
               port: 43300
             initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds | default 10 }}
             periodSeconds: {{ .Values.probes.liveness.periodSeconds | default 15 }}
 {{- end }}
-{{- if .Values.serviceMonitor.enabled }}
-{{- if .Values.probes.readiness.enabled }}
+{{- $sm := (default (dict) .Values.serviceMonitor) -}}
+{{- if $sm.enabled }}
+{{- if (and $probes.readiness ($probes.readiness.enabled)) }}
           readinessProbe:
             httpGet:
-              path: {{ .Values.probes.readiness.httpPath | default "/metrics" }}
-              port: {{ .Values.probes.readiness.httpPort | default .Values.service.metricsPort }}
+              path: {{ $probes.readiness.httpPath | default "/metrics" }}
+              port: {{ $probes.readiness.httpPort | default .Values.service.metricsPort }}
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
 {{- end }}
 {{- else }}
-{{- if .Values.probes.readiness.enabled }}
+{{- if (and $probes.readiness ($probes.readiness.enabled)) }}
           readinessProbe:
-{{- if or (eq .Values.probes.readiness.type "http") (and (not .Values.probes.readiness.type) false) }}
+{{- if or (eq $probes.readiness.type "http") (and (not $probes.readiness.type) false) }}
             httpGet:
-              path: {{ .Values.probes.readiness.httpPath | default "/metrics" }}
-              port: {{ .Values.probes.readiness.httpPort | default .Values.service.metricsPort }}
+              path: {{ $probes.readiness.httpPath | default "/metrics" }}
+              port: {{ $probes.readiness.httpPort | default .Values.service.metricsPort }}
 {{- else }}
             tcpSocket:
               port: 43300
 {{- end }}
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
+            initialDelaySeconds: {{ $probes.readiness.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ $probes.readiness.periodSeconds | default 10 }}
 {{- end }}
 {{- end }}
-{{- if .Values.probes.startup.enabled }}
+{{- if (and $probes.startup ($probes.startup.enabled)) }}
           startupProbe:
             tcpSocket:
               port: 43300
-            failureThreshold: {{ .Values.probes.startup.failureThreshold | default 30 }}
-            periodSeconds: {{ .Values.probes.startup.periodSeconds | default 2 }}
+            failureThreshold: {{ $probes.startup.failureThreshold | default 30 }}
+            periodSeconds: {{ $probes.startup.periodSeconds | default 2 }}
 {{- end }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       volumes:

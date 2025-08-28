@@ -1,4 +1,5 @@
-{{- if .Values.config.enabled }}
+{{- $cfg := (default (dict) .Values.config) -}}
+{{- if $cfg.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,8 +7,8 @@ metadata:
   labels:
 {{ include "nyx.labels" . | indent 4 }}
 data:
-  {{ .Values.config.fileName }}: |-
-{{ .Values.config.data | indent 4 }}
+  {{ $cfg.fileName | default "nyx.toml" }}: |-
+{{ ($cfg.data | default "") | indent 4 }}
 {{- end }}
 
 

@@ -1,24 +1,25 @@
-{{- if .Values.serviceMonitor.enabled }}
+{{- $sm := (default (dict) .Values.serviceMonitor) -}}
+{{- if $sm.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "nyx.fullname" . }}
   labels:
 {{ include "nyx.labels" . | indent 4 }}
-  {{- with .Values.serviceMonitor.labels }}
+  {{- with $sm.labels }}
 {{ toYaml . | indent 2 }}
   {{- end }}
   annotations:
-{{ toYaml .Values.serviceMonitor.annotations | indent 4 }}
+{{ toYaml ($sm.annotations | default (dict)) | indent 4 }}
 spec:
   selector:
     matchLabels:
 {{ include "nyx.selectorLabels" . | indent 6 }}
   endpoints:
     - port: metrics
-      interval: {{ .Values.serviceMonitor.interval }}
-      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
-      scheme: {{ .Values.serviceMonitor.scheme }}
+      interval: {{ $sm.interval | default "30s" }}
+      scrapeTimeout: {{ $sm.scrapeTimeout | default "10s" }}
+      scheme: {{ $sm.scheme | default "http" }}
 {{- end }}
 
 

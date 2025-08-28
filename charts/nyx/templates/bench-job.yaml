@@ -1,4 +1,5 @@
-{{- if .Values.bench.enabled }}
+{{- $bench := (default (dict) .Values.bench) -}}
+{{- if $bench.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,8 +15,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: bench
-          image: {{ .Values.bench.image | quote }}
-          imagePullPolicy: {{ .Values.bench.imagePullPolicy | default "IfNotPresent" }}
+          image: {{ ($bench.image | default "ghcr.io/seleniaproject/nyx-bench:latest") | quote }}
+          imagePullPolicy: {{ $bench.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: TARGET_SERVICE
               value: {{ include "nyx.fullname" . }}
@@ -25,13 +26,13 @@ spec:
               value: {{ printf "%s-headless" (include "nyx.fullname" .) | quote }}
             - name: METRICS_PORT
               value: {{ .Values.service.metricsPort | quote }}
-{{- with .Values.bench.env }}
+{{- with $bench.env }}
 {{ toYaml . | indent 12 }}
 {{- end }}
-          command: {{ toYaml .Values.bench.command | nindent 12 }}
-          args: {{ toYaml .Values.bench.args | nindent 12 }}
+          command: {{ toYaml ($bench.command | default (list "/bin/sh" "-lc")) | nindent 12 }}
+          args: {{ toYaml ($bench.args | default (list "echo bench")) | nindent 12 }}
           resources:
-{{ toYaml .Values.bench.resources | indent 12 }}
+{{ toYaml ($bench.resources | default (dict)) | indent 12 }}
 {{- with .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml . | indent 8 }}
