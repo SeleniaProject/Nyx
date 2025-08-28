@@ -26,6 +26,7 @@ help:
 	@echo ""
 	@echo "Utilities:"
 	@echo "  clean              - Clean up generated reports and artifacts"
+	@echo "  hybrid-tests       - Run nyx-crypto hybrid-handshake tests"
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  NYX_REQUIRED_COMPLIANCE_LEVEL - Required compliance level (core|plus|full)"
@@ -116,6 +117,13 @@ clean:
 	@rm -rf ./compliance-reports ./badges
 	@cargo clean --package nyx-conformance
 	@echo "✅ Cleanup completed"
+
+# Hybrid handshake tests (nyx-crypto)
+.PHONY: hybrid-tests
+hybrid-tests:
+	@echo "🔐 Running nyx-crypto hybrid-handshake tests..."
+	@bash ./scripts/run-hybrid-tests.sh
+	@echo "✅ Hybrid tests completed"
 
 # Development shortcuts
 .PHONY: dev-check dev-report dev-badges

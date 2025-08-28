@@ -38,7 +38,9 @@ mod test_s {
 
     #[tokio::test]
     async fn gateway_rate_limit_s() {
-        let gw = PushGateway::new(Arc::new(LoggingPush), 1000.0);
+        // Use a conservative refill rate to avoid timing flakiness across platforms.
+        // At 1 token/sec capacity=1, two immediate sends must result in the second being limited.
+        let gw = PushGateway::new(Arc::new(LoggingPush), 1.0);
         assert!(gw.send("t", "a", "b").await.unwrap());
         // rate-limited immediately after capacity consumed
         assert!(!gw.send("t", "a", "b").await.unwrap());
