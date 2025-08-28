@@ -119,3 +119,7 @@ spec:
       affinity:
 {{ toYaml . | indent 8 }}
 {{- end }}
+{{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+{{ toYaml . | indent 8 }}
+{{- end }}
