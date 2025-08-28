@@ -1,14 +1,16 @@
 # syntax=docker/dockerfile:1
 
 # Legacy-friendly multi-stage build without BuildKit features
-FROM rust:1.77-slim AS builder
+FROM rust:1.81-slim AS builder
 WORKDIR /workspace
 
 # Copy the full workspace (no cache mounts, no platform args)
 COPY . .
 
 # Build all crates except WASM (gnu target by default)
-RUN cargo build --release --workspace --exclude nyx-sdk-wasm
+# Ensure latest stable toolchain to parse modern Cargo.lock formats
+RUN rustup update stable && rustup default stable \
+	&& cargo build --release --workspace --exclude nyx-sdk-wasm
 
 FROM gcr.io/distroless/cc-debian12
 
