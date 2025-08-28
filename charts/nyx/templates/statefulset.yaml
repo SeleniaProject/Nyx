@@ -28,7 +28,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 {{- end }}
-      containers:
+  containers:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -39,17 +39,17 @@ spec:
             - containerPort: {{ .Values.service.metricsPort }}
           volumeMounts:
             - name: config
-              mountPath: {{ .Values.config.mountPath }}
+      mountPath: {{ (default (dict) .Values.config).mountPath }}
               readOnly: true
           env:
             - name: NYX_CONFIG
-              value: "{{ .Values.config.mountPath }}/{{ .Values.config.fileName }}"
+      value: "{{ (default (dict) .Values.config).mountPath }}/{{ (default (dict) .Values.config).fileName }}"
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       volumes:
         - name: config
           configMap:
             name: {{ include "nyx.fullname" . }}
             items:
-              - key: {{ .Values.config.fileName }}
-                path: {{ .Values.config.fileName }}
+              - key: {{ (default (dict) .Values.config).fileName }}
+                path: {{ (default (dict) .Values.config).fileName }}
 {{- end }}
