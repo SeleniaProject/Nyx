@@ -7,6 +7,8 @@ metadata:
   labels:
 {{ include "nyx.labels" . | indent 4 }}
 spec:
+  parallelism: {{ $bench.replicas | default 1 }}
+  completions: {{ $bench.replicas | default 1 }}
   template:
     metadata:
       labels:
@@ -15,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: bench
-          image: {{ ($bench.image | default "ghcr.io/seleniaproject/nyx-bench:latest") | quote }}
+          image: {{ ($bench.image | default "alpine:3.19") | quote }}
           imagePullPolicy: {{ $bench.imagePullPolicy | default "IfNotPresent" }}
           env:
             - name: TARGET_SERVICE
@@ -26,6 +28,10 @@ spec:
               value: {{ printf "%s-headless" (include "nyx.fullname" .) | quote }}
             - name: METRICS_PORT
               value: {{ .Values.service.metricsPort | quote }}
+            - name: TEST_DURATION_SECONDS
+              value: {{ $bench.testDurationSeconds | default 60 | quote }}
+            - name: CONCURRENT_CONNECTIONS
+              value: {{ $bench.concurrentConnections | default 10 | quote }}
 {{- with $bench.env }}
 {{ toYaml . | indent 12 }}
 {{- end }}

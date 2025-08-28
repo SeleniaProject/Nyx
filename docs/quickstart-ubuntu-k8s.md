@@ -34,14 +34,18 @@ if ! docker info >/dev/null 2>&1; then echo "[!] Docker daemon が起動して�
 kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -; \
 helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
-  --set replicaCount=3 --set bench.enabled=true --set pdb.enabled=true --set serviceMonitor.enabled=true \
+  --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
+  --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false; \
 kubectl rollout status -n nyx deploy/nyx --timeout=300s; \
 kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s; \
-echo "=== NYX DAEMON VALIDATION COMPLETE ==="; \
+echo "=== MULTI-NODE PERFORMANCE BENCHMARK RESULTS ==="; \
 kubectl logs -n nyx job/nyx-bench; \
 echo "=== CLUSTER STATUS ==="; \
-kubectl get pods,svc,pdb -n nyx -o wide
+kubectl get pods,svc,pdb -n nyx -o wide; \
+echo "=== NODE DISTRIBUTION ==="; \
+kubectl get pods -n nyx -o wide | awk 'NR>1{print $7}' | sort | uniq -c
 ```
 
 メモ:
