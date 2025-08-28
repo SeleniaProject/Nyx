@@ -102,22 +102,22 @@ impl std::fmt::Debug for Buffer {
 #[repr(align(128))] // Double cache line alignment for optimal performance
 pub struct BufferPool {
     // Thread-safe size-classed free lists using optimized mutex strategy
-    small_buffers: Mutex<Vec<Vec<u8>>>,  // 64-512 bytes - most common
-    medium_buffers: Mutex<Vec<Vec<u8>>>, // 512-8192 bytes - moderate usage  
-    large_buffers: Mutex<Vec<Vec<u8>>>,  // 8192+ bytes - rare but important
+    small_buffers: Mutex<Vec<Vec<u8>>>, // 64-512 bytes - most common
+    medium_buffers: Mutex<Vec<Vec<u8>>>, // 512-8192 bytes - moderate usage
+    large_buffers: Mutex<Vec<Vec<u8>>>, // 8192+ bytes - rare but important
 
     // Lock-free atomic statistics for monitoring with minimal overhead
     allocated: AtomicUsize,
     recycled: AtomicUsize,
     total_capacity: AtomicUsize,
     cache_hits: AtomicUsize, // Track cache hit rate for optimization
-    
+
     // Pre-computed size limits for ultra-fast classification
     small_limit: usize,
     medium_limit: usize,
     large_limit: usize,
-    
-    // Performance optimization fields  
+
+    // Performance optimization fields
     max_cached_per_class: usize, // Prevent memory bloat while maintaining performance
 }
 
@@ -126,7 +126,7 @@ impl BufferPool {
         // Ultra-high performance: optimized size classes based on real-world usage patterns
         // Small buffers: most common network packets and short messages
         let small_limit = (cap / 8).max(512);
-        // Medium buffers: typical data chunks and streaming content  
+        // Medium buffers: typical data chunks and streaming content
         let medium_limit = (cap / 2).max(8192);
         let large_limit = cap;
 
@@ -183,17 +183,14 @@ impl BufferPool {
             for i in (0..buffers.len()).rev() {
                 if buffers[i].capacity() >= n {
                     let mut v = buffers.swap_remove(i);
-                    
-                    // Ultra-fast buffer preparation with safe operations
-                    // Safe alternative to unsafe memset: fill with zeros for security
-                    v.fill(0);
-                    v.clear();
-                    
-                    // Ensure exact capacity requirement without reallocation
+
+                    // Ensure capacity and set exact length with zero initialization
                     if v.capacity() < n {
                         v.reserve_exact(n - v.capacity());
                     }
-                    
+                    // Resize to requested length and zero-fill for safety
+                    v.resize(n, 0);
+
                     // Update performance counters with relaxed ordering for maximum speed
                     self.recycled.fetch_add(1, Ordering::Relaxed);
                     cache_counter.fetch_add(1, Ordering::Relaxed);
@@ -217,11 +214,14 @@ impl BufferPool {
             (n + (n / 8)).div_ceil(4096) * 4096
         };
 
-        let new_buf = Vec::with_capacity(optimized_capacity);
-        
+        let mut new_buf = Vec::with_capacity(optimized_capacity);
+        // Set requested length and zero-initialize to provide deterministic contents
+        new_buf.resize(n, 0);
+
         // Update statistics atomically for thread safety
         self.allocated.fetch_add(1, Ordering::Relaxed);
-        self.total_capacity.fetch_add(optimized_capacity, Ordering::Relaxed);
+        self.total_capacity
+            .fetch_add(optimized_capacity, Ordering::Relaxed);
         new_buf
     }
     /// Release a Vec<u8> back to pool with intelligent caching strategy.
@@ -241,7 +241,7 @@ impl BufferPool {
             v.fill(0);
         }
         v.clear();
-        
+
         // Ultra-high performance: size-classed deallocation with smart caching
         let (buffer_class, _) = self.get_buffer_class(capacity);
 
@@ -251,7 +251,7 @@ impl BufferPool {
                 Ok(guard) => guard,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            
+
             // Intelligent cache management: keep most useful buffers with optimized replacement
             if guard.len() < self.max_cached_per_class {
                 // Fast path: direct insertion for maximum performance
@@ -261,7 +261,7 @@ impl BufferPool {
                 // Find the buffer with the worst size-efficiency ratio
                 let mut replace_index = None;
                 let mut worst_efficiency = f64::MAX;
-                
+
                 for (i, buf) in guard.iter().enumerate() {
                     // Calculate efficiency: prefer buffers closer to the target size
                     let size_diff = if buf.capacity() > capacity {
@@ -269,15 +269,15 @@ impl BufferPool {
                     } else {
                         capacity - buf.capacity()
                     };
-                    
+
                     let efficiency = size_diff as f64 / capacity as f64;
-                    
+
                     if efficiency > worst_efficiency || buf.capacity() < capacity {
                         worst_efficiency = efficiency;
                         replace_index = Some(i);
                     }
                 }
-                
+
                 if let Some(idx) = replace_index {
                     guard[idx] = v;
                 }
@@ -292,11 +292,11 @@ impl BufferPool {
         let small_count = self.small_buffers.lock().map_or(0, |guard| guard.len());
         let medium_count = self.medium_buffers.lock().map_or(0, |guard| guard.len());
         let large_count = self.large_buffers.lock().map_or(0, |guard| guard.len());
-        
+
         let allocated = self.allocated.load(Ordering::Relaxed);
         let recycled = self.recycled.load(Ordering::Relaxed);
         let cache_hits = self.cache_hits.load(Ordering::Relaxed);
-        
+
         BufferPoolStats {
             allocated,
             recycled,
@@ -304,8 +304,16 @@ impl BufferPool {
             small_buffers_count: small_count,
             medium_buffers_count: medium_count,
             large_buffers_count: large_count,
-            cache_hit_rate: if allocated > 0 { cache_hits as f64 / allocated as f64 * 100.0 } else { 0.0 },
-            efficiency_ratio: if allocated > 0 { recycled as f64 / allocated as f64 * 100.0 } else { 0.0 },
+            cache_hit_rate: if allocated > 0 {
+                cache_hits as f64 / allocated as f64 * 100.0
+            } else {
+                0.0
+            },
+            efficiency_ratio: if allocated > 0 {
+                recycled as f64 / allocated as f64 * 100.0
+            } else {
+                0.0
+            },
         }
     }
 }
@@ -319,8 +327,8 @@ pub struct BufferPoolStats {
     pub small_buffers_count: usize,
     pub medium_buffers_count: usize,
     pub large_buffers_count: usize,
-    pub cache_hit_rate: f64,     // Percentage of requests served from cache
-    pub efficiency_ratio: f64,   // Ratio of recycled to allocated buffers
+    pub cache_hit_rate: f64,   // Percentage of requests served from cache
+    pub efficiency_ratio: f64, // Ratio of recycled to allocated buffers
 }
 
 /// ゼロコピー最適化のベンチマーク
@@ -347,6 +355,13 @@ mod performance_tests {
             pool.release(buf);
         }
 
+        // Perform a second acquire phase to trigger reuse from cache
+        for i in 0..500 {
+            let size = (i % 100 + 1) * 64;
+            let _buf = pool.acquire(size);
+            // drop to return to pool on next release
+        }
+
         let elapsed = start.elapsed();
         println!("Buffer pool benchmark completed in {elapsed:?}");
 
@@ -355,7 +370,10 @@ mod performance_tests {
         println!("Pool stats: {stats:?}");
 
         assert!(stats.allocated > 0);
-        assert!(stats.recycled > 0);
+        assert!(
+            stats.recycled > 0,
+            "expected some recycled buffers after second acquire phase, stats={stats:?}"
+        );
     }
 
     #[test]
@@ -388,6 +406,8 @@ mod test_s {
     fn pool_reuse_s() {
         let p = BufferPool::with_capacity(1024);
         let mut v = p.acquire(100);
+        // With initialized-length acquire, clear before writing custom content
+        v.clear();
         v.extend_from_slice(&[1, 2, 3]);
         let b = Buffer::from_vec(v);
         assert_eq!(b.as_slice(), &[1, 2, 3]);
@@ -407,10 +427,12 @@ mod test_s {
         let p = Arc::new(BufferPool::with_capacity(1024));
         // Poison the mutex in another thread while holding the lock
         let p_ref = Arc::clone(&p);
-        let handle = std::thread::spawn(move || -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            let _guard = p_ref.small_buffers.lock().map_err(|_| "mutex poisoned")?;
-            Err("intentional panic to poison mutex".into())
-        });
+        let handle = std::thread::spawn(
+            move || -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                let _guard = p_ref.small_buffers.lock().map_err(|_| "mutex poisoned")?;
+                Err("intentional panic to poison mutex".into())
+            },
+        );
         let _result = handle.join(); // ignore panic result; mutex should now be poisoned
 
         // After poisoning, acquire/release should still not panic due to recovery

@@ -46,11 +46,7 @@ pub struct Capability {
 impl Capability {
     /// Create a new capability
     pub fn new(id: u32, flags: u8, data: Vec<u8>) -> Self {
-        Self {
-            id,
-            flags,
-            data,
-        }
+        Self { id, flags, data }
     }
 
     /// Create a required capability
@@ -130,10 +126,7 @@ pub fn decode_caps(data: &[u8]) -> Result<Vec<Capability>, CapabilityError> {
 /// 2. Check if local implementation supports it
 /// 3. Return error on first unsupported required capability
 /// 4. Optional capabilities are always accepted (may be ignored)
-pub fn negotiate(
-    local_supported: &[u32],
-    peer_caps: &[Capability],
-) -> Result<(), CapabilityError> {
+pub fn negotiate(local_supported: &[u32], peer_caps: &[Capability]) -> Result<(), CapabilityError> {
     let local_set: HashSet<u32> = local_supported.iter().copied().collect();
 
     for cap in peer_caps {
@@ -154,7 +147,7 @@ pub fn get_local_capabilities() -> Vec<Capability> {
 }
 
 /// Validate capability structure and data bounds with comprehensive security checks
-/// 
+///
 /// # Security Enhancements
 /// - Prevents DoS attacks through oversized capability data
 /// - Validates data format and structure integrity
@@ -163,23 +156,25 @@ pub fn get_local_capabilities() -> Vec<Capability> {
 pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
     // SECURITY ENHANCEMENT: Comprehensive data size validation
     if cap.data.len() > 1024 {
-        return Err(CapabilityError::InvalidData(
-            format!("SECURITY: Capability data size {} exceeds maximum 1024 bytes (DoS prevention)", cap.data.len())
-        ));
+        return Err(CapabilityError::InvalidData(format!(
+            "SECURITY: Capability data size {} exceeds maximum 1024 bytes (DoS prevention)",
+            cap.data.len()
+        )));
     }
-    
+
     // SECURITY: Prevent zero-size data when data is expected
     if cap.data.is_empty() && matches!(cap.id, CAP_PLUGIN_FRAMEWORK) {
         return Err(CapabilityError::InvalidData(
             "SECURITY: Plugin framework capability requires non-empty data".to_string(),
         ));
     }
-    
+
     // SECURITY: Validate capability ID range to prevent invalid IDs
     if cap.id > 0xFFFF {
-        return Err(CapabilityError::InvalidData(
-            format!("SECURITY: Invalid capability ID {} exceeds maximum allowed value", cap.id)
-        ));
+        return Err(CapabilityError::InvalidData(format!(
+            "SECURITY: Invalid capability ID {} exceeds maximum allowed value",
+            cap.id
+        )));
     }
 
     // Validate known capability ids have expected formats
@@ -188,7 +183,8 @@ pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
             // Core capability should have empty data for v1.0
             if !cap.data.is_empty() {
                 return Err(CapabilityError::InvalidData(
-                    "SECURITY: Core capability must have empty data for v1.0 (protocol compliance)".to_string(),
+                    "SECURITY: Core capability must have empty data for v1.0 (protocol compliance)"
+                        .to_string(),
                 ));
             }
         }
@@ -199,23 +195,26 @@ pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
                     "SECURITY: Plugin framework capability data too short (minimum 4 bytes required)".to_string(),
                 ));
             }
-            
+
             // Basic sanity check for version information
             let version = u32::from_le_bytes([cap.data[0], cap.data[1], cap.data[2], cap.data[3]]);
-            if version > 1000 {  // Reasonable version number limit
-                return Err(CapabilityError::InvalidData(
-                    format!("SECURITY: Plugin framework version {version} exceeds reasonable limit")
-                ));
+            if version > 1000 {
+                // Reasonable version number limit
+                return Err(CapabilityError::InvalidData(format!(
+                    "SECURITY: Plugin framework version {version} exceeds reasonable limit"
+                )));
             }
         }
         _ => {
             // Unknown capabilities are allowed (forward compatibility)
             // But we still enforce basic security constraints
-            if cap.data.len() > 512 {  // Stricter limit for unknown capabilities
-                return Err(CapabilityError::InvalidData(
-                    format!("SECURITY: Unknown capability {} data size {} exceeds limit for unknown types", 
-                            cap.id, cap.data.len())
-                ));
+            if cap.data.len() > 512 {
+                // Stricter limit for unknown capabilities
+                return Err(CapabilityError::InvalidData(format!(
+                    "SECURITY: Unknown capability {} data size {} exceeds limit for unknown types",
+                    cap.id,
+                    cap.data.len()
+                )));
             }
         }
     }

@@ -66,7 +66,8 @@ mod platform {
 
                     // Create a marker file to indicate sandbox is active
                     let temp_dir = env::temp_dir();
-                    let _marker_path = temp_dir.join(format!("nyx_windows_sandbox_{}", std::process::id()));
+                    let _marker_path =
+                        temp_dir.join(format!("nyx_windows_sandbox_{}", std::process::id()));
                     if let Err(e) = std::fs::write(&_marker_path, "minimal") {
                         warn!(error = %e, "Failed to create Windows sandbox marker file");
                     }
@@ -79,7 +80,8 @@ mod platform {
 
                     // Create a marker file for strict sandbox
                     let temp_dir = env::temp_dir();
-                    let _marker_path = temp_dir.join(format!("nyx_windows_sandbox_strict_{}", std::process::id()));
+                    let _marker_path =
+                        temp_dir.join(format!("nyx_windows_sandbox_strict_{}", std::process::id()));
                     if let Err(e) = std::fs::write(&_marker_path, "strict") {
                         warn!(error = %e, "Failed to create Windows sandbox marker file");
                     }
@@ -412,4 +414,3 @@ mod test_s {
         assert_eq!(minimal_statu_s, strict_statu_s);
     }
 }
-

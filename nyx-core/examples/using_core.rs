@@ -1,7 +1,4 @@
-use nyx_core::{
-    config::CoreConfig,
-    types::{StreamId},
-};
+use nyx_core::{config::CoreConfig, types::StreamId};
 use std::num::NonZeroU32;
 
 fn main() {

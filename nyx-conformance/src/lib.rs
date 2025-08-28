@@ -74,10 +74,16 @@ mod test_s {
         assert!(!events.is_empty());
         let times: Vec<f64> = events.iter().map(|e| e.delivery_m_s as f64).collect();
         checknon_decreasing_ep_s(&times, 0.0).unwrap();
-        let st = compute_stat_s(&times).ok_or("Failed to compute stats").unwrap();
+        let st = compute_stat_s(&times)
+            .ok_or("Failed to compute stats")
+            .unwrap();
         assert_eq!(st.count, times.len());
-        let _h = histogram(&times, st.min, st.max.max(st.min + 1.0), 8).ok_or("Failed to create histogram").unwrap();
-        let _p50 = percentile(times.clone(), 50.0).ok_or("Failed to compute percentile").unwrap();
+        let _h = histogram(&times, st.min, st.max.max(st.min + 1.0), 8)
+            .ok_or("Failed to create histogram")
+            .unwrap();
+        let _p50 = percentile(times.clone(), 50.0)
+            .ok_or("Failed to compute percentile")
+            .unwrap();
         let depth =
             required_reorder_buffer_depth(&events.iter().map(|e| e.seq).collect::<Vec<_>>());
         assert!(depth <= events.len());

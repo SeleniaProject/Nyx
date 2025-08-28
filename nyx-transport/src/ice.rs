@@ -517,9 +517,15 @@ impl IceAgent {
                     CandidateType::ServerReflexive,
                     "127.0.0.1".parse().expect("Failed to parse IP address"),
                 ),
-                address: "127.0.0.1:0".parse().expect("Failed to parse socket address"),
+                address: "127.0.0.1:0"
+                    .parse()
+                    .expect("Failed to parse socket address"),
                 candidate_type: CandidateType::ServerReflexive,
-                related_address: Some("127.0.0.1:0".parse().expect("Failed to parse related address")),
+                related_address: Some(
+                    "127.0.0.1:0"
+                        .parse()
+                        .expect("Failed to parse related address"),
+                ),
                 extensions: HashMap::new(),
             });
         }
@@ -556,7 +562,7 @@ impl IceAgent {
             let local = self.local_candidates.read().await;
             local.clone()
         };
-        
+
         let remote_candidates = {
             let remote = self.remote_candidates.read().await;
             remote.clone()
@@ -787,14 +793,14 @@ mod tests {
 
             // Add local candidate directly
             agent.local_candidates.write().await.push(local_candidate);
-            
+
             // Add remote candidate directly without triggering pair formation
             agent.remote_candidates.write().await.push(remote_candidate);
-            
+
             // Manually form pairs to avoid potential deadlock in add_remote_candidate
             let local_candidates = agent.local_candidates.read().await;
             let remote_candidates = agent.remote_candidates.read().await;
-            
+
             let mut pairs = agent.candidate_pairs.write().await;
             for local in local_candidates.iter() {
                 for remote in remote_candidates.iter() {
@@ -819,7 +825,8 @@ mod tests {
             let pairs = agent.candidate_pairs.read().await;
             assert_eq!(pairs.len(), 1);
             assert_eq!(pairs[0].state, CandidatePairState::Waiting);
-        }).await;
+        })
+        .await;
 
         // Ensure test completes within timeout
         assert!(result.is_ok(), "Test timed out after 5 seconds");

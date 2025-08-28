@@ -51,7 +51,7 @@ impl<'a> ByteView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zero_copy::manager::{BufferPool, Buffer};
+    use crate::zero_copy::manager::{Buffer, BufferPool};
 
     #[test]
     fn byte_view_single() {

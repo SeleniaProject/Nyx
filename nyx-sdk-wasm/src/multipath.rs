@@ -3,9 +3,9 @@
 //! Provides intelligent path selection, load balancing, and failover capabilities
 //! for multiple network paths in WebAssembly environments.
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 use web_sys::console;
@@ -172,7 +172,7 @@ impl MultipathManager {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn remove_path(&mut self, path_id: &str) -> bool {
         let removed = self.paths.remove(path_id).is_some();
-        
+
         if removed {
             #[cfg(target_arch = "wasm32")]
             console::log_1(&JsValue::from_str(&format!("Removed path: {path_id}")));
@@ -184,7 +184,8 @@ impl MultipathManager {
     /// Select the best available path based on current strategy
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn select_best_path(&mut self) -> Option<String> {
-        let active_paths: Vec<_> = self.paths
+        let active_paths: Vec<_> = self
+            .paths
             .iter()
             .filter(|(_, path)| matches!(path.status, PathStatus::Active | PathStatus::Testing))
             .filter(|(_, path)| path.quality >= self.config.quality_threshold)
@@ -200,21 +201,17 @@ impl MultipathManager {
                 self.current_path_index += 1;
                 path.0.clone()
             }
-            LoadBalanceStrategy::QualityWeighted => {
-                active_paths.iter()
-                    .max_by(|a, b| a.1.quality.partial_cmp(&b.1.quality).unwrap())
-                    .map(|(id, _)| id.to_string())
-                    .unwrap()
-            }
-            LoadBalanceStrategy::LatencyBased => {
-                active_paths.iter()
-                    .min_by(|a, b| a.1.latency_ms.partial_cmp(&b.1.latency_ms).unwrap())
-                    .map(|(id, _)| id.to_string())
-                    .unwrap()
-            }
-            LoadBalanceStrategy::Adaptive => {
-                self.select_adaptive_path(&active_paths)
-            }
+            LoadBalanceStrategy::QualityWeighted => active_paths
+                .iter()
+                .max_by(|a, b| a.1.quality.partial_cmp(&b.1.quality).unwrap())
+                .map(|(id, _)| id.to_string())
+                .unwrap(),
+            LoadBalanceStrategy::LatencyBased => active_paths
+                .iter()
+                .min_by(|a, b| a.1.latency_ms.partial_cmp(&b.1.latency_ms).unwrap())
+                .map(|(id, _)| id.to_string())
+                .unwrap(),
+            LoadBalanceStrategy::Adaptive => self.select_adaptive_path(&active_paths),
         };
 
         Some(selected)
@@ -230,8 +227,10 @@ impl MultipathManager {
         packet_loss: f64,
     ) -> Result<(), JsValue> {
         let current_time = self.get_current_timestamp();
-        
-        let path = self.paths.get_mut(path_id)
+
+        let path = self
+            .paths
+            .get_mut(path_id)
             .ok_or_else(|| JsValue::from_str("Path not found"))?;
 
         // Update basic metrics
@@ -243,7 +242,7 @@ impl MultipathManager {
         let latency_score = (1.0 - (latency_ms / 1000.0).min(1.0)).max(0.0);
         let bandwidth_score = (bandwidth_mbps / 100.0).min(1.0);
         let loss_score = (1.0 - packet_loss).max(0.0);
-        
+
         path.quality = (latency_score * 0.4 + bandwidth_score * 0.4 + loss_score * 0.2).max(0.1);
 
         // Update path status based on quality
@@ -265,12 +264,13 @@ impl MultipathManager {
             packet_loss,
             jitter_ms,
         };
-        
+
         self.performance_history.push(record);
-        
+
         // Keep only recent history (last 100 records)
         if self.performance_history.len() > 100 {
-            self.performance_history.drain(0..self.performance_history.len() - 100);
+            self.performance_history
+                .drain(0..self.performance_history.len() - 100);
         }
 
         Ok(())
@@ -321,17 +321,25 @@ impl MultipathManager {
             // Dynamic weight calculation based on recent performance
             let recent_performance = self.get_recent_performance(path_id);
             let stability_factor = self.calculate_stability_factor(path_id);
-            
+
             // Adaptive scoring algorithm
-            let latency_weight = if recent_performance.avg_latency > 200.0 { 0.5 } else { 0.3 };
-            let bandwidth_weight = if recent_performance.avg_bandwidth < 10.0 { 0.5 } else { 0.3 };
+            let latency_weight = if recent_performance.avg_latency > 200.0 {
+                0.5
+            } else {
+                0.3
+            };
+            let bandwidth_weight = if recent_performance.avg_bandwidth < 10.0 {
+                0.5
+            } else {
+                0.3
+            };
             let quality_weight = 0.2;
             let stability_weight = 0.1;
 
-            let score = (path.quality * quality_weight) +
-                       ((1.0 - (path.latency_ms / 1000.0).min(1.0)) * latency_weight) +
-                       ((path.bandwidth_mbps / 100.0).min(1.0) * bandwidth_weight) +
-                       (stability_factor * stability_weight);
+            let score = (path.quality * quality_weight)
+                + ((1.0 - (path.latency_ms / 1000.0).min(1.0)) * latency_weight)
+                + ((path.bandwidth_mbps / 100.0).min(1.0) * bandwidth_weight)
+                + (stability_factor * stability_weight);
 
             if score > best_score {
                 best_score = score;
@@ -344,7 +352,8 @@ impl MultipathManager {
 
     /// Get recent performance metrics for a path
     fn get_recent_performance(&self, path_id: &str) -> RecentPerformance {
-        let recent_records: Vec<_> = self.performance_history
+        let recent_records: Vec<_> = self
+            .performance_history
             .iter()
             .filter(|record| record.path_id == path_id)
             .rev()
@@ -355,9 +364,12 @@ impl MultipathManager {
             return RecentPerformance::default();
         }
 
-        let avg_latency = recent_records.iter().map(|r| r.latency_ms).sum::<f64>() / recent_records.len() as f64;
-        let avg_bandwidth = recent_records.iter().map(|r| r.bandwidth_mbps).sum::<f64>() / recent_records.len() as f64;
-        let avg_packet_loss = recent_records.iter().map(|r| r.packet_loss).sum::<f64>() / recent_records.len() as f64;
+        let avg_latency =
+            recent_records.iter().map(|r| r.latency_ms).sum::<f64>() / recent_records.len() as f64;
+        let avg_bandwidth = recent_records.iter().map(|r| r.bandwidth_mbps).sum::<f64>()
+            / recent_records.len() as f64;
+        let avg_packet_loss =
+            recent_records.iter().map(|r| r.packet_loss).sum::<f64>() / recent_records.len() as f64;
 
         RecentPerformance {
             avg_latency,
@@ -368,7 +380,8 @@ impl MultipathManager {
 
     /// Calculate stability factor for a path
     fn calculate_stability_factor(&self, path_id: &str) -> f64 {
-        let recent_records: Vec<_> = self.performance_history
+        let recent_records: Vec<_> = self
+            .performance_history
             .iter()
             .filter(|record| record.path_id == path_id)
             .rev()
@@ -380,10 +393,13 @@ impl MultipathManager {
         }
 
         // Calculate variance in latency as instability measure
-        let avg_latency = recent_records.iter().map(|r| r.latency_ms).sum::<f64>() / recent_records.len() as f64;
-        let variance = recent_records.iter()
+        let avg_latency =
+            recent_records.iter().map(|r| r.latency_ms).sum::<f64>() / recent_records.len() as f64;
+        let variance = recent_records
+            .iter()
             .map(|r| (r.latency_ms - avg_latency).powi(2))
-            .sum::<f64>() / recent_records.len() as f64;
+            .sum::<f64>()
+            / recent_records.len() as f64;
 
         // Convert variance to stability factor (lower variance = higher stability)
         (1.0 / (1.0 + variance / 100.0)).min(1.0)
@@ -391,7 +407,8 @@ impl MultipathManager {
 
     /// Calculate jitter for a path based on recent latency measurements
     fn calculate_jitter(&self, path_id: &str, current_latency: f64) -> f64 {
-        let recent_records: Vec<_> = self.performance_history
+        let recent_records: Vec<_> = self
+            .performance_history
             .iter()
             .filter(|record| record.path_id == path_id)
             .rev()
@@ -437,7 +454,7 @@ impl MultipathManager {
                 }
             }
         }
-        
+
         // Fallback for non-WASM environments
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
@@ -480,10 +497,10 @@ mod tests {
     #[test]
     fn test_add_remove_path() {
         let mut manager = MultipathManager::new();
-        
+
         assert!(manager.add_path("path1", 0.8).is_ok());
         assert_eq!(manager.paths.len(), 1);
-        
+
         assert!(manager.remove_path("path1"));
         assert_eq!(manager.paths.len(), 0);
     }
@@ -491,7 +508,7 @@ mod tests {
     #[test]
     fn test_path_selection_strategies() {
         let mut manager = MultipathManager::new();
-        
+
         // Add multiple paths
         manager.add_path("path1", 0.9).unwrap();
         manager.add_path("path2", 0.7).unwrap();
@@ -541,9 +558,15 @@ mod tests {
         manager.add_path("test_path", 0.8).unwrap();
 
         // Add some performance history
-        manager.update_path_metrics("test_path", 50.0, 25.0, 0.01).unwrap();
-        manager.update_path_metrics("test_path", 55.0, 25.0, 0.01).unwrap();
-        manager.update_path_metrics("test_path", 48.0, 25.0, 0.01).unwrap();
+        manager
+            .update_path_metrics("test_path", 50.0, 25.0, 0.01)
+            .unwrap();
+        manager
+            .update_path_metrics("test_path", 55.0, 25.0, 0.01)
+            .unwrap();
+        manager
+            .update_path_metrics("test_path", 48.0, 25.0, 0.01)
+            .unwrap();
 
         let jitter = manager.calculate_jitter("test_path", 52.0);
         assert!(jitter > 0.0); // Should have some jitter

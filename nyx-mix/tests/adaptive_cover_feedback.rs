@@ -45,7 +45,7 @@ fn low_power_reduces_base_rate() {
 
     // Verify exact scaling at baseline (u=0)
     let lo0 = apply_utilization(&config, 0.0, true);
-    
+
     // Test edge cases
     let expected_ratio = config.low_power_ratio;
     assert!((lo0 / config.base_cover_lambda - expected_ratio).abs() < 1e-6);
@@ -65,7 +65,7 @@ fn boundary_conditions_respected() {
     let within = apply_utilization(&config, 0.0, false);
     let above = apply_utilization(&config, 10.0, false);
     let max_valid = apply_utilization(&config, 1.0, false);
-    
+
     // Values should be reasonable
     assert!(below >= 0.0);
     assert!(within >= 0.0);
@@ -102,7 +102,7 @@ fn config_validation_ranges() -> Result<(), Box<dyn std::error::Error>> {
         invalid_config3.validate_range_s().is_err(),
         "Negative ratio should be rejected"
     );
-    
+
     Ok(())
 }
 
@@ -132,12 +132,12 @@ fn mathematical_correctness() {
 }
 
 /// Performance characteristics test
-#[test] 
+#[test]
 fn rate_ranges_reasonable() {
     let config = MixConfig::default();
     let min_rate = apply_utilization(&config, 0.0, false);
     let max_rate = apply_utilization(&config, 1.0, false);
-    
+
     // Ranges should be reasonable for network performance
     assert!(min_rate >= 1.0, "Minimum rate too low");
     assert!(max_rate <= 1000.0, "Maximum rate too high");
@@ -151,11 +151,11 @@ fn poisson_statistical_properties() {
     let mut sum = 0.0f64;
     let samples = 1000;
     let mut rng = thread_rng();
-    
+
     for _ in 0..samples {
         sum += poisson_rate(lambda, &mut rng) as f64;
     }
-    
+
     let avg = sum / samples as f64;
     // For exponential distribution, mean should be 1/lambda
     let expected_mean = 1.0 / lambda as f64;
@@ -170,15 +170,15 @@ fn poisson_statistical_properties() {
 fn adaptive_cover_performance() {
     let config = MixConfig::default();
     let start = std::time::Instant::now();
-    
+
     for i in 0..10_000 {
         let utilization = (i % 100) as f32 / 100.0;
         let _rate = apply_utilization(&config, utilization.into(), i % 2 == 0);
     }
-    
+
     let duration = start.elapsed();
     let per_call_ns = duration.as_nanos() / 10_000;
-    
+
     assert!(
         per_call_ns < 1_000,
         "Performance regression: {per_call_ns}ns per call"

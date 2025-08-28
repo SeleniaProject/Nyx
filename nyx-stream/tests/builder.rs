@@ -7,10 +7,12 @@ use nyx_stream::frame_codec::FrameCodec;
 // ヘッダの主要フィールドがエンコード/デコードで保存されることを確認
 #[test]
 fn header_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
-    let f = Frame::data(123, 456, b"hello".as_ref());
+    let f = Frame::data(123, 456, &b"hello"[..]);
     let mut buf = BytesMut::new();
     FrameCodec::encode(&f, &mut buf)?;
-    let got = FrameCodec::decode(&mut buf).expect("decode").ok_or("decode failed")?;
+    let got = FrameCodec::decode(&mut buf)
+        .expect("decode")
+        .ok_or("decode failed")?;
     assert_eq!(got.header.stream_id, 123);
     assert_eq!(got.header.seq, 456);
     assert_eq!(got.header.ty, FrameType::Data);

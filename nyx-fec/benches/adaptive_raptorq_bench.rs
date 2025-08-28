@@ -159,9 +159,9 @@ fn pid_controller_benchmarks(c: &mut Criterion) {
             |b, config| {
                 b.iter(|| {
                     let mut tuner = AdaptiveRedundancyTuner::with_config(
-                        50, // max_history
-                        Duration::from_millis(1), // min_adjustment_interval 
-                        *config // pid_coefficients
+                        50,                       // max_history
+                        Duration::from_millis(1), // min_adjustment_interval
+                        *config,                  // pid_coefficients
                     );
                     for i in 0..50 {
                         let loss = 0.001 + (i as f32) * 0.005; // Gradually increasing loss
@@ -218,13 +218,13 @@ fn memory_allocation_benchmarks(c: &mut Criterion) {
     group.bench_function("create_tuner_with_config", |b| {
         b.iter(|| {
             let tuner = AdaptiveRedundancyTuner::with_config(
-                50, // max_history
+                50,                       // max_history
                 Duration::from_millis(1), // min_adjustment_interval
                 PidCoefficients {
                     kp: 0.5,
                     ki: 0.1,
                     kd: 0.2,
-                }
+                },
             );
             black_box(tuner);
         });

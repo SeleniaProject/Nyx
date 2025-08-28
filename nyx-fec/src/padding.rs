@@ -1,24 +1,25 @@
-//! Helper_s to pack variable payload_s int/// Unpack a payload from a padded shard. 
+//! Helper_s to pack variable payload_s int/// Unpack a payload from a padded shard.
 /// Returns an empty slice if the shard is invalid.
-/// 
+///
 /// # Security Enhancements
 /// - Validates length prefix to prevent buffer overflow attacks
 /// - Returns empty slice instead of panicking for graceful error handling
 /// - For explicit error handling, use `try_unpack_from_shard`
 pub fn unpack_from_shard(shard: &[u8; SHARD_SIZE]) -> &[u8] {
     let len = u16::from_le_bytes([shard[0], shard[1]]) as usize;
-    
+
     // SECURITY ENHANCEMENT: Runtime bounds checking to prevent buffer overflow
     // Returns empty slice instead of panicking for more robust error handling
     if len > SHARD_SIZE - 2 {
         eprintln!(
             "SECURITY: Invalid shard length {} exceeds maximum allowed {} bytes. \
              This indicates potential data corruption or malicious input. Returning empty slice.",
-            len, SHARD_SIZE - 2
+            len,
+            SHARD_SIZE - 2
         );
         return &[];
     }
-    
+
     &shard[2..2 + len]
 }
 
@@ -27,7 +28,7 @@ pub const SHARD_SIZE: usize = 1280;
 
 /// Pack a payload into a fixed-size shard with length prefix.
 /// Layout: [len: u16 LE][data...][zero padding]
-/// 
+///
 /// # Panics
 /// Panics if the payload exceeds the maximum size (SHARD_SIZE - 2).
 /// For fallible operation, use `try_pack_into_shard`.
@@ -35,7 +36,9 @@ pub fn pack_into_shard(payload: &[u8]) -> [u8; SHARD_SIZE] {
     // Keep a panic in the infallible variant for internal callers expecting fast-fail.
     assert!(
         payload.len() <= SHARD_SIZE - 2,
-        "payload size {} exceeds maximum {} bytes", payload.len(), SHARD_SIZE - 2
+        "payload size {} exceeds maximum {} bytes",
+        payload.len(),
+        SHARD_SIZE - 2
     );
     let mut out = [0u8; SHARD_SIZE];
     let len: u16 = payload.len() as u16;

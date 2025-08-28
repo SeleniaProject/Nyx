@@ -14,6 +14,8 @@ pub mod push;
 pub mod rendezvous;
 pub mod settings;
 pub mod settings_sync;
+#[path = "dht/mod.rs"]
+pub mod dht; // Pure-Rust DHT (Kademlia-like)
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -48,7 +50,7 @@ impl Default for ControlConfig {
 }
 
 /// Parse TOML config and fill missing `fields` with `defaults`.
-/// 
+///
 /// # Errors
 /// Returns an error if:
 /// - TOML parsing fails due to invalid syntax
@@ -77,7 +79,7 @@ impl ControlHandle {
 }
 
 /// Start control plane `tasks` according to config.
-/// 
+///
 /// # Errors
 /// Returns an error if:
 /// - Control plane initialization fails

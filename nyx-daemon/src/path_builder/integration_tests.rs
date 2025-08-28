@@ -1,17 +1,17 @@
-﻿/// Path Builder Integration Tests
-/// Comprehensive end-to-end testing for path building functionality
-/// Tests real network scenarios, failure handling, and performance characteristics
+//! Path Builder Integration Tests
+//! Comprehensive end-to-end testing for path building functionality
+//! Tests real network scenarios, failure handling, and performance characteristics
 
-use crate::path_builder::{PathBuilder, DaemonConfig};
-use crate::path_recovery::{PathRecoveryManager, PathRecoveryConfig, PathFailureReason};
 use crate::errors::{DaemonError, Result};
-use nyx_transport::{UdpTransport, TransportConfig};
+use crate::path_builder::{DaemonConfig, PathBuilder};
+use crate::path_recovery::{PathFailureReason, PathRecoveryConfig, PathRecoveryManager};
+use nyx_transport::{TransportConfig, UdpTransport};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
-use tracing::{info};
+use tracing::info;
 
 /// Integration test configuration
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ pub struct TestSuite {
     config: IntegrationTestConfig,
     path_builder: Arc<PathBuilder>,
     recovery_manager: Arc<PathRecoveryManager>,
-    transport: Arc<UdpTransport>,
+    _transport: Arc<UdpTransport>,
     results: Vec<TestResult>,
 }
 
@@ -74,13 +74,13 @@ impl TestSuite {
     pub async fn new(config: IntegrationTestConfig) -> Result<Self> {
         let daemon_config = DaemonConfig::default();
         let transport_config = TransportConfig::default();
-        
+
         let path_builder = Arc::new(PathBuilder::new(daemon_config)?);
         let transport = Arc::new(
             UdpTransport::new(transport_config)
-                .map_err(|_| DaemonError::transport("Transport initialization failed"))?
+                .map_err(|_| DaemonError::transport("Transport initialization failed"))?,
         );
-        
+
         let recovery_config = PathRecoveryConfig::default();
         let recovery_manager = Arc::new(PathRecoveryManager::new(
             recovery_config,
@@ -91,7 +91,7 @@ impl TestSuite {
             config,
             path_builder,
             recovery_manager,
-            transport,
+            _transport: transport,
             results: Vec::new(),
         })
     }
@@ -133,10 +133,7 @@ impl TestSuite {
         let test_name = "basic_path_building".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_basic_path_build_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_basic_path_build_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -169,7 +166,7 @@ impl TestSuite {
     async fn run_basic_path_build_test(&self) -> Result<()> {
         for endpoint in &self.config.test_endpoints {
             let path_id = self.path_builder.build_path(*endpoint).await?;
-            
+
             // Verify path was created
             let path_exists = self.path_builder.path_exists(&path_id).await?;
             if !path_exists {
@@ -194,14 +191,11 @@ impl TestSuite {
         let test_name = "concurrent_path_building".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_concurrent_build_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_concurrent_build_test()).await;
 
         let duration = start_time.elapsed();
         let mut metrics = HashMap::new();
-        
+
         let test_result = match result {
             Ok(Ok(concurrent_metrics)) => {
                 metrics.extend(concurrent_metrics);
@@ -212,7 +206,7 @@ impl TestSuite {
                     error_message: None,
                     metrics,
                 }
-            },
+            }
             Ok(Err(e)) => TestResult {
                 test_name,
                 success: false,
@@ -241,9 +235,7 @@ impl TestSuite {
             let endpoint = self.config.test_endpoints[i % self.config.test_endpoints.len()];
             let path_builder = Arc::clone(&self.path_builder);
 
-            let task = tokio::spawn(async move {
-                path_builder.build_path(endpoint).await
-            });
+            let task = tokio::spawn(async move { path_builder.build_path(endpoint).await });
 
             tasks.push(task);
         }
@@ -263,7 +255,7 @@ impl TestSuite {
                     failed_builds.push((i, e.to_string()));
                 }
                 Err(e) => {
-                    failed_builds.push((i, format!("Task join error: {}", e)));
+                    failed_builds.push((i, format!("Task join error: {e}")));
                 }
             }
         }
@@ -274,14 +266,17 @@ impl TestSuite {
         let mut metrics = HashMap::new();
         metrics.insert("success_count".to_string(), success_count as f64);
         metrics.insert("success_rate".to_string(), success_rate);
-        metrics.insert("total_builds".to_string(), self.config.max_concurrent_builds as f64);
+        metrics.insert(
+            "total_builds".to_string(),
+            self.config.max_concurrent_builds as f64,
+        );
         metrics.insert("total_time_ms".to_string(), total_time.as_millis() as f64);
 
         if success_rate < self.config.performance_thresholds.min_success_rate {
-            return Err(DaemonError::Internal(
-                format!("Success rate {} below threshold {}", 
-                       success_rate, self.config.performance_thresholds.min_success_rate)
-            ));
+            return Err(DaemonError::Internal(format!(
+                "Success rate {} below threshold {}",
+                success_rate, self.config.performance_thresholds.min_success_rate
+            )));
         }
 
         Ok(metrics)
@@ -292,10 +287,7 @@ impl TestSuite {
         let test_name = "path_quality_assessment".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_quality_assessment_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_quality_assessment_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -331,14 +323,18 @@ impl TestSuite {
 
         // Test quality assessment
         let quality = self.path_builder.assess_path_quality(&path_id).await?;
-        
+
         // Verify quality metrics are reasonable
         if quality.latency.is_nan() || quality.bandwidth.is_nan() || quality.reliability.is_nan() {
-            return Err(DaemonError::Internal("Quality assessment incomplete".to_string()));
+            return Err(DaemonError::Internal(
+                "Quality assessment incomplete".to_string(),
+            ));
         }
 
         // Test quality updates
-        self.path_builder.update_path_quality(&path_id, quality.clone()).await?;
+        self.path_builder
+            .update_path_quality(&path_id, quality.clone())
+            .await?;
 
         // Clean up
         self.path_builder.destroy_path(&path_id).await?;
@@ -351,10 +347,7 @@ impl TestSuite {
         let test_name = "path_failover".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_failover_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_failover_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -394,10 +387,15 @@ impl TestSuite {
         let backup_path = self.path_builder.build_path(backup_endpoint).await?;
 
         // Simulate primary path failure
-        self.path_builder.simulate_path_failure(&primary_path).await?;
+        self.path_builder
+            .simulate_path_failure(&primary_path)
+            .await?;
 
         // Test failover to backup path
-        let failover_successful = self.path_builder.test_failover(&primary_path, &backup_path).await?;
+        let failover_successful = self
+            .path_builder
+            .test_failover(&primary_path, &backup_path)
+            .await?;
 
         if !failover_successful {
             return Err(DaemonError::Internal("Failover test failed".to_string()));
@@ -415,10 +413,7 @@ impl TestSuite {
         let test_name = "build_performance".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_performance_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_performance_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -455,17 +450,17 @@ impl TestSuite {
         for _ in 0..test_count {
             let endpoint = self.config.test_endpoints[0];
             let build_start = Instant::now();
-            
+
             let path_id = self.path_builder.build_path(endpoint).await?;
             let build_time = build_start.elapsed();
-            
+
             build_times.push(build_time);
 
             if build_time > self.config.performance_thresholds.max_build_time {
-                return Err(DaemonError::Internal(
-                    format!("Build time {:?} exceeds threshold {:?}", 
-                           build_time, self.config.performance_thresholds.max_build_time)
-                ));
+                return Err(DaemonError::Internal(format!(
+                    "Build time {:?} exceeds threshold {:?}",
+                    build_time, self.config.performance_thresholds.max_build_time
+                )));
             }
 
             self.path_builder.destroy_path(&path_id).await?;
@@ -476,9 +471,18 @@ impl TestSuite {
         let max_build_time = build_times.iter().max().unwrap();
 
         let mut metrics = HashMap::new();
-        metrics.insert("avg_build_time_ms".to_string(), avg_build_time.as_millis() as f64);
-        metrics.insert("min_build_time_ms".to_string(), min_build_time.as_millis() as f64);
-        metrics.insert("max_build_time_ms".to_string(), max_build_time.as_millis() as f64);
+        metrics.insert(
+            "avg_build_time_ms".to_string(),
+            avg_build_time.as_millis() as f64,
+        );
+        metrics.insert(
+            "min_build_time_ms".to_string(),
+            min_build_time.as_millis() as f64,
+        );
+        metrics.insert(
+            "max_build_time_ms".to_string(),
+            max_build_time.as_millis() as f64,
+        );
         metrics.insert("test_count".to_string(), test_count as f64);
 
         Ok(metrics)
@@ -492,7 +496,7 @@ impl TestSuite {
         // This is a simplified memory test - in a real implementation,
         // you would use proper memory profiling tools
         let initial_memory = self.get_memory_usage();
-        
+
         // Build many paths to test memory usage
         let mut paths = Vec::new();
         for endpoint in &self.config.test_endpoints {
@@ -522,8 +526,10 @@ impl TestSuite {
 
         let success = memory_used <= self.config.performance_thresholds.max_memory_usage;
         let error_message = if !success {
-            Some(format!("Memory usage {} exceeds threshold {}", 
-                        memory_used, self.config.performance_thresholds.max_memory_usage))
+            Some(format!(
+                "Memory usage {} exceeds threshold {}",
+                memory_used, self.config.performance_thresholds.max_memory_usage
+            ))
         } else {
             None
         };
@@ -544,10 +550,7 @@ impl TestSuite {
         let test_name = "latency_requirements".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_latency_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_latency_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -583,14 +586,14 @@ impl TestSuite {
 
         // Measure round-trip latency
         let latency_start = Instant::now();
-        let _response = self.path_builder.ping_path(&path_id).await?;
+        self.path_builder.ping_path(&path_id).await?;
         let latency = latency_start.elapsed();
 
         if latency > self.config.performance_thresholds.max_latency {
-            return Err(DaemonError::Internal(
-                format!("Latency {:?} exceeds threshold {:?}", 
-                       latency, self.config.performance_thresholds.max_latency)
-            ));
+            return Err(DaemonError::Internal(format!(
+                "Latency {:?} exceeds threshold {:?}",
+                latency, self.config.performance_thresholds.max_latency
+            )));
         }
 
         self.path_builder.destroy_path(&path_id).await?;
@@ -606,10 +609,7 @@ impl TestSuite {
         let test_name = "network_failure_handling".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_network_failure_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_network_failure_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -641,12 +641,12 @@ impl TestSuite {
 
     async fn run_network_failure_test(&self) -> Result<()> {
         let _endpoint = self.config.test_endpoints[0];
-        
+
         // Try to build path to unreachable endpoint
         let unreachable_endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)), 9999);
-        
+
         let result = self.path_builder.build_path(unreachable_endpoint).await;
-        
+
         // Should fail gracefully
         match result {
             Err(_) => {
@@ -676,7 +676,11 @@ impl TestSuite {
             test_name,
             success,
             duration,
-            error_message: if success { None } else { Some("Expected timeout but completed".to_string()) },
+            error_message: if success {
+                None
+            } else {
+                Some("Expected timeout but completed".to_string())
+            },
             metrics: HashMap::new(),
         };
 
@@ -690,8 +694,9 @@ impl TestSuite {
 
         let result = timeout(
             self.config.test_timeout,
-            self.run_resource_exhaustion_test()
-        ).await;
+            self.run_resource_exhaustion_test(),
+        )
+        .await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -724,10 +729,10 @@ impl TestSuite {
     async fn run_resource_exhaustion_test(&self) -> Result<()> {
         // Try to build many paths rapidly to test resource limits
         let mut paths = Vec::new();
-        
+
         for i in 0..1000 {
             let endpoint = self.config.test_endpoints[i % self.config.test_endpoints.len()];
-            
+
             match self.path_builder.build_path(endpoint).await {
                 Ok(path_id) => paths.push(path_id),
                 Err(DaemonError::ResourceExhaustion) => {
@@ -754,10 +759,7 @@ impl TestSuite {
         let test_name = "automatic_recovery".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_automatic_recovery_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_automatic_recovery_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -789,14 +791,16 @@ impl TestSuite {
 
     async fn run_automatic_recovery_test(&self) -> Result<()> {
         let endpoint = self.config.test_endpoints[0];
-        
+
         // Record a simulated failure
-        self.recovery_manager.record_failure(
-            "test_path".to_string(),
-            endpoint,
-            PathFailureReason::NetworkUnreachable,
-            "Simulated failure for testing".to_string(),
-        ).await?;
+        self.recovery_manager
+            .record_failure(
+                "test_path".to_string(),
+                endpoint,
+                PathFailureReason::NetworkUnreachable,
+                "Simulated failure for testing".to_string(),
+            )
+            .await?;
 
         // Attempt recovery
         let _recovery_successful = self.recovery_manager.attempt_recovery("test_path").await?;
@@ -812,10 +816,7 @@ impl TestSuite {
         let test_name = "manual_recovery".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_manual_recovery_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_manual_recovery_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -849,10 +850,10 @@ impl TestSuite {
         // Test manual recovery operations
         let _failed_paths = self.recovery_manager.get_failed_paths().await;
         let _statistics = self.recovery_manager.get_failure_statistics().await;
-        
+
         // Clear failure history
         self.recovery_manager.clear_failure_history().await;
-        
+
         Ok(())
     }
 
@@ -863,8 +864,9 @@ impl TestSuite {
 
         let result = timeout(
             Duration::from_secs(60), // Longer timeout for stress test
-            self.run_high_load_test()
-        ).await;
+            self.run_high_load_test(),
+        )
+        .await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -945,10 +947,7 @@ impl TestSuite {
         let test_name = "rapid_build_destroy".to_string();
         let start_time = Instant::now();
 
-        let result = timeout(
-            self.config.test_timeout,
-            self.run_rapid_cycle_test()
-        ).await;
+        let result = timeout(self.config.test_timeout, self.run_rapid_cycle_test()).await;
 
         let duration = start_time.elapsed();
         let test_result = match result {
@@ -994,7 +993,10 @@ impl TestSuite {
         let mut metrics = HashMap::new();
         metrics.insert("cycle_count".to_string(), cycle_count as f64);
         metrics.insert("total_time_ms".to_string(), total_time.as_millis() as f64);
-        metrics.insert("avg_cycle_time_ms".to_string(), avg_cycle_time.as_millis() as f64);
+        metrics.insert(
+            "avg_cycle_time_ms".to_string(),
+            avg_cycle_time.as_millis() as f64,
+        );
 
         Ok(metrics)
     }
@@ -1013,34 +1015,39 @@ impl TestSuite {
         let failed_tests = total_tests - successful_tests;
 
         let mut report = String::new();
-        report.push_str(&format!("Path Builder Integration Test Report\n"));
-        report.push_str(&format!("=====================================\n\n"));
-        report.push_str(&format!("Total Tests: {}\n", total_tests));
-        report.push_str(&format!("Successful: {}\n", successful_tests));
-        report.push_str(&format!("Failed: {}\n", failed_tests));
-        report.push_str(&format!("Success Rate: {:.2}%\n\n", 
-                                (successful_tests as f64 / total_tests as f64) * 100.0));
+        report.push_str("Path Builder Integration Test Report\n");
+        report.push_str("=====================================\n\n");
+        report.push_str(&format!("Total Tests: {total_tests}\n"));
+        report.push_str(&format!("Successful: {successful_tests}\n"));
+        report.push_str(&format!("Failed: {failed_tests}\n"));
+        report.push_str(&format!(
+            "Success Rate: {:.2}%\n\n",
+            (successful_tests as f64 / total_tests as f64) * 100.0
+        ));
 
         report.push_str("Test Details:\n");
         report.push_str("=============\n");
 
         for result in &self.results {
             report.push_str(&format!("Test: {}\n", result.test_name));
-            report.push_str(&format!("  Status: {}\n", if result.success { "PASS" } else { "FAIL" }));
+            report.push_str(&format!(
+                "  Status: {}\n",
+                if result.success { "PASS" } else { "FAIL" }
+            ));
             report.push_str(&format!("  Duration: {:?}\n", result.duration));
-            
+
             if let Some(ref error) = result.error_message {
-                report.push_str(&format!("  Error: {}\n", error));
+                report.push_str(&format!("  Error: {error}\n"));
             }
-            
+
             if !result.metrics.is_empty() {
                 report.push_str("  Metrics:\n");
                 for (key, value) in &result.metrics {
-                    report.push_str(&format!("    {}: {:.2}\n", key, value));
+                    report.push_str(&format!("    {key}: {value:.2}\n"));
                 }
             }
-            
-            report.push_str("\n");
+
+            report.push('\n');
         }
 
         report

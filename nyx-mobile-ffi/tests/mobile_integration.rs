@@ -183,10 +183,7 @@ fn test_error_conditions() -> Result<(), Box<dyn std::error::Error>> {
     // Test invalid power states
     let invalid_states = vec![99, 255, u32::MAX];
     for invalid_state in invalid_states {
-        assert!(
-            invalid_state > 3,
-            "State {invalid_state} should be invalid"
-        );
+        assert!(invalid_state > 3, "State {invalid_state} should be invalid");
     }
 
     // Test null/empty string handling

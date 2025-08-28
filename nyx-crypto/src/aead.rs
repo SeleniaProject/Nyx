@@ -49,7 +49,7 @@ impl AeadProcessor {
     pub fn new(key: &AeadKey) -> Self {
         let key = Key::from_slice(&key.0);
         let cipher = ChaCha20Poly1305::new(key);
-        
+
         Self {
             cipher,
             encrypt_buffer: Vec::with_capacity(4096), // Pre-allocate for typical message sizes
@@ -61,13 +61,14 @@ impl AeadProcessor {
     #[inline(always)]
     pub fn seal_reuse(&mut self, nonce: AeadNonce, aad: &[u8], plaintext: &[u8]) -> Result<&[u8]> {
         let nonce = Nonce::from_slice(&nonce.0);
-        
+
         // Clear and reserve space in the reusable buffer
         self.encrypt_buffer.clear();
         self.encrypt_buffer.reserve(plaintext.len() + 16); // 16 bytes for ChaCha20Poly1305 tag
-        
+
         // Use in-place encryption when possible
-        let encrypted = self.cipher
+        let encrypted = self
+            .cipher
             .encrypt(
                 nonce,
                 Payload {
@@ -76,7 +77,7 @@ impl AeadProcessor {
                 },
             )
             .map_err(|e| Error::Protocol(format!("aead seal failed: {e}")))?;
-        
+
         self.encrypt_buffer.extend_from_slice(&encrypted);
         Ok(&self.encrypt_buffer)
     }
@@ -85,12 +86,14 @@ impl AeadProcessor {
     #[inline(always)]
     pub fn open_reuse(&mut self, nonce: AeadNonce, aad: &[u8], ciphertext: &[u8]) -> Result<&[u8]> {
         let nonce = Nonce::from_slice(&nonce.0);
-        
+
         // Clear and reserve space in the reusable buffer
         self.decrypt_buffer.clear();
-        self.decrypt_buffer.reserve(ciphertext.len().saturating_sub(16)); // Account for tag removal
-        
-        let decrypted = self.cipher
+        self.decrypt_buffer
+            .reserve(ciphertext.len().saturating_sub(16)); // Account for tag removal
+
+        let decrypted = self
+            .cipher
             .decrypt(
                 nonce,
                 Payload {
@@ -99,7 +102,7 @@ impl AeadProcessor {
                 },
             )
             .map_err(|e| Error::Protocol(format!("aead open failed: {e}")))?;
-        
+
         self.decrypt_buffer.extend_from_slice(&decrypted);
         Ok(&self.decrypt_buffer)
     }

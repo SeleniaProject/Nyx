@@ -130,10 +130,10 @@ impl DaemonClient {
     }
 
     /// Update daemon configuration with the provided settings
-    /// 
+    ///
     /// # Arguments
     /// * `settings` - Key-value pairs of configuration options to update
-    /// 
+    ///
     /// # Errors
     /// Returns an error if:
     /// - Failed to serialize settings to JSON
@@ -154,10 +154,10 @@ impl DaemonClient {
     }
 
     /// Rollback daemon configuration to a previous version
-    /// 
+    ///
     /// # Arguments
     /// * `version` - The configuration version to rollback to
-    /// 
+    ///
     /// # Errors
     /// Returns an error if:
     /// - The specified version does not exist
@@ -173,10 +173,10 @@ impl DaemonClient {
     }
 
     /// Create a snapshot of the current daemon configuration
-    /// 
+    ///
     /// # Arguments
     /// * `description` - Optional description for the snapshot
-    /// 
+    ///
     /// # Errors
     /// Returns an error if:
     /// - Communication with daemon fails
@@ -195,10 +195,10 @@ impl DaemonClient {
     }
 
     /// Subscribe to daemon events of specific types
-    /// 
+    ///
     /// # Arguments
     /// * `types` - Optional list of event types to subscribe to. If None, subscribes to all events
-    /// 
+    ///
     /// # Errors
     /// Returns an error if:
     /// - Communication with daemon fails

@@ -49,7 +49,7 @@ impl FrameBuilder {
     /// Build frame with zero-copy payload when possible (accepts various byte slice types)
     pub fn build_data_frame<T: AsRef<[u8]>>(&self, stream_id: u32, seq: u64, payload: T) -> Frame {
         let payload_bytes = Bytes::copy_from_slice(payload.as_ref());
-        
+
         Frame {
             header: FrameHeader {
                 stream_id,
@@ -69,7 +69,7 @@ impl FrameBuilder {
         self.cbor_buffer.clear();
         // Reserve space based on frame size to avoid reallocations
         self.cbor_buffer.reserve(frame.payload.len() + 64);
-        
+
         ciborium::ser::into_writer(frame, &mut self.cbor_buffer).map_err(Error::CborSer)?;
         Ok(&self.cbor_buffer)
     }
@@ -79,7 +79,7 @@ impl FrameBuilder {
         self.json_buffer.clear();
         // Reserve space based on estimated JSON overhead
         self.json_buffer.reserve(frame.payload.len() * 2 + 128);
-        
+
         serde_json::to_writer(&mut self.json_buffer, frame)?;
         Ok(&self.json_buffer)
     }
@@ -109,7 +109,7 @@ impl Frame {
         // Pre-allocate with estimated size to avoid multiple reallocations
         let estimated_size = self.payload.len() + 64; // Header overhead estimate
         let mut out = Vec::with_capacity(estimated_size);
-        
+
         ciborium::ser::into_writer(self, &mut out).map_err(Error::CborSer)?;
         Ok(out)
     }
@@ -126,7 +126,7 @@ impl Frame {
         // Pre-allocate based on payload size and JSON overhead
         let estimated_size = self.payload.len() * 2 + 128; // JSON overhead estimate
         let mut buffer = Vec::with_capacity(estimated_size);
-        
+
         serde_json::to_writer(&mut buffer, self)?;
         Ok(buffer)
     }
@@ -161,7 +161,7 @@ mod test_s {
 
     #[test]
     fn cbor_roundtrip_frame() -> Result<(), Box<dyn std::error::Error>> {
-        let f = Frame::data(10, 99, b"hello-cbor".as_ref());
+        let f = Frame::data(10, 99, &b"hello-cbor"[..]);
         let enc = f.to_cbor()?;
         let dec = Frame::from_cbor(&enc)?;
         assert_eq!(dec.header.stream_id, 10);

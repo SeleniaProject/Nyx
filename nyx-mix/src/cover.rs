@@ -1,10 +1,10 @@
 //! Cover traffic generation (Poisson)
 
+use crate::errors::Result;
 use rand::Rng;
 use rand_distr::{Distribution, Poisson};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use crate::errors::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoverTrafficConfig {
@@ -29,8 +29,8 @@ impl Default for CoverTrafficConfig {
 
 pub struct CoverTrafficGenerator {
     config: CoverTrafficConfig,
-    _last_update: Instant,      // Prefix with underscore to avoid unused warning
-    _packets_generated: u64,    // Prefix with underscore to avoid unused warning
+    _last_update: Instant,   // Prefix with underscore to avoid unused warning
+    _packets_generated: u64, // Prefix with underscore to avoid unused warning
 }
 
 impl CoverTrafficGenerator {

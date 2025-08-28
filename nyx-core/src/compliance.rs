@@ -398,7 +398,12 @@ mod test_s {
 
         let summary = report.summary();
         assert!(summary.contains("Core"));
-        assert!(summary.contains("✓") || summary.contains("✗") || summary.contains("available") || summary.contains("missing"));
+        assert!(
+            summary.contains("✓")
+                || summary.contains("✗")
+                || summary.contains("available")
+                || summary.contains("missing")
+        );
         Ok(())
     }
 

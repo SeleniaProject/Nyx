@@ -246,7 +246,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enhanced_stun_server_creation() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn enhanced_stun_server_creation() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let udp_addr = "127.0.0.1:0".parse()?;
         let server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await;
         assert!(server.is_ok());
@@ -254,7 +255,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enhanced_stun_server_lifecycle() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn enhanced_stun_server_lifecycle() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let udp_addr = "127.0.0.1:0".parse()?;
         let server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await?;
         let (_udp_local, _tcp_local) = server.get_local_addresses()?;
@@ -276,7 +278,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn advanced_nat_traversal_creation() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn advanced_nat_traversal_creation() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let local_addr = "127.0.0.1:0".parse()?;
         let _traversal = AdvancedNatTraversal::new(local_addr, vec![], vec![], vec![]).await?;
         Ok(())
@@ -297,14 +300,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enhanced_stun_server_creation_test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn enhanced_stun_server_creation_test(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let udp_addr = "127.0.0.1:0".parse()?;
         let _server = EnhancedStunServer::new(udp_addr, None, vec![TransportProtocol::Udp]).await?;
         Ok(())
     }
 
     #[tokio::test]
-    async fn connectivity_establishment_mechanism() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn connectivity_establishment_mechanism(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let local_addr = "127.0.0.1:0".parse()?;
         let traversal = AdvancedNatTraversal::new(local_addr, vec![], vec![], vec![]).await?;
         let remote_addr = "127.0.0.1:8080".parse()?;

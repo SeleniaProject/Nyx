@@ -177,10 +177,5 @@ ciborium = "0.2"
 hyper = { version = "0.14", features = ["full"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.10"
-
-[[bench]]
-name = "path_builder_advanced"
-harness = false
-
 [build-dependencies]
 # tonic-build = "0.10" # DISABLED: uses ring/openssl

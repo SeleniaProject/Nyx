@@ -3,7 +3,7 @@
 #[cfg(feature = "reconnect")]
 pub mod retry_policy {
     use std::time::Duration;
-    use tokio_retry::strategy::{ExponentialBackoff, jitter};
+    use tokio_retry::strategy::{jitter, ExponentialBackoff};
 
     /// Create an exponential backoff strategy with jitter for connection retries.
     /// This provides better distribution of retry attempts to avoid thundering herd problems.
@@ -32,12 +32,12 @@ pub mod retry_policy {
 #[cfg(not(feature = "reconnect"))]
 pub mod retry_policy {
     use std::time::Duration;
-    
+
     /// No-op implementation when reconnect feature is disabled.
     pub fn exponential_with_jitter(_base_ms: u64, _max_ms: u64) -> impl Iterator<Item = Duration> {
         std::iter::empty()
     }
-    
+
     /// No-op delay calculation when reconnect feature is disabled.
     #[must_use]
     pub fn calculate_delay(_attempt: u32, _base_ms: u64, _max_ms: u64) -> Duration {
@@ -56,6 +56,6 @@ pub mod backoff_policy {
 #[cfg(not(feature = "reconnect"))]
 pub mod backoff_policy {
     pub use super::retry_policy::*;
-    // Legacy function name for compatibility  
+    // Legacy function name for compatibility
     pub use super::retry_policy::calculate_delay as exponential_with_jitter;
 }

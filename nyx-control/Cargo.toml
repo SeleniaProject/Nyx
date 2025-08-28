@@ -27,6 +27,9 @@ jsonschema = { version = "0.17", default-features = false }
 hex = "0.4"
 rand = "0.8"
 nyx-stream = { path = "../nyx-stream" }
+# CBOR codec (pure Rust)
+ciborium = "0.2"
+blake3 = "1.8"
 # reqwest = { version = "0.11", default-features = false, features = ["json"] } # DISABLED: uses ring/openssl
 ureq = { version = "2.9", default-features = false, features = ["json"] } # Pure Rust HTTP client
 tracing = "0.1"

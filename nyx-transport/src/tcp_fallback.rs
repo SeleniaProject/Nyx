@@ -1,5 +1,5 @@
 //! Optimized TCP fallback helpers for reliable transport
-//! 
+//!
 //! Provides high-performance TCP connection management with connection pooling,
 //! keep-alive optimization, and automatic retry logic.
 
@@ -7,7 +7,10 @@ use crate::{Error, Result};
 use socket2::SockRef; // Safe socket operations
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream};
-use std::sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 
 // Performance metrics for TCP operations
@@ -34,7 +37,11 @@ pub struct TcpConnectionPool {
 
 impl TcpConnectionPool {
     /// Create a new connection pool with specified parameters
-    pub fn new(max_connections_per_addr: usize, connection_timeout: Duration, idle_timeout: Duration) -> Self {
+    pub fn new(
+        max_connections_per_addr: usize,
+        connection_timeout: Duration,
+        idle_timeout: Duration,
+    ) -> Self {
         Self {
             pool: Arc::new(Mutex::new(HashMap::new())),
             max_connections_per_addr,
@@ -59,10 +66,11 @@ impl TcpConnectionPool {
 
     /// Try to reuse an existing connection from the pool
     fn try_reuse_connection(&self, addr: SocketAddr) -> Result<Option<TcpStream>> {
-        let mut pool = self.pool.lock().map_err(|_| {
-            Error::Internal("TCP connection pool mutex poisoned".to_string())
-        })?;
-        
+        let mut pool = self
+            .pool
+            .lock()
+            .map_err(|_| Error::Internal("TCP connection pool mutex poisoned".to_string()))?;
+
         if let Some(connections) = pool.get_mut(&addr) {
             // Remove and return the most recently used connection
             while let Some(conn) = connections.pop() {
@@ -74,13 +82,13 @@ impl TcpConnectionPool {
                     }
                 }
             }
-            
+
             // Clean up empty entries
             if connections.is_empty() {
                 pool.remove(&addr);
             }
         }
-        
+
         Ok(None)
     }
 
@@ -88,26 +96,26 @@ impl TcpConnectionPool {
     fn create_new_connection(&self, addr: SocketAddr) -> Result<TcpStream> {
         let stream = TcpStream::connect_timeout(&addr, self.connection_timeout)
             .map_err(|e| Error::Msg(format!("tcp connect to {addr} failed: {e}")))?;
-        
+
         // Optimize TCP settings for low latency
         stream.set_nodelay(true).ok(); // Disable Nagle's algorithm
-        stream.set_ttl(64).ok();       // Set reasonable TTL
-        
+        stream.set_ttl(64).ok(); // Set reasonable TTL
+
         // Set timeouts for better responsiveness
         stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
         stream.set_write_timeout(Some(Duration::from_secs(30))).ok();
-        
+
         // Platform-specific optimizations
         #[cfg(unix)]
         {
             self.optimize_unix_socket(&stream);
         }
-        
+
         #[cfg(windows)]
         {
             self.optimize_windows_socket(&stream);
         }
-        
+
         Ok(stream)
     }
 
@@ -118,15 +126,15 @@ impl TcpConnectionPool {
         // Use safe Rust APIs instead of unsafe libc calls
         // These are cross-platform optimizations that work on Unix-like systems
         let socket2_stream = SockRef::from(stream);
-        
+
         // Set larger send/receive buffers for better throughput
         // These are safe alternatives to the unsafe libc setsockopt calls
         let _ = socket2_stream.set_send_buffer_size(262144); // 256KB
         let _ = socket2_stream.set_recv_buffer_size(262144); // 256KB
-        
+
         // Enable keep-alive for connection health monitoring
         let _ = socket2_stream.set_keepalive(true);
-        
+
         // Additional TCP optimizations available through socket2
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
@@ -139,11 +147,11 @@ impl TcpConnectionPool {
     fn optimize_windows_socket(&self, stream: &TcpStream) {
         // Windows-specific socket optimizations using safe APIs
         let socket2_stream = SockRef::from(stream);
-        
+
         // Set larger send/receive buffers for better throughput
         let _ = socket2_stream.set_send_buffer_size(262144); // 256KB
         let _ = socket2_stream.set_recv_buffer_size(262144); // 256KB
-        
+
         // Enable keep-alive for connection health monitoring
         let _ = socket2_stream.set_keepalive(true);
     }
@@ -157,12 +165,13 @@ impl TcpConnectionPool {
 
     /// Return a connection to the pool for reuse
     pub fn return_connection(&self, addr: SocketAddr, stream: TcpStream) -> Result<()> {
-        let mut pool = self.pool.lock().map_err(|_| {
-            Error::Internal("TCP connection pool mutex poisoned".to_string())
-        })?;
-        
+        let mut pool = self
+            .pool
+            .lock()
+            .map_err(|_| Error::Internal("TCP connection pool mutex poisoned".to_string()))?;
+
         let connections = pool.entry(addr).or_default();
-        
+
         // Don't exceed max connections per address
         if connections.len() < self.max_connections_per_addr {
             connections.push(PooledConnection {
@@ -171,7 +180,7 @@ impl TcpConnectionPool {
                 _connection_count: 1,
             });
         }
-        
+
         Ok(())
     }
 
@@ -179,7 +188,7 @@ impl TcpConnectionPool {
     pub fn cleanup_idle_connections(&self) {
         if let Ok(mut pool) = self.pool.lock() {
             let now = Instant::now();
-            
+
             pool.retain(|_, connections| {
                 connections.retain(|conn| now.duration_since(conn.last_used) < self.idle_timeout);
                 !connections.is_empty()
@@ -197,7 +206,7 @@ impl TcpConnectionPool {
             // If mutex is poisoned, return default values
             (0, 0)
         };
-        
+
         TcpPoolStats {
             total_pooled_connections: total_pooled,
             addresses_in_pool,
@@ -232,9 +241,9 @@ pub fn try_connect(addr: SocketAddr, timeout: Duration) -> Result<bool> {
 /// Create a default connection pool with reasonable settings
 pub fn create_default_pool() -> TcpConnectionPool {
     TcpConnectionPool::new(
-        4,                                    // max 4 connections per address
-        Duration::from_secs(10),             // 10 second connection timeout
-        Duration::from_secs(300),            // 5 minute idle timeout
+        4,                        // max 4 connections per address
+        Duration::from_secs(10),  // 10 second connection timeout
+        Duration::from_secs(300), // 5 minute idle timeout
     )
 }
 
@@ -242,7 +251,7 @@ pub fn create_default_pool() -> TcpConnectionPool {
 mod tests {
     use super::*;
     use std::net::TcpListener;
-    
+
     #[test]
     fn can_connect_localhost() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -253,13 +262,13 @@ mod tests {
         let _result = th.join();
         Ok(())
     }
-    
+
     #[test]
     fn connection_pool_basic() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let pool = create_default_pool();
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let addr = listener.local_addr()?;
-        
+
         // Start a simple echo server
         let _server_handle = std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
@@ -270,22 +279,22 @@ mod tests {
                 }
             }
         });
-        
+
         // Test connection pool
         std::thread::sleep(Duration::from_millis(10)); // Let server start
         let _conn1 = pool.get_connection(addr);
         let stats = pool.get_stats();
         assert!(stats.connections_created > 0);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn connection_pool_reuse() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let pool = create_default_pool();
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let addr = listener.local_addr()?;
-        
+
         // Simple server that accepts multiple connections
         let _server_handle = std::thread::spawn(move || {
             for _ in 0..3 {
@@ -294,21 +303,21 @@ mod tests {
                 }
             }
         });
-        
+
         std::thread::sleep(Duration::from_millis(10)); // Let server start
-        
+
         // Get and return connection
         if let Ok(conn) = pool.get_connection(addr) {
             let _ = pool.return_connection(addr, conn);
         }
-        
+
         // Try to reuse
         let _conn2 = pool.get_connection(addr);
         let stats = pool.get_stats();
-        
+
         // Should have some activity
         assert!(stats.connections_created > 0 || stats.connections_reused > 0);
-        
+
         Ok(())
     }
 }

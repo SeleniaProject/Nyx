@@ -11,10 +11,7 @@ fn hybrid_demo_handshake_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     // Kyber keypair for responder
     let mut rng = rand::thread_rng();
     let (r_sk, r_pk) = kyber::keypair(&mut rng)?;
-    let r_pq = KyberStaticKeypair {
-        sk: r_sk,
-        pk: r_pk,
-    };
+    let r_pq = KyberStaticKeypair { sk: r_sk, pk: r_pk };
 
     let prologue = b"hybrid-test";
     let mut init = handshake::initiator_handshake(&i_x, &r_x.pk, &r_pq.pk, prologue)?;
@@ -43,10 +40,7 @@ fn hybrid_demo_rejects_static_mismatch() -> Result<(), Box<dyn std::error::Error
     let r_x = X25519StaticKeypair::from_seed([4u8; 32]);
     let mut rng = rand::thread_rng();
     let (r_sk, r_pk) = kyber::keypair(&mut rng)?;
-    let r_pq = KyberStaticKeypair {
-        sk: r_sk,
-        pk: r_pk,
-    };
+    let r_pq = KyberStaticKeypair { sk: r_sk, pk: r_pk };
 
     let prologue = b"hybrid-test";
     let init = handshake::initiator_handshake(&i_x, &r_x.pk, &r_pq.pk, prologue)?;

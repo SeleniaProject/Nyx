@@ -9,7 +9,7 @@ use nyx_stream::frame_codec::FrameCodec;
 fn build_ext_sets_flags_and_appends_path_id() -> Result<(), Box<dyn std::error::Error>> {
     // 現状の公開APIでは flag_s/path_id のフィールドは公開されていないため、
     // ヘッダ主要フィールドのラウンドトリップで基本整合を担保する。
-    let f = Frame::data(9, 77, b"x".as_ref());
+    let f = Frame::data(9, 77, &b"x"[..]);
     let mut buf = BytesMut::new();
     FrameCodec::encode(&f, &mut buf)?;
     let got = FrameCodec::decode(&mut buf).unwrap().unwrap();

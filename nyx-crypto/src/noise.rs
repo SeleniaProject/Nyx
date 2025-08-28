@@ -17,14 +17,14 @@ const MIN_NOISE_MSG_LEN: usize = 8;
 
 /// Hybrid message minimum length validation with comprehensive security checks
 /// Originally should perform strict Noise_Nyx handshake analysis with length/tag integrity checks
-/// 
+///
 /// # Security Considerations
 /// - Enforces strict message size limits to prevent buffer overflow attacks
 /// - Validates minimum message length to prevent trivial protocol manipulation
 /// - Resistant to DoS attacks through oversized messages
 /// - Implements additional format validation to detect malformed messages
 /// - Prevents integer overflow in length calculations
-/// 
+///
 /// # Errors
 /// Returns `Error::Protocol` if message length is outside acceptable bounds or if
 /// the message appears to be malformed in a way that could indicate an attack
@@ -32,47 +32,49 @@ pub fn validate_hybrid_message_len(msg: &[u8]) -> Result<()> {
     // SECURITY ENHANCEMENT: Check for null or extremely short messages
     if msg.is_empty() {
         return Err(Error::Protocol(
-            "SECURITY: empty hybrid message (potential protocol confusion attack)".into()
+            "SECURITY: empty hybrid message (potential protocol confusion attack)".into(),
         ));
     }
-    
+
     if msg.len() < MIN_NOISE_MSG_LEN {
         return Err(Error::Protocol(
             format!("SECURITY: hybrid message length {} below minimum {} bytes (protocol manipulation prevention)", 
                     msg.len(), MIN_NOISE_MSG_LEN)
         ));
     }
-    
+
     if msg.len() > MAX_NOISE_MSG_LEN {
-        return Err(Error::Protocol(
-            format!("SECURITY: hybrid message length {} exceeds maximum {} bytes (DoS attack prevention)", 
-                    msg.len(), MAX_NOISE_MSG_LEN)
-        ));
+        return Err(Error::Protocol(format!(
+            "SECURITY: hybrid message length {} exceeds maximum {} bytes (DoS attack prevention)",
+            msg.len(),
+            MAX_NOISE_MSG_LEN
+        )));
     }
-    
+
     // SECURITY ENHANCEMENT: Additional format validation
     // Check for obvious signs of corrupted or malicious data
     let first_byte = msg[0];
     let _last_byte = msg[msg.len() - 1]; // Reserved for future validation
-    
+
     // Basic sanity checks for message format
     if msg.len() > 100 {
         // For longer messages, check for patterns that might indicate corruption
         let all_same = msg.iter().all(|&b| b == first_byte);
         if all_same && (first_byte == 0x00 || first_byte == 0xFF) {
             return Err(Error::Protocol(
-                "SECURITY: hybrid message contains suspicious repeated pattern (potential attack)".into()
+                "SECURITY: hybrid message contains suspicious repeated pattern (potential attack)"
+                    .into(),
             ));
         }
     }
-    
+
     // SECURITY: Prevent potential integer overflow in downstream processing
     if msg.len() > usize::MAX / 2 {
         return Err(Error::Protocol(
-            "SECURITY: hybrid message length approaches system limits (overflow prevention)".into()
+            "SECURITY: hybrid message length approaches system limits (overflow prevention)".into(),
         ));
     }
-    
+
     Ok(())
 }
 

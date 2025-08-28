@@ -1,17 +1,17 @@
-﻿/// Integrated Frame Processor for Nyx Stream Layer
-/// Provides unified frame processing with zero-copy optimizations, reordering, and flow control
-/// This module integrates frame parsing, validation, reordering, and congestion control
+//! Integrated Frame Processor for Nyx Stream Layer
+//! Provides unified frame processing with zero-copy optimizations, reordering, and flow control
+//! This module integrates frame parsing, validation, reordering, and congestion control
 
+use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameType};
 use crate::frame_codec::FrameCodec;
-use crate::errors::{Error, Result};
 use bytes::{Bytes, BytesMut};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
-use tracing::{debug, warn, error};
+use tracing::{debug, error, warn};
 
 #[derive(Debug, Clone)]
 pub struct ProcessorConfig {
@@ -78,7 +78,7 @@ impl BufferPool {
         let buffers = (0..size)
             .map(|_| BytesMut::with_capacity(buffer_capacity))
             .collect();
-        
+
         Self {
             buffers,
             capacity: buffer_capacity,
@@ -86,9 +86,9 @@ impl BufferPool {
     }
 
     fn get_buffer(&mut self) -> BytesMut {
-        self.buffers.pop().unwrap_or_else(|| {
-            BytesMut::with_capacity(self.capacity)
-        })
+        self.buffers
+            .pop()
+            .unwrap_or_else(|| BytesMut::with_capacity(self.capacity))
     }
 
     fn return_buffer(&mut self, mut buffer: BytesMut) {
@@ -123,8 +123,12 @@ impl ReorderingBuffer {
 
         // Check if frame is within acceptable window
         if seq < self.expected_seq || seq >= self.expected_seq + self.window_size {
-            debug!("Frame seq {} outside window [{}, {})", 
-                   seq, self.expected_seq, self.expected_seq + self.window_size);
+            debug!(
+                "Frame seq {} outside window [{}, {})",
+                seq,
+                self.expected_seq,
+                self.expected_seq + self.window_size
+            );
             return ready_frames;
         }
 
@@ -181,18 +185,21 @@ impl IntegratedFrameProcessor {
         let start_time = Instant::now();
         let mut processed_frames = Vec::new();
 
+        // Work on a single mutable buffer so we actually consume decoded bytes
+        let mut buf = BytesMut::from(&data[..]);
+
         // Timeout wrapper for processing
         let result = timeout(self.config.processing_timeout, async {
-            while !data.is_empty() {
-                // Try to decode a frame
-                let mut data_bytes = BytesMut::from(data.as_ref());
-                match FrameCodec::decode(&mut data_bytes) {
+            loop {
+                match FrameCodec::decode(&mut buf) {
                     Ok(Some(frame)) => {
                         let reordered_frames = self.handle_frame_reordering(frame).await?;
                         processed_frames.extend(reordered_frames);
+                        // Continue to decode remaining bytes
+                        continue;
                     }
                     Ok(None) => {
-                        // Need more data
+                        // No complete frame available in remaining buffer
                         break;
                     }
                     Err(e) => {
@@ -203,16 +210,21 @@ impl IntegratedFrameProcessor {
                 }
             }
             Ok(processed_frames)
-        }).await;
+        })
+        .await;
 
         let processing_time = start_time.elapsed();
-        self.update_processing_metrics(processing_time, result.is_ok()).await;
+        self.update_processing_metrics(processing_time, result.is_ok())
+            .await;
 
         match result {
             Ok(Ok(frames)) => Ok(frames),
             Ok(Err(e)) => Err(e),
             Err(_) => {
-                warn!("Frame processing timeout after {:?}", self.config.processing_timeout);
+                warn!(
+                    "Frame processing timeout after {:?}",
+                    self.config.processing_timeout
+                );
                 Err(Error::ProcessingTimeout)
             }
         }
@@ -222,8 +234,11 @@ impl IntegratedFrameProcessor {
     pub async fn process_frame(&self, frame: Frame) -> Result<Vec<Frame>> {
         let start_time = Instant::now();
 
-        // Validate frame
-        self.validate_frame(&frame)?;
+        // Validate frame; count errors in metrics if invalid
+        if let Err(e) = self.validate_frame(&frame) {
+            self.increment_error_counter().await;
+            return Err(e);
+        }
 
         // Handle reordering
         let reordered_frames = self.handle_frame_reordering(frame).await?;
@@ -245,7 +260,7 @@ impl IntegratedFrameProcessor {
 
         let result = buffer.freeze();
         buffer_pool.return_buffer(BytesMut::new()); // Return empty buffer to pool
-        
+
         Ok(result)
     }
 
@@ -255,15 +270,13 @@ impl IntegratedFrameProcessor {
         let mut reordering_buffers = self.reordering_buffers.write().await;
 
         // Get or create reordering buffer for this stream
-        let reordering_buffer = reordering_buffers
-            .entry(stream_id)
-            .or_insert_with(|| {
-                ReorderingBuffer::new(
-                    1, // Start from sequence 1
-                    self.config.reordering_window,
-                    self.config.max_reorder_buffer,
-                )
-            });
+        let reordering_buffer = reordering_buffers.entry(stream_id).or_insert_with(|| {
+            ReorderingBuffer::new(
+                1, // Start from sequence 1
+                self.config.reordering_window,
+                self.config.max_reorder_buffer,
+            )
+        });
 
         let ready_frames = reordering_buffer.insert(frame);
 
@@ -271,10 +284,12 @@ impl IntegratedFrameProcessor {
         if !ready_frames.is_empty() {
             let mut metrics = self.metrics.lock().await;
             metrics.frames_processed += ready_frames.len() as u64;
-            
+
             // Check if reordering occurred
-            if ready_frames.len() > 1 || 
-               (ready_frames.len() == 1 && ready_frames[0].header.seq != reordering_buffer.expected_seq - 1) {
+            if ready_frames.len() > 1
+                || (ready_frames.len() == 1
+                    && ready_frames[0].header.seq != reordering_buffer.expected_seq - 1)
+            {
                 metrics.frames_reordered += 1;
             }
         }
@@ -286,9 +301,10 @@ impl IntegratedFrameProcessor {
     fn validate_frame(&self, frame: &Frame) -> Result<()> {
         // Check frame size
         if frame.payload.len() > self.config.max_frame_size {
-            return Err(Error::InvalidFrame(
-                format!("Frame too large: {} bytes", frame.payload.len())
-            ));
+            return Err(Error::InvalidFrame(format!(
+                "Frame too large: {} bytes",
+                frame.payload.len()
+            )));
         }
 
         // Validate frame type specific constraints
@@ -296,14 +312,14 @@ impl IntegratedFrameProcessor {
             FrameType::Ack => {
                 if !frame.payload.is_empty() {
                     return Err(Error::InvalidFrame(
-                        "ACK frame should have empty payload".to_string()
+                        "ACK frame should have empty payload".to_string(),
                     ));
                 }
             }
             FrameType::Close => {
                 if !frame.payload.is_empty() {
                     return Err(Error::InvalidFrame(
-                        "CLOSE frame should have empty payload".to_string()
+                        "CLOSE frame should have empty payload".to_string(),
                     ));
                 }
             }
@@ -322,7 +338,7 @@ impl IntegratedFrameProcessor {
 
         if success {
             times.push_back(processing_time);
-            
+
             // Keep only recent times for average calculation
             while times.len() > 1000 {
                 times.pop_front();
@@ -339,11 +355,13 @@ impl IntegratedFrameProcessor {
 
         // Update buffer utilization
         let reordering_buffers = self.reordering_buffers.read().await;
-        let total_buffered: usize = reordering_buffers.values()
+        let total_buffered: usize = reordering_buffers
+            .values()
             .map(|buf| buf.get_buffer_info().0)
             .sum();
-        
-        metrics.buffer_utilization = (total_buffered as f64) / (self.config.max_reorder_buffer as f64);
+
+        metrics.buffer_utilization =
+            (total_buffered as f64) / (self.config.max_reorder_buffer as f64);
     }
 
     /// Increment error counter
@@ -361,7 +379,7 @@ impl IntegratedFrameProcessor {
     pub async fn reset_metrics(&self) {
         let mut metrics = self.metrics.lock().await;
         *metrics = ProcessingMetrics::default();
-        
+
         let mut times = self.processing_times.lock().await;
         times.clear();
     }
@@ -369,7 +387,8 @@ impl IntegratedFrameProcessor {
     /// Get reordering buffer status for all streams
     pub async fn get_buffer_status(&self) -> std::collections::HashMap<u32, (usize, u64, u64)> {
         let buffers = self.reordering_buffers.read().await;
-        buffers.iter()
+        buffers
+            .iter()
             .map(|(&stream_id, buffer)| (stream_id, buffer.get_buffer_info()))
             .collect()
     }
@@ -377,20 +396,20 @@ impl IntegratedFrameProcessor {
     /// Force flush reordering buffers (useful for stream closure)
     pub async fn flush_stream_buffer(&self, stream_id: u32) -> Result<Vec<Frame>> {
         let mut reordering_buffers = self.reordering_buffers.write().await;
-        
+
         if let Some(buffer) = reordering_buffers.remove(&stream_id) {
             // Extract all buffered frames
             let mut flushed_frames = Vec::new();
             for (_, frame) in buffer.buffer.into_iter() {
                 flushed_frames.push(frame);
             }
-            
+
             // Sort by sequence number for consistency
             flushed_frames.sort_by_key(|f| f.header.seq);
-            
+
             let mut metrics = self.metrics.lock().await;
             metrics.frames_dropped += flushed_frames.len() as u64;
-            
+
             Ok(flushed_frames)
         } else {
             Ok(Vec::new())
@@ -401,7 +420,13 @@ impl IntegratedFrameProcessor {
     pub async fn get_processing_stats(&self) -> Result<String> {
         let metrics = self.get_metrics().await;
         let buffer_status = self.get_buffer_status().await;
-        
+
+        let active_streams = buffer_status
+            .values()
+            .filter(|(count, _, _)| *count > 0)
+            .count();
+        let total_buffered: usize = buffer_status.values().map(|(count, _, _)| count).sum();
+
         Ok(format!(
             "Processing Stats:\n\
              - Frames processed: {}\n\
@@ -418,8 +443,8 @@ impl IntegratedFrameProcessor {
             metrics.processing_errors,
             metrics.avg_processing_time,
             metrics.buffer_utilization * 100.0,
-            buffer_status.len(),
-            buffer_status.values().map(|(count, _, _)| count).sum::<usize>()
+            active_streams,
+            total_buffered
         ))
     }
 }
@@ -434,7 +459,7 @@ mod tests {
     async fn test_processor_creation() {
         let config = ProcessorConfig::default();
         let processor = IntegratedFrameProcessor::new(config);
-        
+
         let metrics = processor.get_metrics().await;
         assert_eq!(metrics.frames_processed, 0);
     }
@@ -444,13 +469,13 @@ mod tests {
         let config = ProcessorConfig::default();
         let processor = IntegratedFrameProcessor::new(config);
         let builder = FrameBuilder::new();
-        
+
         let frame = builder.build_data_frame(1, 1, b"test data");
         let processed = processor.process_frame(frame.clone()).await?;
-        
+
         assert_eq!(processed.len(), 1);
         assert_eq!(processed[0].header.seq, frame.header.seq);
-        
+
         Ok(())
     }
 
@@ -459,31 +484,31 @@ mod tests {
         let config = ProcessorConfig::default();
         let processor = IntegratedFrameProcessor::new(config);
         let builder = FrameBuilder::new();
-        
+
         // Send frames out of order: 2, 1, 3
         let frame2 = builder.build_data_frame(1, 2, b"frame 2");
         let frame1 = builder.build_data_frame(1, 1, b"frame 1");
         let frame3 = builder.build_data_frame(1, 3, b"frame 3");
-        
+
         // Process frame 2 first (should be buffered)
         let result2 = processor.process_frame(frame2).await?;
         assert!(result2.is_empty()); // Should be buffered
-        
+
         // Process frame 1 (should release both 1 and 2)
         let result1 = processor.process_frame(frame1).await?;
         assert_eq!(result1.len(), 2);
         assert_eq!(result1[0].header.seq, 1);
         assert_eq!(result1[1].header.seq, 2);
-        
+
         // Process frame 3 (should be released immediately)
         let result3 = processor.process_frame(frame3).await?;
         assert_eq!(result3.len(), 1);
         assert_eq!(result3[0].header.seq, 3);
-        
+
         let metrics = processor.get_metrics().await;
         assert_eq!(metrics.frames_processed, 3);
         assert!(metrics.frames_reordered > 0);
-        
+
         Ok(())
     }
 
@@ -494,7 +519,7 @@ mod tests {
             ..ProcessorConfig::default()
         };
         let processor = IntegratedFrameProcessor::new(config);
-        
+
         // Test oversized frame
         let oversized_payload = vec![0u8; 200];
         let frame = Frame {
@@ -505,10 +530,10 @@ mod tests {
             },
             payload: oversized_payload,
         };
-        
+
         let result = processor.process_frame(frame).await;
         assert!(result.is_err());
-        
+
         Ok(())
     }
 
@@ -517,20 +542,20 @@ mod tests {
         let config = ProcessorConfig::default();
         let processor = IntegratedFrameProcessor::new(config);
         let builder = FrameBuilder::new();
-        
+
         // Add some frames to buffer (out of order)
         let frame3 = builder.build_data_frame(1, 3, b"frame 3");
         let frame2 = builder.build_data_frame(1, 2, b"frame 2");
-        
+
         processor.process_frame(frame3).await?;
         processor.process_frame(frame2).await?;
-        
+
         // Flush the buffer
         let flushed = processor.flush_stream_buffer(1).await?;
         assert_eq!(flushed.len(), 2);
         assert_eq!(flushed[0].header.seq, 2); // Should be sorted
         assert_eq!(flushed[1].header.seq, 3);
-        
+
         Ok(())
     }
 
@@ -539,18 +564,18 @@ mod tests {
         let config = ProcessorConfig::default();
         let processor = IntegratedFrameProcessor::new(config);
         let builder = FrameBuilder::new();
-        
+
         // Process several frames
         for i in 1..=5 {
-            let payload_str = format!("frame {}", i);
+            let payload_str = format!("frame {i}");
             let frame = builder.build_data_frame(1, i, payload_str.as_bytes());
             processor.process_frame(frame).await?;
         }
-        
+
         let metrics = processor.get_metrics().await;
         assert_eq!(metrics.frames_processed, 5);
         assert!(metrics.avg_processing_time > Duration::from_nanos(0));
-        
+
         Ok(())
     }
 }

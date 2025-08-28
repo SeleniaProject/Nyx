@@ -184,8 +184,8 @@ fn test_responder_handshake(
         responder_x25519,
         responder_kyber,
         initiator_x25519_pk,
-        info,
         handshake_msg,
+        info,
     )
     .unwrap_or_else(|e| panic!("Responder handshake failed in {context}: {e}"))
 }
@@ -395,8 +395,8 @@ pub fn open_envelope(
         recipient_x25519_sk,
         recipient_kyber_sk,
         &envelope.ephemeral_public_key, // Use the ephemeral public key from envelope
-        info,
         &envelope.encapsulated_key,
+        info,
     )
     .map_err(|e| format!("Handshake failed: {e:?}"))?;
 
@@ -451,8 +451,8 @@ fn test_handshake() -> Result<(), Box<dyn std::error::Error>> {
         &bob_x25519,
         &bob_kyber,
         &alice_x25519.pk,
-        b"test",
         &init_result.msg1,
+        b"test",
     );
 
     assert!(resp_result.is_ok());
@@ -776,9 +776,7 @@ fn test_hpke_performance_metric_s() -> Result<(), Box<dyn std::error::Error>> {
     assert!(decrypt_time.as_millis() < 1000, "Decryption should be fast");
 
     // Log performance for monitoring
-    println!(
-        "HPKE Performance - Encrypt: {encrypt_time:?}, Decrypt: {decrypt_time:?}",
-    );
+    println!("HPKE Performance - Encrypt: {encrypt_time:?}, Decrypt: {decrypt_time:?}",);
 
     Ok(())
 }

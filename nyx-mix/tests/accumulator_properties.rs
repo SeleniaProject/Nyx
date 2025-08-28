@@ -4,8 +4,8 @@
 //! must satisfy, such as correctness, soundness, and efficiency.
 
 use nyx_mix::accumulator::{
-    verify_batch_membership, verify_membership_detailed, Accumulator,
-    AccumulatorConfig, AccumulatorError,
+    verify_batch_membership, verify_membership_detailed, Accumulator, AccumulatorConfig,
+    AccumulatorError,
 };
 use proptest::prelude::*;
 

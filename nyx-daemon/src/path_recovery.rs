@@ -1,15 +1,15 @@
-/// Path Recovery Module - Debugging and Recovery Utilities
-/// Provides tools for diagnosing and recovering from path building failures
-/// This module helps identify common issues and provides automated recovery mechanisms
+//! Path Recovery Module - Debugging and Recovery Utilities
+//! Provides tools for diagnosing and recovering from path building failures
+//! This module helps identify common issues and provides automated recovery mechanisms
 
-use crate::path_builder::PathBuilder;
 use crate::errors::Result;
+use crate::path_builder::PathBuilder;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::time::{SystemTime, Duration};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{Mutex, RwLock};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 // Note: This DaemonConfig here is a local placeholder and independent of the one in path_builder.
 #[derive(Debug, Clone, Default)]
@@ -73,10 +73,10 @@ impl Default for PathRecoveryConfig {
 
 #[derive(Debug, Clone)]
 pub struct PathDiagnostics {
-    pub connectivity_score: f64,    // 0.0 - 1.0
-    pub reliability_score: f64,     // 0.0 - 1.0
-    pub performance_score: f64,     // 0.0 - 1.0
-    pub overall_health: f64,        // 0.0 - 1.0
+    pub connectivity_score: f64, // 0.0 - 1.0
+    pub reliability_score: f64,  // 0.0 - 1.0
+    pub performance_score: f64,  // 0.0 - 1.0
+    pub overall_health: f64,     // 0.0 - 1.0
     pub issue_count: u32,
     pub last_diagnosis: SystemTime,
     pub recommended_actions: Vec<String>,
@@ -93,10 +93,7 @@ pub struct PathRecoveryManager {
 }
 
 impl PathRecoveryManager {
-    pub fn new(
-        config: PathRecoveryConfig,
-        path_builder: Arc<PathBuilder>,
-    ) -> Self {
+    pub fn new(config: PathRecoveryConfig, path_builder: Arc<PathBuilder>) -> Self {
         Self {
             config,
             path_builder,
@@ -128,7 +125,7 @@ impl PathRecoveryManager {
         error_details: String,
     ) -> Result<()> {
         let mut failure_records = self.failure_records.write().await;
-        
+
         let record = if let Some(existing) = failure_records.get(&path_id) {
             PathFailureRecord {
                 retry_count: existing.retry_count + 1,
@@ -182,45 +179,45 @@ impl PathRecoveryManager {
 
         // Check if it's too soon to retry
         let retry_delay = self.calculate_retry_delay(record.retry_count);
-        if record.failure_time.elapsed().unwrap_or(Duration::from_secs(0)) < retry_delay {
-            debug!("Too soon to retry path {}, waiting {:?}", path_id, retry_delay);
+        if record
+            .failure_time
+            .elapsed()
+            .unwrap_or(Duration::from_secs(0))
+            < retry_delay
+        {
+            debug!(
+                "Too soon to retry path {}, waiting {:?}",
+                path_id, retry_delay
+            );
             return Ok(false);
         }
 
-        info!("Attempting recovery for path {} (attempt {})", path_id, record.retry_count + 1);
+        info!(
+            "Attempting recovery for path {} (attempt {})",
+            path_id,
+            record.retry_count + 1
+        );
 
         // Perform recovery based on failure reason
         let recovery_result = match record.failure_reason {
             PathFailureReason::NetworkUnreachable => {
                 self.recover_network_unreachable(&record).await
             }
-            PathFailureReason::ConnectionTimeout => {
-                self.recover_connection_timeout(&record).await
-            }
-            PathFailureReason::HandshakeFailure => {
-                self.recover_handshake_failure(&record).await
-            }
+            PathFailureReason::ConnectionTimeout => self.recover_connection_timeout(&record).await,
+            PathFailureReason::HandshakeFailure => self.recover_handshake_failure(&record).await,
             PathFailureReason::InsufficientBandwidth => {
                 self.recover_insufficient_bandwidth(&record).await
             }
-            PathFailureReason::HighLatency => {
-                self.recover_high_latency(&record).await
-            }
-            PathFailureReason::PacketLoss => {
-                self.recover_packet_loss(&record).await
-            }
+            PathFailureReason::HighLatency => self.recover_high_latency(&record).await,
+            PathFailureReason::PacketLoss => self.recover_packet_loss(&record).await,
             PathFailureReason::AuthenticationError => {
                 self.recover_authentication_error(&record).await
             }
-            PathFailureReason::ProtocolMismatch => {
-                self.recover_protocol_mismatch(&record).await
-            }
+            PathFailureReason::ProtocolMismatch => self.recover_protocol_mismatch(&record).await,
             PathFailureReason::ResourceExhaustion => {
                 self.recover_resource_exhaustion(&record).await
             }
-            PathFailureReason::Unknown(_) => {
-                self.recover_unknown_failure(&record).await
-            }
+            PathFailureReason::Unknown(_) => self.recover_unknown_failure(&record).await,
         };
 
         match recovery_result {
@@ -251,7 +248,7 @@ impl PathRecoveryManager {
     fn calculate_retry_delay(&self, retry_count: u32) -> Duration {
         let delay_ms = self.config.base_retry_delay.as_millis() as u64 * (2_u64.pow(retry_count));
         let delay = Duration::from_millis(delay_ms);
-        
+
         if delay > self.config.max_retry_delay {
             self.config.max_retry_delay
         } else {
@@ -261,10 +258,17 @@ impl PathRecoveryManager {
 
     /// Recovery strategies for different failure types
     async fn recover_network_unreachable(&self, record: &PathFailureRecord) -> Result<bool> {
-        debug!("Attempting network unreachable recovery for {}", record.path_id);
-        
+        debug!(
+            "Attempting network unreachable recovery for {}",
+            record.path_id
+        );
+
         // Try to rebuild the path with alternative routes
-        match self.path_builder.rebuild_path_with_alternatives(&record.path_id, record.target_addr).await {
+        match self
+            .path_builder
+            .rebuild_path_with_alternatives(&record.path_id, record.target_addr)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => {
                 // Try to find completely new path
@@ -277,18 +281,28 @@ impl PathRecoveryManager {
     }
 
     async fn recover_connection_timeout(&self, record: &PathFailureRecord) -> Result<bool> {
-        debug!("Attempting connection timeout recovery for {}", record.path_id);
-        
+        debug!(
+            "Attempting connection timeout recovery for {}",
+            record.path_id
+        );
+
         // Increase timeout and retry
-        match self.path_builder.rebuild_path_with_extended_timeout(&record.path_id, Duration::from_secs(10)).await {
+        match self
+            .path_builder
+            .rebuild_path_with_extended_timeout(&record.path_id, Duration::from_secs(10))
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
     }
 
     async fn recover_handshake_failure(&self, record: &PathFailureRecord) -> Result<bool> {
-        debug!("Attempting handshake failure recovery for {}", record.path_id);
-        
+        debug!(
+            "Attempting handshake failure recovery for {}",
+            record.path_id
+        );
+
         // Reset crypto state and retry
         match self.path_builder.reset_crypto_state(&record.path_id).await {
             Ok(_) => {
@@ -304,9 +318,13 @@ impl PathRecoveryManager {
 
     async fn recover_insufficient_bandwidth(&self, record: &PathFailureRecord) -> Result<bool> {
         debug!("Attempting bandwidth recovery for {}", record.path_id);
-        
+
         // Try to find a higher bandwidth path
-        match self.path_builder.find_high_bandwidth_path(record.target_addr).await {
+        match self
+            .path_builder
+            .find_high_bandwidth_path(record.target_addr)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -314,9 +332,13 @@ impl PathRecoveryManager {
 
     async fn recover_high_latency(&self, record: &PathFailureRecord) -> Result<bool> {
         debug!("Attempting latency recovery for {}", record.path_id);
-        
+
         // Try to find a lower latency path
-        match self.path_builder.find_low_latency_path(record.target_addr).await {
+        match self
+            .path_builder
+            .find_low_latency_path(record.target_addr)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -324,12 +346,20 @@ impl PathRecoveryManager {
 
     async fn recover_packet_loss(&self, record: &PathFailureRecord) -> Result<bool> {
         debug!("Attempting packet loss recovery for {}", record.path_id);
-        
+
         // Enable redundancy or find more reliable path
-        match self.path_builder.enable_path_redundancy(&record.path_id).await {
+        match self
+            .path_builder
+            .enable_path_redundancy(&record.path_id)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => {
-                match self.path_builder.find_reliable_path(record.target_addr).await {
+                match self
+                    .path_builder
+                    .find_reliable_path(record.target_addr)
+                    .await
+                {
                     Ok(_) => Ok(true),
                     Err(_) => Ok(false),
                 }
@@ -339,7 +369,7 @@ impl PathRecoveryManager {
 
     async fn recover_authentication_error(&self, record: &PathFailureRecord) -> Result<bool> {
         debug!("Attempting authentication recovery for {}", record.path_id);
-        
+
         // Refresh credentials and retry
         match self.path_builder.refresh_credentials(&record.path_id).await {
             Ok(_) => Ok(true),
@@ -348,18 +378,28 @@ impl PathRecoveryManager {
     }
 
     async fn recover_protocol_mismatch(&self, record: &PathFailureRecord) -> Result<bool> {
-        debug!("Attempting protocol mismatch recovery for {}", record.path_id);
-        
+        debug!(
+            "Attempting protocol mismatch recovery for {}",
+            record.path_id
+        );
+
         // Try with different protocol version
-        match self.path_builder.retry_with_fallback_protocol(&record.path_id).await {
+        match self
+            .path_builder
+            .retry_with_fallback_protocol(&record.path_id)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
     }
 
     async fn recover_resource_exhaustion(&self, record: &PathFailureRecord) -> Result<bool> {
-        debug!("Attempting resource exhaustion recovery for {}", record.path_id);
-        
+        debug!(
+            "Attempting resource exhaustion recovery for {}",
+            record.path_id
+        );
+
         // Wait and then retry
         tokio::time::sleep(Duration::from_secs(5)).await;
         match self.path_builder.retry_path_build(&record.path_id).await {
@@ -370,9 +410,13 @@ impl PathRecoveryManager {
 
     async fn recover_unknown_failure(&self, record: &PathFailureRecord) -> Result<bool> {
         debug!("Attempting unknown failure recovery for {}", record.path_id);
-        
+
         // Generic retry approach
-        match self.path_builder.generic_path_recovery(&record.path_id).await {
+        match self
+            .path_builder
+            .generic_path_recovery(&record.path_id)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -381,10 +425,10 @@ impl PathRecoveryManager {
     /// Update path diagnostics
     async fn update_path_diagnostics(&self, path_id: &str) -> Result<()> {
         let diagnostics = self.calculate_path_diagnostics(path_id).await?;
-        
+
         let mut diag_map = self.diagnostics.write().await;
         diag_map.insert(path_id.to_string(), diagnostics);
-        
+
         Ok(())
     }
 
@@ -394,8 +438,13 @@ impl PathRecoveryManager {
         let record = failure_records.get(path_id);
 
         let (connectivity_score, reliability_score, issue_count) = if let Some(record) = record {
-            let connectivity = 1.0 - (record.retry_count as f64 / self.config.max_retry_attempts as f64).min(1.0);
-            let reliability = if record.last_working_time.is_some() { 0.7 } else { 0.3 };
+            let connectivity =
+                1.0 - (record.retry_count as f64 / self.config.max_retry_attempts as f64).min(1.0);
+            let reliability = if record.last_working_time.is_some() {
+                0.7
+            } else {
+                0.3
+            };
             (connectivity, reliability, record.retry_count)
         } else {
             (1.0, 1.0, 0)
@@ -443,10 +492,10 @@ impl PathRecoveryManager {
     /// Main recovery loop
     async fn run_recovery_loop(&self) {
         let mut interval = tokio::time::interval(self.config.recovery_interval);
-        
+
         loop {
             interval.tick().await;
-            
+
             let failed_paths: Vec<String> = {
                 let records = self.failure_records.read().await;
                 records.keys().cloned().collect()
@@ -489,10 +538,10 @@ impl PathRecoveryManager {
     pub async fn clear_failure_history(&self) {
         let mut records = self.failure_records.write().await;
         records.clear();
-        
+
         let mut diagnostics = self.diagnostics.write().await;
         diagnostics.clear();
-        
+
         info!("Cleared path failure history");
     }
 }

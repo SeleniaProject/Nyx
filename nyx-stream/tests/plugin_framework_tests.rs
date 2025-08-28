@@ -5,9 +5,7 @@
 
 #![allow(clippy::needless_collect)]
 
-use nyx_stream::capability::{
-    get_local_capabilities, negotiate, Capability, CAP_PLUGIN_FRAMEWORK,
-};
+use nyx_stream::capability::{get_local_capabilities, negotiate, Capability, CAP_PLUGIN_FRAMEWORK};
 use nyx_stream::plugin::{
     is_plugin_frame, PluginHeader, PluginId, FRAME_TYPE_PLUGIN_CONTROL, FRAME_TYPE_PLUGIN_DATA,
     FRAME_TYPE_PLUGIN_ERROR, FRAME_TYPE_PLUGIN_HANDSHAKE,

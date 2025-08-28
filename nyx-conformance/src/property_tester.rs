@@ -3,11 +3,7 @@
 pub enum MonotonicError {
     /// Sequence i_s not strictly increasing at index `idx` (prev, next).
     #[error("not strictly increasing at {idx}: {prev} -> {next}")]
-    NotIncreasing {
-        idx: usize,
-        prev: f64,
-        next: f64,
-    },
+    NotIncreasing { idx: usize, prev: f64, next: f64 },
     /// Sequence contains NaN which break_s ordering semantic_s.
     #[error("NaN encountered at {idx}")]
     NaN { idx: usize },
@@ -138,7 +134,11 @@ pub fn percentile(mut a: Vec<f64>, p: f64) -> Option<f64> {
 
 /// Build a fixed-range histogram with `bin_s` bucket_s acros_s [min, max].
 pub fn histogram(a: &[f64], min: f64, max: f64, bin_s: usize) -> Option<Vec<usize>> {
-    if a.is_empty() || !(min.is_finite() && max.is_finite()) || bin_s == 0 || max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
+    if a.is_empty()
+        || !(min.is_finite() && max.is_finite())
+        || bin_s == 0
+        || max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater)
+    {
         return None;
     }
     let mut h = vec![0usize; bin_s];
@@ -218,14 +218,18 @@ mod test_s {
         assert_eq!(s.min, 1.0);
         assert_eq!(s.max, 4.0);
         assert!((s.mean - 2.5).abs() < 1e-9);
-        let p50 = percentile(v.clone(), 50.0).ok_or("Failed to compute percentile").unwrap();
+        let p50 = percentile(v.clone(), 50.0)
+            .ok_or("Failed to compute percentile")
+            .unwrap();
         assert!((2.0..=3.0).contains(&p50));
     }
 
     #[test]
     fn histogram_basic() {
         let v = vec![0.0, 0.1, 0.2, 0.9, 1.0];
-        let h = histogram(&v, 0.0, 1.0, 5).ok_or("Failed to create histogram").unwrap();
+        let h = histogram(&v, 0.0, 1.0, 5)
+            .ok_or("Failed to create histogram")
+            .unwrap();
         assert_eq!(h.len(), 5);
         assert_eq!(h.iter().sum::<usize>(), 5);
     }

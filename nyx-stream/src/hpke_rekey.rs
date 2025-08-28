@@ -71,14 +71,12 @@ impl RekeyHarness {
             .map_err(|seal_error| format!("Failed to encrypt message: {seal_error}"))?;
 
         // Attempt to open the ciphertext with the receive session
-        let decrypted = self
-            .rx
-            .open_at(sequencenumber, aad, &ciphertext)
-            .map_err(|open_error| {
-                format!(
-                    "Failed to decrypt message at sequence {sequencenumber}: {open_error}"
-                )
-            })?;
+        let decrypted =
+            self.rx
+                .open_at(sequencenumber, aad, &ciphertext)
+                .map_err(|open_error| {
+                    format!("Failed to decrypt message at sequence {sequencenumber}: {open_error}")
+                })?;
 
         Ok(decrypted)
     }

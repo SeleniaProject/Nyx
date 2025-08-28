@@ -9,8 +9,8 @@ pub mod event_system;
 pub mod low_power;
 pub mod metrics;
 pub mod path_builder; // Path builder implementation
-pub mod path_recovery; // Path recovery and diagnostics
 pub mod path_performance_test; // Performance testing for paths
+pub mod path_recovery; // Path recovery and diagnostics
 pub mod prometheus_exporter;
 
 // Re-export with shorter prefixe_s used in main.r_s

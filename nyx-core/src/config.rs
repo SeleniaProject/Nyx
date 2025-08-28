@@ -117,7 +117,9 @@ pub struct QuicConfig {
 impl Default for QuicConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "127.0.0.1:0".parse().expect("Failed to parse default bind address"),
+            bind_addr: "127.0.0.1:0"
+                .parse()
+                .expect("Failed to parse default bind address"),
             idle_timeout_secs: 300,
             keep_alive_interval_secs: 30,
             max_concurrent_streams: 100,

@@ -139,7 +139,7 @@ mod tests {
         // RTO should be calculated correctly (may not always decrease due to variance)
         assert!(rto2 >= Duration::from_millis(200)); // min RTO
         assert!(rto2 <= Duration::from_secs(60)); // max RTO
-        // RTO should be reasonable for the measured RTT
+                                                  // RTO should be reasonable for the measured RTT
         assert!(rto2 >= Duration::from_millis(110));
     }
 

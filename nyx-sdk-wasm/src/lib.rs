@@ -40,16 +40,16 @@ pub fn version() -> String {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub fn init_with_config(config: &str) -> Result<(), JsValue> {
     init();
-    
+
     #[cfg(target_arch = "wasm32")]
     {
         web_sys::console::log_1(&format!("Nyx SDK initialized with config: {}", config).into());
     }
-    
+
     // Parse and validate configuration
     let _config: serde_json::Value = serde_json::from_str(config)
         .map_err(|e| JsValue::from_string(&format!("Invalid config JSON: {e}")))?;
-    
+
     Ok(())
 }
 

@@ -13,9 +13,12 @@
 
 #![forbid(unsafe_code)]
 
-use thiserror::Error;
-use std::sync::{OnceLock, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    OnceLock,
+};
 use std::time::{Duration, Instant};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -162,7 +165,7 @@ pub fn detect_capabilities() -> TransportCapabilities {
         tcp_available: available(TransportKind::Tcp),
         ice_available: available(TransportKind::Ice),
         ipv6_support: has_ipv6_support(),
-        nat_traversal: true,   // Our STUN implementation is always available
+        nat_traversal: true,  // Our STUN implementation is always available
         teredo_support: true, // Pure Rust implementation
     }
 }
@@ -202,14 +205,14 @@ fn can_bind_tcp_loopback() -> bool {
 }
 
 /// Simple UDP endpoint for loopback-only communications (127.0.0.1).
-/// 
+///
 /// Optimized for high-performance network operations with cache-aligned structures
 /// and efficient buffer management.
 #[repr(align(64))] // Cache line alignment for better performance
 pub struct UdpEndpoint {
     sock: std::net::UdpSocket,
-    send_buffer: Vec<u8>,  // Reusable send buffer to avoid allocations
-    recv_buffer: Vec<u8>,  // Reusable receive buffer
+    send_buffer: Vec<u8>, // Reusable send buffer to avoid allocations
+    recv_buffer: Vec<u8>, // Reusable receive buffer
     last_send_time: Instant,
     last_recv_time: Instant,
 }
@@ -242,10 +245,10 @@ impl UdpEndpoint {
         if let Err(e) = sock.set_nonblocking(false) {
             eprintln!("Failed to set socket to blocking mode: {e}");
         }
-        
+
         // Note: set_send_buffer_size and set_recv_buffer_size are not available on UdpSocket
         // These would be handled at the OS level through socket2 crate if needed
-        
+
         Ok(())
     }
 
@@ -255,7 +258,7 @@ impl UdpEndpoint {
         Self {
             sock,
             send_buffer: Vec::with_capacity(65536), // 64KB initial capacity
-            recv_buffer: vec![0u8; 65536],         // 64KB receive buffer
+            recv_buffer: vec![0u8; 65536],          // 64KB receive buffer
             last_send_time: now,
             last_recv_time: now,
         }
@@ -269,21 +272,21 @@ impl UdpEndpoint {
     /// Send a datagram to the target address with optimized buffering.
     pub fn send_to(&mut self, buf: &[u8], to: std::net::SocketAddr) -> Result<usize> {
         let result = self.sock.send_to(buf, to);
-        
+
         if let Ok(bytes_sent) = result {
             // Update performance metrics
             UDP_SEND_BYTES.fetch_add(bytes_sent as u64, Ordering::Relaxed);
             UDP_SEND_COUNT.fetch_add(1, Ordering::Relaxed);
             self.last_send_time = Instant::now();
         }
-        
+
         Ok(result?)
     }
 
     /// Receive a datagram from the socket with optimized buffering.
     pub fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, std::net::SocketAddr)> {
         let result = self.sock.recv_from(buf);
-        
+
         if let Ok((bytes_recv, addr)) = result {
             // Update performance metrics
             UDP_RECV_BYTES.fetch_add(bytes_recv as u64, Ordering::Relaxed);
@@ -299,12 +302,13 @@ impl UdpEndpoint {
     pub fn send_to_buffered(&mut self, data: &[u8], to: std::net::SocketAddr) -> Result<usize> {
         // Reuse internal buffer if possible
         if self.send_buffer.capacity() < data.len() {
-            self.send_buffer.reserve(data.len() - self.send_buffer.capacity());
+            self.send_buffer
+                .reserve(data.len() - self.send_buffer.capacity());
         }
-        
+
         self.send_buffer.clear();
         self.send_buffer.extend_from_slice(data);
-        
+
         // Create a temporary copy to avoid borrowing conflicts
         let buffer_data = self.send_buffer.clone();
         self.send_to(&buffer_data, to)
@@ -430,22 +434,20 @@ impl TransportManager {
     }
 
     /// Check if transport meets requirements
-    fn transport_meets_requirements(&self, transport: TransportKind, req: &TransportRequirements) -> bool {
+    fn transport_meets_requirements(
+        &self,
+        transport: TransportKind,
+        req: &TransportRequirements,
+    ) -> bool {
         match transport {
             TransportKind::Udp => {
                 req.allows_unreliable && !req.requires_reliability && !req.supports_streams
             }
             TransportKind::Quic => {
-                self.capabilities.quic_available
-                    && req.requires_encryption
-                    && req.supports_streams
+                self.capabilities.quic_available && req.requires_encryption && req.supports_streams
             }
-            TransportKind::Tcp => {
-                self.capabilities.tcp_available && req.requires_reliability
-            }
-            TransportKind::Ice => {
-                self.capabilities.ice_available && req.requires_nat_traversal
-            }
+            TransportKind::Tcp => self.capabilities.tcp_available && req.requires_reliability,
+            TransportKind::Ice => self.capabilities.ice_available && req.requires_nat_traversal,
         }
     }
 
@@ -497,7 +499,7 @@ mod tests {
     fn detect_capabilities_basic() {
         let caps = detect_capabilities();
         assert!(caps.udp_available); // Should always be true in test environment
-        // QUIC availability depends on feature flag
+                                     // QUIC availability depends on feature flag
         assert_eq!(caps.quic_available, cfg!(feature = "quic"));
     }
 

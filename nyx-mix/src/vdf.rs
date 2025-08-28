@@ -69,8 +69,14 @@ impl std::fmt::Display for VdfError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             VdfError::InvalidInput { reason } => write!(f, "Invalid input: {reason}"),
-            VdfError::ComputationTimeout { __elapsed, max_allowed } => {
-                write!(f, "Computation timeout: elapsed {__elapsed:?}, max allowed {max_allowed:?}")
+            VdfError::ComputationTimeout {
+                __elapsed,
+                max_allowed,
+            } => {
+                write!(
+                    f,
+                    "Computation timeout: elapsed {__elapsed:?}, max allowed {max_allowed:?}"
+                )
             }
             VdfError::VerificationFailed { reason } => write!(f, "Verification failed: {reason}"),
             VdfError::InternalError { message } => write!(f, "Internal error: {message}"),

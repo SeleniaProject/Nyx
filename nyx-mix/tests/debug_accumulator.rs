@@ -53,6 +53,6 @@ fn debug_accumulator_step_by_step() -> Result<(), Box<dyn std::error::Error>> {
         "Element [0] should verify with new witnes_s"
     );
     assert!(verification2, "Element [1] should verify");
-    
+
     Ok(())
 }

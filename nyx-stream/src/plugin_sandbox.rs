@@ -98,9 +98,9 @@ impl SandboxGuard {
                     for allowed_path in &self.policy.filesystem_allowlist {
                         let allowed_normalized =
                             Path::new(allowed_path).canonicalize().map_err(|_| {
-                                                    SandboxError::ConfigurationError(format!(
-                        "Invalid allowlist path: {allowed_path}"
-                    ))
+                                SandboxError::ConfigurationError(format!(
+                                    "Invalid allowlist path: {allowed_path}"
+                                ))
                             })?;
 
                         if normalized_path.starts_with(&allowed_normalized) {
@@ -205,7 +205,8 @@ impl SandboxPolicy {
 
     /// Allow access to a specific path prefix
     pub fn allow_path_prefix(mut self, path: &Path) -> Self {
-        self.filesystem_allowlist.push(path.to_string_lossy().to_string());
+        self.filesystem_allowlist
+            .push(path.to_string_lossy().to_string());
         self
     }
 

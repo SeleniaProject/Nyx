@@ -28,9 +28,9 @@ impl AeadSession {
     const MAX_PLAINTEXT_LEN: usize = 1024 * 1024; // 1 MiB
     const MAX_AAD_LEN: usize = 16 * 1024; // 16 KiB
     const MAX_TAG_OVERHEAD: usize = 16; // Tag length for ChaCha20-Poly1305/AES-GCM
-    
+
     /// Create new AEAD session with security validation
-    /// 
+    ///
     /// # Security Considerations
     /// - Validates key material is properly sized
     /// - Initializes with secure defaults for sequence limits
@@ -116,7 +116,7 @@ impl AeadSession {
     }
 
     /// Encrypt next packet. Returns (sequence, ciphertext). Enforces security limits.
-    /// 
+    ///
     /// # Security Enhancements
     /// - Prevents sequence number overflow to avoid nonce reuse
     /// - Enforces strict input size limits to prevent DoS attacks
@@ -130,36 +130,40 @@ impl AeadSession {
                 self.seq, self.__maxseq
             )));
         }
-        
+
         // SECURITY: Additional check for sequence approaching overflow
         if self.seq > u64::MAX - 1000 {
             return Err(Error::Protocol(
-                "SECURITY: sequence number approaching overflow, immediate rekey required".to_string()
+                "SECURITY: sequence number approaching overflow, immediate rekey required"
+                    .to_string(),
             ));
         }
-        
+
         // SECURITY ENHANCEMENT: Strict input validation
         if plaintext.len() > Self::MAX_PLAINTEXT_LEN {
             return Err(Error::Protocol(format!(
                 "SECURITY: plaintext length {} exceeds maximum {} bytes (DoS prevention)",
-                plaintext.len(), Self::MAX_PLAINTEXT_LEN
+                plaintext.len(),
+                Self::MAX_PLAINTEXT_LEN
             )));
         }
-        
+
         if aad.len() > Self::MAX_AAD_LEN {
             return Err(Error::Protocol(format!(
                 "SECURITY: AAD length {} exceeds maximum {} bytes (DoS prevention)",
-                aad.len(), Self::MAX_AAD_LEN
+                aad.len(),
+                Self::MAX_AAD_LEN
             )));
         }
-        
+
         // SECURITY: Check for automatic rekey conditions before proceeding
         if self.needs_rekey() {
             return Err(Error::Protocol(
-                "SECURITY: automatic rekey required before further operations (forward secrecy)".to_string()
+                "SECURITY: automatic rekey required before further operations (forward secrecy)"
+                    .to_string(),
             ));
         }
-        
+
         // Mix direction id into the first 4 bytes then XOR counter (RFC8439 style)
         let mut base = self.basenonce;
         let dir = self.dir_id.to_be_bytes();
@@ -167,7 +171,7 @@ impl AeadSession {
             base[i] ^= dir[i];
         }
         let n = AeadNonce(aeadnonce_xor(&base, self.seq));
-        
+
         // Ultra-high performance: use pre-computed cipher instance
         let cipher = self.get_cipher();
         let ct = cipher.seal(n, aad, plaintext)?;
@@ -296,8 +300,7 @@ mod test_s {
     fn refuses_too_long_inputs() -> core::result::Result<(), Box<dyn std::error::Error>> {
         let key = AeadKey([2u8; 32]);
         let base = [0u8; 12];
-        let mut sess =
-            AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(3);
+        let mut sess = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(3);
         let long_pt = vec![0u8; AeadSession::MAX_PLAINTEXT_LEN + 1];
         assert!(sess.sealnext(b"ok", &long_pt).is_err());
         let long_aad = vec![0u8; AeadSession::MAX_AAD_LEN + 1];

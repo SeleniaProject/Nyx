@@ -32,8 +32,6 @@ pub enum Mode {
     Cmix,
 }
 
-
-
 /// nyx-mix の基本設定
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MixConfig {

@@ -78,7 +78,11 @@ async fn path_validation_ignores_response_from_wrong_addr() -> Result<(), Box<dy
     });
 
     // Expect timeout because response came from wrong addr
-    let err = validator.validate_path(b_addr).await.err().ok_or("Expected error")?;
+    let err = validator
+        .validate_path(b_addr)
+        .await
+        .err()
+        .ok_or("Expected error")?;
     let msg = format!("{err}");
     assert!(
         msg.to_lowercase().contains("timed")
@@ -113,7 +117,11 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
     });
 
     // Expect timeout due to malformed response
-    let _ = validator.validate_path(b_addr).await.err().ok_or("Expected error")?;
+    let _ = validator
+        .validate_path(b_addr)
+        .await
+        .err()
+        .ok_or("Expected error")?;
 
     // 2) Old token: send a delayed valid-looking response after timeout elapsed
     let validator2 = PathValidator::new_with_timeout(
@@ -140,13 +148,16 @@ async fn path_validation_rejects_malformed_and_old_token() -> Result<(), Box<dyn
         }
     });
 
-    let _ = validator2.validate_path(b2_addr).await.err().ok_or("Expected error")?;
+    let _ = validator2
+        .validate_path(b2_addr)
+        .await
+        .err()
+        .ok_or("Expected error")?;
     Ok(())
 }
 
 #[tokio::test]
-async fn multiple_paths_concurrent_validation_succeeds() -> Result<(), Box<dyn std::error::Error>>
-{
+async fn multiple_paths_concurrent_validation_succeeds() -> Result<(), Box<dyn std::error::Error>> {
     // One validator socket (ephemeral)
     let validator = PathValidator::new_with_timeout(
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),

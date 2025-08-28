@@ -1,4 +1,4 @@
-#![cfg(feature = "quic")]
+#![cfg(all(feature = "quic", test, nyx_run_quic_tests))]
 //! Comprehensive QUIC Transport Integration Tests
 //!
 //! This test suite validates the production-grade QUIC implementation with:
@@ -73,7 +73,7 @@ async fn establish_connection_pair(
     // Give server time to start listening
     sleep(Duration::from_millis(100)).await;
 
-    // Client connect_s
+    // Client connects
     let client_conn = client_transport
         .connect(server_addr)
         .await
@@ -98,7 +98,7 @@ async fn test_quic_transport_creation() -> TestResult<()> {
     let local_addr = transport
         .endpoint
         .local_addr()
-        .map_err(|e| format!("Failed to get local addres_s: {}", e))?;
+        .map_err(|e| format!("Failed to get local address: {}", e))?;
     info!("QUIC transport created successfully on {}", local_addr);
     Ok(())
 }
@@ -108,7 +108,7 @@ async fn test_quic_transport_creation() -> TestResult<()> {
 async fn test_connection_establishment() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(2, 3).await?;
 
-    // Verify both connection_s are active
+    // Verify both connections are active
     assert!(
         client_conn.is_active(),
         "Client connection should be active"
@@ -118,7 +118,7 @@ async fn test_connection_establishment() -> TestResult<()> {
         "Server connection should be active"
     );
 
-    // Verify connection state_s
+    // Verify connection states
     match client_conn.get_state() {
         ConnectionState::Connected { .. } => {}
         state => return Err(format!("Expected Connected state, got {:?}", state).into()),
@@ -138,19 +138,18 @@ async fn test_connection_establishment() -> TestResult<()> {
 async fn test_bidirectional_stream_communication() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(4, 5).await?;
 
-    // Client open_s bidirectional stream
+    // Client opens bidirectional stream
     let stream_id = client_conn
         .open_bidirectional_stream(StreamType::MixPacket, 1)
         .await?;
 
     let test_data = b"Hello, QUIC world!";
 
-    // Client send_s data
+    // Client sends data
     client_conn.send_on_stream(stream_id, test_data).await?;
 
     // Server receives incoming stream
-    let incoming_result =
-        timeout(Duration::from_secs(5), server_conn.connection.accept_bi()).await;
+    let incoming_result = timeout(Duration::from_secs(5), server_conn.connection.accept_bi()).await;
 
     assert!(
         incoming_result.is_ok(),
@@ -187,14 +186,14 @@ async fn test_bidirectional_stream_communication() -> TestResult<()> {
 async fn test_unidirectional_stream() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(6, 7).await?;
 
-    // Client open_s unidirectional stream
+    // Client opens unidirectional stream
     let stream_id = client_conn
         .open_unidirectional_stream(StreamType::Telemetry, 2)
         .await?;
 
     let test_data = b"Telemetry data stream";
 
-    // Client send_s data
+    // Client sends data
     client_conn.send_on_stream(stream_id, test_data).await?;
 
     // Server receives incoming stream
@@ -264,11 +263,11 @@ async fn test_multiple_stream_types() -> TestResult<()> {
         .open_bidirectional_stream(StreamType::Authentication, 1)
         .await?;
 
-    // Verify all stream_s have different ID_s
-    assertne!(control_stream, telemetry_stream);
-    assertne!(telemetry_stream, mix_stream);
-    assertne!(mix_stream, auth_stream);
-    assertne!(control_stream, auth_stream);
+    // Verify all streams have different IDs
+    assert_ne!(control_stream, telemetry_stream);
+    assert_ne!(telemetry_stream, mix_stream);
+    assert_ne!(mix_stream, auth_stream);
+    assert_ne!(control_stream, auth_stream);
 
     // Send data on each stream
     client_conn
@@ -288,10 +287,10 @@ async fn test_multiple_stream_types() -> TestResult<()> {
         .await?;
 
     // Verify stream count
-    let streams_count = client_conn.stream_s.read().await.len();
-    assert_eq!(streams_count, 4, "Should have 4 active stream_s");
+    let streams_count = client_conn.streams.read().await.len();
+    assert_eq!(streams_count, 4, "Should have 4 active streams");
 
-    info!("Multiple stream type_s test passed");
+    info!("Multiple stream types test passed");
     Ok(())
 }
 
@@ -304,23 +303,23 @@ async fn test_stream_flow_control() -> TestResult<()> {
         .open_unidirectional_stream(StreamType::Telemetry, 2)
         .await?;
 
-    // Try to send large amount_s of data to trigger flow control
+    // Try to send large amounts of data to trigger flow control
     let large_data = vec![0u8; 2 * 1024 * 1024]; // 2MB
 
     let mut send_count = 0;
     let mut total_sent = 0;
 
-    // Keep sending until we hit flow control limit_s
+    // Keep sending until we hit flow control limits
     loop {
         match client_conn.send_on_stream(stream_id, &large_data).await {
             Ok(_) => {
                 send_count += 1;
                 total_sent += large_data.len();
-                debug!("Sent chunk {}, total: {} byte_s", send_count, total_sent);
+                debug!("Sent chunk {}, total: {} bytes", send_count, total_sent);
             }
             Err(QuicError::ResourceExhausted { .. }) => {
                 info!(
-                    "Hit flow control limit after {} send_s, {} byte_s",
+                    "Hit flow control limit after {} sends, {} bytes",
                     send_count, total_sent
                 );
                 break;
@@ -329,7 +328,7 @@ async fn test_stream_flow_control() -> TestResult<()> {
         }
 
         if send_count > 10 {
-            warn!("Flow control test didn't trigger within 10 send_s");
+            warn!("Flow control test didn't trigger within 10 sends");
             break;
         }
     }
@@ -380,8 +379,8 @@ async fn test_stream_lifecycle() -> TestResult<()> {
         .open_bidirectional_stream(StreamType::MixPacket, 1)
         .await?;
 
-    // Verify stream exist_s
-    assert!(client_conn.stream_s.read().await.contains_key(&stream_id));
+    // Verify stream exists
+    assert!(client_conn.streams.read().await.contains_key(&stream_id));
 
     // Send some data
     client_conn
@@ -417,7 +416,7 @@ async fn test_large_datagram_rejection() -> TestResult<()> {
 
     match result.unwrap_err() {
         QuicError::ProtocolViolation { violation } => {
-            assert!(violation.contains("exceed_s maximum"));
+            assert!(violation.contains("exceeds maximum"));
         }
         e => return Err(format!("Expected ProtocolViolation, got {:?}", e).into()),
     }
@@ -669,7 +668,7 @@ async fn test_transport_statistics() -> TestResult<()> {
 async fn test_graceful_connection_close() -> TestResult<()> {
     let (client_conn, server_conn) = establish_connection_pair(30, 31).await?;
 
-    // Open some stream_s
+    // Open some streams
     let stream1 = client_conn
         .open_bidirectional_stream(StreamType::Control, 1)
         .await?;

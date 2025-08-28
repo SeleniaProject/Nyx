@@ -248,34 +248,39 @@ fn display_power(state: u32) -> &'static str {
 mod test_s {
     use super::*;
     use std::sync::{Mutex, OnceLock};
-    use tokio::time::{timeout, Duration};
+    use std::time::Duration;
+    use tokio::time::timeout;
 
     fn test_lock() -> std::sync::MutexGuard<'static, ()> {
         static L: OnceLock<Mutex<()>> = OnceLock::new();
-        L.get_or_init(|| Mutex::new(())).lock()?
+        // In tests we can't use ? since we don't return Result; unwrap is fine here.
+        L.get_or_init(|| Mutex::new(())).lock().unwrap()
     }
 
     #[tokio::test]
     async fn emits_initial_state_event() {
         let __g = test_lock();
         std::env::set_var("NYX_POWER_POLL_MS", "50");
-        let _event_s = EventSystem::new(16);
+        let event_s = EventSystem::new(16);
         let mut rx = event_s.subscribe();
-        let __bridge = LowPowerBridge::start(event_s)?;
+        let __bridge = LowPowerBridge::start(event_s).unwrap();
         // Expect first event due to initial state observation
-        let _ev = timeout(Duration::from_millis(1000), rx.recv()).await??;
-        assert_eq!(ev.ty, "power");
+        let ev = timeout(Duration::from_millis(1000), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ev._ty, "power");
         // detail i_s JSON like {"type":"State","state":"active"}
-        assert!(ev.detail.contains("\"type\":") && ev.detail.contains("state"));
+        assert!(ev._detail.contains("\"type\":") && ev._detail.contains("state"));
     }
 
     #[tokio::test]
     async fn emits_on_state_change() {
         let __g = test_lock();
         std::env::set_var("NYX_POWER_POLL_MS", "50");
-        let _event_s = EventSystem::new(16);
+        let event_s = EventSystem::new(16);
         let mut rx = event_s.subscribe();
-        let __bridge = LowPowerBridge::start(event_s.clone())?;
+        let __bridge = LowPowerBridge::start(event_s.clone()).unwrap();
         // Drain the first initial event if present
         let __ = timeout(Duration::from_millis(500), rx.recv()).await;
 
@@ -283,12 +288,15 @@ mod test_s {
         let __ = nyx_mobile_ffi::nyx_power_set_state(NyxPowerState::Background as u32);
 
         // Expect a state:background event
-        let _ev = timeout(Duration::from_millis(1500), rx.recv()).await??;
-        assert_eq!(ev.ty, "power");
+        let ev = timeout(Duration::from_millis(1500), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ev._ty, "power");
         assert!(
-            ev.detail.contains("\"state\":\"background\""),
+            ev._detail.contains("\"state\":\"background\""),
             "got {}",
-            ev.detail
+            ev._detail
         );
     }
 }

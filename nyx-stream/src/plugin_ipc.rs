@@ -22,12 +22,7 @@ pub trait PluginIpcReceiver: Send + Sync {
 #[derive(Default, Clone)]
 pub struct NoopSender;
 impl PluginIpcSender for NoopSender {
-    fn send(
-        &self,
-        _header: &PluginHeader,
-        _frame_type: u8,
-        _raw: &[u8],
-    ) -> Result<(), String> {
+    fn send(&self, _header: &PluginHeader, _frame_type: u8, _raw: &[u8]) -> Result<(), String> {
         Ok(())
     }
 }

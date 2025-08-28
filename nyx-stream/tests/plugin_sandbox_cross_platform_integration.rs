@@ -130,8 +130,11 @@ fn sandbox_guard_with_os_sandbox() {
         "C:\\windows\\System32\\config\\sam".to_string(),
     );
     #[cfg(not(windows))]
-    let (allowed_prefix, allowed_path, denied_path) =
-        (std::path::Path::new("/tmp"), "/tmp/file.txt".to_string(), "/etc/passwd".to_string());
+    let (allowed_prefix, allowed_path, denied_path) = (
+        std::path::Path::new("/tmp"),
+        "/tmp/file.txt".to_string(),
+        "/etc/passwd".to_string(),
+    );
 
     let stream_policy = StreamPolicy::permissive() // Use permissive to enable FS
         .allow_connect_host("api.service.com")
@@ -147,8 +150,11 @@ fn sandbox_guard_with_os_sandbox() {
 
     // Test path validation - should fail because denied_path is not under allowed prefix
     let denied_result = guard.check_open_path(&denied_path);
-    assert!(denied_result.is_err(), "Denied path should fail: {denied_path} -> {denied_result:?}");
-    
+    assert!(
+        denied_result.is_err(),
+        "Denied path should fail: {denied_path} -> {denied_result:?}"
+    );
+
     // Should succeed because allowed_simple is the exact prefix we allowed
     let allowed_result = guard.check_open_path(&allowed_simple);
     if allowed_result.is_err() {
@@ -158,18 +164,26 @@ fn sandbox_guard_with_os_sandbox() {
         // For this test, we just need to verify the sandbox is working, not the exact path behavior
         println!("Subpath result: {subpath_result:?}");
     } else {
-        assert!(allowed_result.is_ok(), "Allowed directory should succeed: {allowed_simple} -> {allowed_result:?}");
+        assert!(
+            allowed_result.is_ok(),
+            "Allowed directory should succeed: {allowed_simple} -> {allowed_result:?}"
+        );
     }
 
     // Test host validation - verify that the deny logic works correctly
-    assert!(guard.check_connect("malicious.com:80").is_err(), "Malicious connection should be denied");
-    
+    assert!(
+        guard.check_connect("malicious.com:80").is_err(),
+        "Malicious connection should be denied"
+    );
+
     // Test that the allowed host is configured in the policy
     let connect_result = guard.check_connect("api.service.com:443");
     if connect_result.is_err() {
         // If this fails, it may be due to policy implementation differences
         // The important thing is that malicious connections are denied
-        println!("Note: Allowed connection test failed, but deny test passed - sandbox is functional");
+        println!(
+            "Note: Allowed connection test failed, but deny test passed - sandbox is functional"
+        );
     } else {
         assert!(connect_result.is_ok(), "Allowed connection should succeed");
     }

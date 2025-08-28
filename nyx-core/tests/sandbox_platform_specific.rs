@@ -19,7 +19,9 @@ mod unix_tests {
         if status == SandboxStatus::Applied {
             // Create a test file and check permissions
             let tmpdir = tempdir()?;
-            let test_file = tmpdir.path().join(format!("nyx_umask_test_{}", process::id()));
+            let test_file = tmpdir
+                .path()
+                .join(format!("nyx_umask_test_{}", process::id()));
 
             // Write to file (this will use the current umask)
             fs::write(&test_file, "test")?;
@@ -114,8 +116,9 @@ mod unix_tests {
                 ""
             };
 
-            let minimal_marker =
-                tmpdir.path().join(format!("nyx_sandbox_{}{}", platform_prefix, process_id));
+            let minimal_marker = tmpdir
+                .path()
+                .join(format!("nyx_sandbox_{}{}", platform_prefix, process_id));
             let strict_marker = tmpdir.path().join(format!(
                 "nyx_sandbox_{}strict_{}",
                 platform_prefix, process_id
@@ -167,7 +170,9 @@ mod unix_tests {
 
             // File operations
             let tmpdir = tempdir()?;
-            let test_file = tmpdir.path().join(format!("functional_test_{}", process::id()));
+            let test_file = tmpdir
+                .path()
+                .join(format!("functional_test_{}", process::id()));
             fs::write(&test_file, "functional test")?;
             let content = fs::read_to_string(&test_file)?;
             assert_eq!(content, "functional test");

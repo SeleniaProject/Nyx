@@ -1,23 +1,23 @@
-﻿/// Path Performance Testing Module for Nyx Daemon
-/// Provides comprehensive testing and benchmarking for path performance metrics
-/// Includes latency measurement, bandwidth testing, and path quality evaluation
+//! Path Performance Testing Module for Nyx Daemon
+//! Provides comprehensive testing and benchmarking for path performance metrics
+//! Includes latency measurement, bandwidth testing, and path quality evaluation
 
-use crate::path_builder::PathBuilder;
 use crate::errors::{DaemonError, Result};
+use crate::path_builder::PathBuilder;
 use nyx_transport::UdpTransport;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, timeout};
 
 #[derive(Debug, Clone, Default)]
 pub struct DaemonConfig {
-    // Dummy config for now  
+    // Dummy config for now
     pub max_paths: usize,
 }
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct PathPerformanceConfig {
@@ -80,10 +80,9 @@ impl PathPerformanceMetrics {
         let jitter_score = 1.0 - (self.jitter.as_millis() as f64 / 100.0).min(1.0);
 
         // Weighted average
-        self.quality_score = (latency_score * 0.3 + 
-                             bandwidth_score * 0.3 + 
-                             loss_score * 0.3 + 
-                             jitter_score * 0.1).max(0.0).min(1.0);
+        self.quality_score =
+            (latency_score * 0.3 + bandwidth_score * 0.3 + loss_score * 0.3 + jitter_score * 0.1)
+                .clamp(0.0, 1.0);
     }
 }
 
@@ -154,10 +153,10 @@ impl PathPerformanceTest {
 
         tokio::spawn(async move {
             let mut interval = interval(config.measurement_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if let Err(e) = Self::run_performance_tests(
                     &config,
                     &path_builder,
@@ -165,7 +164,9 @@ impl PathPerformanceTest {
                     &active_tests,
                     &performance_history,
                     &test_counter,
-                ).await {
+                )
+                .await
+                {
                     error!("Performance test failed: {}", e);
                 }
             }
@@ -176,9 +177,13 @@ impl PathPerformanceTest {
     }
 
     /// Test performance of a specific path
-    pub async fn test_path_performance(&self, path_id: &str, target_addr: SocketAddr) -> Result<PathPerformanceMetrics> {
+    pub async fn test_path_performance(
+        &self,
+        path_id: &str,
+        target_addr: SocketAddr,
+    ) -> Result<PathPerformanceMetrics> {
         let test_start = Instant::now();
-        let session_id = format!("{}_{}", path_id, test_start.elapsed().as_nanos());
+        let session_id = format!("{path_id}_{}", test_start.elapsed().as_nanos());
 
         // Create test session
         let session = TestSession {
@@ -198,8 +203,9 @@ impl PathPerformanceTest {
         // Perform the test
         let result = timeout(
             self.config.test_timeout,
-            self.execute_path_test(&session_id, target_addr)
-        ).await;
+            self.execute_path_test(&session_id, target_addr),
+        )
+        .await;
 
         // Clean up and calculate metrics
         let metrics = match result {
@@ -223,8 +229,11 @@ impl PathPerformanceTest {
         // Store metrics in history
         {
             let mut history = self.performance_history.write().await;
-            history.entry(path_id.to_string()).or_insert_with(Vec::new).push(metrics.clone());
-            
+            history
+                .entry(path_id.to_string())
+                .or_insert_with(Vec::new)
+                .push(metrics.clone());
+
             // Keep only recent history (last 100 measurements)
             if let Some(path_history) = history.get_mut(path_id) {
                 if path_history.len() > 100 {
@@ -233,15 +242,24 @@ impl PathPerformanceTest {
             }
         }
 
-        info!("Path {} performance: latency={:?}, bandwidth={} bytes/s, loss={:.2}%, quality={:.3}",
-              path_id, metrics.avg_latency, metrics.bandwidth_estimate, 
-              metrics.packet_loss_rate * 100.0, metrics.quality_score);
+        info!(
+            "Path {} performance: latency={:?}, bandwidth={} bytes/s, loss={:.2}%, quality={:.3}",
+            path_id,
+            metrics.avg_latency,
+            metrics.bandwidth_estimate,
+            metrics.packet_loss_rate * 100.0,
+            metrics.quality_score
+        );
 
         Ok(metrics)
     }
 
     /// Execute the actual performance test
-    async fn execute_path_test(&self, session_id: &str, target_addr: SocketAddr) -> Result<PathPerformanceMetrics> {
+    async fn execute_path_test(
+        &self,
+        session_id: &str,
+        target_addr: SocketAddr,
+    ) -> Result<PathPerformanceMetrics> {
         let packet_id_counter = {
             let mut counter = self.test_counter.lock().await;
             *counter += 1;
@@ -262,8 +280,10 @@ impl PathPerformanceTest {
             }
 
             // Send packet via transport
-            self.transport.send_to(&test_packet.data, target_addr).await
-                .map_err(|e| DaemonError::Transport(format!("Failed to send test packet: {}", e)))?;
+            self.transport
+                .send_to(&test_packet.data, target_addr)
+                .await
+                .map_err(|e| DaemonError::Transport(format!("Failed to send test packet: {e}")))?;
 
             // Small delay between packets to avoid overwhelming
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -279,7 +299,8 @@ impl PathPerformanceTest {
     /// Calculate performance metrics from test session
     async fn calculate_test_metrics(&self, session_id: &str) -> Result<PathPerformanceMetrics> {
         let active_tests = self.active_tests.lock().await;
-        let session = active_tests.get(session_id)
+        let session = active_tests
+            .get(session_id)
             .ok_or_else(|| DaemonError::Internal("Test session not found".to_string()))?;
 
         let test_duration = session.start_time.elapsed();
@@ -300,19 +321,26 @@ impl PathPerformanceTest {
             let avg = latencies.iter().sum::<Duration>() / latencies.len() as u32;
             let min = latencies[0];
             let max = latencies[latencies.len() - 1];
-            
+
             // Calculate jitter (standard deviation of latencies)
-            let variance: f64 = latencies.iter()
+            let variance: f64 = latencies
+                .iter()
                 .map(|&lat| {
                     let diff = lat.as_nanos() as i64 - avg.as_nanos() as i64;
                     (diff * diff) as f64
                 })
-                .sum::<f64>() / latencies.len() as f64;
+                .sum::<f64>()
+                / latencies.len() as f64;
             let jitter = Duration::from_nanos(variance.sqrt() as u64);
 
             (avg, min, max, jitter)
         } else {
-            (Duration::from_millis(999), Duration::from_millis(999), Duration::from_millis(999), Duration::from_millis(0))
+            (
+                Duration::from_millis(999),
+                Duration::from_millis(999),
+                Duration::from_millis(999),
+                Duration::from_millis(0),
+            )
         };
 
         // Calculate bandwidth
@@ -361,9 +389,10 @@ impl PathPerformanceTest {
     ) -> Result<()> {
         // Get available paths from path builder
         let paths = path_builder.get_available_paths().await?;
-        
+
         // Limit concurrent tests
-        let test_paths: Vec<_> = paths.into_iter()
+        let test_paths: Vec<_> = paths
+            .into_iter()
             .take(config.concurrent_path_limit)
             .collect();
 
@@ -380,9 +409,15 @@ impl PathPerformanceTest {
             };
 
             let task = tokio::spawn(async move {
-                match test_instance.test_path_performance(&path_id, target_addr).await {
+                match test_instance
+                    .test_path_performance(&path_id, target_addr)
+                    .await
+                {
                     Ok(metrics) => {
-                        debug!("Path {} test completed: quality={:.3}", path_id, metrics.quality_score);
+                        debug!(
+                            "Path {} test completed: quality={:.3}",
+                            path_id, metrics.quality_score
+                        );
                     }
                     Err(e) => {
                         warn!("Path {} test failed: {}", path_id, e);
@@ -423,15 +458,16 @@ impl PathPerformanceTest {
 
     /// Check if a path meets performance thresholds
     pub fn meets_performance_thresholds(&self, metrics: &PathPerformanceMetrics) -> bool {
-        metrics.bandwidth_estimate >= self.config.min_bandwidth_threshold &&
-        metrics.avg_latency <= self.config.max_latency_threshold &&
-        metrics.packet_loss_rate <= self.config.max_loss_threshold
+        metrics.bandwidth_estimate >= self.config.min_bandwidth_threshold
+            && metrics.avg_latency <= self.config.max_latency_threshold
+            && metrics.packet_loss_rate <= self.config.max_loss_threshold
     }
 
     /// Get paths that meet performance requirements
     pub async fn get_good_paths(&self) -> Vec<String> {
         let summary = self.get_performance_summary().await;
-        summary.into_iter()
+        summary
+            .into_iter()
             .filter(|(_, metrics)| self.meets_performance_thresholds(metrics))
             .map(|(path_id, _)| path_id)
             .collect()
@@ -467,7 +503,7 @@ mod tests {
             max_latency: Duration::from_millis(60),
             jitter: Duration::from_millis(5),
             bandwidth_estimate: 1_000_000, // 1 MB/s
-            packet_loss_rate: 0.01, // 1%
+            packet_loss_rate: 0.01,        // 1%
             test_timestamp: SystemTime::now(),
             test_duration: Duration::from_secs(1),
             packets_sent: 100,
@@ -495,8 +531,10 @@ mod tests {
         let test = PathPerformanceTest::new(
             config.clone(),
             Arc::new(PathBuilder::new(Default::default())?),
-            Arc::new(UdpTransport::new(Default::default())
-                .map_err(|_| DaemonError::transport("Transport error"))?),
+            Arc::new(
+                UdpTransport::new(Default::default())
+                    .map_err(|_| DaemonError::transport("Transport error"))?,
+            ),
         );
 
         let good_metrics = PathPerformanceMetrics {
@@ -507,7 +545,7 @@ mod tests {
             max_latency: Duration::from_millis(110),
             jitter: Duration::from_millis(5),
             bandwidth_estimate: 200_000, // Above threshold
-            packet_loss_rate: 0.02, // Below threshold
+            packet_loss_rate: 0.02,      // Below threshold
             test_timestamp: SystemTime::now(),
             test_duration: Duration::from_secs(1),
             packets_sent: 100,
@@ -519,12 +557,12 @@ mod tests {
 
         let bad_metrics = PathPerformanceMetrics {
             bandwidth_estimate: 50_000, // Below threshold
-            packet_loss_rate: 0.1, // Above threshold
+            packet_loss_rate: 0.1,      // Above threshold
             ..good_metrics
         };
 
         assert!(!test.meets_performance_thresholds(&bad_metrics));
-        
+
         Ok(())
     }
 }

@@ -18,11 +18,11 @@ async fn recv_gets_data_then_none_after_close() -> Result<(), Box<dyn std::error
     a.send(Bytes::from_static(b"hi")).await?;
     let got = b.recv(50).await?.unwrap();
     assert_eq!(&got[..], b"hi");
-    
+
     // Test that receive without data returns None
     let r = b.recv(10).await?;
     assert!(r.is_none());
-    
+
     // Close is separate from data receiving
     a.close().await?;
     Ok(())

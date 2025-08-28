@@ -1,6 +1,6 @@
-﻿/// Adaptive Mix Module for Nyx Protocol
-/// Implements dynamic mixing strategies based on network conditions and traffic patterns
-/// This module provides adaptive cover traffic generation and mixing parameter optimization
+//! Adaptive Mix Module for Nyx Protocol
+//! Implements dynamic mixing strategies based on network conditions and traffic patterns
+//! This module provides adaptive cover traffic generation and mixing parameter optimization
 
 use crate::cover::{CoverTrafficConfig, CoverTrafficGenerator};
 use crate::errors::Result;
@@ -127,17 +127,19 @@ impl AdaptiveMixEngine {
 
         tokio::spawn(async move {
             let mut adaptation_interval = interval(config.monitoring_interval);
-            
+
             loop {
                 adaptation_interval.tick().await;
-                
+
                 if let Err(e) = Self::adapt_mixing_parameters(
                     &config,
                     &network_conditions,
                     &metrics,
                     &cover_generator,
                     &adaptation_history,
-                ).await {
+                )
+                .await
+                {
                     warn!("Failed to adapt mixing parameters: {:?}", e);
                 }
             }
@@ -150,8 +152,10 @@ impl AdaptiveMixEngine {
     /// Update network conditions for adaptation
     pub async fn update_network_conditions(&self, conditions: NetworkConditions) {
         let mut current_conditions = self.network_conditions.write().await;
-        debug!("Updating network conditions: RTT={:?}, BW={} bytes/s", 
-               conditions.rtt, conditions.bandwidth_estimate);
+        debug!(
+            "Updating network conditions: RTT={:?}, BW={} bytes/s",
+            conditions.rtt, conditions.bandwidth_estimate
+        );
         *current_conditions = conditions;
     }
 
@@ -180,7 +184,8 @@ impl AdaptiveMixEngine {
         let jitter_factor = 1.0 + (conditions.jitter.as_millis() as f64) / 50.0;
 
         // Anonymity set consideration
-        let anonymity_factor = if current_metrics.actual_anonymity_set < config.target_anonymity_set {
+        let anonymity_factor = if current_metrics.actual_anonymity_set < config.target_anonymity_set
+        {
             0.8 // Decrease interval to increase mixing frequency
         } else {
             1.2 // Increase interval to save resources
@@ -188,8 +193,8 @@ impl AdaptiveMixEngine {
 
         let adjustment = rtt_factor * loss_factor * jitter_factor * anonymity_factor;
         let base_ms = config.base_interval.as_millis() as f64;
-        let optimal_ms = base_ms * adjustment * config.adaptation_factor + 
-                        base_ms * (1.0 - config.adaptation_factor);
+        let optimal_ms = base_ms * adjustment * config.adaptation_factor
+            + base_ms * (1.0 - config.adaptation_factor);
 
         let optimal_duration = Duration::from_millis(optimal_ms as u64);
 
@@ -215,11 +220,8 @@ impl AdaptiveMixEngine {
         let mut current_metrics = metrics.lock().await;
 
         // Calculate optimal mixing interval
-        let optimal_interval = Self::calculate_optimal_interval(
-            config,
-            &conditions,
-            &current_metrics,
-        ).await;
+        let optimal_interval =
+            Self::calculate_optimal_interval(config, &conditions, &current_metrics).await;
 
         // Update mixing interval
         current_metrics.current_interval = optimal_interval;
@@ -238,20 +240,23 @@ impl AdaptiveMixEngine {
 
         // Update cover traffic generation parameters
         let mut cover_gen = cover_generator.lock().await;
-        let target_bandwidth = (conditions.bandwidth_estimate as f64 * config.cover_traffic_ratio) as u64;
+        let target_bandwidth =
+            (conditions.bandwidth_estimate as f64 * config.cover_traffic_ratio) as u64;
         cover_gen.update_target_bandwidth(target_bandwidth)?;
 
         // Store adaptation history
         let mut history = adaptation_history.lock().await;
         history.push((Instant::now(), current_metrics.adaptation_score));
-        
+
         // Keep only recent history (last hour)
         let cutoff = Instant::now() - Duration::from_secs(3600);
         history.retain(|(timestamp, _)| *timestamp > cutoff);
 
         debug!(
             "Adapted mixing parameters: interval={:?}, score={:.3}, anonymity_set={}",
-            optimal_interval, current_metrics.adaptation_score, current_metrics.actual_anonymity_set
+            optimal_interval,
+            current_metrics.adaptation_score,
+            current_metrics.actual_anonymity_set
         );
 
         Ok(())
@@ -269,23 +274,24 @@ impl AdaptiveMixEngine {
         metrics.cover_packets_sent = 0;
         metrics.actual_anonymity_set = 0;
         metrics.last_reset = Instant::now();
-        
+
         let mut history = self.adaptation_history.lock().await;
         history.clear();
-        
+
         info!("Reset adaptive mix metrics");
     }
 
     /// Check if adaptation is working effectively
     pub async fn is_adaptation_effective(&self) -> bool {
         let history = self.adaptation_history.lock().await;
-        
+
         if history.len() < 3 {
             return false; // Not enough data
         }
 
         // Check if adaptation score is improving over time
-        let recent_scores: Vec<f64> = history.iter()
+        let recent_scores: Vec<f64> = history
+            .iter()
             .rev()
             .take(5)
             .map(|(_, score)| *score)
@@ -304,11 +310,11 @@ mod tests {
     async fn test_adaptive_mix_creation() -> Result<()> {
         let config = AdaptiveMixConfig::default();
         let engine = AdaptiveMixEngine::new(config)?;
-        
+
         let metrics = engine.get_metrics().await;
         assert_eq!(metrics.packets_mixed, 0);
         assert_eq!(metrics.adaptation_score, 0.5);
-        
+
         Ok(())
     }
 
@@ -316,7 +322,7 @@ mod tests {
     async fn test_network_conditions_update() -> Result<()> {
         let config = AdaptiveMixConfig::default();
         let engine = AdaptiveMixEngine::new(config)?;
-        
+
         let new_conditions = NetworkConditions {
             rtt: Duration::from_millis(100),
             bandwidth_estimate: 2_000_000,
@@ -325,12 +331,17 @@ mod tests {
             last_updated: Instant::now(),
         };
 
-        engine.update_network_conditions(new_conditions.clone()).await;
-        
+        engine
+            .update_network_conditions(new_conditions.clone())
+            .await;
+
         let stored_conditions = engine.network_conditions.read().await;
         assert_eq!(stored_conditions.rtt, new_conditions.rtt);
-        assert_eq!(stored_conditions.bandwidth_estimate, new_conditions.bandwidth_estimate);
-        
+        assert_eq!(
+            stored_conditions.bandwidth_estimate,
+            new_conditions.bandwidth_estimate
+        );
+
         Ok(())
     }
 
@@ -340,15 +351,12 @@ mod tests {
         let conditions = NetworkConditions::default();
         let metrics = MixingMetrics::default();
 
-        let interval = AdaptiveMixEngine::calculate_optimal_interval(
-            &config,
-            &conditions,
-            &metrics,
-        ).await;
+        let interval =
+            AdaptiveMixEngine::calculate_optimal_interval(&config, &conditions, &metrics).await;
 
         assert!(interval >= config.min_interval);
         assert!(interval <= config.max_interval);
-        
+
         Ok(())
     }
 
@@ -356,14 +364,14 @@ mod tests {
     async fn test_packet_mixing_reporting() -> Result<()> {
         let config = AdaptiveMixConfig::default();
         let engine = AdaptiveMixEngine::new(config)?;
-        
+
         engine.report_packet_mixed(5).await?;
         engine.report_packet_mixed(8).await?;
-        
+
         let metrics = engine.get_metrics().await;
         assert_eq!(metrics.packets_mixed, 2);
         assert_eq!(metrics.actual_anonymity_set, 8);
-        
+
         Ok(())
     }
 
@@ -371,10 +379,10 @@ mod tests {
     async fn test_adaptation_effectiveness() -> Result<()> {
         let config = AdaptiveMixConfig::default();
         let engine = AdaptiveMixEngine::new(config)?;
-        
+
         // Initially not effective due to lack of data
         assert!(!engine.is_adaptation_effective().await);
-        
+
         // Add some history manually for testing
         {
             let mut history = engine.adaptation_history.lock().await;
@@ -382,9 +390,9 @@ mod tests {
                 history.push((Instant::now(), 0.7 + (i as f64) * 0.05));
             }
         }
-        
+
         assert!(engine.is_adaptation_effective().await);
-        
+
         Ok(())
     }
 
@@ -392,17 +400,17 @@ mod tests {
     async fn test_metrics_reset() -> Result<()> {
         let config = AdaptiveMixConfig::default();
         let engine = AdaptiveMixEngine::new(config)?;
-        
+
         engine.report_packet_mixed(10).await?;
         engine.reset_metrics().await;
-        
+
         let metrics = engine.get_metrics().await;
         assert_eq!(metrics.packets_mixed, 0);
         assert_eq!(metrics.actual_anonymity_set, 0);
-        
+
         let history = engine.get_adaptation_history().await;
         assert!(history.is_empty());
-        
+
         Ok(())
     }
 }

@@ -174,8 +174,7 @@ impl Accumulator {
         self.stats.total_verification_time_ms += start_time.elapsed().as_millis() as u64;
 
         // Cache witness for future lookups
-        self.witness_cache
-            .insert(element_hash, witness.clone());
+        self.witness_cache.insert(element_hash, witness.clone());
 
         Ok(witness)
     }
@@ -207,8 +206,7 @@ impl Accumulator {
         // Simplified witness: Use a deterministic function based on current accumulator state
         // This ensures consistent verification for testing purposes
         let element_prime = Self::hash_to_prime(element);
-        let witness =
-            Self::modular_exponentiation(&self.generator, &element_prime, &self.modulus);
+        let witness = Self::modular_exponentiation(&self.generator, &element_prime, &self.modulus);
 
         self.witness_cache
             .insert(element_hash.clone(), witness.clone());
@@ -297,8 +295,7 @@ impl Accumulator {
             Ok(w) => w,
             Err(_) => {
                 self.stats.verifications_performed += 1;
-                self.stats.total_verification_time_ms +=
-                    start_time.elapsed().as_millis() as u64;
+                self.stats.total_verification_time_ms += start_time.elapsed().as_millis() as u64;
                 return false;
             }
         };
@@ -399,10 +396,7 @@ pub enum AccumulatorError {
     /// Duplicate element (already exists in accumulator)
     DuplicateElement { element: Vec<u8> },
     /// Witness verification failed
-    VerificationFailed {
-        element: Vec<u8>,
-        witness: Vec<u8>,
-    },
+    VerificationFailed { element: Vec<u8>, witness: Vec<u8> },
     /// Configuration error
     ConfigError { message: String },
 }
@@ -413,7 +407,9 @@ impl std::fmt::Display for AccumulatorError {
             AccumulatorError::InvalidElement { reason } => write!(f, "Invalid element: {reason}"),
             AccumulatorError::DuplicateElement { .. } => write!(f, "Duplicate element"),
             AccumulatorError::VerificationFailed { .. } => write!(f, "Witness verification failed"),
-            AccumulatorError::ConfigError { message } => write!(f, "Configuration error: {message}"),
+            AccumulatorError::ConfigError { message } => {
+                write!(f, "Configuration error: {message}")
+            }
         }
     }
 }
@@ -440,8 +436,7 @@ pub fn verify_membership(witness: &[u8], element: &[u8], acc: &[u8]) -> bool {
 
     // RSA accumulator verification: witness^prime = expected_value (mod N)
     let verification_result = witness_bigint.modpow(&element_prime, &modulus);
-    let expected_result =
-        compute_expected_accumulator_value(element, &acc_bigint, &modulus);
+    let expected_result = compute_expected_accumulator_value(element, &acc_bigint, &modulus);
 
     verification_result == expected_result
 }
@@ -643,7 +638,11 @@ mod tests {
         let ___witness2 = acc.add_element(__element2)?;
 
         let witnesses = vec![vec![1], vec![2], vec![3]]; // Dummy witnesses as Vec<u8>
-        let elements = vec![__element1.to_vec(), __element2.to_vec(), __element3.to_vec()];
+        let elements = vec![
+            __element1.to_vec(),
+            __element2.to_vec(),
+            __element3.to_vec(),
+        ];
 
         let result_s = verify_batch_membership(&witnesses, &elements, &[]);
         // Note: verify_batch_membership use_s legacy API, result_s will be [false, false, false]

@@ -1,13 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nyx_core::performance::RateLimiter;
 #[cfg(feature = "zero_copy")]
-use nyx_core::zero_copy::manager::{BufferPool, Buffer};
-// Currently unused imports - TODO: implement if needed
-// use nyx_stream::async_stream::{pair, AsyncStreamConfig};
-// use nyx_stream::performance::{StreamMetrics, BufferPool as StreamBufferPool};
-// use bytes::Bytes;
-// use std::time::{Duration, Instant};
-// use tokio::runtime::Runtime;
+use nyx_core::zero_copy::manager::{Buffer, BufferPool};
 // use std::sync::Arc;
 // use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 // use futures::future;
@@ -48,13 +42,17 @@ fn bench_buffer_pool_comprehensive(c: &mut Criterion) {
     for &size in &sizes {
         group.throughput(criterion::Throughput::Elements(1000));
 
-        group.bench_with_input(BenchmarkId::new("acquire_release", size), &size, |b, &size| {
-            b.iter(|| {
-                let buf = pool.acquire(size);
-                black_box(buf.len());
-                pool.release(buf);
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("acquire_release", size),
+            &size,
+            |b, &size| {
+                b.iter(|| {
+                    let buf = pool.acquire(size);
+                    black_box(buf.len());
+                    pool.release(buf);
+                })
+            },
+        );
     }
     group.finish();
 }
@@ -64,7 +62,7 @@ fn bench_memory_efficiency(c: &mut Criterion) {
 
     // Simulate different memory patterns
     let sizes = [1024, 4096, 16384, 65536];
-    
+
     for &size in &sizes {
         group.bench_with_input(BenchmarkId::new("allocation", size), &size, |b, &size| {
             b.iter(|| {
@@ -80,7 +78,7 @@ fn bench_algorithmic_complexity(c: &mut Criterion) {
     let mut group = c.benchmark_group("algorithms");
 
     let rates = [10.0, 100.0, 1000.0];
-    
+
     for &rate in &rates {
         group.bench_with_input(BenchmarkId::new("rate_limiter", rate), &rate, |b, &rate| {
             let mut rl = RateLimiter::new(rate * 2.0, rate);
@@ -164,17 +162,21 @@ fn bench_scalability_tests(c: &mut Criterion) {
     let mut group = c.benchmark_group("scalability");
 
     let sizes = [100, 1000, 10000];
-    
+
     for &size in &sizes {
-        group.bench_with_input(BenchmarkId::new("concurrent_operations", size), &size, |b, &size| {
-            b.iter(|| {
-                for _ in 0..size {
-                    black_box(42);
-                }
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("concurrent_operations", size),
+            &size,
+            |b, &size| {
+                b.iter(|| {
+                    for _ in 0..size {
+                        black_box(42);
+                    }
+                })
+            },
+        );
     }
-    
+
     group.finish();
 }
 

@@ -226,7 +226,8 @@ impl AdaptiveRedundancyTuner {
         let dynamic_kd = self.pid_coefficients.kd * stability_factor;
 
         // Enhanced PID output with non-linear response for extreme conditions
-        let linear_output = dynamic_kp * error + dynamic_ki * integral_error + dynamic_kd * derivative_error;
+        let linear_output =
+            dynamic_kp * error + dynamic_ki * integral_error + dynamic_kd * derivative_error;
         let pid_output = if error.abs() > 0.05 {
             // Non-linear response for high loss conditions
             linear_output * (1.0 + error.abs() * 2.0)
@@ -236,8 +237,10 @@ impl AdaptiveRedundancyTuner {
 
         // Advanced base redundancy adjustment with momentum
         let momentum_factor = 0.85; // Smooth adjustments
-        let base_tx = self.current_redundancy.tx * momentum_factor + pid_output * (1.0 - momentum_factor);
-        let base_rx = self.current_redundancy.rx * momentum_factor + (pid_output * 0.75) * (1.0 - momentum_factor);
+        let base_tx =
+            self.current_redundancy.tx * momentum_factor + pid_output * (1.0 - momentum_factor);
+        let base_rx = self.current_redundancy.rx * momentum_factor
+            + (pid_output * 0.75) * (1.0 - momentum_factor);
 
         // Enhanced network condition modifiers
         let quality_modifier = self.calculate_enhanced_quality_modifier(current);
@@ -246,10 +249,12 @@ impl AdaptiveRedundancyTuner {
         let trend_modifier = self.calculate_trend_modifier();
 
         // Apply all modifiers with intelligent bounds
-        let final_tx = (base_tx * quality_modifier * bandwidth_modifier * stability_modifier * trend_modifier)
-            .clamp(0.005, 0.85); // Ultra-low minimum, slightly lower maximum
-        let final_rx = (base_rx * quality_modifier * bandwidth_modifier * stability_modifier * trend_modifier)
-            .clamp(0.005, 0.85);
+        let final_tx =
+            (base_tx * quality_modifier * bandwidth_modifier * stability_modifier * trend_modifier)
+                .clamp(0.005, 0.85); // Ultra-low minimum, slightly lower maximum
+        let final_rx =
+            (base_rx * quality_modifier * bandwidth_modifier * stability_modifier * trend_modifier)
+                .clamp(0.005, 0.85);
 
         Redundancy::new(final_tx, final_rx)
     }
@@ -291,10 +296,13 @@ impl AdaptiveRedundancyTuner {
         }
 
         let mean = self.loss_window.iter().sum::<f32>() / self.loss_window.len() as f32;
-        let variance = self.loss_window.iter()
+        let variance = self
+            .loss_window
+            .iter()
             .map(|&x| (x - mean).powi(2))
-            .sum::<f32>() / self.loss_window.len() as f32;
-        
+            .sum::<f32>()
+            / self.loss_window.len() as f32;
+
         variance
     }
 
@@ -323,7 +331,7 @@ impl AdaptiveRedundancyTuner {
     /// Calculate enhanced quality-based modifier with non-linear response [0.4, 2.5]
     fn calculate_enhanced_quality_modifier(&self, metrics: &NetworkMetrics) -> f32 {
         let quality = metrics.quality_score();
-        
+
         // Non-linear response: poor quality gets exponentially more redundancy
         if quality < 0.3 {
             2.5 // Very poor quality: maximum redundancy
@@ -338,7 +346,7 @@ impl AdaptiveRedundancyTuner {
     /// Calculate enhanced bandwidth-based modifier with adaptive scaling [0.7, 1.4]
     fn calculate_enhanced_bandwidth_modifier(&self, metrics: &NetworkMetrics) -> f32 {
         let bw = metrics.bandwidth_kbps as f32;
-        
+
         // More granular bandwidth-based scaling
         if bw > 5000.0 {
             1.4 // Very high bandwidth: allow maximum redundancy
@@ -356,7 +364,7 @@ impl AdaptiveRedundancyTuner {
     /// Calculate enhanced stability-based modifier with trend awareness [0.6, 1.3]
     fn calculate_enhanced_stability_modifier(&self, metrics: &NetworkMetrics) -> f32 {
         let base_stability: f32 = if metrics.is_stable() { 0.8 } else { 1.2 };
-        
+
         // Factor in loss trend
         let trend = self.loss_trend();
         let trend_adjustment: f32 = if trend > 0.02 {
@@ -366,7 +374,7 @@ impl AdaptiveRedundancyTuner {
         } else {
             1.0 // Stable trend: no adjustment
         };
-        
+
         (base_stability * trend_adjustment).clamp(0.6_f32, 1.3_f32)
     }
 
@@ -377,7 +385,9 @@ impl AdaptiveRedundancyTuner {
         }
 
         // Analyze recent quality trend
-        let recent_qualities: Vec<f32> = self.history.iter()
+        let recent_qualities: Vec<f32> = self
+            .history
+            .iter()
             .rev()
             .take(5)
             .map(|m| m.quality_score())
@@ -388,9 +398,11 @@ impl AdaptiveRedundancyTuner {
         }
 
         // Calculate quality trend
-        let quality_trend = recent_qualities.windows(2)
+        let quality_trend = recent_qualities
+            .windows(2)
             .map(|window| window[0] - window[1])
-            .sum::<f32>() / (recent_qualities.len() - 1) as f32;
+            .sum::<f32>()
+            / (recent_qualities.len() - 1) as f32;
 
         // Proactive adjustment based on trend
         if quality_trend < -0.1 {
@@ -439,6 +451,11 @@ pub struct TunerStatistics {
 
 /// Legacy function for backward compatibility - now delegates to adaptive tuner
 pub fn adaptive_raptorq_redundancy(rtt_ms: u32, loss: f32, prev: Redundancy) -> Redundancy {
+    // Conformance: if there is no observed loss and previous redundancy is zero,
+    // keep redundancy at exactly 0.0 (do not apply minimum clamp).
+    if loss <= f32::EPSILON && prev.tx == 0.0 && prev.rx == 0.0 {
+        return Redundancy { tx: 0.0, rx: 0.0 };
+    }
     let metrics = NetworkMetrics::new(rtt_ms, 0, loss, 1000);
     let mut tuner = AdaptiveRedundancyTuner::new();
     tuner.current_redundancy = prev;

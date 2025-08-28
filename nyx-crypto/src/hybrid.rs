@@ -224,8 +224,8 @@ pub mod demo {
     use crate::session::AeadSession;
     use hkdf::Hkdf;
     use sha2::Sha256;
-    use zeroize::Zeroize;
     use x25519_dalek::{PublicKey as XPublic, StaticSecret as XSecret};
+    use zeroize::Zeroize;
 
     // Wire header (same base format as noise::ik_demo)
     const HDR_MAGIC: [u8; 2] = [b'N', b'X'];
@@ -466,8 +466,8 @@ pub mod demo {
         r_static_x: &X25519StaticKeypair,
         r_pq: &KyberStaticKeypair,
         istatic_pk_expected: &[u8; 32],
-        prologue: &[u8],
         msg1: &[u8],
+        prologue: &[u8],
     ) -> Result<ResponderResult, Error> {
         let telemetry = HandshakeTelemetry::new("responder_handshake");
 
@@ -529,6 +529,8 @@ pub mod demo {
             if s_i_pk.as_slice() != istatic_pk_expected {
                 return Err(Error::Protocol("hybrid initiator static mismatch".into()));
             }
+            // Keep transcript hash consistent with initiator: mix ciphertext into h
+            ss.mix_hash(ct);
 
             // Kyber decapsulate - record PQ operation
             let ss_pq = {

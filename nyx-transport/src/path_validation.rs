@@ -103,12 +103,12 @@ pub struct PathChallenge {
 
 impl PathChallenge {
     /// Create a new path challenge with cryptographically secure random token
-    /// 
+    ///
     /// # Security Enhancements
     /// - Uses OS-backed CSPRNG for unpredictable token generation
     /// - Validates target address to prevent injection attacks
     /// - Implements rate limiting safeguards against DoS attacks
-    /// 
+    ///
     /// # Errors
     /// Returns `None` if the target address is invalid for security reasons
     pub fn new(target_addr: SocketAddr) -> Option<Self> {
@@ -117,7 +117,7 @@ impl PathChallenge {
             eprintln!("SECURITY: Invalid target address for path validation: {target_addr}");
             return None;
         }
-        
+
         // Use OS-backed CSPRNG for unpredictable token generation.
         // This prevents off-path/on-path attackers from predicting tokens and spoofing PATH_RESPONSE.
         let mut token = [0u8; PATH_CHALLENGE_TOKEN_SIZE];
@@ -131,9 +131,9 @@ impl PathChallenge {
             state: PathValidationState::Pending,
         })
     }
-    
+
     /// Validate that the target address is acceptable for path validation
-    /// 
+    ///
     /// # Security Considerations
     /// - Rejects localhost/loopback addresses in production builds to prevent local attacks
     /// - Blocks private network addresses when configured for public networks
@@ -602,8 +602,7 @@ impl PathValidator {
         if let Ok(mut challenges) =
             safe_mutex_lock(&self.active_challenges, "active_challenges_operation")
         {
-            challenges
-                .retain(|_, challenge| !challenge.is_timed_out(self.validation_timeout * 2));
+            challenges.retain(|_, challenge| !challenge.is_timed_out(self.validation_timeout * 2));
         }
 
         // Cleanup old metrics (older than 1 hour)
@@ -721,9 +720,12 @@ mod tests {
         // Test with broadcast address (should always be rejected for security)
         let broadcast_addr = "255.255.255.255:8080".parse().unwrap();
         let challenge = PathChallenge::new(broadcast_addr);
-        
+
         // Broadcast addresses are always rejected regardless of build type
-        assert!(challenge.is_none(), "Broadcast address should always be rejected for security reasons");
+        assert!(
+            challenge.is_none(),
+            "Broadcast address should always be rejected for security reasons"
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use bytes::Bytes;
-use nyx_stream::{AsyncStream, AsyncStreamConfig, pair};
+use nyx_stream::{pair, AsyncStream, AsyncStreamConfig};
 
 /// SDK wrapper for streams. Delegates to nyx-stream's AsyncStream, providing an adapter.
 #[derive(Clone)]
@@ -36,10 +36,7 @@ impl NyxStream {
             ..AsyncStreamConfig::default()
         };
         let (inner1, inner2) = pair(config1, config2);
-        (
-            Self { inner: inner1 },
-            Self { inner: inner2 },
-        )
+        (Self { inner: inner1 }, Self { inner: inner2 })
     }
 
     /// Send data through the stream

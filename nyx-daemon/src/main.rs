@@ -4,7 +4,7 @@ use std::{io, path::PathBuf, sync::Arc, time::Instant};
 
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 mod json_util;
 #[cfg(feature = "telemetry")]
 use nyx_telemetry as telemetry;
@@ -737,7 +737,7 @@ fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-        
+
     // Treat empty or whitespace-only token as not set (disabled auth)
     let effective = state
         .token
@@ -763,25 +763,25 @@ fn is_authorized(state: &DaemonState, auth: Option<&str>) -> bool {
         Some(provided) => {
             // SECURITY ENHANCEMENT: Use constant-time comparison to prevent timing attacks
             // This prevents attackers from deducing token characters through timing analysis
-            
+
             let provided_bytes = provided.as_bytes();
             let expected_bytes = expected.as_bytes();
-            
+
             // Ensure both strings are compared in constant time regardless of length
             let max_len = std::cmp::max(provided_bytes.len(), expected_bytes.len());
             let mut result = 0u8;
-            
+
             // Always compare the full length to prevent early termination timing attacks
             for i in 0..max_len {
                 let p_byte = provided_bytes.get(i).copied().unwrap_or(0);
                 let e_byte = expected_bytes.get(i).copied().unwrap_or(0);
                 result |= p_byte ^ e_byte;
             }
-            
+
             // Additional length check in constant time
             let length_match = provided_bytes.len() == expected_bytes.len();
             let ok = result == 0 && length_match;
-            
+
             if !ok {
                 warn!("authorization failed: invalid token");
             }
@@ -962,24 +962,28 @@ mod tests {
         with_env_lock(|| {
             // Set the new disable auth flag to simulate development mode
             std::env::set_var("NYX_DAEMON_DISABLE_AUTH", "1");
-            
+
             // Simulate daemon started with empty token ("   ") which should disable auth when flag is set
             let state = make_state_with_token(Some("   "));
-            
-            // Create a test request  
+
+            // Create a test request
             let req = serde_json::json!({
                 "id": "r1",
                 "op": "reload_config"
-            }).to_string();
-            
+            })
+            .to_string();
+
             // Process request in async context
             let rt = tokio::runtime::Runtime::new().unwrap();
             let (resp, _rx, _filter) = rt.block_on(process_request(&req, &state));
-            
+
             // Clean up environment
             std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
-            
-            assert!(resp.ok, "auth should be disabled when token is empty/whitespace and disable flag is set");
+
+            assert!(
+                resp.ok,
+                "auth should be disabled when token is empty/whitespace and disable flag is set"
+            );
             Ok(())
         })
     }
@@ -1015,10 +1019,13 @@ mod tests {
         with_env_lock(|| {
             // Remove environment variable to test default behavior
             std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
-            
+
             let state = make_state_with_token(None); // No token set
             let is_auth = is_authorized(&state, None);
-            assert!(!is_auth, "Auth should be enabled by default when no token configured");
+            assert!(
+                !is_auth,
+                "Auth should be enabled by default when no token configured"
+            );
         });
     }
 
@@ -1026,14 +1033,17 @@ mod tests {
     fn auth_can_be_explicitly_disabled() {
         with_env_lock(|| {
             std::env::set_var("NYX_DAEMON_DISABLE_AUTH", "1");
-            
+
             let state = make_state_with_token(None); // No token set
             let is_auth = is_authorized(&state, None);
-            
+
             // Cleanup
             std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
-            
-            assert!(is_auth, "Auth should be disabled when NYX_DAEMON_DISABLE_AUTH=1");
+
+            assert!(
+                is_auth,
+                "Auth should be disabled when NYX_DAEMON_DISABLE_AUTH=1"
+            );
         });
     }
 
@@ -1041,7 +1051,7 @@ mod tests {
     fn auth_with_valid_token_works() {
         with_env_lock(|| {
             std::env::remove_var("NYX_DAEMON_DISABLE_AUTH");
-            
+
             let state = make_state_with_token(Some("valid_token"));
             let is_auth = is_authorized(&state, Some("valid_token"));
             assert!(is_auth, "Auth should succeed with valid token");

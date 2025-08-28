@@ -30,12 +30,18 @@ impl std::fmt::Display for CmixError {
             CmixError::TamperedBatch { batch_id, .. } => {
                 write!(f, "Batch verification failed - batch_id: {batch_id}")
             }
-            CmixError::VdfTimeout { duration, max_allowed } => {
+            CmixError::VdfTimeout {
+                duration,
+                max_allowed,
+            } => {
                 write!(f, "VDF computation timeout - duration: {duration:?}, max_allowed: {max_allowed:?}")
             }
             CmixError::InvalidWitness { .. } => write!(f, "Invalid witness for element"),
             CmixError::InvalidBatchSize { size, min, max } => {
-                write!(f, "Invalid batch size {size}, expected between {min} and {max}")
+                write!(
+                    f,
+                    "Invalid batch size {size}, expected between {min} and {max}"
+                )
             }
         }
     }
@@ -169,12 +175,14 @@ impl Batcher {
         // For testing purposes, we'll create a temporary accumulator and verify membership
         let mut temp_acc = accumulator::Accumulator::new();
         let _ = temp_acc.add_element(&batch.id.to_le_bytes());
-        let generated_witness = temp_acc.generate_witness(&batch.id.to_le_bytes())
-            .map_err(|_| CmixError::InvalidWitness {
-                element: batch.id.to_le_bytes().to_vec(),
-                witness: batch.accumulator_witness.clone(),
-            })?;
-        
+        let generated_witness =
+            temp_acc
+                .generate_witness(&batch.id.to_le_bytes())
+                .map_err(|_| CmixError::InvalidWitness {
+                    element: batch.id.to_le_bytes().to_vec(),
+                    witness: batch.accumulator_witness.clone(),
+                })?;
+
         if !temp_acc.verify_element(&batch.id.to_le_bytes(), &generated_witness) {
             let error = CmixError::InvalidWitness {
                 element: batch.id.to_le_bytes().to_vec(),
@@ -237,7 +245,7 @@ impl Batcher {
                         expected_hash,
                         actual_hash,
                     } => {
-                                    report.push_str(&format!("[{timestamp:?}] SECURITY ALERT: Batch {batch_id} tampered - Expected: {expected_hash:?}, Actual: {actual_hash:?}\n"));
+                        report.push_str(&format!("[{timestamp:?}] SECURITY ALERT: Batch {batch_id} tampered - Expected: {expected_hash:?}, Actual: {actual_hash:?}\n"));
                     }
                     CmixError::VdfTimeout {
                         duration,
@@ -251,7 +259,7 @@ impl Batcher {
                         element,
                         witness: _,
                     } => {
-                                            report.push_str(&format!(
+                        report.push_str(&format!(
                         "[{timestamp:?}] SECURITY ALERT: Invalid accumulator witness for element {element:?}\n"
                     ));
                     }

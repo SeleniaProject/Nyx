@@ -142,11 +142,11 @@ impl AsyncStream {
 /// Creates a pair of connected AsyncStreams for testing and simulation purposes.
 /// This function establishes a full-duplex communication channel between two stream endpoints,
 /// enabling comprehensive testing of stream protocols, flow control, and multipath behavior.
-/// 
+///
 /// # Arguments
 /// * `cfg_a` - Configuration for the first stream endpoint
 /// * `cfg_b` - Configuration for the second stream endpoint (will be modified if stream_id conflicts)
-/// 
+///
 /// # Returns
 /// A tuple containing two connected AsyncStream instances that can communicate bidirectionally
 pub fn pair(cfg_a: AsyncStreamConfig, mut cfg_b: AsyncStreamConfig) -> (AsyncStream, AsyncStream) {
@@ -274,33 +274,33 @@ async fn endpoint_task(
                 match cmd {
                     Cmd::Send { data, ack } => {
                         // Early exit if stream is already closed locally
-                        if closed_local { 
-                            let _ = ack.send(()); 
-                            continue; 
+                        if closed_local {
+                            let _ = ack.send(());
+                            continue;
                         }
-                        
+
                         // Apply backpressure by waiting if flow control window is full
-                        while !flow.can_send(inflight.len()) { 
-                            sleep(Duration::from_millis(1)).await; 
+                        while !flow.can_send(inflight.len()) {
+                            sleep(Duration::from_millis(1)).await;
                         }
-                        
+
                         // Enforce maximum frame length limit if configured
-                        if let Some(limit) = config.max_frame_len { 
-                            if data.len() > limit { 
-                                let _ = ack.send(()); 
-                                continue; 
-                            } 
+                        if let Some(limit) = config.max_frame_len {
+                            if data.len() > limit {
+                                let _ = ack.send(());
+                                continue;
+                            }
                         }
-                        
+
                         // Create data frame with monotonically increasing sequence number
                         let frame = Frame::data(config.stream_id, next_seq, data);
                         next_seq += 1;
-                        
+
                         // Select optimal path for this frame (multipath load balancing)
                         let selected_path = mpr.as_mut()
                             .map(|s| s.pick_path())
                             .unwrap_or(PathId(0));
-                        
+
                         // Encode frame and handle optional reordering for network simulation
                         let mut buf = BytesMut::new();
                         if FrameCodec::encode(&frame, &mut buf).is_ok() {
@@ -310,27 +310,27 @@ async fn endpoint_task(
                                 if reorder_buf.len() >= n {
                                     // Flush buffered frames in reverse order
                                     while let Some((b, path)) = reorder_buf.pop() {
-                                        let _ = wire_tx.send(LinkMsg::Wire { 
-                                            bytes: b, 
-                                            path: path.0 
+                                        let _ = wire_tx.send(LinkMsg::Wire {
+                                            bytes: b,
+                                            path: path.0
                                         }).await;
                                     }
                                 }
                             } else {
                                 // Direct transmission without reordering
-                                let _ = wire_tx.send(LinkMsg::Wire { 
-                                    bytes: buf, 
-                                    path: selected_path.0 
+                                let _ = wire_tx.send(LinkMsg::Wire {
+                                    bytes: buf,
+                                    path: selected_path.0
                                 }).await;
                             }
                         }
-                        
+
                         // Track frame for retransmission and acknowledgment handling
-                        inflight.insert(frame.header.seq, TxEntry { 
-                            frame, 
-                            last_sent: Instant::now(), 
-                            retries: 0, 
-                            last_path: selected_path 
+                        inflight.insert(frame.header.seq, TxEntry {
+                            frame,
+                            last_sent: Instant::now(),
+                            retries: 0,
+                            last_path: selected_path
                         });
                         let _ = ack.send(());
                     }
@@ -467,12 +467,12 @@ mod tests {
     async fn send_recv_roundtrip_and_backpressure() -> Result<(), Box<dyn std::error::Error>> {
         // Test comprehensive send/receive functionality with backpressure handling
         let (stream_a, stream_b) = pair(AsyncStreamConfig::default(), AsyncStreamConfig::default());
-        
+
         // Send more messages than the flow control window to exercise backpressure mechanisms
         for i in 0..100u32 {
             stream_a.send(Bytes::from(format!("msg-{i}"))).await?;
         }
-        
+
         // Receive all messages and verify ordering preservation
         let mut received_messages = Vec::new();
         loop {
@@ -486,7 +486,7 @@ mod tests {
                 tokio::task::yield_now().await;
             }
         }
-        
+
         // Verify message count and ordering integrity
         assert_eq!(received_messages.len(), 100);
         assert_eq!(received_messages[0], "msg-0");
@@ -497,14 +497,14 @@ mod tests {
     #[tokio::test]
     async fn close_propagates() -> Result<(), Box<dyn std::error::Error>> {
         let (a, b) = pair(AsyncStreamConfig::default(), AsyncStreamConfig::default());
-        
+
         // Send some data first to ensure connection is established
         a.send(Bytes::from_static(b"test")).await?;
         let _data = b.recv().await?;
-        
+
         // Test graceful close
         a.close().await?;
-        
+
         // Close operation completed successfully
         Ok(())
     }
