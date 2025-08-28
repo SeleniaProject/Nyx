@@ -88,12 +88,13 @@ helm upgrade --install nyx ./charts/nyx -n nyx -f ./charts/nyx/values-kind.yaml
 リポジトリのルートで実行。1台のサーバー上に kind マルチノード（1CP + 3Worker）を作成し、`nyx-daemon:local` をビルド/ロード、`values-kind.yaml` で 3 レプリカ配備し、ベンチ Job の完了とログまで一気に行います。
 
 ```bash
-set -euo pipefail; \
-if ! command -v docker >/dev/null 2>&1; then curl -fsSL https://get.docker.com | sh; sudo usermod -aG docker "$USER"; fi; \
-if ! command -v kubectl >/dev/null 2>&1; then sudo apt-get update -y; sudo apt-get install -y ca-certificates curl gnupg; sudo install -m 0755 -d /etc/apt/keyrings; curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg; echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null; sudo apt-get update -y; sudo apt-get install -y kubectl; fi; \
-if ! command -v helm >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; fi; \
-if ! command -v kind >/dev/null 2>&1; then curl -Lo kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64; chmod +x kind; sudo mv kind /usr/local/bin/; fi; \
-if ! docker info >/dev/null 2>&1; then echo "[!] Docker daemon が起動していません。'sudo systemctl start docker' などで起動してください。"; exit 1; fi; \
+# 完全版マルチノード分散パフォーマンステスト（構文修正版）
+set -euo pipefail && \
+if ! command -v docker >/dev/null 2>&1; then curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker "$USER"; fi && \
+if ! command -v kubectl >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y ca-certificates curl gnupg && sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null && sudo apt-get update -y && sudo apt-get install -y kubectl; fi && \
+if ! command -v helm >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; fi && \
+if ! command -v kind >/dev/null 2>&1; then curl -Lo kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64 && chmod +x kind && sudo mv kind /usr/local/bin/; fi && \
+if ! docker info >/dev/null 2>&1; then echo "[!] Docker daemon が起動していません。'sudo systemctl start docker' などで起動してください。" && exit 1; fi && \
 cat > /tmp/kind-nyx.yaml <<'EOF'
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -103,21 +104,102 @@ nodes:
   - role: worker
   - role: worker
 EOF
-; \
-(kind get clusters | grep -q '^nyx$' || kind create cluster --name nyx --config /tmp/kind-nyx.yaml); \
-docker build -f Dockerfile.legacy -t nyx-daemon:local .; \
-kind load docker-image nyx-daemon:local --name nyx; \
-kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -; \
-helm upgrade --install nyx ./charts/nyx -n nyx -f ./charts/nyx/values-kind.yaml; \
-kubectl rollout status -n nyx deploy/nyx --timeout=300s; \
-kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s; \
+&& \
+(kind get clusters | grep -q '^nyx$' || kind create cluster --name nyx --config /tmp/kind-nyx.yaml) && \
+docker build -f Dockerfile.legacy -t nyx-daemon:local . && \
+kind load docker-image nyx-daemon:local --name nyx && \
+kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f - && \
+helm upgrade --install nyx ./charts/nyx -n nyx \
+  --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
+  --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
+  --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
+  --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false && \
+kubectl rollout status -n nyx deploy/nyx --timeout=300s && \
+kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s && \
+echo "=== MULTI-NODE PERFORMANCE BENCHMARK RESULTS ===" && \
+kubectl logs -n nyx job/nyx-bench && \
+echo "=== CLUSTER STATUS ===" && \
+kubectl get pods,svc,pdb -n nyx -o wide && \
+echo "=== NODE DISTRIBUTION ===" && \
+kubectl get pods -n nyx -o wide | awk 'NR>1{print $7}' | sort | uniq -c
+```
+
+## 1-ter) 分割実行版（bashエラー回避）
+
+上記ワンライナーで構文エラーが出る場合は、以下のように分割実行してください：
+
+```bash
+# Phase 1: ツール準備
+set -euo pipefail
+if ! command -v docker >/dev/null 2>&1; then 
+  curl -fsSL https://get.docker.com | sh
+  sudo usermod -aG docker "$USER"
+  echo "Docker インストール完了。再ログインしてから続行してください。"
+  exit 0
+fi
+
+# Phase 2: Kubernetes ツール準備  
+if ! command -v kubectl >/dev/null 2>&1; then
+  sudo apt-get update -y
+  sudo apt-get install -y ca-certificates curl gnupg
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
+  sudo apt-get update -y
+  sudo apt-get install -y kubectl
+fi
+
+if ! command -v helm >/dev/null 2>&1; then
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+fi
+
+if ! command -v kind >/dev/null 2>&1; then
+  curl -Lo kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+  chmod +x kind
+  sudo mv kind /usr/local/bin/
+fi
+
+# Phase 3: クラスター構築・デプロイ・テスト
+cat > /tmp/kind-nyx.yaml <<'EOF'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+  - role: worker
+EOF
+
+kind get clusters | grep -q '^nyx$' || kind create cluster --name nyx --config /tmp/kind-nyx.yaml
+docker build -f Dockerfile.legacy -t nyx-daemon:local .
+kind load docker-image nyx-daemon:local --name nyx
+kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -
+
+helm upgrade --install nyx ./charts/nyx -n nyx \
+  --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
+  --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
+  --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
+  --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
+
+kubectl rollout status -n nyx deploy/nyx --timeout=300s
+kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s
+
+echo "=== MULTI-NODE PERFORMANCE BENCHMARK RESULTS ==="
 kubectl logs -n nyx job/nyx-bench
+echo "=== CLUSTER STATUS ==="
+kubectl get pods,svc,pdb -n nyx -o wide
+echo "=== NODE DISTRIBUTION ==="
+kubectl get pods -n nyx -o wide | awk 'NR>1{print $7}' | sort | uniq -c
 ```
 
 メモ:
 - 初回に docker グループ追加を行った場合は、再ログイン（または `newgrp docker`）後に再実行してください。
 - 既に `nyx` という kind クラスタがある場合は再利用されます。
-- `charts/nyx/values-kind.yaml` は probes を無効化しつつ 3 レプリカとベンチ Job を有効化します。
+- 6個の daemon ポッド + 3個の並列 bench ポッドでマルチノード分散パフォーマンステストを実行します。
+
+---
 
 ---
 
