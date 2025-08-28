@@ -4,7 +4,6 @@ image:
   repository: ghcr.io/seleniaproject/nyx-daemon
   tag: latest
   pullPolicy: IfNotPresent
-  pullSecrets: []
 
 service:
   type: ClusterIP
@@ -14,6 +13,87 @@ service:
   loadBalancerSourceRanges: []
   externalTrafficPolicy: Cluster
   sessionAffinity: None
+
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  scheme: http
+  annotations: {}
+  labels: {}
+
+podSecurity:
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 20
+  readiness:
+    enabled: true
+    type: tcp
+    httpPath: /metrics
+    httpPort: 9090
+    initialDelaySeconds: 20
+    periodSeconds: 10
+  startup:
+    enabled: false
+    failureThreshold: 30
+    periodSeconds: 2
+
+podAnnotations: {}
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+terminationGracePeriodSeconds: 30
+
+imagePullSecrets: []
+
+config:
+  enabled: true
+  mountPath: /etc/nyx
+  fileName: config.toml
+  data: |
+    listen_port = 43300
+    log_level = "info"
+
+secrets:
+  create: false
+  name: ""
+  apiTokenKey: NYX_CONTROL_TOKEN
+  apiTokenValue: ""
+
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+
+extraEnv: []
+extraEnvFrom: []
 
 ingress:
   enabled: false
@@ -25,155 +105,61 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
-  # - secretName: nyx-tls
-  #   hosts:
-  #     - nyx.example.com
 
-# Prometheus exporter / readiness probe port
-exporter:
-  port: 9090
-
-# ServiceMonitor (Prometheus Operator) configuration
-serviceMonitor:
+networkPolicy:
   enabled: false
-  interval: 15s
-  replicaCount: 1
+  allowEgressDNS: true
+  allowIngressFromNamespaces: []
+  additionalIngressRules: []
+  additionalEgressRules: []
 
-  image:
-    repository: ghcr.io/seleniaproject/nyx-daemon
-    tag: latest
-    pullPolicy: IfNotPresent
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  enableCustomPodsMetric: false
+  targetBytesPerSecond: "10k"
 
-  service:
-    type: ClusterIP
-    port: 43300
-    metricsPort: 9090
-    annotations: {}
-    loadBalancerSourceRanges: []
-    externalTrafficPolicy: Cluster
-    sessionAffinity: None
+pdb:
+  enabled: false
+  minAvailable: 1
 
-  serviceMonitor:
-    enabled: false
+stateful:
+  enabled: false
 
-  podSecurity:
-    seccompProfile:
-      type: RuntimeDefault
-
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 65532
-    runAsGroup: 65532
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  probes:
-    liveness:
-      enabled: true
-      initialDelaySeconds: 30
-      periodSeconds: 20
-    readiness:
-      enabled: true
-      type: tcp
-      httpPath: /metrics
-      httpPort: 9090
-      initialDelaySeconds: 20
-      periodSeconds: 10
-    startup:
-      enabled: false
-      failureThreshold: 30
-      periodSeconds: 2
-
-    podAnnotations: {}
-    podLabels: {}
-
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-  topologySpreadConstraints: []
-  priorityClassName: ""
-  terminationGracePeriodSeconds: 30
-
-  imagePullSecrets: []
-
-  config:
-    enabled: true
-    mountPath: /etc/nyx
-    fileName: config.toml
-    data: |
-      listen_port = 43300
-      log_level = "info"
-
-  secrets:
-    create: true
-    name: ""
-    apiTokenKey: NYX_CONTROL_TOKEN
-    apiTokenValue: ""
-    extraEnv: []
-
-  extraEnv: []
-  extraEnvFrom: []
-  extraVolumes: []
-  extraVolumeMounts: []
-  extraInitContainers: []
-  extraContainers: []
-
-  networkPolicy:
-    enabled: false
-    allowEgressDNS: true
-    additionalIngressRules: []
-    additionalEgressRules: []
-
-  cloud:
-    provider: ""
-    annotations: {}
-
-  stateful:
-    enabled: false
-
-  bench:
-    enabled: false
-    image: alpine:3.19
-    imagePullPolicy: IfNotPresent
-    command: ["/bin/sh","-lc"]
-    args:
-      - |
-        set -euo pipefail
-        echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}"
-        echo "Headless: ${TARGET_HEADLESS}"
-        echo "== DNS (service) =="
-        (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
-          || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") || true
-        echo "== DNS (headless) =="
-        PODS=$(
-          (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}" | awk '{print $1}') \
-          || (command -v nslookup >/dev/null 2>&1 && nslookup -type=A "${TARGET_HEADLESS}" 2>/dev/null | awk '/Address: /{print $2}') \
-          || true
-        )
-        echo "Resolved headless IPs: ${PODS:-none}"
-        echo "== TCP probe (service) =="
-        (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true
-        echo "== Metrics scrape (service) =="
-        if command -v wget >/dev/null 2>&1; then
-          wget -qO- "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" | head -n 5 || true
-        elif command -v curl >/dev/null 2>&1; then
-          curl -fsSL "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" | head -n 5 || true
-        fi
-        echo "== Fan-out TCP to headless pods =="
-        for ip in ${PODS}; do
-          (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "$ip" "${TARGET_PORT}") || true
-        done
-        echo "OK"
-    env: []
-    resources: {}
+bench:
+  enabled: false
+  image: alpine:3.19
+  imagePullPolicy: IfNotPresent
+  command: ["/bin/sh","-lc"]
+  args:
+    - |
+      set -euo pipefail
+      echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}"
+      echo "Headless: ${TARGET_HEADLESS}"
+      echo "== DNS (service) =="
+      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
+        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") || true
+      echo "== DNS (headless) =="
+      PODS=$(
+        (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}" | awk '{print $1}') \
+        || (command -v nslookup >/dev/null 2>&1 && nslookup -type=A "${TARGET_HEADLESS}" 2>/dev/null | awk '/Address: /{print $2}') \
+        || true
+      )
+      echo "Resolved headless IPs: ${PODS:-none}"
+      echo "== TCP probe (service) =="
+      (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true
+      echo "== Metrics scrape (service) =="
+      if command -v wget >/dev/null 2>&1; then
+        wget -qO- "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" | head -n 5 || true
+      elif command -v curl >/dev/null 2>&1; then
+        curl -fsSL "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" | head -n 5 || true
+      fi
+      echo "== Fan-out TCP to headless pods =="
+      for ip in ${PODS}; do
+        (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "$ip" "${TARGET_PORT}") || true
+      done
+      echo "OK"
+  env: []
+  resources: {}
