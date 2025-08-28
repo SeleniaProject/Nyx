@@ -50,11 +50,11 @@ spec:
 {{ toYaml (.Values.resources | default (dict)) | indent 12 }}
           volumeMounts:
             - name: config
-        mountPath: {{ $mount }}
+              mountPath: {{ $mount }}
               readOnly: true
           env:
             - name: NYX_CONFIG
-        value: "{{ $mount }}/{{ $file }}"
+              value: "{{ $mount }}/{{ $file }}"
           envFrom:
 {{- $sec := (default (dict) .Values.secrets) -}}
 {{- if $sec.create }}
