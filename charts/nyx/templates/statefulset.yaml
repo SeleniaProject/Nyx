@@ -1,4 +1,4 @@
-{{- if .Values.stateful.enabled }}
+{{- if (dig "stateful" "enabled" false .Values) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -17,9 +17,16 @@ spec:
 {{ include "nyx.selectorLabels" . | indent 8 }}
     spec:
       securityContext:
+{{- if .Values.podSecurity.seccompProfile.type }}
         seccompProfile:
-          type: Localhost
-          localhostProfile: {{ .Values.podSecurity.seccompProfile | quote }}
+          type: {{ .Values.podSecurity.seccompProfile.type }}
+{{- if eq .Values.podSecurity.seccompProfile.type "Localhost" }}
+          localhostProfile: {{ .Values.podSecurity.seccompProfile.localhostProfile | quote }}
+{{- end }}
+{{- else }}
+        seccompProfile:
+          type: RuntimeDefault
+{{- end }}
       containers:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
