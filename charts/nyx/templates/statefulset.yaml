@@ -1,4 +1,5 @@
-{{- if (default false .Values.stateful.enabled) }}
+{{- $st := index .Values "stateful" -}}
+{{- if and $st (index $st "enabled") }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
