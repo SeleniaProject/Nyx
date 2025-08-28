@@ -1,24 +1,12 @@
-# Android (NDK + JNI thin stubs)
+# Android Integration (Deprecated)
 
-Steps:
-1) Link libnyx_mobile_ffi.so via CMake/ndk-build.
-2) Create a tiny JNI class in your app:
+**Note**: This directory contains legacy integration examples. 
 
-```java
-public final class NyxNative {
-  static { System.loadLibrary("nyx_mobile_ffi"); }
-  private NyxNative() {}
-  public static native int nyx_mobile_init();
-  public static native int nyx_mobile_shutdown();
-  public static native int nyx_power_set_state(int state);
-  public static native int nyx_push_wake();
-  public static native int nyx_resume_low_power_session();
-}
-```
+**NEW**: Please see the comprehensive integration guide at `../android_integration.md` for:
 
-3) In your C/C++ JNI implementation, forward to the C ABI declared in include/nyx_mobile_ffi.h.
-4) From your Application/Activity lifecycle, call these functions accordingly.
+- Complete C ABI setup with CMake
+- Native JNI implementation examples  
+- Power policy integration with screen off ratio tracking
+- Full MainActivity example with lifecycle handling
 
-Notes:
-- Avoid long-running work in background. Respect Doze/App Standby.
-- Use WorkManager/Foreground Service for controlled resumes, coupled with nyx_push_wake/nyx_resume_low_power_session.
+The new guide uses the stable C ABI (`nyx_mobile_ffi.h`) instead of deprecated Java-level JNI stubs.

@@ -11,3 +11,8 @@ comprehensive_verification_report.json
 tla_verification_report.json
 tla_coverage_report.json
 tla_report.html
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

@@ -31,12 +31,17 @@ num_cpus = "1.16"
 socket2 = "0.5"
 # Needed for push module and concurrent maps
 dashmap = "5.5"
+# Removed libc dependency for pure Rust implementation
+# All system calls now use pure Rust alternatives
 
 # Optional telemetry integration
 nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 
 # Optional crypto integration
 nyx-crypto = { path = "../nyx-crypto", optional = true }
+
+# Optional FEC integration for zero-copy helpers
+nyx-fec = { path = "../nyx-fec", optional = true }
 
 # Optional FEC integration (removed due to circular dependency)
 # nyx-fec integration is handled through traits and feature gates
@@ -54,6 +59,8 @@ cbor4ii = { version = "0.3", optional = true, features = ["serde1"] }
 
 [features]
 default = []
+# Enable OS-level sandbox enforcement (platform-dependent). Off by default.
+os_sandbox = []
 # Enable automatic error metric recording.
 telemetry = ["nyx-telemetry"]
 # Enable mobile platform integration
@@ -70,26 +77,39 @@ multipath_dp = []
 cmix = ["num-bigint", "num-traits"]
 # Enable zero-copy integration with crypto components (fec handled separately)
 zero_copy = ["nyx-crypto"]
+# Enable FEC helpers (e.g., 1280B shard views)
+fec = ["dep:nyx-fec"]
 # Alias feature to enable optional dependency `nyx-crypto`
 nyx-crypto = ["dep:nyx-crypto"]
+
+# Additional features for compliance system
+multipath = []
+hybrid = []
+vdf = []
+plugin = ["plugin_framework"]
+quic = []
+nat_traversal = []
+otlp = ["telemetry"]
 
 [dependencies.nyx-mobile-ffi]
 path = "../nyx-mobile-ffi"
 optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-anyhow = "1"
-# Use pure-Rust seccomp-bpf compiler/runtime instead of libseccomp bindings
-seccompiler = "0.4"
-seccomp = "0.1"
+# Pure Rust implementation without C dependencies
+# Removed nix dependency - all functionality now uses pure Rust alternatives
 
 [target.'cfg(target_os = "openbsd")'.dependencies]
-pledge = "0.4"
-unveil = "0.3"
+# Removed pledge and unveil dependencies for pure Rust implementation
+# All sandbox functionality now uses environment variable-based restrictions
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.56", features = ["Win32_Foundation","Win32_System_Threading","Win32_System_JobObjects", "Win32_Security"] }
-win32job = "2.0"
+# Removed windows and win32job dependencies for pure Rust implementation
+# All sandbox functionality now uses environment variable-based restrictions
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Pure Rust implementation without C dependencies
+# Removed nix dependency - all functionality now uses pure Rust alternatives
 
 [dev-dependencies]
 hex-literal = "0.4"
@@ -99,9 +119,16 @@ criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 futures = "0.3"
 nyx-crypto = { path = "../nyx-crypto" }
 nyx-fec = { path = "../nyx-fec" }
+nyx-transport = { path = "../nyx-transport" }
+nyx-stream = { path = "../nyx-stream" }
+bytes = "1.5"
 
 [[bench]]
-name = "zero_copy_benchmarks"
+name = "security_scalability_benchmark"
+harness = false
+
+[[bench]]
+name = "push_gateway_enhanced"
 harness = false
 
 [build-dependencies]

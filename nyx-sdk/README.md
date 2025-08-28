@@ -39,7 +39,7 @@ async fn main() -> nyx_sdk::Result<()> {
 ## Features
 - `reconnect`: enable backoff policy utilities.
 - `metrics`: integrates with `nyx-core/telemetry`.
-- `grpc-backup`: feature placeholder; gRPC is disabled by default.
+- `grpc-backup`: Legacy compatibility feature flag. gRPC functionality is intentionally disabled to avoid C dependencies (ring/openssl). Nyx uses pure Rust JSON-RPC over Unix Domain Sockets or Named Pipes for daemon communication.
 
 ## License
 MIT OR Apache-2.0

@@ -1,29 +1,29 @@
 #![forbid(unsafe_code)]
-// Centralized JSON utilities with optional SIMD acceleration (feature = "simd").
-// Some helpers may remain unused in certain feature sets; suppress dead_code noise.
+// Centralized JSON utilitie_s with optional SIMD acceleration (feature = "simd").
+// Some helper_s may remain unused in certain feature set_s; suppres_s dead_code noise.
 #![allow(dead_code)]
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 #[inline]
-pub fn decode_from_str<T: DeserializeOwned>(s: &str) -> Result<T, String> {
-    // NOTE: simd-json's from_str is unsafe in 0.13.x. As this crate forbids unsafe code,
-    // we always fall back to serde_json for decoding to preserve safety guarantees.
-    serde_json::from_str::<T>(s).map_err(|e| e.to_string())
+pub fn decode_from_str<T: DeserializeOwned>(_s: &str) -> Result<T, String> {
+    // NOTE: simd-json'_s from_str i_s unsafe in 0.13.x. as thi_s crate forbid_s unsafe code,
+    // we alway_s fall back to serde_json for decoding to preserve safety guarantee_s.
+    serde_json::from_str::<T>(_s).map_err(|e| e.to_string())
 }
 
 #[inline]
-pub fn decode_from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+pub fn decode_from_slice<T: DeserializeOwned>(byte_s: &[u8]) -> Result<T, String> {
     // See note above: keep decoding on serde_json to avoid unsafe.
-    serde_json::from_slice::<T>(bytes).map_err(|e| e.to_string())
+    serde_json::from_slice::<T>(byte_s).map_err(|e| e.to_string())
 }
 
 #[inline]
 pub fn encode_to_vec<T: Serialize>(v: &T) -> Result<Vec<u8>, String> {
     #[cfg(feature = "simd")]
     {
-        let s = simd_json::to_string(v).map_err(|e| e.to_string())?;
-        Ok(s.into_bytes())
+        let _s = simd_json::to_string(v).map_err(|e| e.to_string())?;
+        Ok(_s.into_bytes())
     }
     #[cfg(not(feature = "simd"))]
     {
@@ -39,30 +39,35 @@ pub fn encode_line<T: Serialize>(v: &T) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
     use super::*;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
     struct Simple {
-        a: u32,
-        s: String,
+        _a: u32,
+        _s: String,
     }
 
     #[test]
-    fn roundtrip_string_map() {
+    fn roundtrip_string_map() -> Result<(), Box<dyn std::error::Error>> {
         let value = serde_json::json!({"k": "v", "n": 123});
-        let bytes = encode_to_vec(&value).expect("encode");
-        let decoded: serde_json::Value = decode_from_slice(&bytes).expect("decode");
+        let byte_s = encode_to_vec(&value)?;
+        let decoded: serde_json::Value = decode_from_slice(&byte_s)?;
         assert_eq!(decoded, value);
+        Ok(())
     }
 
     #[test]
-    fn roundtrip_struct() {
-        let v = Simple { a: 7, s: "ok".into() };
-        let line = encode_line(&v).expect("encode_line");
+    fn roundtrip_struct() -> Result<(), Box<dyn std::error::Error>> {
+        let v = Simple {
+            _a: 7,
+            _s: "ok".into(),
+        };
+        let line = encode_line(&v)?;
         assert!(line.ends_with(b"\n"));
-        let decoded: Simple = decode_from_slice(&line[..line.len()-1]).expect("decode");
+        let decoded: Simple = decode_from_slice(&line[..line.len() - 1])?;
         assert_eq!(decoded, v);
+        Ok(())
     }
 }

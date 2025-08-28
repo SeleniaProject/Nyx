@@ -26,6 +26,7 @@ bitflags = "2.4"
 schemars = { version = "0.8", features=["derive"] }
 jsonschema = "0.17"
 tracing = "0.1"
+thiserror = "1.0"
 num-bigint = { version = "0.4", features=["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
@@ -34,3 +35,6 @@ lazy_static = "1"
 tokio-stream = { version = "0.1", features=["sync"] }
 nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 metrics = { version = "0.22", optional = true }
+
+[dev-dependencies]
+proptest = "1.4"

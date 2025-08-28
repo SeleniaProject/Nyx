@@ -7,20 +7,21 @@ description = "Nyx cryptography engine implementing Noise_Nyx handshake and HKDF
 license = "MIT OR Apache-2.0"
 
 [features]
-default = ["classic"]
+default = ["classic", "hybrid-handshake"]
 # Optional/experimental feature flag used for cfg guards in code paths (no deps)
 bike = []
 hpke = ["dep:hpke"]
-# Telemetry (no extra deps here; used only for conditional instrumentation counters)
-telemetry = []
+# Telemetry (with optional nyx-telemetry integration)
+telemetry = ["dep:nyx-telemetry"]
 # Classic (Elliptic Curve) X25519 only build
 classic = ["x25519-dalek"]
 
-# Kyber post-quantum build (pure Rust implementation)
-kyber = ["pqc_kyber"]
+# ML-KEM post-quantum build (NIST standardized) - replaces pqc_kyber for security
+kyber = ["ml-kem"]
+ml-kem = ["dep:ml-kem"]
 
-# ML-KEM post-quantum build (NIST standardized) - REMOVED due to C dependencies
-# ml-kem = ["dep:ml-kem"]
+# Hybrid handshake with ML-KEM (Kyber-768) + X25519 (for Protocol v1.0)
+hybrid-handshake = ["dep:ml-kem", "classic"]
 
 # Convenience flag: build with hybrid classic/PQ algorithms
 hybrid = ["classic", "kyber"]
@@ -40,7 +41,9 @@ runtime = ["tokio"]
 x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets"], optional = true }
 
 # Pure Rust post-quantum implementations
-pqc_kyber = { version = "0.7", optional = true }
+ml-kem = { version = "0.2", optional = true }
+# pqcrypto-kyber = { version = "0.7", optional = true }  # Kyber-768 for hybrid handshake - replaced with ml-kem
+# pqc_kyber = { version = "0.7", optional = true } # REMOVED due to KyberSlash vulnerability
 # ml-kem = { version = "0.2", optional = true } # REMOVED due to C dependencies
 
 # Symmetric primitives
@@ -51,6 +54,8 @@ hkdf = "0.12"
 rand_core = { version = "0.9", features = ["std"] }
 rand_core_06 = { package = "rand_core", version = "0.6", features=["std","getrandom"] }
 rand = { version = "0.8", default-features = false, features=["std", "std_rng"] }
+# ChaCha20 RNG for deterministic key generation in ML-KEM
+rand_chacha = "0.3"
 
 # HPKE RFC9180 implementation (optional)
 hpke = { version = "0.11", optional = true }
@@ -68,10 +73,13 @@ hmac = "0.12"
 getrandom = "0.2"
 tracing = "0.1"
 
+# Telemetry and metrics dependencies (optional)
+nyx-telemetry = { path = "../nyx-telemetry", optional = true }
+
 # System dependencies
 
 # metadata serialization for future extensions
-serde = { version = "1", features=["derive"], optional = true }
+serde = { version = "1", features=["derive"] }
 serde_json = { version = "1", optional = true }
 
 # Async runtime for key rotation scheduling

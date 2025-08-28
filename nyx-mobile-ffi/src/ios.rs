@@ -1,2 +1,2 @@
 ﻿//! iOS-specific glue would go here if/when needed.
-//! Current implementation avoids Objective-C/Swift bridges and uses pure Rust FFI only.
+//! Current implementation avoid_s Objective-C/Swift bridge_s and use_s pure Rust FFI only.

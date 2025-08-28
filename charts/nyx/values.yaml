@@ -149,3 +149,50 @@ cloud:
   provider: ""
   # provider: aws|gcp|azure (used only to help with example annotations)
   annotations: {}
+
+# Use StatefulSet instead of Deployment for stable Pod identities (optional)
+stateful:
+  enabled: false
+
+# Example of spreading pods across nodes and zones (uncomment to enable)
+# topologySpreadConstraints:
+#   - maxSkew: 1
+#     topologyKey: kubernetes.io/hostname
+#     whenUnsatisfiable: ScheduleAnyway
+#     labelSelector:
+#       matchLabels:
+#         app.kubernetes.io/name: nyx
+#   - maxSkew: 1
+#     topologyKey: topology.kubernetes.io/zone
+#     whenUnsatisfiable: ScheduleAnyway
+#     labelSelector:
+#       matchLabels:
+#         app.kubernetes.io/name: nyx
+
+# Benchmark job configuration (disabled by default)
+bench:
+  enabled: false
+  # Default to a tiny image with /bin/sh for simple connectivity checks.
+  image: alpine:3.19
+  imagePullPolicy: IfNotPresent
+  # Example: run a simple connectivity/throughput probe using nyx-cli or a custom tool.
+  command: ["/bin/sh","-lc"]
+  args:
+    - |
+      echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}";
+      echo "DNS check (service)";
+      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
+        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") \
+        || true;
+      echo "DNS check (headless)";
+      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}") \
+        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_HEADLESS}") \
+        || true;
+      echo "TCP connectivity probe (may fail if service doesn't accept plain TCP):";
+      (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true;
+      echo "Starting benchmark stub...";
+      # TODO: replace with real nyx-cli traffic generator once available
+      sleep 2;
+      echo "OK";
+  env: []
+  resources: {}

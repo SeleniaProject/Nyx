@@ -1,0 +1,47 @@
+{{- if .Values.stateful.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "nyx.fullname" . }}
+  labels:
+{{ include "nyx.labels" . | indent 4 }}
+spec:
+  serviceName: {{ include "nyx.fullname" . }}-headless
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+{{ include "nyx.selectorLabels" . | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ include "nyx.selectorLabels" . | indent 8 }}
+    spec:
+      securityContext:
+        seccompProfile:
+          type: Localhost
+          localhostProfile: {{ .Values.podSecurity.seccompProfile | quote }}
+      containers:
+        - name: nyxd
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+{{ toYaml .Values.securityContext | indent 12 }}
+          ports:
+            - containerPort: 43300
+            - containerPort: {{ .Values.service.metricsPort }}
+          volumeMounts:
+            - name: config
+              mountPath: {{ .Values.config.mountPath }}
+              readOnly: true
+          env:
+            - name: NYX_CONFIG
+              value: "{{ .Values.config.mountPath }}/{{ .Values.config.fileName }}"
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nyx.fullname" . }}
+            items:
+              - key: {{ .Values.config.fileName }}
+                path: {{ .Values.config.fileName }}
+{{- end }}

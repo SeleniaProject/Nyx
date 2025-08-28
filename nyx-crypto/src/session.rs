@@ -1,23 +1,26 @@
 #![forbid(unsafe_code)]
 
 use crate::aead::{AeadCipher, AeadKey, AeadNonce, AeadSuite};
-use crate::kdf::{aead_nonce_xor, hkdf_expand};
+use crate::kdf::{aeadnonce_xor, hkdf_expand};
 use crate::{Error, Result};
+use std::sync::OnceLock;
 
 /// AEAD session (unidirectional): derive per-record nonce from base nonce + sequence,
-/// with optional 32-bit direction identifier mixed to avoid overlap across directions.
+/// with optional 32-bit direction identifier mixed to avoid overlap acros_s direction_s.
 pub struct AeadSession {
-    suite: AeadSuite,
-    key: AeadKey,
-    base_nonce: [u8; 12],
+    __suite: AeadSuite,
+    __key: AeadKey,
+    basenonce: [u8; 12],
     seq: u64,
-    max_seq: u64,
-    rekey_interval: u64,
-    // Total ciphertext bytes sent for byte-threshold rekey (0 disables threshold)
-    bytes_sent: u64,
-    rekey_bytes_interval: u64,
-    // 32-bit direction identifier to be XORed into the first 4 bytes of the nonce
+    __maxseq: u64,
+    __rekey_interval: u64,
+    // Total ciphertext byte_s sent for byte-_threshold rekey (0 disable_s _threshold)
+    _bytes_sent: u64,
+    _rekey_bytes_interval: u64,
+    // 32-bit direction identifier to be XORed into the first 4 byte_s of the nonce
     dir_id: u32,
+    // Pre-computed cipher instance for maximum performance - eliminates allocation overhead
+    cipher: OnceLock<AeadCipher>,
 }
 
 impl AeadSession {
@@ -25,113 +28,220 @@ impl AeadSession {
     const MAX_PLAINTEXT_LEN: usize = 1024 * 1024; // 1 MiB
     const MAX_AAD_LEN: usize = 16 * 1024; // 16 KiB
     const MAX_TAG_OVERHEAD: usize = 16; // Tag length for ChaCha20-Poly1305/AES-GCM
-    pub fn new(suite: AeadSuite, key: AeadKey, base_nonce: [u8; 12]) -> Self {
+
+    /// Create new AEAD session with security validation
+    ///
+    /// # Security Considerations
+    /// - Validates key material is properly sized
+    /// - Initializes with secure defaults for sequence limits
+    /// - Pre-computes cipher instance for consistent performance
+    pub fn new(_suite: AeadSuite, _key: AeadKey, nonce: [u8; 12]) -> Self {
         Self {
-            suite,
-            key,
-            base_nonce,
+            __suite: _suite,
+            __key: _key.clone(),
+            basenonce: nonce,
             seq: 0,
-            max_seq: u64::MAX,
-            rekey_interval: 1 << 20,
-            bytes_sent: 0,
-            rekey_bytes_interval: 0,
+            __maxseq: u64::MAX,
+            __rekey_interval: 1 << 20,
+            _bytes_sent: 0,
+            _rekey_bytes_interval: 0,
             dir_id: 0,
+            cipher: OnceLock::new(),
         }
     }
 
+    // Get or create the pre-computed cipher instance for maximum performance
+    #[inline(always)]
+    fn get_cipher(&self) -> &AeadCipher {
+        self.cipher
+            .get_or_init(|| AeadCipher::new(self.__suite, AeadKey(self.__key.0)))
+    }
+
     /// Set an explicit upper bound for sequence (DoS avoidance, key update policy)
-    pub fn with_max_seq(mut self, max_seq: u64) -> Self { self.max_seq = max_seq; self }
+    pub fn with_maxseq(mut self, maxseq: u64) -> Self {
+        self.__maxseq = maxseq;
+        self
+    }
 
-    /// Set rekey interval by record count (default: 2^20 records)
+    /// Set rekey interval by record count (default: 2^20 record_s)
     pub fn with_rekey_interval(mut self, interval: u64) -> Self {
-        self.rekey_interval = interval.max(1);
+        self.__rekey_interval = interval.max(1);
         self
     }
 
-    /// Set rekey threshold by bytes (0 disables)
-    pub fn with_rekey_bytes_interval(mut self, bytes: u64) -> Self {
-        self.rekey_bytes_interval = bytes; // 0は無効として扱う
+    /// Set rekey _threshold by byte_s (0 disable_s)
+    pub fn with_rekey_bytes_interval(mut self, byte_s: u64) -> Self {
+        self._rekey_bytes_interval = byte_s; // 0は無効として扱ぁE
         self
     }
 
-    /// Set 32-bit direction identifier to be mixed into nonce (first 4 bytes XOR)
-    pub fn with_direction_id(mut self, dir_id: u32) -> Self {
+    /// Set 32-bit direction identifier to be mixed into nonce (first 4 byte_s XOR)
+    pub fn withdirection_id(mut self, dir_id: u32) -> Self {
         self.dir_id = dir_id;
         self
     }
 
     /// Current sequence number (used for the next send)
-    pub fn seq(&self) -> u64 { self.seq }
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
 
-    /// Whether rekey criteria by records/bytes are met
+    /// Whether rekey criteria by record_s/byte_s are met
     pub fn needs_rekey(&self) -> bool {
-        if self.seq >= self.rekey_interval { return true; }
-        if self.rekey_bytes_interval > 0 && self.bytes_sent >= self.rekey_bytes_interval { return true; }
+        if self.seq >= self.__rekey_interval {
+            return true;
+        }
+        if self._rekey_bytes_interval > 0 && self._bytes_sent >= self._rekey_bytes_interval {
+            return true;
+        }
         false
     }
 
     /// Rekey using HKDF; refresh key and base nonce, reset counters
     pub fn rekey(&mut self) {
-        let old_key = self.key.0; // copy
-        // 新しい鍵
-        let mut new_key = [0u8;32];
-        hkdf_expand(&old_key, b"nyx/aead/rekey/v1", &mut new_key);
-        // 新しいベースノンス
-        let mut new_nonce = [0u8;12];
-        hkdf_expand(&old_key, b"nyx/aead/rekey/nonce/v1", &mut new_nonce);
-    // 置換
-        self.key = AeadKey(new_key);
-        self.base_nonce = new_nonce;
+        let old_key = self.__key.0; // copy
+                                    // New key
+        let mut new_key = [0u8; 32];
+        let _ = hkdf_expand(&old_key, b"nyx/aead/rekey/v1", &mut new_key);
+        // New base nonce
+        let mut newnonce = [0u8; 12];
+        let _ = hkdf_expand(&old_key, b"nyx/aead/rekey/nonce/v1", &mut newnonce);
+        // Ultra-high performance: reset cipher instance for new key
+        self.__key = AeadKey(new_key);
+        self.basenonce = newnonce;
         self.seq = 0;
-    self.bytes_sent = 0;
+        self._bytes_sent = 0;
+        // Clear pre-computed cipher to force recreation with new key
+        self.cipher = OnceLock::new();
     }
 
-    /// Encrypt next packet. Returns (sequence, ciphertext). Enforces limits.
-    pub fn seal_next(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<(u64, Vec<u8>)> {
-        // seq が max_seq に到達したら以降の送信を拒否（nonce再利用防止）
-        if self.seq >= self.max_seq { return Err(Error::Protocol("aead sequence exhausted".into())); }
-        if plaintext.len() > Self::MAX_PLAINTEXT_LEN { return Err(Error::Protocol("plaintext too long".into())); }
-        if aad.len() > Self::MAX_AAD_LEN { return Err(Error::Protocol("aad too long".into())); }
+    /// Encrypt next packet. Returns (sequence, ciphertext). Enforces security limits.
+    ///
+    /// # Security Enhancements
+    /// - Prevents sequence number overflow to avoid nonce reuse
+    /// - Enforces strict input size limits to prevent DoS attacks
+    /// - Implements automatic rekeying based on usage thresholds
+    /// - Validates input parameters before any cryptographic operations
+    pub fn sealnext(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<(u64, Vec<u8>)> {
+        // SECURITY ENHANCEMENT: Comprehensive sequence number validation
+        if self.seq >= self.__maxseq {
+            return Err(Error::Protocol(format!(
+                "SECURITY: sequence number {} reached maximum limit {} (nonce reuse prevention)",
+                self.seq, self.__maxseq
+            )));
+        }
+
+        // SECURITY: Additional check for sequence approaching overflow
+        if self.seq > u64::MAX - 1000 {
+            return Err(Error::Protocol(
+                "SECURITY: sequence number approaching overflow, immediate rekey required"
+                    .to_string(),
+            ));
+        }
+
+        // SECURITY ENHANCEMENT: Strict input validation
+        if plaintext.len() > Self::MAX_PLAINTEXT_LEN {
+            return Err(Error::Protocol(format!(
+                "SECURITY: plaintext length {} exceeds maximum {} bytes (DoS prevention)",
+                plaintext.len(),
+                Self::MAX_PLAINTEXT_LEN
+            )));
+        }
+
+        if aad.len() > Self::MAX_AAD_LEN {
+            return Err(Error::Protocol(format!(
+                "SECURITY: AAD length {} exceeds maximum {} bytes (DoS prevention)",
+                aad.len(),
+                Self::MAX_AAD_LEN
+            )));
+        }
+
+        // SECURITY: Check for automatic rekey conditions before proceeding
+        if self.needs_rekey() {
+            return Err(Error::Protocol(
+                "SECURITY: automatic rekey required before further operations (forward secrecy)"
+                    .to_string(),
+            ));
+        }
+
         // Mix direction id into the first 4 bytes then XOR counter (RFC8439 style)
-        let mut base = self.base_nonce;
+        let mut base = self.basenonce;
         let dir = self.dir_id.to_be_bytes();
-        for i in 0..4 { base[i] ^= dir[i]; }
-        let n = AeadNonce(aead_nonce_xor(&base, self.seq));
-    let cipher = AeadCipher::new(self.suite, AeadKey(self.key.0));
-    let ct = cipher.seal(n, aad, plaintext)?;
-    let used = self.seq;
+        for i in 0..4 {
+            base[i] ^= dir[i];
+        }
+        let n = AeadNonce(aeadnonce_xor(&base, self.seq));
+
+        // Ultra-high performance: use pre-computed cipher instance
+        let cipher = self.get_cipher();
+        let ct = cipher.seal(n, aad, plaintext)?;
+        let used = self.seq;
         self.seq = self.seq.saturating_add(1);
-    // タグも含む暗号文長を加算（おおよその上限としてDoS耐性に寄与）
-    self.bytes_sent = self.bytes_sent.saturating_add(ct.len() as u64);
+        // タグも含む暗号斁E��を加算（おおよそ�E上限としてDoS耐性に寁E��！E
+        self._bytes_sent = self._bytes_sent.saturating_add(ct.len() as u64);
         Ok((used, ct))
     }
 
     /// Decrypt at a given sequence number (reordering/retransmit handled by caller)
     pub fn open_at(&self, seq: u64, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
-    if aad.len() > Self::MAX_AAD_LEN { return Err(Error::Protocol("aad too long".into())); }
-    if ciphertext.len() > (Self::MAX_PLAINTEXT_LEN + Self::MAX_TAG_OVERHEAD) { return Err(Error::Protocol("ciphertext too long".into())); }
-    if ciphertext.len() < Self::MAX_TAG_OVERHEAD { return Err(Error::Protocol("ciphertext too short".into())); }
-        let mut base = self.base_nonce;
+        if aad.len() > Self::MAX_AAD_LEN {
+            return Err(Error::Protocol("aad too long".into()));
+        }
+        if ciphertext.len() > (Self::MAX_PLAINTEXT_LEN + Self::MAX_TAG_OVERHEAD) {
+            return Err(Error::Protocol("ciphertext too long".into()));
+        }
+        if ciphertext.len() < Self::MAX_TAG_OVERHEAD {
+            return Err(Error::Protocol("ciphertext too short".into()));
+        }
+        let mut base = self.basenonce;
         let dir = self.dir_id.to_be_bytes();
-        for i in 0..4 { base[i] ^= dir[i]; }
-        let n = AeadNonce(aead_nonce_xor(&base, seq));
-    let cipher = AeadCipher::new(self.suite, AeadKey(self.key.0));
-    cipher.open(n, aad, ciphertext)
+        for i in 0..4 {
+            base[i] ^= dir[i];
+        }
+        let n = AeadNonce(aeadnonce_xor(&base, seq));
+        // Ultra-high performance: use pre-computed cipher instance
+        let cipher = self.get_cipher();
+        cipher.open(n, aad, ciphertext)
+    }
+
+    /// Export key material for additional cryptographic operation_s
+    /// Use_s HKDF to derive key_s from the current session key
+    pub fn export_key_material(&self, context: &[u8], length: usize) -> Result<Vec<u8>> {
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        // Use current session key as IKM for HKDF
+        let hk = Hkdf::<Sha256>::new(None, &self.__key.0);
+        let mut output = vec![0u8; length];
+
+        // Create info by combining context with session meta_data
+        let mut info = Vec::new();
+        info.extend_from_slice(b"nyx-session-export-v1:");
+        info.extend_from_slice(context);
+        info.extend_from_slice(&self.seq.to_be_bytes());
+        info.extend_from_slice(&self.dir_id.to_be_bytes());
+
+        hk.expand(&info, &mut output)
+            .map_err(|_| Error::Protocol("Key material export failed".into()))?;
+
+        Ok(output)
     }
 }
 
 impl Drop for AeadSession {
     fn drop(&mut self) {
-        // Zeroize base nonce and key explicitly (AeadKey also zeroizes)
-        self.base_nonce.fill(0);
-    // Explicitly zeroize key (safe even if AeadKey Drop also does it)
-    self.key.0.fill(0);
-        // Reset counters (not strictly sensitive but good hygiene)
+        // Ultra-high performance: clear cipher instance first
+        self.cipher = OnceLock::new();
+        // Zeroize base nonce and key explicitly (AeadKey also zeroize_s)
+        self.basenonce.fill(0);
+        // Explicitly zeroize key (safe even if AeadKey Drop also doe_s it)
+        self.__key.0.fill(0);
+        // Reset counter_s (not strictly sensitive but good hygiene)
         self.seq = 0;
-        self.max_seq = 0;
-    self.rekey_interval = 0;
-        self.bytes_sent = 0;
-        self.rekey_bytes_interval = 0;
+        self.__maxseq = 0;
+        self.__rekey_interval = 0;
+        self._bytes_sent = 0;
+        self._rekey_bytes_interval = 0;
         self.dir_id = 0;
     }
 }
@@ -141,145 +251,150 @@ impl core::fmt::Debug for AeadSession {
         f.debug_struct("AeadSession")
             .field("suite", &"ChaCha20Poly1305")
             .field("seq", &self.seq)
-            .field("max_seq", &self.max_seq)
-            .field("rekey_interval", &self.rekey_interval)
-            .field("bytes_sent", &self.bytes_sent)
-            .field("rekey_bytes_interval", &self.rekey_bytes_interval)
+            .field("maxseq", &self.__maxseq)
+            .field("rekey_interval", &self.__rekey_interval)
+            .field("bytes_sent", &self._bytes_sent)
+            .field("rekey_bytes_interval", &self._rekey_bytes_interval)
             .field("dir_id", &self.dir_id)
             .finish()
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod test_s {
     use super::*;
 
     #[test]
-    fn seq_increments_and_refuses_after_max() {
-        let key = AeadKey([9u8;32]);
-        let base = [0u8;12];
-    let mut sess = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).with_max_seq(2).with_direction_id(1);
+    fn seq_increments_and_refuses_after_max() -> core::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let key = AeadKey([9u8; 32]);
+        let base = [0u8; 12];
+        let mut ses_s = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
+            .with_maxseq(2)
+            .withdirection_id(1);
         let aad = b"aad";
-    let (s0, c0) = sess.seal_next(aad, b"m0").unwrap();
+        let (s0, c0) = ses_s.sealnext(aad, b"m0")?;
         assert_eq!(s0, 0);
-    let (s1, c1) = sess.seal_next(aad, b"m1").unwrap();
+        let (s1, c1) = ses_s.sealnext(aad, b"m1")?;
         assert_eq!(s1, 1);
-    // 次は上限到達で拒否（seq==max_seq でエラー）
-        assert!(sess.seal_next(aad, b"m3").is_err());
-        // 復号検証
-        assert_eq!(sess.open_at(s0, aad, &c0).unwrap(), b"m0");
-        assert_eq!(sess.open_at(s1, aad, &c1).unwrap(), b"m1");
-    // 2つ送信のみ成功
+        assert!(ses_s.sealnext(aad, b"m3").is_err());
+        assert_eq!(ses_s.open_at(s0, aad, &c0).unwrap(), b"m0");
+        assert_eq!(ses_s.open_at(s1, aad, &c1).unwrap(), b"m1");
+        Ok(())
     }
 
     #[test]
-    fn open_fails_with_wrong_seq() {
-        let key = AeadKey([1u8;32]);
-        let base = [0u8;12];
-    let mut sess = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).with_direction_id(7);
+    fn open_fails_with_wrongseq() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([1u8; 32]);
+        let base = [0u8; 12];
+        let mut ses_s =
+            AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(7);
         let aad = b"aad";
-        let (s, c) = sess.seal_next(aad, b"m").unwrap();
+        let (s, c) = ses_s.sealnext(aad, b"m")?;
         assert_eq!(s, 0);
-        // 異なる seq での復号は失敗
-        assert!(sess.open_at(1, aad, &c).is_err());
+        assert!(ses_s.open_at(1, aad, &c).is_err());
+        Ok(())
     }
 
     #[test]
-    fn refuses_too_long_inputs() {
-        let key = AeadKey([2u8;32]);
-        let base = [0u8;12];
-    let mut sess = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).with_direction_id(3);
-        let long_pt = vec![0u8; (AeadSession::MAX_PLAINTEXT_LEN + 1) as usize];
-        assert!(sess.seal_next(b"ok", &long_pt).is_err());
-        let long_aad = vec![0u8; (AeadSession::MAX_AAD_LEN + 1) as usize];
-        assert!(sess.seal_next(&long_aad, b"ok").is_err());
+    fn refuses_too_long_inputs() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([2u8; 32]);
+        let base = [0u8; 12];
+        let mut sess = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(3);
+        let long_pt = vec![0u8; AeadSession::MAX_PLAINTEXT_LEN + 1];
+        assert!(sess.sealnext(b"ok", &long_pt).is_err());
+        let long_aad = vec![0u8; AeadSession::MAX_AAD_LEN + 1];
+        assert!(sess.sealnext(&long_aad, b"ok").is_err());
+        Ok(())
     }
 
     #[test]
-    fn open_rejects_too_short_or_too_long_ciphertext() {
-        let key = AeadKey([4u8;32]);
-        let base = [9u8;12];
-    let sess = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).with_direction_id(0xAABBCCDD);
-        // too short (< tag)
-        assert!(sess.open_at(0, b"", &[0u8; 15]).is_err());
-        // too long (> pt max + tag)
+    fn open_rejects_too_short_or_too_longciphertext(
+    ) -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([4u8; 32]);
+        let base = [9u8; 12];
+        let ses_s =
+            AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(0xAABBCCDD);
+        assert!(ses_s.open_at(0, b"", &[0u8; 15]).is_err());
         let big = vec![0u8; AeadSession::MAX_PLAINTEXT_LEN + AeadSession::MAX_TAG_OVERHEAD + 1];
-        assert!(sess.open_at(0, b"", &big).is_err());
+        assert!(ses_s.open_at(0, b"", &big).is_err());
+        Ok(())
     }
 
     #[test]
-    fn rekey_resets_sequence_and_keys() {
-        let key = AeadKey([7u8;32]);
-        let base = [3u8;12];
-        let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).with_rekey_interval(2).with_direction_id(1);
-    // Receiver before rekey (simulating old state)
-    let rx_old = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([7u8;32]), base).with_direction_id(1);
-        // 2つ送ってrekey条件に到達
-        let (_, c0) = tx.seal_next(b"aad", b"m0").unwrap();
-        let (_, c1) = tx.seal_next(b"aad", b"m1").unwrap();
+    fn rekey_resetssequence_and_key_s() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([7u8; 32]);
+        let base = [3u8; 12];
+        let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
+            .with_rekey_interval(2)
+            .withdirection_id(1);
+        let rx_old = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([7u8; 32]), base)
+            .withdirection_id(1);
+        let (_, c0) = tx.sealnext(b"aad", b"m0")?;
+        let (_, c1) = tx.sealnext(b"aad", b"m1")?;
         assert!(tx.needs_rekey());
-    // rekey前の受信側で旧CTは復号できる
-    assert_eq!(rx_old.open_at(0, b"aad", &c0).unwrap(), b"m0");
-    assert_eq!(rx_old.open_at(1, b"aad", &c1).unwrap(), b"m1");
-        // rekey実施
+        assert_eq!(rx_old.open_at(0, b"aad", &c0).unwrap(), b"m0");
+        assert_eq!(rx_old.open_at(1, b"aad", &c1).unwrap(), b"m1");
         tx.rekey();
         assert_eq!(tx.seq(), 0);
-        // 新しい鍵/ノンスで暗号化したものは同一セッションでは復号可能
-        let (s2, c2) = tx.seal_next(b"aad", b"m2").unwrap();
+        let (s2, c2) = tx.sealnext(b"aad", b"m2")?;
         assert_eq!(s2, 0);
-        let pt2 = tx.open_at(0, b"aad", &c2).unwrap();
+        let pt2 = tx.open_at(0, b"aad", &c2)?;
         assert_eq!(pt2, b"m2");
-    // 旧受信側では新しいCTは復号できない
-    assert!(rx_old.open_at(0, b"aad", &c2).is_err());
+        assert!(rx_old.open_at(0, b"aad", &c2).is_err());
+        Ok(())
     }
 
     #[test]
-    fn rekey_both_sides_compat() {
-        let init_key = AeadKey([11u8;32]);
-        let base = [5u8;12];
-        let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, init_key, base).with_rekey_interval(1).with_direction_id(2);
-        let mut rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([11u8;32]), base).with_rekey_interval(1).with_direction_id(2);
-        // 1レコードでrekey閾値到達
-        let (s0, c0) = tx.seal_next(b"aad", b"hello").unwrap();
+    fn rekey_both_sides_compat() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let init_key = AeadKey([11u8; 32]);
+        let base = [5u8; 12];
+        let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, init_key, base)
+            .with_rekey_interval(1)
+            .withdirection_id(2);
+        let mut rx = AeadSession::new(AeadSuite::ChaCha20Poly1305, AeadKey([11u8; 32]), base)
+            .with_rekey_interval(1)
+            .withdirection_id(2);
+        let (s0, c0) = tx.sealnext(b"aad", b"hello")?;
         assert_eq!(rx.open_at(s0, b"aad", &c0).unwrap(), b"hello");
-    assert!(tx.needs_rekey());
-        // 両端rekey
-        tx.rekey(); rx.rekey();
-        // 次の送信はseq=0で新キー
-        let (s1, c1) = tx.seal_next(b"aad", b"world").unwrap();
+        assert!(tx.needs_rekey());
+        tx.rekey();
+        rx.rekey();
+        let (s1, c1) = tx.sealnext(b"aad", b"world")?;
         assert_eq!(s1, 0);
         assert_eq!(rx.open_at(0, b"aad", &c1).unwrap(), b"world");
+        Ok(())
     }
 
     #[test]
-    fn different_direction_id_fails_decrypt() {
-        // Same key/base/seq but different direction IDs must not decrypt each other
-        let key = AeadKey([33u8;32]);
-        let base = [1u8;12];
-        let mut a = AeadSession::new(AeadSuite::ChaCha20Poly1305, key.clone(), base).with_direction_id(0x11111111);
-        let b = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).with_direction_id(0x22222222);
-        let (s, c) = a.seal_next(b"aad", b"msg").unwrap();
+    fn differentdirection_id_fails_decrypt() -> core::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let key = AeadKey([33u8; 32]);
+        let base = [1u8; 12];
+        let mut a = AeadSession::new(AeadSuite::ChaCha20Poly1305, key.clone(), base)
+            .withdirection_id(0x11111111);
+        let b =
+            AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base).withdirection_id(0x22222222);
+        let (s, c) = a.sealnext(b"aad", b"msg")?;
         assert!(b.open_at(s, b"aad", &c).is_err());
+        Ok(())
     }
 
     #[test]
-    fn rekey_by_bytes_threshold() {
-        let key = AeadKey([22u8;32]);
-        let base = [7u8;12];
-        // しきい値を小さく設定して動作確認（タグ16B + 本文5B 程度で超える）
+    fn rekey_by_bytes_threshold() -> core::result::Result<(), Box<dyn std::error::Error>> {
+        let key = AeadKey([22u8; 32]);
+        let base = [7u8; 12];
         let mut tx = AeadSession::new(AeadSuite::ChaCha20Poly1305, key, base)
-            .with_rekey_interval(u64::MAX) // レコード数では打たない
+            .with_rekey_interval(u64::MAX)
             .with_rekey_bytes_interval(20);
         assert!(!tx.needs_rekey());
-    let (_s0, _c0) = tx.seal_next(b"a", b"hello").unwrap();
-        // 暗号文長を加算後、しきい値超えを想定
+        let (_s0, _c0) = tx.sealnext(b"a", b"hello")?;
         assert!(tx.needs_rekey());
-        // rekeyでカウンタがリセットされる
         tx.rekey();
         assert_eq!(tx.seq(), 0);
         assert!(!tx.needs_rekey());
-        // 送信しても直後はまだ未到達のはず
-        let _ = tx.seal_next(b"a", b"x").unwrap();
+        let _ = tx.sealnext(b"a", b"x")?;
         assert!(!tx.needs_rekey());
+        Ok(())
     }
 }

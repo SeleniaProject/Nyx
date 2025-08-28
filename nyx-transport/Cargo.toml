@@ -2,6 +2,7 @@
 name = "nyx-transport"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 description = "Nyx UDP transport adapter with NAT traversal utilities."
 license = "MIT OR Apache-2.0"
@@ -10,25 +11,49 @@ license = "MIT OR Apache-2.0"
 default = []
 quic = []
 test_tracing = []
+run_quic_tests = []
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+# 100% Pure Rust QUIC Transport Dependencies (ZERO C/C++ dependencies)
+# Network and async
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 rand = "0.8"
-socket2 = "0.5"
+# Safe cross-platform socket operations (replaces unsafe libc calls)
+socket2 = "0.6"
 tracing = "0.1"
 once_cell = "1.19"
 async-trait = "0.1"
 nyx-core = { path = "../nyx-core" }
 nyx-mix = { path = "../nyx-mix" }
 nyx-stream = { path = "../nyx-stream" }
-# quinn = { version = "0.11", default-features = false, features = ["runtime-tokio"], optional = true } # DISABLED: depends on ring (C code)
-# rcgen = { version = "0.13", optional = true } # DISABLED: crypto dependency
+# Pure Rust crypto implementations (NO rustls due to aws-lc-rs)
+crypto-bigint = "0.6"
+elliptic-curve = "0.13"
+p256 = "0.13"
+p384 = "0.13"
+sha2 = "0.10"
+hmac = "0.12"
+chacha20poly1305 = "0.10"
+aes-gcm = "0.10"
+bytes = "1.8"
+hex = "0.4"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.0", features = ["v4"] }
+hkdf = "0.12"
+# Utilities
 futures = "0.3"
 anyhow = "1"
 nom = { version = "7", default-features = false, features = ["std"] }
-thiserror = "1"
 
 [dev-dependencies]
+tracing-test = "0.2"
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "transport_benchmarks"
+harness = false
+
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.27" }

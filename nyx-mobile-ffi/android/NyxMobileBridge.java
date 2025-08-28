@@ -1,52 +1,29 @@
 package com.nyx.mobile;
 
 import android.app.Activity;
-import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.net.ConnectivityManager;
-import android.net.Network;
-import android.net.NetworkCapabilities;
-import android.net.NetworkRequest;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.PowerManager;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
-
 /**
  * NyxMobileBridge - Android native bridge for Nyx mobile platform integration
  * 
  * This class provides Android-specific implementations for battery monitoring,
- * power management, app lifecycle tracking, and network connectivity detection.
+ * power management, and app lifecycle tracking using the stable C ABI.
  */
 public class NyxMobileBridge {
     private static final String TAG = "NyxMobileBridge";
     
-    // State enums matching Rust definitions
-    public enum AppState {
-        ACTIVE(0),
-        BACKGROUND(1),
-        INACTIVE(2);
-        
-        private final int value;
-        AppState(int value) { this.value = value; }
-        public int getValue() { return value; }
-    }
-    
-    public enum NetworkState {
-        WIFI(0),
-        CELLULAR(1),
-        ETHERNET(2),
-        NONE(3);
-        
-        private final int value;
-        NetworkState(int value) { this.value = value; }
-        public int getValue() { return value; }
-    }
+    // Power state constants matching Rust enum
+    public static final int POWER_STATE_ACTIVE = 0;
+    public static final int POWER_STATE_BACKGROUND = 1;
+    public static final int POWER_STATE_INACTIVE = 2;
+    public static final int POWER_STATE_CRITICAL = 3;
     
     // Singleton instance
     private static NyxMobileBridge instance;
@@ -55,30 +32,18 @@ public class NyxMobileBridge {
     private Context context;
     private BatteryManager batteryManager;
     private PowerManager powerManager;
-    private ConnectivityManager connectivityManager;
-    private ActivityManager activityManager;
-    
-    // Current state
-    private AppState currentAppState = AppState.ACTIVE;
-    private NetworkState currentNetworkState = NetworkState.NONE;
     
     // Broadcast receivers
     private BatteryBroadcastReceiver batteryReceiver;
     private PowerSaveBroadcastReceiver powerSaveReceiver;
     
-    // Network callback
-    private ConnectivityManager.NetworkCallback networkCallback;
-    
-    // Native callback interface
-    public interface NativeCallback {
-        void onBatteryLevelChanged(int level);
-        void onChargingStateChanged(boolean charging);
-        void onPowerSaveModeChanged(boolean enabled);
-        void onAppStateChanged(int state);
-        void onNetworkStateChanged(int state);
+    // Power state callback interface
+    public interface PowerStateCallback {
+        void onPowerStateChanged(int newState);
+        void onScreenOffRatioChanged(float ratio);
     }
     
-    private NativeCallback nativeCallback;
+    private PowerStateCallback callback;
     
     // Singleton access
     public static synchronized NyxMobileBridge getInstance() {
@@ -103,49 +68,68 @@ public class NyxMobileBridge {
         // Get system services
         batteryManager = (BatteryManager) context.getSystemService(Context.BATTERY_SERVICE);
         powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-        connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
         
-        if (batteryManager == null || powerManager == null || 
-            connectivityManager == null || activityManager == null) {
+        if (batteryManager == null || powerManager == null) {
             Log.e(TAG, "Failed to get required system services");
             return false;
         }
         
-    // C-ABIを直接呼び出す方針に切替。ここではJNI初期化は行わない。
-    // アプリ側のNDKラッパから nyx_mobile_init()/nyx_mobile_set_log_level() 等を呼んでください。
-
+        // Initialize C ABI
+        int result = nyx_mobile_init();
+        if (result != 0) {
+            Log.e(TAG, "Failed to initialize Nyx mobile C ABI: " + result);
+            return false;
+        }
+        
         // Initialize monitoring
         startBatteryMonitoring();
         startPowerSaveMonitoring();
-        startNetworkMonitoring();
         
         Log.d(TAG, "NyxMobileBridge initialization complete");
-
-    // テレメトリの初期化やラベル付与はRust側/デーモン側で行う方針。ここではノーオペ。
         return true;
     }
     
     /**
-     * Set native callback for state changes
+     * Set power state callback
      */
-    public void setNativeCallback(NativeCallback callback) {
-        this.nativeCallback = callback;
+    public void setCallback(PowerStateCallback callback) {
+        this.callback = callback;
     }
     
     /**
      * Cleanup resources
      */
-    public void cleanup() {
+    public void shutdown() {
         Log.d(TAG, "Cleaning up NyxMobileBridge");
         
         stopBatteryMonitoring();
         stopPowerSaveMonitoring();
-        stopNetworkMonitoring();
         
-    // C-ABI側の終了はアプリのNDKラッパで実行してください（nyx_mobile_shutdown）。
-
-        nativeCallback = null;
+        nyx_mobile_shutdown();
+        callback = null;
+    }
+    
+    /**
+     * Handle app resume
+     */
+    public void onAppResume() {
+        nyx_power_set_state(POWER_STATE_ACTIVE);
+        nyx_push_wake();
+        
+        if (callback != null) {
+            callback.onPowerStateChanged(POWER_STATE_ACTIVE);
+        }
+    }
+    
+    /**
+     * Handle app pause
+     */
+    public void onAppPause() {
+        nyx_power_set_state(POWER_STATE_BACKGROUND);
+        
+        if (callback != null) {
+            callback.onPowerStateChanged(POWER_STATE_BACKGROUND);
+        }
     }
     
     // MARK: - Battery Monitoring
@@ -253,126 +237,6 @@ public class NyxMobileBridge {
         }
     }
     
-    // MARK: - App State Management
-    
-    public AppState getAppState() {
-        return currentAppState;
-    }
-    
-    public void setAppState(AppState state) {
-        if (currentAppState != state) {
-            currentAppState = state;
-            Log.d(TAG, "App state changed: " + state);
-            
-            if (nativeCallback != null) {
-                nativeCallback.onAppStateChanged(state.getValue());
-            }
-            try {
-                NyxMobileJNI.nativeNotifyEvent(3, state.getValue());
-            } catch (Throwable t) {
-                Log.w(TAG, "nativeNotifyEvent(app) failed: " + t.getMessage());
-            }
-        }
-    }
-    
-    // MARK: - Network Monitoring
-    
-    public NetworkState getNetworkState() {
-        return currentNetworkState;
-    }
-    
-    private void updateNetworkState() {
-        if (connectivityManager == null) return;
-        
-        NetworkState newState = NetworkState.NONE;
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Network activeNetwork = connectivityManager.getActiveNetwork();
-            if (activeNetwork != null) {
-                NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(activeNetwork);
-                if (capabilities != null) {
-                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                        newState = NetworkState.WIFI;
-                    } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
-                        newState = NetworkState.CELLULAR;
-                    } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                        newState = NetworkState.ETHERNET;
-                    }
-                }
-            }
-        } else {
-            // Fallback for older Android versions
-            @SuppressWarnings("deprecation")
-            android.net.NetworkInfo activeInfo = connectivityManager.getActiveNetworkInfo();
-            if (activeInfo != null && activeInfo.isConnected()) {
-                switch (activeInfo.getType()) {
-                    case ConnectivityManager.TYPE_WIFI:
-                        newState = NetworkState.WIFI;
-                        break;
-                    case ConnectivityManager.TYPE_MOBILE:
-                        newState = NetworkState.CELLULAR;
-                        break;
-                    case ConnectivityManager.TYPE_ETHERNET:
-                        newState = NetworkState.ETHERNET;
-                        break;
-                }
-            }
-        }
-        
-        if (currentNetworkState != newState) {
-            currentNetworkState = newState;
-            Log.d(TAG, "Network state changed: " + newState);
-            
-            if (nativeCallback != null) {
-                nativeCallback.onNetworkStateChanged(newState.getValue());
-            }
-            try {
-                NyxMobileJNI.nativeNotifyEvent(4, newState.getValue());
-            } catch (Throwable t) {
-                Log.w(TAG, "nativeNotifyEvent(net) failed: " + t.getMessage());
-            }
-        }
-    }
-    
-    private void startNetworkMonitoring() {
-        if (connectivityManager == null) return;
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            networkCallback = new ConnectivityManager.NetworkCallback() {
-                @Override
-                public void onAvailable(@NonNull Network network) {
-                    updateNetworkState();
-                }
-                
-                @Override
-                public void onLost(@NonNull Network network) {
-                    updateNetworkState();
-                }
-                
-                @Override
-                public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities capabilities) {
-                    updateNetworkState();
-                }
-            };
-            
-            NetworkRequest.Builder builder = new NetworkRequest.Builder();
-            connectivityManager.registerNetworkCallback(builder.build(), networkCallback);
-        }
-        
-        // Initial state update
-        updateNetworkState();
-        
-        Log.d(TAG, "Network monitoring started");
-    }
-    
-    private void stopNetworkMonitoring() {
-        if (connectivityManager != null && networkCallback != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            connectivityManager.unregisterNetworkCallback(networkCallback);
-            networkCallback = null;
-            Log.d(TAG, "Network monitoring stopped");
-        }
-    }
-    
     // MARK: - Broadcast Receivers
     
     private class BatteryBroadcastReceiver extends BroadcastReceiver {
@@ -384,21 +248,21 @@ public class NyxMobileBridge {
             switch (action) {
                 case Intent.ACTION_BATTERY_CHANGED:
                     int level = getBatteryLevel();
-                    if (nativeCallback != null && level >= 0) {
-                        nativeCallback.onBatteryLevelChanged(level);
-                    }
                     if (level >= 0) {
-                        try { NyxMobileJNI.nativeNotifyEvent(2, level); } catch (Throwable t) { Log.w(TAG, "nativeNotifyEvent(battery) failed: " + t.getMessage()); }
+                        // Update power state based on battery level
+                        if (level < 15) {
+                            nyx_power_set_state(POWER_STATE_CRITICAL);
+                            if (callback != null) {
+                                callback.onPowerStateChanged(POWER_STATE_CRITICAL);
+                            }
+                        }
                     }
                     break;
                     
                 case Intent.ACTION_POWER_CONNECTED:
                 case Intent.ACTION_POWER_DISCONNECTED:
                     boolean charging = isCharging();
-                    if (nativeCallback != null) {
-                        nativeCallback.onChargingStateChanged(charging);
-                    }
-                    // Low power or charging is reflected via dedicated receiver; omit here.
+                    Log.d(TAG, "Charging state changed: " + charging);
                     break;
             }
         }
@@ -409,15 +273,32 @@ public class NyxMobileBridge {
         public void onReceive(Context context, Intent intent) {
             if (PowerManager.ACTION_POWER_SAVE_MODE_CHANGED.equals(intent.getAction())) {
                 boolean powerSaveMode = isPowerSaveMode();
-                if (nativeCallback != null) {
-                    nativeCallback.onPowerSaveModeChanged(powerSaveMode);
-                }
-                try {
-                    NyxMobileJNI.nativeNotifyEvent(1, powerSaveMode ? 1 : 0);
-                } catch (Throwable t) {
-                    Log.w(TAG, "nativeNotifyEvent(low_power) failed: " + t.getMessage());
+                Log.d(TAG, "Power save mode changed: " + powerSaveMode);
+                
+                if (powerSaveMode) {
+                    nyx_power_set_state(POWER_STATE_CRITICAL);
+                    if (callback != null) {
+                        callback.onPowerStateChanged(POWER_STATE_CRITICAL);
+                    }
                 }
             }
         }
     }
+    
+    // MARK: - Native C ABI Functions
+    
+    // Load native library
+    static {
+        System.loadLibrary("nyx_mobile_ffi");
+    }
+    
+    // Native method declarations
+    private static native int nyx_mobile_init();
+    private static native int nyx_mobile_shutdown();
+    private static native int nyx_power_set_state(int state);
+    private static native int nyx_power_get_state(int[] outState);
+    private static native int nyx_push_wake();
+    private static native int nyx_resume_low_power_session();
+    private static native int nyx_mobile_set_telemetry_label(String key, String value);
+    private static native int nyx_mobile_clear_telemetry_labels();
 }

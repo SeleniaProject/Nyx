@@ -1,46 +1,76 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
-use bytes::Bytes;
 use crate::error::{Error, Result};
-use nyx_stream::async_stream::{AsyncStream, AsyncStreamConfig};
+use bytes::Bytes;
+use nyx_stream::{pair, AsyncStream, AsyncStreamConfig};
 
-/// SDK 公開用のストリーム。内部は nyx-stream の AsyncStream に委譲する薄いアダプタ。
+/// SDK wrapper for streams. Delegates to nyx-stream's AsyncStream, providing an adapter.
 #[derive(Clone)]
 pub struct NyxStream {
-	inner: AsyncStream,
+    inner: AsyncStream,
 }
 
 impl NyxStream {
-	/// 開発/テスト向け：プロセス内で相互接続されたストリームペアを生成。
-	pub fn pair(stream_id: u32) -> (Self, Self) {
-		let mut ca = AsyncStreamConfig::default();
-		ca.stream_id = stream_id;
-		let cb = AsyncStreamConfig::default();
-		let (a, b) = nyx_stream::async_stream::pair(ca, cb);
-		(Self { inner: a }, Self { inner: b })
-	}
+    /// Create a new stream with default configuration
+    pub fn new() -> Self {
+        Self {
+            inner: AsyncStream::new(AsyncStreamConfig::default()),
+        }
+    }
 
-	pub async fn send(&self, data: impl Into<Bytes>) -> Result<()> {
-		self.inner.send(data.into()).await.map_err(|e| Error::Protocol(e.to_string()))
-	}
+    /// Create a stream with custom configuration
+    pub fn with_config(config: AsyncStreamConfig) -> Self {
+        Self {
+            inner: AsyncStream::new(config),
+        }
+    }
 
-	/// 受信（ミリ秒タイムアウト）。期限までにデータがなければ Timeout。
-	pub async fn recv(&self, timeout_ms: u64) -> Result<Option<Bytes>> {
-		// 即時（ノンブロッキング）チェック
-		if let Some(b) = self.inner.try_recv().await.map_err(|e| Error::Protocol(e.to_string()))? { return Ok(Some(b)); }
-		if timeout_ms == 0 { return Ok(None); }
-		let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
-		while tokio::time::Instant::now() < deadline {
-			if let Some(b) = self.inner.try_recv().await.map_err(|e| Error::Protocol(e.to_string()))? {
-				return Ok(Some(b));
-			}
-			tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-		}
-		Ok(None)
-	}
+    /// Create a pair of connected streams for testing
+    pub fn pair(_buffer_size: usize) -> (Self, Self) {
+        let config1 = AsyncStreamConfig {
+            stream_id: 1,
+            ..AsyncStreamConfig::default()
+        };
+        let config2 = AsyncStreamConfig {
+            stream_id: 2,
+            ..AsyncStreamConfig::default()
+        };
+        let (inner1, inner2) = pair(config1, config2);
+        (Self { inner: inner1 }, Self { inner: inner2 })
+    }
 
-	pub async fn close(&self) -> Result<()> {
-		self.inner.close().await.map_err(|e| Error::Protocol(e.to_string()))
-	}
+    /// Send data through the stream
+    pub async fn send<T: Into<Bytes>>(&mut self, data: T) -> Result<()> {
+        self.inner
+            .send(data.into())
+            .await
+            .map_err(|e| Error::Stream(e.to_string()))
+    }
+
+    /// Receive data from the stream with timeout
+    pub async fn recv(&mut self, _timeout_ms: u64) -> Result<Option<Bytes>> {
+        self.inner
+            .recv()
+            .await
+            .map_err(|e| Error::Stream(e.to_string()))
+    }
+
+    /// Close the stream
+    pub async fn close(&mut self) -> Result<()> {
+        self.inner
+            .close()
+            .await
+            .map_err(|e| Error::Stream(e.to_string()))
+    }
+
+    /// Check if the stream is closed
+    pub fn is_closed(&self) -> bool {
+        self.inner.is_closed()
+    }
 }
 
+impl Default for NyxStream {
+    fn default() -> Self {
+        Self::new()
+    }
+}

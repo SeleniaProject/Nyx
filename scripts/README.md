@@ -82,6 +82,37 @@ PowerShell version of the build script for Windows compatibility.
 **Usage:**
 ```powershell
 .\scripts\build-verify.ps1 [options]
+
+#### `run-hybrid-tests.ps1` (Windows) / `run-hybrid-tests.sh` (Linux/macOS)
+
+nyx-crypto のハイブリッド・ハンドシェイク関連テストを素早く再現するためのヘルパーです。OS に応じて PowerShell 版/ Bash 版を使えます。
+
+使い方例:
+
+- すべて実行
+
+  ```powershell
+  .\scripts\run-hybrid-tests.ps1
+  ```
+
+- テスト名でフィルタ（PowerShell のワイルドカード不要、cargo のパターン一致）
+
+  ```powershell
+  .\scripts\run-hybrid-tests.ps1 -Filter test_key_pair_generation
+  .\scripts\run-hybrid-tests.ps1 -Filter test_complete_handshake_protocol
+  ```
+
+Linux/macOS の場合:
+
+```bash
+./scripts/run-hybrid-tests.sh [Filter]
+```
+
+内部的には以下を実行します（共通）:
+
+```powershell
+cargo test -p nyx-crypto --features hybrid-handshake [Filter] -- --nocapture
+```
 ```
 
 **Options:**

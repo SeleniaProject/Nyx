@@ -19,9 +19,11 @@ spec:
       port: {{ .Values.service.metricsPort }}
       targetPort: {{ .Values.service.metricsPort }}
       protocol: TCP
-{{- with .Values.service.loadBalancerSourceRanges }}
+{{- if and (.Values.service.loadBalancerSourceRanges) (eq .Values.service.type "LoadBalancer") }}
   loadBalancerSourceRanges:
-{{ toYaml . | indent 4 }}
+{{ toYaml .Values.service.loadBalancerSourceRanges | indent 4 }}
 {{- end }}
+{{- if or (eq .Values.service.type "LoadBalancer") (eq .Values.service.type "NodePort") }}
   externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+{{- end }}
   sessionAffinity: {{ .Values.service.sessionAffinity }}

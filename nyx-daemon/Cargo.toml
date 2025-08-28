@@ -38,12 +38,14 @@ experimental-all = [
  # Enable SIMD-accelerated JSON via simd-json (optional)
  simd = ["dep:simd-json"]
  telemetry = []
+os_sandbox = ["nyx-core/os_sandbox"]
 
 [dependencies]
 async-trait = "0.1"
 prost = "0.12"
 prost-types = "0.12"
 tokio = { version = "1.37", features = ["full"] }
+thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # tonic = { version = "0.10", default-features = false, features = ["transport", "prost", "codegen"] } # DISABLED: uses ring/openssl
@@ -80,7 +82,6 @@ futures = "0.3"
 futures-util = "0.3"
 pin-project = "1.1"
 bytes = "1.5"
-thiserror = "1.0"
 anyhow = "1.0"
 once_cell = "1.19"
 
@@ -103,7 +104,8 @@ config = "0.14"
 # libp2p-identity = "0.2"
 # libp2p-kad = "0.45"
 
-# Pure Rust cryptography to replace libp2p (temporarily disabled due to ring dependency)
+# Pure Rust cryptography (enabled) - using pure Rust crypto instead of libp2p
+# TLS dependencies still disabled to avoid ring/openssl
 # rustls = { version = "0.21", default-features = false, features = ["logging", "tls12"] }
 # tokio-rustls = "0.24"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
@@ -155,6 +157,7 @@ petgraph = "0.6"
 geo = "0.27"
 
 # DNS resolver (Pure Rust)
+# Secure DNS resolution using hickory-dns (modern, maintained replacement for trust-dns)
 hickory-resolver = "0.24"
 
 # Database for peer persistence (Pure Rust alternative)
@@ -162,7 +165,7 @@ redb = { version = "2.1", features = ["logging"] }
 
 # DHT and networking - Pure Rust implementation (100% Pure Rust, no C/C++ deps)
 # Avoiding ALL ring dependencies; use plain TCP and application-level crypto only
-trust-dns-resolver = "0.23"
+# trust-dns-resolver = "0.23" # REMOVED: replaced with hickory-resolver for security
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
@@ -174,10 +177,5 @@ ciborium = "0.2"
 hyper = { version = "0.14", features = ["full"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.10"
-
-[[bench]]
-name = "path_builder_advanced"
-harness = false
-
 [build-dependencies]
 # tonic-build = "0.10" # DISABLED: uses ring/openssl

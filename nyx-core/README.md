@@ -25,3 +25,19 @@ cargo run -p nyx-core --example using_core
 # benches
 cargo bench -p nyx-core --bench zero_copy_benchmarks
 ```
+
+## OS-level sandbox (optional)
+
+When built with the `os_sandbox` feature, `nyx-core` can apply a minimal OS-enforced sandbox on supported platforms.
+
+- Windows: a Job Object is created and the current process is assigned. The job is configured with Kill-on-job-close to ensure robust cleanup of child processes.
+- Other platforms: currently unsupported (no-op).
+
+API:
+
+- `nyx_core::sandbox::apply_policy(SandboxPolicy::Minimal)` returns `SandboxStatus::{Applied, Unsupported}`.
+
+Notes:
+
+- This crate forbids `unsafe_code`; the implementation uses safe wrappers from `win32job`.
+- Additional stricter policies may be added in the future under `SandboxPolicy::Strict`.
