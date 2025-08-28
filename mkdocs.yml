@@ -16,6 +16,7 @@ extra:
       link: https://github.com/SeleniaProject/NyxNet
 nav:
   - トップ: index.md
+  - クイックスタート（Ubuntu/k8s）: quickstart-ubuntu-k8s.md
 markdown_extensions:
   - admonition
   - codehilite

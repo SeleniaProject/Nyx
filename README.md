@@ -15,6 +15,8 @@ Nyx is a modular transport protocol that combines advanced cryptography, mix net
 
 > Dual-licensed under MIT and Apache-2.0. Actively developed in a multi-crate Cargo workspace.
 
+[➡ Ubuntu で Kubernetes を使った最短クイックスタート（ワンライナー付き）](docs/quickstart-ubuntu-k8s.md)
+
 ### Table of Contents
 
 - Highlights
