@@ -32,10 +32,16 @@ fi; \
 if ! docker info >/dev/null 2>&1; then echo "[!] Docker daemon が起動していません。'sudo systemctl start docker' などで起動してください。"; exit 1; fi; \
 (kind get clusters | grep -q '^nyx$' || kind create cluster --name nyx); \
 kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -; \
-helm upgrade --install nyx ./charts/nyx -n nyx --set replicaCount=3 --set bench.enabled=true; \
+helm upgrade --install nyx ./charts/nyx -n nyx \
+  --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
+  --set replicaCount=3 --set bench.enabled=true --set pdb.enabled=true --set serviceMonitor.enabled=true \
+  --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false; \
 kubectl rollout status -n nyx deploy/nyx --timeout=300s; \
 kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s; \
-kubectl logs -n nyx job/nyx-bench
+echo "=== NYX DAEMON VALIDATION COMPLETE ==="; \
+kubectl logs -n nyx job/nyx-bench; \
+echo "=== CLUSTER STATUS ==="; \
+kubectl get pods,svc,pdb -n nyx -o wide
 ```
 
 メモ:

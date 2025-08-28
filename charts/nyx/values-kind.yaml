@@ -1,3 +1,4 @@
+# Values for kind local testing with full production features
 image:
   repository: nyx-daemon
   tag: local
@@ -9,6 +10,7 @@ podSecurity:
 
 replicaCount: 3
 
+# Disable probes for faster startup in kind
 probes:
   startup:
     enabled: false
@@ -17,5 +19,23 @@ probes:
   readiness:
     enabled: false
 
+# Enable comprehensive benchmarking
 bench:
   enabled: true
+
+# Enable production features for testing
+pdb:
+  enabled: true
+  minAvailable: 2
+
+serviceMonitor:
+  enabled: true
+
+# Optimized resources for kind
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
