@@ -13,8 +13,8 @@ spec:
     metadata:
       labels:
 {{ include "nyx.selectorLabels" . | indent 8 }}
-      annotations:
-{{ toYaml .Values.podAnnotations | indent 8 }}
+  annotations:
+{{ toYaml (.Values.podAnnotations | default (dict)) | indent 8 }}
   spec:
 {{- $sa := (default (dict) .Values.serviceAccount) -}}
 {{- if or $sa.create $sa.name }}

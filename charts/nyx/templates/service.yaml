@@ -5,7 +5,7 @@ metadata:
   labels:
 {{ include "nyx.labels" . | indent 4 }}
   annotations:
-{{ toYaml .Values.service.annotations | indent 4 }}
+{{ toYaml (.Values.service.annotations | default (dict)) | indent 4 }}
 spec:
   type: {{ .Values.service.type }}
   selector:
