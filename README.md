@@ -298,6 +298,7 @@ Options:
 - Headless Service is included for direct pod DNS: `nyx-0.nyx-headless`, `nyx-1.nyx-headless`, ...
 - To spread pods across nodes/zones, set `topologySpreadConstraints` in `values.yaml` or via `--set-json`.
 - For stable pod IDs and stateful addressing, enable `--set stateful.enabled=true`.
+ - Bench Job defaults to an `alpine:3.19` shell script for connectivity checks. Replace with `--set bench.image=ghcr.io/seleniaproject/nyx-cli:latest` and adjust `bench.command/args` when real traffic gen is ready.
 - [ ] Advanced monitoring and alerting
 - [ ] Production deployment guides
 

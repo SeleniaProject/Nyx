@@ -172,16 +172,25 @@ stateful:
 # Benchmark job configuration (disabled by default)
 bench:
   enabled: false
-  image: ghcr.io/seleniaproject/nyx-cli:latest
+  # Default to a tiny image with /bin/sh for simple connectivity checks.
+  image: alpine:3.19
   imagePullPolicy: IfNotPresent
   # Example: run a simple connectivity/throughput probe using nyx-cli or a custom tool.
   command: ["/bin/sh","-lc"]
   args:
     - |
       echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}";
-      getent hosts ${TARGET_SERVICE} || true;
-      getent hosts ${TARGET_HEADLESS} || true;
-      echo "Starting benchmark...";
+      echo "DNS check (service)";
+      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
+        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") \
+        || true;
+      echo "DNS check (headless)";
+      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}") \
+        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_HEADLESS}") \
+        || true;
+      echo "TCP connectivity probe (may fail if service doesn't accept plain TCP):";
+      (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true;
+      echo "Starting benchmark stub...";
       # TODO: replace with real nyx-cli traffic generator once available
       sleep 2;
       echo "OK";
