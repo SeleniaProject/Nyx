@@ -1,4 +1,4 @@
-{{- if (dig "stateful" "enabled" false .Values) }}
+{{- if (default false .Values.stateful.enabled) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
