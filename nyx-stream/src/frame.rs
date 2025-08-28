@@ -7,6 +7,8 @@ pub enum FrameType {
     Data,
     Ack,
     Close,
+    /// Custom frame types for extensions (plugin framework, etc.)
+    Custom(u8),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

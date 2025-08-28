@@ -247,45 +247,48 @@ fn display_power(state: u32) -> &'static str {
 #[cfg(all(test, feature = "low_power"))]
 mod test_s {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::OnceLock;
     use std::time::Duration;
+    use tokio::sync::Mutex;
     use tokio::time::timeout;
 
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    async fn test_lock() -> tokio::sync::MutexGuard<'static, ()> {
         static L: OnceLock<Mutex<()>> = OnceLock::new();
         // In tests we can't use ? since we don't return Result; unwrap is fine here.
-        L.get_or_init(|| Mutex::new(())).lock().unwrap()
+        L.get_or_init(|| Mutex::new(())).lock().await
     }
 
     #[tokio::test]
     async fn emits_initial_state_event() {
-        let __g = test_lock();
+        let _guard = test_lock().await;
         std::env::set_var("NYX_POWER_POLL_MS", "50");
-        let event_s = EventSystem::new(16);
-        let mut rx = event_s.subscribe();
-        let __bridge = LowPowerBridge::start(event_s).unwrap();
+        let event_sys = EventSystem::new(16);
+        let mut rx = event_sys.subscribe();
+        let bridge = LowPowerBridge::start(event_sys).unwrap();
         // Expect first event due to initial state observation
         let ev = timeout(Duration::from_millis(1000), rx.recv())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(ev._ty, "power");
-        // detail i_s JSON like {"type":"State","state":"active"}
+        // detail is JSON like {"type":"State","state":"active"}
         assert!(ev._detail.contains("\"type\":") && ev._detail.contains("state"));
+        // Avoid dropping the bridge (and its runtime) inside async context
+        std::mem::forget(bridge);
     }
 
     #[tokio::test]
     async fn emits_on_state_change() {
-        let __g = test_lock();
+        let _guard = test_lock().await;
         std::env::set_var("NYX_POWER_POLL_MS", "50");
-        let event_s = EventSystem::new(16);
-        let mut rx = event_s.subscribe();
-        let __bridge = LowPowerBridge::start(event_s.clone()).unwrap();
+        let event_sys = EventSystem::new(16);
+        let mut rx = event_sys.subscribe();
+        let bridge = LowPowerBridge::start(event_sys.clone()).unwrap();
         // Drain the first initial event if present
-        let __ = timeout(Duration::from_millis(500), rx.recv()).await;
+        let _ = timeout(Duration::from_millis(500), rx.recv()).await;
 
         // Change state to Background
-        let __ = nyx_mobile_ffi::nyx_power_set_state(NyxPowerState::Background as u32);
+        let _ = nyx_mobile_ffi::nyx_power_set_state(NyxPowerState::Background as u32);
 
         // Expect a state:background event
         let ev = timeout(Duration::from_millis(1500), rx.recv())
@@ -298,5 +301,7 @@ mod test_s {
             "got {}",
             ev._detail
         );
+        // Avoid dropping the bridge (and its runtime) inside async context
+        std::mem::forget(bridge);
     }
 }

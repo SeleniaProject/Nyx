@@ -59,8 +59,8 @@ fn backoff_policy_exponential_with_jitter_bound_s() {
     use nyx_sdk::reconnect::backoff_policy::exponential_with_jitter;
     for a in [0u32, 1, 5, 10, 20, 32, 64] {
         let d = exponential_with_jitter(a, 10, 10_000);
-        // within [base, max]
+        // within (0, max]; duration is non-negative by definition
         assert!(d.as_millis() as u64 <= 10_000);
-        assert!(d.as_millis() as u64 >= 0);
+        assert!(d.as_millis() > 0);
     }
 }

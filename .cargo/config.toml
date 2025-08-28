@@ -9,3 +9,9 @@ ar = "llvm-ar.exe"
 [target.aarch64-pc-windows-msvc]
 linker = "rust-lld.exe"
 ar = "llvm-ar.exe"
+
+[alias]
+# Run all tests in the workspace with verbose output
+xt = ["test", "--workspace", "--", "--nocapture"]
+# Run hybrid-handshake tests in nyx-crypto crate only
+crypto-hybrid = ["test", "-p", "nyx-crypto", "--features", "hybrid-handshake", "--", "--nocapture"]

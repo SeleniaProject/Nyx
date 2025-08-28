@@ -1,0 +1,45 @@
+{{- if .Values.bench.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nyx.fullname" . }}-bench
+  labels:
+{{ include "nyx.labels" . | indent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+{{ include "nyx.selectorLabels" . | indent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bench
+          image: {{ .Values.bench.image | quote }}
+          imagePullPolicy: {{ .Values.bench.imagePullPolicy | default "IfNotPresent" }}
+          env:
+            - name: TARGET_SERVICE
+              value: {{ include "nyx.fullname" . }}
+            - name: TARGET_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: TARGET_HEADLESS
+              value: {{ printf "%s-headless" (include "nyx.fullname" .) | quote }}
+{{- with .Values.bench.env }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+          command: {{ toYaml .Values.bench.command | nindent 12 }}
+          args: {{ toYaml .Values.bench.args | nindent 12 }}
+          resources:
+{{ toYaml .Values.bench.resources | indent 12 }}
+{{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- end }}

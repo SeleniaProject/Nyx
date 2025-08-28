@@ -1,4 +1,5 @@
-#![cfg(all(feature = "quic", test, nyx_run_quic_tests))]
+#![allow(unexpected_cfgs)]
+#![cfg(all(feature = "quic", test, run_quic_tests))]
 //! Comprehensive QUIC Transport Integration Tests
 //!
 //! This test suite validates the production-grade QUIC implementation with:

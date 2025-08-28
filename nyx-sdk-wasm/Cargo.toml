@@ -11,11 +11,11 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wasm-bindgen = "0.2"
 nyx-crypto = { path = "../nyx-crypto", optional = true }
-getrandom = { version = "0.2", features = ["js"] }
-hex = "0.4"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-base64 = "0.22"
+getrandom = { version = "0.2", features = ["js"], optional = true }
+hex = { version = "0.4", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+base64 = { version = "0.22", optional = true }
 web-sys = { version = "0.3", features = [
     "Window",
     "Navigator",
@@ -30,7 +30,7 @@ web-sys = { version = "0.3", features = [
     "Notification",
     "console",
     "Performance"
-] } 
+], optional = true } 
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 serde-wasm-bindgen = { version = "0.6", optional = true }
@@ -42,11 +42,13 @@ sha2 = { version = "0.10", optional = true }
 ciborium = { version = "0.2", optional = true }
 
 [features]
-default = ["plugin", "multipath"]
+default = ["core", "push", "noise"]
+core = ["serde", "serde_json"]
 plugin = ["serde", "serde_json", "serde-wasm-bindgen", "ed25519-dalek", "sha2", "semver", "ciborium"]
 multipath = ["serde", "serde_json", "serde-wasm-bindgen", "once_cell", "thiserror"]
-noise = ["nyx-crypto"]
-hpke = []
+noise = ["serde", "serde_json", "hex", "getrandom"]
+push = ["serde", "serde_json", "base64", "getrandom", "js-sys", "web-sys", "wasm-bindgen-futures"]
+hpke = ["nyx-crypto", "hex", "getrandom", "serde", "serde_json"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

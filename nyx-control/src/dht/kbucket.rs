@@ -12,7 +12,12 @@ pub struct KBuckets {
 }
 
 impl KBuckets {
-    pub fn new(local: NodeId) -> Self { Self { local, peers: Vec::new() } }
+    pub fn new(local: NodeId) -> Self {
+        Self {
+            local,
+            peers: Vec::new(),
+        }
+    }
 
     pub fn upsert(&mut self, info: NodeInfo) {
         // Remove existing
@@ -41,6 +46,10 @@ impl KBuckets {
         v
     }
 
-    pub fn len(&self) -> usize { self.peers.len() }
-    pub fn is_empty(&self) -> bool { self.peers.is_empty() }
+    pub fn len(&self) -> usize {
+        self.peers.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.peers.is_empty()
+    }
 }

@@ -26,6 +26,8 @@ pub enum Error {
     ProcessingTimeout,
     #[error("stream error: {0}")]
     StreamError(String),
+    #[error("multipath error: {message}")]
+    MultipathError { message: String },
 }
 
 impl Error {

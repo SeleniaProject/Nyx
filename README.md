@@ -278,6 +278,24 @@ Authorized operations require a token (see Security). Include it via `auth`:
 #### **Phase 4: Production Readiness** (Q4 2024) 📅
 - [ ] Security audit and vulnerability assessment
 - [ ] Protocol plugins per v1.0 specification
+
+### Kubernetes: Multi-node testing quickstart
+
+- Build/push container image (or use `ghcr.io/seleniaproject/nyx-daemon:latest`).
+- Helm chart is under `charts/nyx`. Install with multiple replicas:
+
+```bash
+helm upgrade --install nyx charts/nyx \
+	--set replicaCount=3 \
+	--set stateful.enabled=false
+
+kubectl get pod -l app.kubernetes.io/name=nyx -o wide
+```
+
+Options:
+- Headless Service is included for direct pod DNS: `nyx-0.nyx-headless`, `nyx-1.nyx-headless`, ...
+- To spread pods across nodes/zones, set `topologySpreadConstraints` in `values.yaml` or via `--set-json`.
+- For stable pod IDs and stateful addressing, enable `--set stateful.enabled=true`.
 - [ ] Advanced monitoring and alerting
 - [ ] Production deployment guides
 

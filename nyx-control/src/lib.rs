@@ -9,13 +9,13 @@
 
 use serde::{Deserialize, Serialize};
 
+#[path = "dht/mod.rs"]
+pub mod dht;
 pub mod probe;
 pub mod push;
 pub mod rendezvous;
 pub mod settings;
-pub mod settings_sync;
-#[path = "dht/mod.rs"]
-pub mod dht; // Pure-Rust DHT (Kademlia-like)
+pub mod settings_sync; // Pure-Rust DHT (Kademlia-like)
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

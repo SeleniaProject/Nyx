@@ -14,7 +14,11 @@ pub struct RouteEntry {
 
 impl RouteEntry {
     pub fn new(dest: NodeId, hops: u16, est_latency_ms: u32) -> Self {
-        Self { dest, hops, est_latency_ms }
+        Self {
+            dest,
+            hops,
+            est_latency_ms,
+        }
     }
 }
 
@@ -25,8 +29,18 @@ pub struct RoutingTable {
 }
 
 impl RoutingTable {
-    pub fn new() -> Self { Self { routes: HashMap::new() } }
-    pub fn add_route(&mut self, r: RouteEntry) { self.routes.insert(r.dest.clone(), r); }
-    pub fn find_route(&self, dest: &NodeId) -> Option<&RouteEntry> { self.routes.get(dest) }
-    pub fn remove_route(&mut self, dest: &NodeId) -> bool { self.routes.remove(dest).is_some() }
+    pub fn new() -> Self {
+        Self {
+            routes: HashMap::new(),
+        }
+    }
+    pub fn add_route(&mut self, r: RouteEntry) {
+        self.routes.insert(r.dest.clone(), r);
+    }
+    pub fn find_route(&self, dest: &NodeId) -> Option<&RouteEntry> {
+        self.routes.get(dest)
+    }
+    pub fn remove_route(&mut self, dest: &NodeId) -> bool {
+        self.routes.remove(dest).is_some()
+    }
 }

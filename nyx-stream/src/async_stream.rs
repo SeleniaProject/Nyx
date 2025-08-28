@@ -2,11 +2,13 @@
 
 use crate::multipath::{integration::IntegrationSettings, mpr::MprState, scheduler::PathId};
 use crate::{
+    cmix_integration::{CmixConfig, CmixIntegrationManager},
     congestion::RttEstimator,
     errors::{Error, Result},
     flow_controller::FlowController,
     frame::{Frame, FrameHeader, FrameType},
     frame_codec::FrameCodec,
+    multipath_dataplane::MultipathConfig,
 };
 use bytes::{Bytes, BytesMut};
 use std::{collections::BTreeMap, time::Duration};
@@ -37,6 +39,10 @@ pub struct AsyncStreamConfig {
     /// Optional cap for receiver out-of-order buffer (number of frames).
     /// If Some(n), pending out-of-order frames beyond n will cause oldest to be dropped.
     pub max_reorder_pending: Option<usize>,
+    /// Optional cMix integration configuration
+    pub cmix_config: Option<CmixConfig>,
+    /// Optional multipath data plane configuration (LARMix++)
+    pub multipath_dataplane_config: Option<MultipathConfig>,
 }
 
 impl Default for AsyncStreamConfig {
@@ -50,6 +56,8 @@ impl Default for AsyncStreamConfig {
             max_frame_len: None,
             multipath: None,
             max_reorder_pending: Some(4096), // Increased from 2048 for better buffering
+            cmix_config: None,               // Disabled by default
+            multipath_dataplane_config: None, // Disabled by default
         }
     }
 }
@@ -206,6 +214,20 @@ async fn endpoint_task(
     let mut closed_local = false;
     let mut closed_remote = false;
     let mut reorder_buf: Vec<(BytesMut, PathId)> = Vec::new();
+
+    // Initialize cMix integration if configured
+    let cmix_manager = if let Some(cmix_config) = config.cmix_config.clone() {
+        match CmixIntegrationManager::new(cmix_config) {
+            Ok(manager) => Some(manager),
+            Err(e) => {
+                tracing::error!("Failed to initialize cMix integration: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let mut mpr = config.multipath.as_ref().and_then(|s| {
         if s.enable_multipath && s.paths.len() > 1 {
             Some(MprState::new(&s.paths))
@@ -296,6 +318,14 @@ async fn endpoint_task(
                         let frame = Frame::data(config.stream_id, next_seq, data);
                         next_seq += 1;
 
+                        // Process frame through cMix if enabled
+                        if let Some(ref cmix_manager) = cmix_manager {
+                            if let Err(e) = cmix_manager.process_frame(frame.clone()).await {
+                                tracing::warn!("cMix processing failed for frame {}: {}", frame.header.seq, e);
+                                // Continue with normal processing even if cMix fails
+                            }
+                        }
+
                         // Select optimal path for this frame (multipath load balancing)
                         let selected_path = mpr.as_mut()
                             .map(|s| s.pick_path())
@@ -383,6 +413,14 @@ async fn endpoint_task(
                         // Decode one frame per wire message
                         match FrameCodec::decode(&mut bytes) {
                             Ok(Some(frame)) => {
+                                // Process received frame through cMix if enabled
+                                if let Some(ref cmix_manager) = cmix_manager {
+                                    if let Err(e) = cmix_manager.process_frame(frame.clone()).await {
+                                        tracing::debug!("cMix processing failed for received frame {}: {}", frame.header.seq, e);
+                                        // Continue with normal processing
+                                    }
+                                }
+
                                 match frame.header.ty {
                                     FrameType::Data => {
                                 // Queue payload out-of-order and ack
@@ -433,6 +471,11 @@ async fn endpoint_task(
                             FrameType::Close => {
                                 // Handle close frame - set closed_remote flag
                                 closed_remote = true;
+                            }
+                            FrameType::Custom(_) => {
+                                // Handle custom/plugin frames
+                                // For now, just log them - could be forwarded to plugin manager
+                                tracing::debug!("Received custom frame for stream {}", frame.header.stream_id);
                             }
                         }
                     }

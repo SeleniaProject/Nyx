@@ -12,6 +12,8 @@
 pub mod aead;
 pub mod hpke;
 pub mod hybrid;
+#[cfg(feature = "hybrid-handshake")]
+pub mod hybrid_handshake;
 pub mod kdf;
 pub mod keystore;
 #[cfg(feature = "classic")]
@@ -40,3 +42,12 @@ pub type Result<T> = core::result::Result<T, Error>;
 // Feature-gated ML-KEM wrapper (secure NIST-standardized post-quantum cryptography)
 #[cfg(feature = "kyber")]
 pub mod kyber;
+
+// Hybrid post-quantum handshake (Kyber-768 + X25519)
+#[cfg(feature = "hybrid-handshake")]
+pub use hybrid_handshake::{
+    HybridCiphertext, HybridHandshake, HybridKeyPair, HybridParameters, HybridPublicKey,
+    KyberPublicKey, KyberSecretKey, SharedSecret, X25519PublicKeyWrapper, HYBRID_PUBLIC_KEY_SIZE,
+    KYBER_CIPHERTEXT_SIZE, KYBER_PUBLIC_KEY_SIZE, KYBER_SECRET_KEY_SIZE, KYBER_SHARED_SECRET_SIZE,
+    MAX_ADDITIONAL_DATA_SIZE, SHARED_SECRET_SIZE, X25519_PUBLIC_KEY_SIZE, X25519_SECRET_KEY_SIZE,
+};

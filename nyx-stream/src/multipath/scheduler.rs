@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
 
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PathId(pub u8);
 
 #[derive(Debug, Clone, Copy)]
@@ -400,9 +401,7 @@ mod test_s {
         // Faster path should be preferred - test for any preference rather than strict 60%
         assert!(
             c1 > c2,
-            "Faster path (1) should be preferred over slower path (2). Got c1={}, c2={}",
-            c1,
-            c2
+            "Faster path (1) should be preferred over slower path (2). Got c1={c1}, c2={c2}"
         );
     }
 
@@ -445,9 +444,7 @@ mod test_s {
         // Less lossy path should be preferred - test for any preference rather than strict 60%
         assert!(
             c2 > c1,
-            "Less lossy path (2) should be preferred over lossy path (1). Got c1={}, c2={}",
-            c1,
-            c2
+            "Less lossy path (2) should be preferred over lossy path (1). Got c1={c1}, c2={c2}"
         );
     }
 }

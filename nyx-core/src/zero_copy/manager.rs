@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 /// assert_eq!(b2.as_ref(), &[4,5]);
 ///
 /// // Cheap clone_s share the same backing allocation
-/// let _c = b.clone();
+/// let c = b.clone();
 /// assert_eq!(b, c);
 /// ```
 #[derive(Clone)]
@@ -88,11 +88,11 @@ impl std::fmt::Debug for Buffer {
 /// -------
 /// ```
 /// use nyx_core::zero_copy::manager::BufferPool;
-/// let _pool = BufferPool::with_capacity(1024);
+/// let pool = BufferPool::with_capacity(1024);
 /// let mut v = pool.acquire(128);
 /// v.extend_from_slice(&[1,2,3]);
 /// pool.release(v);
-/// let _w = pool.acquire(64);
+/// let w = pool.acquire(64);
 /// assert!(w.capacity() >= 64);
 /// ```
 /// Ultra-high performance buffer pool with optimized size-classed allocation.

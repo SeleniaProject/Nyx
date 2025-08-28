@@ -50,39 +50,49 @@ fn storage_kv_basic() {
     assert!(s.capacity() > 0);
 }
 
-/// Test DHT routing table functionality
+// Test DHT routing table functionality
 // Keep a smoke test that control module builds without external DHT deps
 
-/// Test DHT key-value storage functionality
+/// Test DHT key-value storage functionality (capacity, put/get/delete)
 #[test]
 fn test_dht_kv_store() {
-    // TODO: Re-enable when storage module is implemented
-    // Test DHT key-value storage implementation when available
-    // use nyx_control::storage::{DhtStorage, StorageKey, StorageValue};
+    use nyx_control::dht::{DhtStorage, StorageKey, StorageValue};
 
-    // let mut storage = DhtStorage::new();
-    // let key = StorageKey::from_bytes(b"test_key");
-    // let value = StorageValue::from_bytes(b"test_value");
+    let mut storage = DhtStorage::with_capacity(2);
+    let k1 = StorageKey::from_bytes(b"k1");
+    let v1 = StorageValue::from_bytes(b"v1");
+    let k2 = StorageKey::from_bytes(b"k2");
+    let v2 = StorageValue::from_bytes(b"v2");
+    let k3 = StorageKey::from_bytes(b"k3");
+    let v3 = StorageValue::from_bytes(b"v3");
 
-    // Test storage operations
-    // assert!(storage.put(key.clone(), value.clone()).is_ok());
+    // capacity is enforced
+    assert_eq!(storage.capacity(), 2);
 
-    // let retrieved = storage.get(&key);
-    // assert!(retrieved.is_some());
-    // assert_eq!(retrieved.unwrap(), value);
+    // put two entries succeeds
+    assert!(storage.put(k1.clone(), v1.clone()).is_ok());
+    assert!(storage.put(k2.clone(), v2.clone()).is_ok());
+    assert_eq!(storage.len(), 2);
 
-    // Test key deletion
-    // assert!(storage.delete(&key).is_ok());
-    // assert!(storage.get(&key).is_none());
+    // third insert should fail due to capacity
+    assert!(storage.put(k3.clone(), v3.clone()).is_err());
 
-    // Test storage capacity and limits
-    // assert!(storage.capacity() > 0);
-    // assert_eq!(storage.len(), 0);
+    // get returns stored values
+    assert_eq!(storage.get(&k1).unwrap(), v1);
+    assert_eq!(storage.get(&k2).unwrap(), v2);
 
-    // For now, just pass the test - TODO: implement proper KV store tests
+    // delete removes entry and frees a slot
+    assert!(storage.delete(&k1).unwrap());
+    assert!(storage.get(&k1).is_none());
+    assert_eq!(storage.len(), 1);
+
+    // now we can insert the third key
+    assert!(storage.put(k3.clone(), v3.clone()).is_ok());
+    assert_eq!(storage.len(), 2);
+    assert_eq!(storage.get(&k3).unwrap(), v3);
 }
 
-/// Test that the control module build_s without DHT dependencie_s
+/// Test that the control module builds without DHT dependencies
 #[test]
 fn control_module_builds_without_dht() {
     // Verify that the control module can be built and used

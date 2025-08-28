@@ -7,9 +7,17 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "t", content = "p")]
 pub enum RpcRequest {
     Ping(NodeId),
-    FindNode { target: NodeId },
-    Get { key: StorageKey },
-    Put { key: StorageKey, value: StorageValue, ttl_secs: u64 },
+    FindNode {
+        target: NodeId,
+    },
+    Get {
+        key: StorageKey,
+    },
+    Put {
+        key: StorageKey,
+        value: StorageValue,
+        ttl_secs: u64,
+    },
     /// 要求先ノードの公開鍵を問い合わせる
     GetPubKey,
 }
@@ -33,19 +41,36 @@ pub struct NodeInfoSerializable {
 }
 
 impl From<&NodeInfo> for NodeInfoSerializable {
-    fn from(n: &NodeInfo) -> Self { Self { id: n.id.clone(), addr: n.addr.to_string() } }
+    fn from(n: &NodeInfo) -> Self {
+        Self {
+            id: n.id.clone(),
+            addr: n.addr.to_string(),
+        }
+    }
 }
 
 impl TryFrom<NodeInfoSerializable> for NodeInfo {
     type Error = std::net::AddrParseError;
     fn try_from(v: NodeInfoSerializable) -> Result<Self, Self::Error> {
-        Ok(NodeInfo { id: v.id, addr: v.addr.parse()?, last_seen: std::time::Instant::now() })
+        Ok(NodeInfo {
+            id: v.id,
+            addr: v.addr.parse()?,
+            last_seen: std::time::Instant::now(),
+        })
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "k", content = "v")]
 pub enum Rpc {
-    Req { from: NodeId, sig: Option<Vec<u8>>, req: RpcRequest },
-    Res { from: NodeId, sig: Option<Vec<u8>>, res: RpcResponse },
+    Req {
+        from: NodeId,
+        sig: Option<Vec<u8>>,
+        req: RpcRequest,
+    },
+    Res {
+        from: NodeId,
+        sig: Option<Vec<u8>>,
+        res: RpcResponse,
+    },
 }

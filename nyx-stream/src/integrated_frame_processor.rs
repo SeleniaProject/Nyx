@@ -326,6 +326,10 @@ impl IntegratedFrameProcessor {
             FrameType::Data => {
                 // Data frames can have any payload size within limits
             }
+            FrameType::Custom(_) => {
+                // Custom frames handled by plugin framework
+                // Payload validation delegated to plugin implementation
+            }
         }
 
         Ok(())

@@ -17,15 +17,18 @@ pub mod retry_policy {
     /// Used for compatibility with existing code patterns.
     #[must_use]
     pub fn calculate_delay(attempt: u32, base_ms: u64, max_ms: u64) -> Duration {
-        let pow = if attempt >= 64 {
-            0
-        } else {
-            1u64.checked_shl(attempt.min(16)).unwrap_or(0)
-        };
+        // Compute 2^attempt with a safe upper bound to avoid shifting by >= 64.
+        // Use saturating multiplication so large attempts cap at max_ms below.
+        let shift = attempt.min(63);
+        let pow = 1u64 << shift;
         let raw = base_ms.saturating_mul(pow);
         let capped = raw.min(max_ms);
-        let jitter = fastrand::u64(0..(capped / 2).max(1));
-        Duration::from_millis(capped / 2 + jitter)
+        if capped == 0 {
+            return Duration::from_millis(0);
+        }
+        let half = (capped / 2).max(1);
+        let jitter = fastrand::u64(0..half);
+        Duration::from_millis(half + jitter)
     }
 }
 

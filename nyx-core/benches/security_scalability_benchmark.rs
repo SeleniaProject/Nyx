@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nyx_core::performance::RateLimiter;
 #[cfg(feature = "zero_copy")]
-use nyx_core::zero_copy::manager::{Buffer, BufferPool};
+use nyx_core::zero_copy::manager::BufferPool;
 // use std::sync::Arc;
 // use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 // use futures::future;

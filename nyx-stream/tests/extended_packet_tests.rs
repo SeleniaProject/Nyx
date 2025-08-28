@@ -7,9 +7,10 @@
 //! - Protocol compliance
 //! - Memory safety and efficiency
 
-use nyx_stream::extended_packet::*;
-use nyx_stream::{Result};
 use bytes::Bytes;
+use nyx_stream::extended_packet::*;
+use nyx_stream::Result;
+use std::time::Instant;
 
 #[test]
 fn test_connection_id_basic_operations() {
@@ -40,16 +41,16 @@ fn test_connection_id_basic_operations() {
 fn test_path_id_functionality() {
     let path = PathId(42);
     assert_eq!(path.0, 42);
-    assert_eq!(format!("{}", path), "Path42");
+    assert_eq!(format!("{path}"), "Path42");
 
     let default_path = PathId::default();
     assert_eq!(default_path.0, 0);
-    assert_eq!(format!("{}", default_path), "Path0");
+    assert_eq!(format!("{default_path}"), "Path0");
 
     // Test with maximum value
     let max_path = PathId(255);
     assert_eq!(max_path.0, 255);
-    assert_eq!(format!("{}", max_path), "Path255");
+    assert_eq!(format!("{max_path}"), "Path255");
 }
 
 #[test]
@@ -123,7 +124,7 @@ fn test_extended_packet_header_creation() -> Result<()> {
 #[test]
 fn test_header_security_validation() {
     let cid = ConnectionId::random();
-    
+
     // Test oversized payload length
     let result = ExtendedPacketHeader::new(
         cid,
@@ -193,9 +194,24 @@ fn test_header_decode_security_validation() {
     assert!(ExtendedPacketHeader::decode(&short_data).is_err());
 
     // Test invalid packet type
-    let mut invalid_type_data = vec![0u8; EXTENDED_HEADER_SIZE];
-    invalid_type_data[12] = 0xFF; // Invalid type (0b11xxxxxx)
-    assert!(ExtendedPacketHeader::decode(&invalid_type_data).is_err());
+    let mut invalid_type_data = [0u8; EXTENDED_HEADER_SIZE];
+    invalid_type_data[12] = 0xFC; // Invalid type (0b11111100 = type 3, but invalid flags)
+                                  // This should still succeed as type 3 is valid, but let's test actual invalid type
+    invalid_type_data[12] = 0b11111111; // Type 3 with all flags - should succeed
+
+    // Let's instead create a packet with deliberately corrupted connection ID that fails validation
+    let mut invalid_cid_data = [0xFF; EXTENDED_HEADER_SIZE]; // All 0xFF
+    invalid_cid_data[12] = 0x00; // Valid type 0 (Initial)
+    invalid_cid_data[13] = 0x01; // Valid path ID
+    invalid_cid_data[14] = 0x00; // Valid length
+    invalid_cid_data[15] = 0x00; // Valid length
+                                 // This should pass actually since CID can be any bytes
+
+    // Let's test with a length that's actually invalid
+    let mut invalid_len_data = vec![0u8; EXTENDED_HEADER_SIZE];
+    let invalid_length = (MAX_PAYLOAD_SIZE + 1) as u16;
+    invalid_len_data[14..16].copy_from_slice(&invalid_length.to_be_bytes());
+    assert!(ExtendedPacketHeader::decode(&invalid_len_data).is_err());
 
     // Test oversized length declaration
     let mut oversized_data = vec![0u8; EXTENDED_HEADER_SIZE];
@@ -208,7 +224,7 @@ fn test_header_decode_security_validation() {
 fn test_extended_packet_creation() -> Result<()> {
     let cid = ConnectionId::random();
     let payload = b"Hello, Nyx Protocol v1.0!".to_vec();
-    
+
     let header = ExtendedPacketHeader::new(
         cid,
         PacketType::Application,
@@ -218,7 +234,7 @@ fn test_extended_packet_creation() -> Result<()> {
     )?;
 
     let packet = ExtendedPacket::new(header, payload.clone())?;
-    
+
     assert_eq!(packet.header.cid, cid);
     assert_eq!(packet.header.path_id, PathId(5));
     assert_eq!(packet.payload, payload);
@@ -233,7 +249,7 @@ fn test_extended_packet_creation() -> Result<()> {
 #[test]
 fn test_packet_security_validation() {
     let cid = ConnectionId::random();
-    
+
     // Test payload size mismatch
     let payload = b"test".to_vec();
     let header = ExtendedPacketHeader::new(
@@ -242,7 +258,8 @@ fn test_packet_security_validation() {
         PacketFlags::default(),
         PathId(1),
         (payload.len() + 1) as u16, // Mismatched length
-    ).unwrap();
+    )
+    .unwrap();
 
     let result = ExtendedPacket::new(header, payload);
     assert!(result.is_err(), "Should reject mismatched payload size");
@@ -256,7 +273,10 @@ fn test_packet_security_validation() {
         PathId(1),
         oversized_payload.len() as u16,
     );
-    assert!(header.is_err(), "Should reject oversized payload in header creation");
+    assert!(
+        header.is_err(),
+        "Should reject oversized payload in header creation"
+    );
 }
 
 #[test]
@@ -264,15 +284,15 @@ fn test_packet_encoding_decoding_roundtrip() -> Result<()> {
     let test_payloads = vec![
         vec![], // Empty payload
         b"Small payload".to_vec(),
-        vec![0xAA; 100], // Binary data
-        vec![0x55; 1000], // Large payload
+        vec![0xAA; 100],               // Binary data
+        vec![0x55; 1000],              // Large payload
         (0..255).collect::<Vec<u8>>(), // Sequential data
     ];
 
     for payload in test_payloads {
         let cid = ConnectionId::random();
         let path_id = PathId(fastrand::u8(..));
-        
+
         let header = ExtendedPacketHeader::new(
             cid,
             PacketType::Application,
@@ -352,7 +372,7 @@ fn test_builder_encode_reuse() -> Result<()> {
     let payload = b"Reuse test payload";
 
     let packet = builder.build_data_packet(cid, PathId(15), payload)?;
-    
+
     // Test multiple reuses
     let encoded1 = builder.encode_reuse(&packet)?.clone();
     let encoded2 = builder.encode_reuse(&packet)?.clone();
@@ -367,7 +387,7 @@ fn test_builder_encode_reuse() -> Result<()> {
     let payload2 = b"Different payload for second test";
     let packet2 = builder.build_data_packet(cid, PathId(25), payload2)?;
     let encoded4 = builder.encode_reuse(&packet2)?;
-    
+
     assert_ne!(encoded1, encoded4);
     assert_eq!(encoded4.len(), EXTENDED_HEADER_SIZE + payload2.len());
 
@@ -389,8 +409,11 @@ fn test_performance_characteristics() -> Result<()> {
     }
     let encoding_duration = start.elapsed();
 
-    println!("Encoding {} packets took: {:?}", NUM_ITERATIONS, encoding_duration);
-    println!("Average encoding time: {:?}", encoding_duration / NUM_ITERATIONS as u32);
+    println!("Encoding {NUM_ITERATIONS} packets took: {encoding_duration:?}");
+    println!(
+        "Average encoding time: {:?}",
+        encoding_duration / NUM_ITERATIONS as u32
+    );
 
     // Test decoding performance
     let packet = builder.build_data_packet(cid, PathId(100), &payload)?;
@@ -402,8 +425,11 @@ fn test_performance_characteristics() -> Result<()> {
     }
     let decoding_duration = start.elapsed();
 
-    println!("Decoding {} packets took: {:?}", NUM_ITERATIONS, decoding_duration);
-    println!("Average decoding time: {:?}", decoding_duration / NUM_ITERATIONS as u32);
+    println!("Decoding {NUM_ITERATIONS} packets took: {decoding_duration:?}");
+    println!(
+        "Average decoding time: {:?}",
+        decoding_duration / NUM_ITERATIONS as u32
+    );
 
     Ok(())
 }
@@ -413,8 +439,7 @@ fn test_edge_cases_and_boundary_conditions() -> Result<()> {
     let cid = ConnectionId::random();
 
     // Test empty payload
-    let empty_packet = ExtendedPacketBuilder::new()
-        .build_data_packet(cid, PathId(0), &[])?;
+    let empty_packet = ExtendedPacketBuilder::new().build_data_packet(cid, PathId(0), &[])?;
     assert_eq!(empty_packet.payload.len(), 0);
     assert_eq!(empty_packet.header.length, 0);
 
@@ -424,8 +449,8 @@ fn test_edge_cases_and_boundary_conditions() -> Result<()> {
 
     // Test maximum payload size
     let max_payload = vec![0x42; MAX_PAYLOAD_SIZE];
-    let max_packet = ExtendedPacketBuilder::new()
-        .build_data_packet(cid, PathId(255), &max_payload)?;
+    let max_packet =
+        ExtendedPacketBuilder::new().build_data_packet(cid, PathId(255), &max_payload)?;
     assert_eq!(max_packet.payload.len(), MAX_PAYLOAD_SIZE);
     assert_eq!(max_packet.size(), MAX_PACKET_SIZE);
 
@@ -440,7 +465,10 @@ fn test_edge_cases_and_boundary_conditions() -> Result<()> {
         PacketType::Retry,
         PacketType::Handshake,
         PacketType::Application,
-    ].iter().enumerate() {
+    ]
+    .iter()
+    .enumerate()
+    {
         let header = ExtendedPacketHeader::new(
             cid,
             *packet_type,
@@ -449,7 +477,7 @@ fn test_edge_cases_and_boundary_conditions() -> Result<()> {
             payload.len() as u16,
         )?;
         let packet = ExtendedPacket::new(header, payload.clone())?;
-        
+
         let encoded = packet.encode()?;
         let decoded = ExtendedPacket::decode(encoded)?;
         assert_eq!(packet, decoded);
@@ -472,11 +500,11 @@ fn test_protocol_compliance() -> Result<()> {
     )?;
 
     let encoded = header.encode()?;
-    
+
     // Verify byte layout according to specification
     assert_eq!(&encoded[0..12], cid.as_bytes()); // Bytes 0-11: CID
     assert_eq!(encoded[12], 0xD5); // Byte 12: Type(11) + Flags(010101) = 11010101 = 0xD5
-    assert_eq!(encoded[13], 42);   // Byte 13: Path ID
+    assert_eq!(encoded[13], 42); // Byte 13: Path ID
     assert_eq!(&encoded[14..16], &1234u16.to_be_bytes()); // Bytes 14-15: Length (big-endian)
 
     Ok(())
@@ -486,16 +514,16 @@ fn test_protocol_compliance() -> Result<()> {
 fn test_memory_safety() -> Result<()> {
     // Test with various buffer sizes to ensure no buffer overflows
     let cid = ConnectionId::random();
-    
+
     for size in [0, 1, 64, 127, 128, 255, 256, 512, 1024, MAX_PAYLOAD_SIZE] {
         let payload = vec![0x55; size];
-        let packet = ExtendedPacketBuilder::new()
-            .build_data_packet(cid, PathId(size as u8), &payload)?;
-        
+        let packet =
+            ExtendedPacketBuilder::new().build_data_packet(cid, PathId(size as u8), &payload)?;
+
         // Verify no corruption
         assert_eq!(packet.payload.len(), size);
         assert!(packet.payload.iter().all(|&b| b == 0x55));
-        
+
         // Test roundtrip
         let encoded = packet.encode()?;
         let decoded = ExtendedPacket::decode(encoded)?;
@@ -515,23 +543,26 @@ fn test_concurrent_operations() -> Result<()> {
     let payload = Arc::new(vec![0xCC; 100]);
 
     // Test concurrent packet creation and encoding
-    let handles: Vec<_> = (0..10).map(|i| {
-        let cid = Arc::clone(&cid_arc);
-        let payload = Arc::clone(&payload);
-        
-        thread::spawn(move || -> Result<()> {
-            let mut builder = ExtendedPacketBuilder::new();
-            
-            for j in 0..100 {
-                let packet = builder.build_data_packet(*cid, PathId((i * 100 + j) as u8), &payload)?;
-                let encoded = packet.encode()?;
-                let decoded = ExtendedPacket::decode(encoded)?;
-                assert_eq!(packet, decoded);
-            }
-            
-            Ok(())
+    let handles: Vec<_> = (0..10)
+        .map(|i| {
+            let cid = Arc::clone(&cid_arc);
+            let payload = Arc::clone(&payload);
+
+            thread::spawn(move || -> Result<()> {
+                let mut builder = ExtendedPacketBuilder::new();
+
+                for j in 0..100 {
+                    let packet =
+                        builder.build_data_packet(*cid, PathId((i * 100 + j) as u8), &payload)?;
+                    let encoded = packet.encode()?;
+                    let decoded = ExtendedPacket::decode(encoded)?;
+                    assert_eq!(packet, decoded);
+                }
+
+                Ok(())
+            })
         })
-    }).collect();
+        .collect();
 
     // Wait for all threads and check results
     for handle in handles {

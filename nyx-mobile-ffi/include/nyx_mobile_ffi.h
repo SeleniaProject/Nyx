@@ -4,10 +4,26 @@
 #include <stdlib.h>
 
 /**
- * Initialize Nyx mobile layer. Idempotent.
- * Return_s 0 on succes_s, 1 if already initialized.
+ * Initialize Nyx mobile layer with complete protocol support
+ * Returns 0 on success, 1 if already initialized, other codes for errors
  */
 int nyx_mobile_init(void);
+
+/**
+ * Create and configure a Nyx client with mobile optimizations
+ */
+int nyx_mobile_create_client(const char *config_json);
+
+/**
+ * Connect to the Nyx network with specified endpoint
+ *
+ * # Safety
+ * - `endpoint` は有効なヌル終端 C 文字列でなければならない
+ * - `connection_id_out` は有効な書き込み可能ポインタでなければならない
+ * - 呼び出し元はこれらポインタのライフタイムと整合性を保証する必要がある
+ */
+int nyx_mobile_connect(const char *endpoint,
+                       unsigned long *connection_id_out);
 
 /**
  * Shutdown Nyx mobile layer. Safe to call multiple time_s.
@@ -85,3 +101,70 @@ int nyx_push_wake(void);
  * Explicit resume trigger when OS grant_s execution window.
  */
 int nyx_resume_low_power_session(void);
+
+/**
+ * Send data over established connection
+ */
+int nyx_mobile_send_data(unsigned long connection_id,
+                         const void *data,
+                         uintptr_t data_len,
+                         uintptr_t *bytes_sent_out);
+
+/**
+ * Receive data from connection (non-blocking)
+ */
+int nyx_mobile_receive_data(unsigned long connection_id,
+                            void *buffer,
+                            uintptr_t buffer_len,
+                            uintptr_t *bytes_received_out);
+
+/**
+ * Disconnect from specific connection
+ */
+int nyx_mobile_disconnect(unsigned long connection_id);
+
+/**
+ * Get connection statistics
+ */
+int nyx_mobile_get_connection_stats(unsigned long connection_id,
+                                    unsigned long *bytes_sent_out,
+                                    unsigned long *bytes_received_out,
+                                    int *quality_out);
+
+/**
+ * Set network type for optimization
+ */
+int nyx_mobile_set_network_type(int network_type);
+
+/**
+ * Get current network type
+ */
+int nyx_mobile_get_network_type(int *network_type_out);
+
+/**
+ * Update mobile configuration at runtime
+ */
+int nyx_mobile_update_config(const char *config_json);
+
+/**
+ * Get global protocol statistics
+ */
+int nyx_mobile_get_global_stats(unsigned long *total_connections_out,
+                                unsigned long *successful_handshakes_out,
+                                unsigned long *connection_failures_out,
+                                unsigned long *network_changes_out);
+
+/**
+ * Enable background mode optimizations
+ */
+int nyx_mobile_enter_background_mode(void);
+
+/**
+ * Disable background mode optimizations
+ */
+int nyx_mobile_enter_foreground_mode(void);
+
+/**
+ * Force connection quality assessment
+ */
+int nyx_mobile_assess_connection_quality(void);

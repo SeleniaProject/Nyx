@@ -15,6 +15,8 @@ pub enum MixError {
     Adaptation(String),
     #[error("anonymity: {0}")]
     Anonymity(String),
+    #[error("internal: {msg}")]
+    Internal { msg: String },
 }
 
 impl MixError {

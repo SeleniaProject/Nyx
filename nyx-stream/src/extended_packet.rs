@@ -19,7 +19,7 @@
 //! - Secure handling of untrusted input data
 
 use crate::errors::{Error, Result};
-use bytes::{Bytes, BytesMut, BufMut, Buf};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -36,14 +36,8 @@ pub const MAX_PACKET_SIZE: usize = 1280;
 pub const MAX_PAYLOAD_SIZE: usize = MAX_PACKET_SIZE - EXTENDED_HEADER_SIZE;
 
 /// Path ID type for multi-path communication
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct PathId(pub u8);
-
-impl Default for PathId {
-    fn default() -> Self {
-        PathId(0)
-    }
-}
 
 impl fmt::Display for PathId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -98,7 +92,7 @@ impl fmt::Display for ConnectionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "CID:")?;
         for byte in &self.0 {
-            write!(f, "{:02x}", byte)?;
+            write!(f, "{byte:02x}")?;
         }
         Ok(())
     }
@@ -126,7 +120,7 @@ impl PacketType {
             1 => Ok(PacketType::Retry),
             2 => Ok(PacketType::Handshake),
             3 => Ok(PacketType::Application),
-            _ => Err(Error::Protocol(format!("Invalid packet type: {}", value))),
+            _ => Err(Error::Protocol(format!("Invalid packet type: {value}"))),
         }
     }
 
@@ -137,7 +131,7 @@ impl PacketType {
 }
 
 /// Packet flags for extended functionality
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PacketFlags(pub u8);
 
 impl PacketFlags {
@@ -168,11 +162,7 @@ impl PacketFlags {
     }
 }
 
-impl Default for PacketFlags {
-    fn default() -> Self {
-        Self(0)
-    }
-}
+// Default is derived
 
 /// Extended packet header according to v1.0 specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,8 +190,7 @@ impl ExtendedPacketHeader {
         // SECURITY: Validate length to prevent overflow attacks
         if length as usize > MAX_PAYLOAD_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Payload length {} exceeds maximum allowed {}",
-                length, MAX_PAYLOAD_SIZE
+                "SECURITY: Payload length {length} exceeds maximum allowed {MAX_PAYLOAD_SIZE}"
             )));
         }
 
@@ -239,8 +228,7 @@ impl ExtendedPacketHeader {
         // SECURITY: Validate input size to prevent buffer underflow
         if bytes.len() < EXTENDED_HEADER_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Header too short: expected {}, got {}",
-                EXTENDED_HEADER_SIZE,
+                "SECURITY: Header too short: expected {EXTENDED_HEADER_SIZE}, got {}",
                 bytes.len()
             )));
         }
@@ -262,8 +250,7 @@ impl ExtendedPacketHeader {
         // SECURITY: Additional validation
         if length as usize > MAX_PAYLOAD_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Declared payload length {} exceeds maximum {}",
-                length, MAX_PAYLOAD_SIZE
+                "SECURITY: Declared payload length {length} exceeds maximum {MAX_PAYLOAD_SIZE}"
             )));
         }
 
@@ -303,8 +290,7 @@ impl ExtendedPacket {
         let total_size = EXTENDED_HEADER_SIZE + payload.len();
         if total_size > MAX_PACKET_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Total packet size {} exceeds maximum {}",
-                total_size, MAX_PACKET_SIZE
+                "SECURITY: Total packet size {total_size} exceeds maximum {MAX_PACKET_SIZE}"
             )));
         }
 
@@ -329,8 +315,7 @@ impl ExtendedPacket {
         // SECURITY: Validate minimum size
         if bytes.len() < EXTENDED_HEADER_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Packet too short: minimum {}, got {}",
-                EXTENDED_HEADER_SIZE,
+                "SECURITY: Packet too short: minimum {EXTENDED_HEADER_SIZE}, got {}",
                 bytes.len()
             )));
         }
@@ -338,8 +323,7 @@ impl ExtendedPacket {
         // SECURITY: Validate maximum size
         if bytes.len() > MAX_PACKET_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Packet too large: maximum {}, got {}",
-                MAX_PACKET_SIZE,
+                "SECURITY: Packet too large: maximum {MAX_PACKET_SIZE}, got {}",
                 bytes.len()
             )));
         }
@@ -353,8 +337,7 @@ impl ExtendedPacket {
 
         if actual_payload_size != expected_payload_size {
             return Err(Error::Protocol(format!(
-                "SECURITY: Payload size mismatch: header declares {}, actual {}",
-                expected_payload_size, actual_payload_size
+                "SECURITY: Payload size mismatch: header declares {expected_payload_size}, actual {actual_payload_size}"
             )));
         }
 
@@ -381,9 +364,8 @@ impl ExtendedPacket {
 
         if self.size() > MAX_PACKET_SIZE {
             return Err(Error::Protocol(format!(
-                "SECURITY: Packet size {} exceeds maximum {}",
+                "SECURITY: Packet size {} exceeds maximum {MAX_PACKET_SIZE}",
                 self.size(),
-                MAX_PACKET_SIZE
             )));
         }
 
@@ -503,7 +485,7 @@ mod tests {
     fn test_path_id() {
         let path = PathId(42);
         assert_eq!(path.0, 42);
-        assert_eq!(format!("{}", path), "Path42");
+        assert_eq!(format!("{path}"), "Path42");
     }
 
     #[test]
@@ -517,10 +499,10 @@ mod tests {
     fn test_packet_flags() {
         let mut flags = PacketFlags::new(0x0F);
         assert_eq!(flags.value(), 0x0F);
-        
+
         flags.set_flag(0x20);
         assert!(flags.has_flag(0x20));
-        
+
         flags.clear_flag(0x0F);
         assert!(!flags.has_flag(0x0F));
     }
@@ -547,7 +529,7 @@ mod tests {
     fn test_packet_creation_and_validation() -> Result<()> {
         let cid = ConnectionId::random();
         let payload = b"Hello, World!".to_vec();
-        
+
         let header = ExtendedPacketHeader::new(
             cid,
             PacketType::Application,
@@ -566,7 +548,7 @@ mod tests {
     fn test_packet_encoding_decoding() -> Result<()> {
         let cid = ConnectionId::random();
         let payload = b"Test payload data".to_vec();
-        
+
         let header = ExtendedPacketHeader::new(
             cid,
             PacketType::Application,
@@ -591,7 +573,7 @@ mod tests {
         let payload = b"Builder test payload";
 
         let packet = builder.build_data_packet(cid, PathId(5), payload)?;
-        
+
         assert_eq!(packet.header.cid, cid);
         assert_eq!(packet.header.path_id, PathId(5));
         assert_eq!(packet.header.packet_type, PacketType::Application);
@@ -605,7 +587,7 @@ mod tests {
         // Test oversized payload
         let cid = ConnectionId::random();
         let oversized_payload = vec![0u8; MAX_PAYLOAD_SIZE + 1];
-        
+
         let result = ExtendedPacketHeader::new(
             cid,
             PacketType::Application,

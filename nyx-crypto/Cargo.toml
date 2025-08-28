@@ -7,7 +7,7 @@ description = "Nyx cryptography engine implementing Noise_Nyx handshake and HKDF
 license = "MIT OR Apache-2.0"
 
 [features]
-default = ["classic"]
+default = ["classic", "hybrid-handshake"]
 # Optional/experimental feature flag used for cfg guards in code paths (no deps)
 bike = []
 hpke = ["dep:hpke"]
@@ -19,6 +19,9 @@ classic = ["x25519-dalek"]
 # ML-KEM post-quantum build (NIST standardized) - replaces pqc_kyber for security
 kyber = ["ml-kem"]
 ml-kem = ["dep:ml-kem"]
+
+# Hybrid handshake with ML-KEM (Kyber-768) + X25519 (for Protocol v1.0)
+hybrid-handshake = ["dep:ml-kem", "classic"]
 
 # Convenience flag: build with hybrid classic/PQ algorithms
 hybrid = ["classic", "kyber"]
@@ -39,6 +42,7 @@ x25519-dalek = { version = "2.0.1", default-features = false, features = ["stati
 
 # Pure Rust post-quantum implementations
 ml-kem = { version = "0.2", optional = true }
+# pqcrypto-kyber = { version = "0.7", optional = true }  # Kyber-768 for hybrid handshake - replaced with ml-kem
 # pqc_kyber = { version = "0.7", optional = true } # REMOVED due to KyberSlash vulnerability
 # ml-kem = { version = "0.2", optional = true } # REMOVED due to C dependencies
 
@@ -75,7 +79,7 @@ nyx-telemetry = { path = "../nyx-telemetry", optional = true }
 # System dependencies
 
 # metadata serialization for future extensions
-serde = { version = "1", features=["derive"], optional = true }
+serde = { version = "1", features=["derive"] }
 serde_json = { version = "1", optional = true }
 
 # Async runtime for key rotation scheduling

@@ -2,6 +2,7 @@
 name = "nyx-transport"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 description = "Nyx UDP transport adapter with NAT traversal utilities."
 license = "MIT OR Apache-2.0"
@@ -10,6 +11,7 @@ license = "MIT OR Apache-2.0"
 default = []
 quic = []
 test_tracing = []
+run_quic_tests = []
 
 [dependencies]
 # 100% Pure Rust QUIC Transport Dependencies (ZERO C/C++ dependencies)

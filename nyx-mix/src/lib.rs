@@ -15,6 +15,7 @@ pub mod anonymity;
 pub mod cmix;
 pub mod cover;
 pub mod cover_adaptive;
+pub mod enhanced_cover_traffic; // Enhanced cover traffic & traffic analysis resistance for v1.0
 pub mod errors; // Error types for mix module
 pub mod larmix;
 pub mod vdf;
@@ -22,6 +23,14 @@ pub mod vdf_calib;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+// Re-export enhanced cover traffic types
+pub use cover::{adaptive_cover_rate, poisson_rate, CoverTrafficConfig, CoverTrafficGenerator};
+pub use cover_adaptive::{AdaptiveCoverManager, CoverConfig, NetworkMetrics};
+pub use enhanced_cover_traffic::{
+    AnonymityMetrics, CoverPacket, CoverPriority, CrossLayerMetrics, EnhancedCoverConfig,
+    EnhancedCoverError, EnhancedCoverManager, TrafficPattern,
+};
 
 /// Mix 層の動作モーチE
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
