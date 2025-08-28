@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.4
 
-FROM --platform=$BUILDPLATFORM rust:1.77-slim AS builder
+FROM --platform=$BUILDPLATFORM rust:1.81-slim AS builder
 ARG TARGET=x86_64-unknown-linux-musl
 ENV CARGO_TERM_COLOR=always
-RUN rustup target add $TARGET
+RUN rustup update && rustup target add $TARGET
 WORKDIR /workspace
 
 # Cache deps
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/workspace/target \
     cargo build -p nyx-cli --release --target $TARGET
 
-FROM gcr.io/distroless/cc-debian12@sha256:ce5c00e38acfc34b4e2cbbded4086985a45fc5517fcdba833ca6123e3aa8b6e1
+FROM gcr.io/distroless/cc-debian12
 ARG TARGET=x86_64-unknown-linux-musl
 COPY --from=builder /workspace/target/${TARGET}/release/nyx-cli /usr/bin/nyx-cli
 USER 65532:65532

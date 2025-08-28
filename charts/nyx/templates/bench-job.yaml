@@ -23,6 +23,8 @@ spec:
               value: {{ .Values.service.port | quote }}
             - name: TARGET_HEADLESS
               value: {{ printf "%s-headless" (include "nyx.fullname" .) | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.service.metricsPort | quote }}
 {{- with .Values.bench.env }}
 {{ toYaml . | indent 12 }}
 {{- end }}

@@ -149,19 +149,31 @@ serviceMonitor:
     command: ["/bin/sh","-lc"]
     args:
       - |
-        echo "Target service ${TARGET_SERVICE} ${TARGET_PORT}";
-        echo "DNS check (service)";
+        set -euo pipefail
+        echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}"
+        echo "Headless: ${TARGET_HEADLESS}"
+        echo "== DNS (service) =="
         (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
-          || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") \
-          || true;
-        echo "DNS check (headless)";
-        (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}") \
-          || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_HEADLESS}") \
-          || true;
-        echo "TCP connectivity probe";
-        (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true;
-        echo "Starting benchmark stub...";
-        sleep 2;
-        echo "OK";
+          || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") || true
+        echo "== DNS (headless) =="
+        PODS=$(
+          (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}" | awk '{print $1}') \
+          || (command -v nslookup >/dev/null 2>&1 && nslookup -type=A "${TARGET_HEADLESS}" 2>/dev/null | awk '/Address: /{print $2}') \
+          || true
+        )
+        echo "Resolved headless IPs: ${PODS:-none}"
+        echo "== TCP probe (service) =="
+        (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true
+        echo "== Metrics scrape (service) =="
+        if command -v wget >/dev/null 2>&1; then
+          wget -qO- "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" | head -n 5 || true
+        elif command -v curl >/dev/null 2>&1; then
+          curl -fsSL "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" | head -n 5 || true
+        fi
+        echo "== Fan-out TCP to headless pods =="
+        for ip in ${PODS}; do
+          (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "$ip" "${TARGET_PORT}") || true
+        done
+        echo "OK"
     env: []
     resources: {}
