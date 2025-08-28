@@ -13,9 +13,9 @@ spec:
     metadata:
       labels:
 {{ include "nyx.selectorLabels" . | indent 8 }}
-  annotations:
+      annotations:
 {{ toYaml (.Values.podAnnotations | default (dict)) | indent 8 }}
-  spec:
+    spec:
 {{- $sa := (default (dict) .Values.serviceAccount) -}}
 {{- $ps := (default (dict) .Values.podSecurity) -}}
 {{- $sp := (default (dict) $ps.seccompProfile) -}}
@@ -23,7 +23,7 @@ spec:
 {{- $mount := ($cfg.mountPath | default "/etc/nyx") -}}
 {{- $file := ($cfg.fileName | default "nyx.toml") -}}
 {{- if or $sa.create $sa.name }}
-    serviceAccountName: {{ default (include "nyx.fullname" .) $sa.name }}
+      serviceAccountName: {{ default (include "nyx.fullname" .) $sa.name }}
 {{- end }}
       securityContext:
 {{- if $sp.type }}
@@ -65,25 +65,25 @@ spec:
             - {{ toYaml . | nindent 14 }}
 {{- end }}
 {{- $probes := (default (dict) .Values.probes) -}}
-{{- if (and $probes.liveness ($probes.liveness.enabled)) }}
+{{- if (and $probes.liveness $probes.liveness.enabled) }}
           livenessProbe:
             tcpSocket:
               port: 43300
-            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds | default 10 }}
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds | default 15 }}
+            initialDelaySeconds: {{ $probes.liveness.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ $probes.liveness.periodSeconds | default 15 }}
 {{- end }}
 {{- $sm := (default (dict) .Values.serviceMonitor) -}}
 {{- if $sm.enabled }}
-{{- if (and $probes.readiness ($probes.readiness.enabled)) }}
+{{- if (and $probes.readiness $probes.readiness.enabled) }}
           readinessProbe:
             httpGet:
               path: {{ $probes.readiness.httpPath | default "/metrics" }}
               port: {{ $probes.readiness.httpPort | default .Values.service.metricsPort }}
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
+            initialDelaySeconds: {{ $probes.readiness.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ $probes.readiness.periodSeconds | default 10 }}
 {{- end }}
 {{- else }}
-{{- if (and $probes.readiness ($probes.readiness.enabled)) }}
+{{- if (and $probes.readiness $probes.readiness.enabled) }}
           readinessProbe:
 {{- if or (eq $probes.readiness.type "http") (and (not $probes.readiness.type) false) }}
             httpGet:
@@ -97,7 +97,7 @@ spec:
             periodSeconds: {{ $probes.readiness.periodSeconds | default 10 }}
 {{- end }}
 {{- end }}
-{{- if (and $probes.startup ($probes.startup.enabled)) }}
+{{- if (and $probes.startup $probes.startup.enabled) }}
           startupProbe:
             tcpSocket:
               port: 43300
