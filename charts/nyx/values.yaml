@@ -37,184 +37,131 @@ exporter:
 serviceMonitor:
   enabled: false
   interval: 15s
-  scrapeTimeout: 10s
-  labels: {}
-  annotations: {}
-  scheme: http
+  replicaCount: 1
 
-# PodDisruptionBudget configuration
-pdb:
-  enabled: true
-  minAvailable: 1
+  image:
+    repository: ghcr.io/seleniaproject/nyx-daemon
+    tag: latest
+    pullPolicy: IfNotPresent
 
-# HorizontalPodAutoscaler configuration
-hpa:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 75
-  targetBytesPerSecond: "5Mi"
-  enableCustomPodsMetric: false
+  service:
+    type: ClusterIP
+    port: 43300
+    metricsPort: 9090
+    annotations: {}
+    loadBalancerSourceRanges: []
+    externalTrafficPolicy: Cluster
+    sessionAffinity: None
 
-# Pod security context (seccomp)
-podSecurity:
-  # Choose seccomp profile type: RuntimeDefault | Localhost
-  seccompProfile:
-    type: RuntimeDefault
-    # If type=Localhost, set the profile file name available on the node or via projected volume
-    localhostProfile: "nyx-seccomp-bpf.json"
-
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 65532
-  runAsGroup: 65532
-  readOnlyRootFilesystem: true
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-      - ALL
-
-serviceAccount:
-  create: true
-  name: ""
-  annotations: {}
-
-rbac:
-  create: false
-
-podAnnotations: {}
-podLabels: {}
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-# Probes configuration
-probes:
-  liveness:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 20
-  readiness:
-    enabled: true
-    # type: tcp | http
-    type: tcp
-    httpPath: /metrics
-    httpPort: 9090
-    initialDelaySeconds: 20
-    periodSeconds: 10
-  startup:
+  serviceMonitor:
     enabled: false
-    failureThreshold: 30
-    periodSeconds: 2
 
-nodeSelector: {}
-tolerations: []
-affinity: {}
-topologySpreadConstraints: []
-priorityClassName: ""
-terminationGracePeriodSeconds: 30
+  podSecurity:
+    seccompProfile:
+      type: RuntimeDefault
 
-imagePullSecrets: []
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
-# Nyx daemon configuration projected as ConfigMap and mounted into the pod.
-config:
-  enabled: true
-  mountPath: /etc/nyx
-  fileName: config.toml
-  # Example minimal configuration. Override as needed.
-  data: |
-    listen_port = 43300
-    log_level = "info"
-    [mix]
-    hop_count = 5
-    cover_traffic_rate = 10.0
-    [transport]
-    quic_enabled = true
-    tcp_fallback = true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-secrets:
-  create: true
-  name: ""
-  apiTokenKey: NYX_CONTROL_TOKEN
-  apiTokenValue: ""
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 20
+    readiness:
+      enabled: true
+      type: tcp
+      httpPath: /metrics
+      httpPort: 9090
+      initialDelaySeconds: 20
+      periodSeconds: 10
+    startup:
+      enabled: false
+      failureThreshold: 30
+      periodSeconds: 2
+
+    podAnnotations: {}
+    podLabels: {}
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: 30
+
+  imagePullSecrets: []
+
+  config:
+    enabled: true
+    mountPath: /etc/nyx
+    fileName: config.toml
+    data: |
+      listen_port = 43300
+      log_level = "info"
+
+  secrets:
+    create: true
+    name: ""
+    apiTokenKey: NYX_CONTROL_TOKEN
+    apiTokenValue: ""
+    extraEnv: []
+
   extraEnv: []
-  # - name: SOME_SECRET
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: my-secret
-  #       key: key
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraInitContainers: []
+  extraContainers: []
 
-extraEnv: []
-extraEnvFrom: []
-extraVolumes: []
-extraVolumeMounts: []
-extraInitContainers: []
-extraContainers: []
+  networkPolicy:
+    enabled: false
+    allowEgressDNS: true
+    additionalIngressRules: []
+    additionalEgressRules: []
 
-# NetworkPolicy baseline: deny-all with explicit allowances
-networkPolicy:
-  enabled: false
-  allowIngressFromNamespaces: []
-  # - name: monitoring
-  #   namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
-  allowEgressDNS: true
-  additionalIngressRules: []
-  additionalEgressRules: []
+  cloud:
+    provider: ""
+    annotations: {}
 
-# Cloud provider specific hints (optional)
-cloud:
-  provider: ""
-  # provider: aws|gcp|azure (used only to help with example annotations)
-  annotations: {}
+  stateful:
+    enabled: false
 
-# Use StatefulSet instead of Deployment for stable Pod identities (optional)
-stateful:
-  enabled: false
-
-# Example of spreading pods across nodes and zones (uncomment to enable)
-# topologySpreadConstraints:
-#   - maxSkew: 1
-#     topologyKey: kubernetes.io/hostname
-#     whenUnsatisfiable: ScheduleAnyway
-#     labelSelector:
-#       matchLabels:
-#         app.kubernetes.io/name: nyx
-#   - maxSkew: 1
-#     topologyKey: topology.kubernetes.io/zone
-#     whenUnsatisfiable: ScheduleAnyway
-#     labelSelector:
-#       matchLabels:
-#         app.kubernetes.io/name: nyx
-
-# Benchmark job configuration (disabled by default)
-bench:
-  enabled: false
-  # Default to a tiny image with /bin/sh for simple connectivity checks.
-  image: alpine:3.19
-  imagePullPolicy: IfNotPresent
-  # Example: run a simple connectivity/throughput probe using nyx-cli or a custom tool.
-  command: ["/bin/sh","-lc"]
-  args:
-    - |
-      echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}";
-      echo "DNS check (service)";
-      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
-        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") \
-        || true;
-      echo "DNS check (headless)";
-      (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}") \
-        || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_HEADLESS}") \
-        || true;
-      echo "TCP connectivity probe (may fail if service doesn't accept plain TCP):";
-      (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true;
-      echo "Starting benchmark stub...";
-      # TODO: replace with real nyx-cli traffic generator once available
-      sleep 2;
-      echo "OK";
-  env: []
-  resources: {}
+  bench:
+    enabled: false
+    image: alpine:3.19
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/sh","-lc"]
+    args:
+      - |
+        echo "Target service ${TARGET_SERVICE} ${TARGET_PORT}";
+        echo "DNS check (service)";
+        (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_SERVICE}") \
+          || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_SERVICE}") \
+          || true;
+        echo "DNS check (headless)";
+        (command -v getent >/dev/null 2>&1 && getent hosts "${TARGET_HEADLESS}") \
+          || (command -v nslookup >/dev/null 2>&1 && nslookup "${TARGET_HEADLESS}") \
+          || true;
+        echo "TCP connectivity probe";
+        (command -v nc >/dev/null 2>&1 && nc -vz -w 2 "${TARGET_SERVICE}" "${TARGET_PORT}") || true;
+        echo "Starting benchmark stub...";
+        sleep 2;
+        echo "OK";
+    env: []
+    resources: {}
