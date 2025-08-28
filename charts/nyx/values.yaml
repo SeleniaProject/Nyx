@@ -96,9 +96,15 @@ resources:
 # Probes configuration
 probes:
   liveness:
+  enabled: true
     initialDelaySeconds: 30
     periodSeconds: 20
   readiness:
+  enabled: true
+  # type: tcp | http
+  type: tcp
+  httpPath: /metrics
+  httpPort: 9090
     initialDelaySeconds: 20
     periodSeconds: 10
   startup:

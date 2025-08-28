@@ -57,24 +57,36 @@ spec:
 {{- range .Values.extraEnvFrom }}
             - {{ toYaml . | nindent 14 }}
 {{- end }}
+{{- if .Values.probes.liveness.enabled }}
           livenessProbe:
             tcpSocket:
               port: 43300
             initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds | default 10 }}
             periodSeconds: {{ .Values.probes.liveness.periodSeconds | default 15 }}
+{{- end }}
 {{- if .Values.serviceMonitor.enabled }}
+{{- if .Values.probes.readiness.enabled }}
           readinessProbe:
             httpGet:
-              path: /metrics
-              port: {{ .Values.service.metricsPort }}
+              path: {{ .Values.probes.readiness.httpPath | default "/metrics" }}
+              port: {{ .Values.probes.readiness.httpPort | default .Values.service.metricsPort }}
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
+{{- end }}
 {{- else }}
+{{- if .Values.probes.readiness.enabled }}
           readinessProbe:
+{{- if or (eq .Values.probes.readiness.type "http") (and (not .Values.probes.readiness.type) false) }}
+            httpGet:
+              path: {{ .Values.probes.readiness.httpPath | default "/metrics" }}
+              port: {{ .Values.probes.readiness.httpPort | default .Values.service.metricsPort }}
+{{- else }}
             tcpSocket:
               port: 43300
+{{- end }}
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
+{{- end }}
 {{- end }}
 {{- if .Values.probes.startup.enabled }}
           startupProbe:
