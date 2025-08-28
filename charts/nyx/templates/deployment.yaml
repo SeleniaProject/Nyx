@@ -20,9 +20,17 @@ spec:
       serviceAccountName: {{ default (include "nyx.fullname" .) .Values.serviceAccount.name }}
 {{- end }}
       securityContext:
+{{- if .Values.podSecurity.seccompProfile.type }}
         seccompProfile:
-          type: Localhost
-          localhostProfile: {{ .Values.podSecurity.seccompProfile | quote }}
+          type: {{ .Values.podSecurity.seccompProfile.type }}
+{{- if eq .Values.podSecurity.seccompProfile.type "Localhost" }}
+          localhostProfile: {{ .Values.podSecurity.seccompProfile.localhostProfile | quote }}
+{{- end }}
+{{- else }}
+        # Default to RuntimeDefault if not explicitly set
+        seccompProfile:
+          type: RuntimeDefault
+{{- end }}
       containers:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -52,21 +60,28 @@ spec:
           livenessProbe:
             tcpSocket:
               port: 43300
-            initialDelaySeconds: 10
-            periodSeconds: 15
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds | default 15 }}
 {{- if .Values.serviceMonitor.enabled }}
           readinessProbe:
             httpGet:
               path: /metrics
               port: {{ .Values.service.metricsPort }}
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
 {{- else }}
           readinessProbe:
             tcpSocket:
               port: 43300
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
+{{- end }}
+{{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            tcpSocket:
+              port: 43300
+            failureThreshold: {{ .Values.probes.startup.failureThreshold | default 30 }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds | default 2 }}
 {{- end }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       volumes:

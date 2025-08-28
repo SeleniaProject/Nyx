@@ -58,8 +58,11 @@ hpa:
 
 # Pod security context (seccomp)
 podSecurity:
-  # Localhost seccomp profile name mounted via projected volume or node default path
-  seccompProfile: "nyx-seccomp-bpf.json"
+  # Choose seccomp profile type: RuntimeDefault | Localhost
+  seccompProfile:
+    type: RuntimeDefault
+    # If type=Localhost, set the profile file name available on the node or via projected volume
+    localhostProfile: "nyx-seccomp-bpf.json"
 
 securityContext:
   runAsNonRoot: true
@@ -89,6 +92,19 @@ resources:
   requests:
     cpu: 100m
     memory: 128Mi
+
+# Probes configuration
+probes:
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+  readiness:
+    initialDelaySeconds: 20
+    periodSeconds: 10
+  startup:
+    enabled: false
+    failureThreshold: 30
+    periodSeconds: 2
 
 nodeSelector: {}
 tolerations: []
