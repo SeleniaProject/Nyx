@@ -17,15 +17,20 @@ spec:
 {{ toYaml (.Values.podAnnotations | default (dict)) | indent 8 }}
   spec:
 {{- $sa := (default (dict) .Values.serviceAccount) -}}
+{{- $ps := (default (dict) .Values.podSecurity) -}}
+{{- $sp := (default (dict) $ps.seccompProfile) -}}
+{{- $cfg := (default (dict) .Values.config) -}}
+{{- $mount := ($cfg.mountPath | default "/etc/nyx") -}}
+{{- $file := ($cfg.fileName | default "nyx.toml") -}}
 {{- if or $sa.create $sa.name }}
     serviceAccountName: {{ default (include "nyx.fullname" .) $sa.name }}
 {{- end }}
       securityContext:
-{{- if .Values.podSecurity.seccompProfile.type }}
+{{- if $sp.type }}
         seccompProfile:
-          type: {{ .Values.podSecurity.seccompProfile.type }}
-{{- if eq .Values.podSecurity.seccompProfile.type "Localhost" }}
-          localhostProfile: {{ .Values.podSecurity.seccompProfile.localhostProfile | quote }}
+      type: {{ $sp.type }}
+{{- if eq $sp.type "Localhost" }}
+      localhostProfile: {{ $sp.localhostProfile | quote }}
 {{- end }}
 {{- else }}
         # Default to RuntimeDefault if not explicitly set
@@ -37,19 +42,19 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
-{{ toYaml .Values.securityContext | indent 12 }}
+{{ toYaml (.Values.securityContext | default (dict)) | indent 12 }}
           ports:
             - containerPort: 43300
             - containerPort: {{ .Values.service.metricsPort }}
           resources:
-{{ toYaml .Values.resources | indent 12 }}
+{{ toYaml (.Values.resources | default (dict)) | indent 12 }}
           volumeMounts:
             - name: config
-              mountPath: {{ .Values.config.mountPath }}
+        mountPath: {{ $mount }}
               readOnly: true
           env:
             - name: NYX_CONFIG
-              value: "{{ .Values.config.mountPath }}/{{ .Values.config.fileName }}"
+        value: "{{ $mount }}/{{ $file }}"
           envFrom:
 {{- $sec := (default (dict) .Values.secrets) -}}
 {{- if $sec.create }}
@@ -105,8 +110,8 @@ spec:
           configMap:
             name: {{ include "nyx.fullname" . }}
             items:
-              - key: {{ .Values.config.fileName }}
-                path: {{ .Values.config.fileName }}
+              - key: {{ $file }}
+                path: {{ $file }}
 {{- with .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml . | indent 8 }}

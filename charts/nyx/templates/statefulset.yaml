@@ -18,11 +18,13 @@ spec:
 {{ include "nyx.selectorLabels" . | indent 8 }}
     spec:
       securityContext:
-{{- if .Values.podSecurity.seccompProfile.type }}
+{{- $ps := (default (dict) .Values.podSecurity) -}}
+{{- $sp := (default (dict) $ps.seccompProfile) -}}
+{{- if $sp.type }}
         seccompProfile:
-          type: {{ .Values.podSecurity.seccompProfile.type }}
-{{- if eq .Values.podSecurity.seccompProfile.type "Localhost" }}
-          localhostProfile: {{ .Values.podSecurity.seccompProfile.localhostProfile | quote }}
+          type: {{ $sp.type }}
+{{- if eq $sp.type "Localhost" }}
+          localhostProfile: {{ $sp.localhostProfile | quote }}
 {{- end }}
 {{- else }}
         seccompProfile:
