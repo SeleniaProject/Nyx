@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+
+# Legacy-friendly multi-stage build without BuildKit features
+FROM rust:1.77-slim AS builder
+WORKDIR /workspace
+
+# Copy the full workspace (no cache mounts, no platform args)
+COPY . .
+
+# Build all crates except WASM (gnu target by default)
+RUN cargo build --release --workspace --exclude nyx-sdk-wasm
+
+FROM gcr.io/distroless/cc-debian12
+
+# Copy daemon binary built for the default gnu target
+COPY --from=builder /workspace/target/release/nyx-daemon /usr/bin/nyx-daemon
+
+USER 65532:65532
+ENTRYPOINT ["/usr/bin/nyx-daemon"]
