@@ -86,7 +86,6 @@ data:
         echo "❌ Check daemon configuration and port bindings"
     fi
     echo "======================================================"
-{{- end }}
     echo ""
 
     # Discover all daemon pod IPs using nslookup (Alpine compatible)
