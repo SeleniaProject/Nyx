@@ -81,12 +81,7 @@ if kubectl get deployment nyx -n nyx >/dev/null 2>&1; then
     sleep 5
 fi
 
-helm upgrade --install nyx ./charts/nyx -n nyx \
-  --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
-  --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
-  --set bench.testDurationSeconds=30 --set bench.concurrentConnections=5 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
-  --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
+helm upgrade --install nyx ./charts/nyx -n nyx -f ./charts/nyx/values-demo.yaml
 
 # Wait for deployment
 echo "Waiting for Nyx deployment to complete..."

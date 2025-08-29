@@ -11,7 +11,7 @@ data:
     #!/bin/sh
     set -e
     echo "======================================================"
-    echo "NYX NETWORK - SIMPLE CONNECTIVITY TEST"
+    echo "NYX NETWORK - MOCK DAEMON CONNECTIVITY TEST"
     echo "======================================================"
     echo "Bench Pod: $(hostname)"
     echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}"

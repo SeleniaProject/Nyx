@@ -1,0 +1,101 @@
+#!/bin/sh
+set -e
+
+echo "======================================================"
+echo "NYX NETWORK - DAEMON MOCK FOR TESTING"
+echo "======================================================"
+echo "Starting mock daemon on port 43300..."
+
+# Install minimal HTTP server
+apk add --no-cache python3 2>/dev/null || true
+
+# Create simple HTTP server that responds on port 43300
+cat > /tmp/mock_daemon.py << 'EOF'
+#!/usr/bin/env python3
+import socket
+import threading
+import time
+
+def handle_tcp_connection(conn, addr):
+    """Handle TCP connections on port 43300"""
+    try:
+        data = conn.recv(1024)
+        response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"
+        conn.send(response)
+    except:
+        pass
+    finally:
+        conn.close()
+
+def handle_http_connection(conn, addr):
+    """Handle HTTP connections on port 9090"""
+    try:
+        data = conn.recv(1024)
+        if b'GET /health' in data:
+            response = b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\nhealthy"
+        elif b'GET /metrics' in data:
+            response = b"HTTP/1.1 200 OK\r\nContent-Length: 50\r\n\r\n# Mock metrics\nnyx_connections_total 42\nnyx_uptime_seconds 100"
+        else:
+            response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"
+        conn.send(response)
+    except:
+        pass
+    finally:
+        conn.close()
+
+def start_tcp_server():
+    """Start TCP server on port 43300"""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('0.0.0.0', 43300))
+    server.listen(5)
+    print("TCP server listening on port 43300")
+    
+    while True:
+        conn, addr = server.accept()
+        thread = threading.Thread(target=handle_tcp_connection, args=(conn, addr))
+        thread.start()
+
+def start_http_server():
+    """Start HTTP server on port 9090"""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('0.0.0.0', 9090))
+    server.listen(5)
+    print("HTTP server listening on port 9090")
+    
+    while True:
+        conn, addr = server.accept()
+        thread = threading.Thread(target=handle_http_connection, args=(conn, addr))
+        thread.start()
+
+if __name__ == "__main__":
+    # Start both servers
+    tcp_thread = threading.Thread(target=start_tcp_server)
+    http_thread = threading.Thread(target=start_http_server)
+    
+    tcp_thread.daemon = True
+    http_thread.daemon = True
+    
+    tcp_thread.start()
+    http_thread.start()
+    
+    print("Mock daemon started successfully")
+    
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Shutting down...")
+EOF
+
+python3 /tmp/mock_daemon.py &
+DAEMON_PID=$!
+
+echo "Mock daemon started with PID: $DAEMON_PID"
+echo "Listening on:"
+echo "  - TCP port 43300 (main service)"  
+echo "  - HTTP port 9090 (metrics/health)"
+
+# Keep running
+wait $DAEMON_PID

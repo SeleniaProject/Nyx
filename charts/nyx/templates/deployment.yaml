@@ -41,6 +41,12 @@ spec:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.command }}
+          command: {{ .Values.command | toJson }}
+          {{- end }}
+          {{- if .Values.args }}
+          args: {{ .Values.args | toJson }}
+          {{- end }}
           securityContext:
 {{ toYaml (.Values.securityContext | default (dict)) | indent 12 }}
           ports:
@@ -55,6 +61,9 @@ spec:
             - name: tmp
               mountPath: /tmp
               readOnly: false
+            - name: daemon-script
+              mountPath: /scripts
+              readOnly: true
           env:
             - name: NYX_CONFIG
               value: "{{ $mount }}/{{ $file }}"
@@ -117,6 +126,10 @@ spec:
                 path: {{ $file }}
         - name: tmp
           emptyDir: {}
+        - name: daemon-script
+          configMap:
+            name: {{ include "nyx.fullname" . }}-daemon-script
+            defaultMode: 0755
 {{- with .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml . | indent 8 }}
