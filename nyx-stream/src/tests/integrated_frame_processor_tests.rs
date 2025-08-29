@@ -360,7 +360,7 @@ async fn test_buffer_status_monitoring() -> Result<()> {
         assert_eq!(count, 1, "Stream 1 should have 1 buffered frame");
         assert_eq!(expected_seq, 1, "Stream 1 expecting seq 1");
     } else {
-        panic!("Stream 1 buffer not found");
+    panic!("Stream 1 buffer not found");
     }
 
     // Check stream 2 buffer

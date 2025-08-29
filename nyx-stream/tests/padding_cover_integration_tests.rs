@@ -1,3 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect,
+    clippy::explicit_into_iter_loop,
+    clippy::uninlined_format_args,
+    clippy::unreachable
+)]
+
 //! Comprehensive Test Suite for Padding System & Enhanced Cover Traffic
 //!
 //! This test suite validates the integration between the stream layer padding system

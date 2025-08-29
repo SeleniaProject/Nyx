@@ -1,3 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect,
+    clippy::explicit_into_iter_loop,
+    clippy::uninlined_format_args,
+    clippy::unreachable
+)]
+
 //! Comprehensive test suite for Early Data and 0-RTT Reception implementation
 //!
 //! This test suite covers all aspects of the Early-Data and 0-RTT Reception

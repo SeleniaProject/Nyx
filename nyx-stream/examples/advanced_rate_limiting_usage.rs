@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 //! Practical usage example for Advanced Rate Limiting & Flow Control
 //!
 //! This example demonstrates how to integrate the Nyx Protocol v1.0 advanced

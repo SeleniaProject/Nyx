@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};

@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use schemars::schema_for;
 use std::{fs, path::PathBuf};
 // use schemars::JsonSchema;

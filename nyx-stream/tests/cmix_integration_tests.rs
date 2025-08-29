@@ -1,3 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect,
+    clippy::explicit_into_iter_loop,
+    clippy::uninlined_format_args,
+    clippy::unreachable
+)]
+
 //! Integration tests for cMix integration in Nyx Stream
 //!
 //! These tests verify the complete cMix integration functionality including:

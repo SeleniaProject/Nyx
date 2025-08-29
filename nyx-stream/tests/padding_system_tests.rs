@@ -1,3 +1,13 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect,
+    clippy::explicit_into_iter_loop,
+    clippy::uninlined_format_args,
+    clippy::unreachable
+)]
+
 //! Basic Tests for Padding System
 //!
 //! This test suite validates the core padding system functionality.

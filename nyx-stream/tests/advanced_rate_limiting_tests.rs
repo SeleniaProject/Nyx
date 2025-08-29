@@ -1,3 +1,14 @@
+#![allow(
+    missing_docs,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect,
+    clippy::explicit_into_iter_loop,
+    clippy::uninlined_format_args,
+    clippy::unreachable
+)]
+
 //! Comprehensive tests for Advanced Rate Limiting & Flow Control
 //!
 //! This test suite validates all aspects of the advanced rate limiting system
