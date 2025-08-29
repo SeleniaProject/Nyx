@@ -48,7 +48,8 @@ struct RpcResponseValue {
     ok: bool,
     code: u16,
     id: Option<String>,
-    #[serde(default)]
+    // Accept both "_data" (legacy) and "data" (current daemon)
+    #[serde(default, alias = "data")]
     _data: Option<serde_json::Value>,
     #[serde(default)]
     error: Option<String>,

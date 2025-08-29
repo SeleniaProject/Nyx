@@ -1,14 +1,17 @@
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 ar = "llvm-ar.exe"
+rustflags = ["-C", "embed-bitcode=yes"]
 
 [target.i686-pc-windows-msvc]
 linker = "rust-lld.exe"
 ar = "llvm-ar.exe"
+rustflags = ["-C", "embed-bitcode=yes"]
 
 [target.aarch64-pc-windows-msvc]
 linker = "rust-lld.exe"
 ar = "llvm-ar.exe"
+rustflags = ["-C", "embed-bitcode=yes"]
 
 [alias]
 # Run all tests in the workspace with verbose output
