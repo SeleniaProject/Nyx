@@ -32,6 +32,10 @@ cargo run -p nyx-cli --release -- info
 Write-Host 'Smoke: update_config (log_level=debug)'
 cargo run -p nyx-cli --release -- update-config --set log_level="\"debug\""
 
+# Create a snapshot so that list-versions shows at least one entry
+Write-Host 'Smoke: snapshot (description=u22-demo)'
+cargo run -p nyx-cli --release -- snapshot --description u22-demo
+
 Write-Host 'Smoke: list_versions'
 cargo run -p nyx-cli --release -- list-versions
 
