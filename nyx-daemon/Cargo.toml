@@ -125,7 +125,7 @@ log = "0.4"
 
 # Metrics and telemetry
 metrics = "0.22"
-metrics-exporter-prometheus = { version = "0.13", default-features = false }
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
 opentelemetry = { version = "0.21", default-features = false, features = ["trace"] }
 opentelemetry-otlp = { version = "0.14", default-features = false }
 opentelemetry-semantic-conventions = { version = "0.13", default-features = false }
