@@ -54,6 +54,7 @@ See `examples/ipc_client.rs` for a minimal client.
 
 ## Development Notes
 
+- Toolchain: this workspace uses Cargo.lock v4. If you see `lock file version 4 requires -Znext-lockfile-bump`, update Rust (stable) via `rustup update stable`, or regenerate the lockfile with your cargo (not recommended).
 - Unsafe code is forbidden (`#![forbid(unsafe_code)]`)
 - SIMD JSON parsing is disabled for decoding (safety); encoding may use `simd-json` when enabled.
 - Run tests:
