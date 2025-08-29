@@ -8,6 +8,9 @@ license = "MIT OR Apache-2.0"
 
 build = "build.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 nom = { version = "7", default-features = false, features = ["std"] }
 nyx-core = { path = "../nyx-core" }

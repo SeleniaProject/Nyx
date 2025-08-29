@@ -6,6 +6,9 @@ edition = "2021"
 description = "Nyx Core utilities, types, configuration, and error handling."
 license = "MIT OR Apache-2.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

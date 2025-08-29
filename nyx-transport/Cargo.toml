@@ -7,6 +7,9 @@ build = "build.rs"
 description = "Nyx UDP transport adapter with NAT traversal utilities."
 license = "MIT OR Apache-2.0"
 
+[lints]
+workspace = true
+
 [features]
 default = []
 quic = []
