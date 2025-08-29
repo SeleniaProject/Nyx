@@ -24,3 +24,15 @@ if (-not (Test-Path -Path './nyx.toml')) {
 }
 
 Write-Host 'Done. You can set $env:NYX_CONFIG to point to nyx.toml if needed.'
+
+# --- Minimal smoke: info -> update_config -> list_versions ---
+Write-Host 'Smoke: nyx-cli info'
+cargo run -p nyx-cli --release -- info
+
+Write-Host 'Smoke: update_config (log_level=debug)'
+cargo run -p nyx-cli --release -- update-config --set log_level="\"debug\""
+
+Write-Host 'Smoke: list_versions'
+cargo run -p nyx-cli --release -- list-versions
+
+Write-Host 'U22 demo smoke completed.'

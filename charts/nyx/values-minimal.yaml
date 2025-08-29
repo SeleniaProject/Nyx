@@ -1,0 +1,51 @@
+# Ultra-minimal values for immediate deployment
+replicaCount: 1
+
+image:
+  repository: alpine
+  pullPolicy: IfNotPresent
+  tag: "3.19"
+
+daemon:
+  command: ["/bin/sh"]
+  args: ["-c", "apk add --no-cache netcat-openbsd && while true; do echo 'OK' | nc -l -p 43300; done"]
+
+service:
+  type: ClusterIP
+  port: 43300
+  metricsPort: 9090
+
+bench:
+  enabled: true
+  image: alpine:3.19
+  replicas: 1
+  testDurationSeconds: 10
+  concurrentConnections: 1
+
+# Disable everything for speed
+probes:
+  startup:
+    enabled: false
+  liveness:
+    enabled: false
+  readiness:
+    enabled: false
+
+resources:
+  limits:
+    cpu: 50m
+    memory: 64Mi
+  requests:
+    cpu: 25m
+    memory: 32Mi
+
+serviceMonitor:
+  enabled: false
+pdb:
+  enabled: false
+hpa:
+  enabled: false
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false
