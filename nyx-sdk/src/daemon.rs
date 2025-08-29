@@ -58,9 +58,11 @@ struct RpcResponseValue {
 /// Mirror of daemon's ConfigResponse for caller convenience
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigResponse {
+    #[serde(alias = "__succes_s")]
     pub success: bool,
+    #[serde(alias = "_message")]
     pub message: String,
-    #[serde(default)]
+    #[serde(default, alias = "__validation_error_s")]
     pub validation_errors: Vec<String>,
 }
 

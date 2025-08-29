@@ -6,9 +6,7 @@
 
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-// use std::time::Duration;
 use thiserror::Error;
-// use tokio::time::timeout;
 
 #[derive(Error, Debug)]
 pub enum TeredoError {

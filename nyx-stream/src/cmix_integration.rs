@@ -25,42 +25,27 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, warn};
 
 /// cMix integration errors
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CmixIntegrationError {
     /// VDF computation failed
+    #[error("VDF computation failed: {0}")]
     VdfFailed(VdfError),
     /// Batch processing error
+    #[error("Batch processing error: {0}")]
     BatchError(CmixError),
     /// Accumulator proof validation failed
+    #[error("Accumulator error: {0:?}")]
     AccumulatorError(AccumulatorError),
     /// Invalid configuration
+    #[error("Invalid configuration: {reason}")]
     InvalidConfig { reason: String },
     /// Network timeout
+    #[error("Network timeout after {duration:?}")]
     NetworkTimeout { duration: Duration },
     /// Channel communication error
+    #[error("Channel error: {message}")]
     ChannelError { message: String },
 }
-
-impl std::fmt::Display for CmixIntegrationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CmixIntegrationError::VdfFailed(e) => write!(f, "VDF computation failed: {e}"),
-            CmixIntegrationError::BatchError(e) => write!(f, "Batch processing error: {e}"),
-            CmixIntegrationError::AccumulatorError(e) => write!(f, "Accumulator error: {e:?}"),
-            CmixIntegrationError::InvalidConfig { reason } => {
-                write!(f, "Invalid configuration: {reason}")
-            }
-            CmixIntegrationError::NetworkTimeout { duration } => {
-                write!(f, "Network timeout after {duration:?}")
-            }
-            CmixIntegrationError::ChannelError { message } => {
-                write!(f, "Channel error: {message}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for CmixIntegrationError {}
 
 impl From<VdfError> for CmixIntegrationError {
     fn from(e: VdfError) -> Self {

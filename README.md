@@ -1,356 +1,123 @@
-## Nyx Protocol 🌓
+<div align="center">
 
-![CI](https://github.com/SeleniaProject/Nyx/actions/workflows/comprehensive_ci.yml/badge.svg)
-![Formal Verification](https://github.com/SeleniaProject/Nyx/actions/workflows/formal-verification.yml/badge.svg)
-![Docs](https://github.com/SeleniaProject/Nyx/actions/workflows/docs.yml/badge.svg)
+# NyxNet
+
+Modular, privacy-first networking stack in Rust. Clean architecture, safe-by-default, and OSS-friendly.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE-MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE-APACHE)
 ![Rust Edition](https://img.shields.io/badge/Rust-2021-orange)
 ![OS](https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-555)
-[![codecov](https://codecov.io/gh/SeleniaProject/Nyx/branch/main/graph/badge.svg)](https://codecov.io/gh/SeleniaProject/Nyx)
 
-**A high-performance, privacy-focused, and formally verified network protocol implementation.**
+</div>
 
-Nyx is a modular transport protocol that combines advanced cryptography, mix networking, and formal verification. Built in Rust with comprehensive test coverage and continuous integration across multiple platforms.
+## Overview
 
-> Dual-licensed under MIT and Apache-2.0. Actively developed in a multi-crate Cargo workspace.
+NyxNet is a multi-crate Rust workspace that brings together a daemon, CLI, SDKs, and transport/stream/crypto utilities to build privacy-preserving networked apps. Dual-licensed under MIT or Apache-2.0.
 
-[➡ Ubuntu で Kubernetes を使った最短クイックスタート（ワンライナー付き）](docs/quickstart-ubuntu-k8s.md)
+## Highlights
 
-### Table of Contents
+- nyx-daemon: pure Rust daemon with newline-delimited JSON RPC over UDS/Named Pipe, hot-reloadable config, event streaming, optional Prometheus.
+- nyx-cli: CLI for daemon operations and quick smoke tests.
+- nyx-core: IDs, time, config builder, i18n, rate limiting, Windows minimal sandbox feature.
+- nyx-crypto: pure Rust AEAD/KDF/HPKE building blocks (no unsafe).
+- nyx-transport: minimal UDP/TCP helpers.
+- nyx-stream: stream layer with plugin framework (permissions, CBOR headers).
+- nyx-fec: FEC for fixed 1280-byte shards with adaptive redundancy tuning.
+- nyx-conformance: deterministic network simulator and property testing helpers.
+- nyx-sdk: app-facing SDK (async stream, daemon client).
+- nyx-sdk-wasm: WASM SDK for browser/Node/WASI (Noise demo, push, multipath, HPKE).
+- nyx-mobile-ffi: C-ABI for mobile integration.
 
-- Highlights
-- Architecture
-- Workspace layout
-- Build and run
-- Quick Start: talk to the daemon
-- Specifications and docs
-- Formal verification
-- Configuration
-- Telemetry
-- Security
-- Status
-- OS Support
-- Roadmap
-- Contributing
-- License
+See `Cargo.toml` workspace members for the authoritative list.
 
-### Why Nyx?
+## Quick start (local)
 
-- Privacy by design: mix routing + capability negotiation + robust close/error codes.
-- Practical performance: secure stream layer with framing/flow control and UDP-based transport.
-- Verifiability: TLA+ models and automated verification pipeline included.
-- Observability: OpenTelemetry and Prometheus support out of the box.
-
-### ✨ Key Features
-
-- 🔐 **Advanced Cryptography**: Noise_Nyx handshake with robust key derivation
-- 🌐 **Mix Networking**: Privacy-preserving path selection and cover traffic
-- 🚀 **High Performance**: Efficient UDP transport with NAT traversal
-- 📊 **Rich Telemetry**: OpenTelemetry OTLP and Prometheus integration
-- 🧪 **Formally Verified**: TLA+ models with automated verification
-- 🏗️ **Modular Design**: 15+ specialized crates for maximum flexibility
-- 🌍 **Cross-Platform**: Linux, macOS, and Windows support
-- 📱 **SDK Ready**: Rust, WebAssembly, and mobile FFI bindings
-
-### 🎯 Core Components
-
-- 🔐 **nyx-stream** — Secure stream layer with framing and flow control
-- 🛰️ **nyx-transport** — UDP transport adapter with NAT traversal utilities
-- 🧭 **nyx-mix** — Mix routing layer for path selection and cover traffic
-- 🧩 **nyx-control** — Capability negotiation and control plane (DHT, settings sync)
-- ⚙️ **nyx-crypto** — Cryptography engine with Noise_Nyx handshake and HKDF helpers
-- 🧱 **nyx-fec** — Reed–Solomon FEC for fixed 1280B packets
-- 📊 **nyx-telemetry** — Telemetry via OpenTelemetry OTLP and Prometheus
-- 🧰 **nyx-cli & nyx-daemon** — CLI tools and long-running daemon
-- 📦 **SDKs** — Rust, WebAssembly, and mobile FFI bindings
-- ✅ **nyx-conformance** — Conformance tests and formal models (TLA+)
-
-### 🏗️ Architecture
+1) Build
 
 ```
-	+---------------------+     +-----------------------+
-	|     Applications    |     |   Tools/Integrations  |
-	+----------+----------+     +-----------+-----------+
-						 \                          /
-							\                        /
-							 v                      v
-				+-------------------------------------+
-				|          SDKs & Interfaces          |
-				|  nyx-sdk  |  nyx-sdk-wasm  |       |
-				|  nyx-mobile-ffi  |  nyx-cli        |
-				+-------------------+-----------------+
-														|
-														v
-								 +---------------------------+
-								 |         nyx-daemon        |
-								 | IPC: UDS / Win NamedPipe  |
-								 +-------------+-------------+
-															 |
-															 v
-			+---------------------------------------------------+
-			|              Core Protocol Layers                  |
-			|  +-----------+   +---------+   +----------------+  |
-			|  | nyx-stream|-->| nyx-mix |-->| nyx-transport |  |
-			|  | framing/  |   | path    |   | UDP + NAT     |  |
-			|  | flow ctrl |   | select  |   | traversal     |  |
-			|  +-----+-----+   +----+----+   +--------+-----+  |
-			|        |              |                 |        |
-			|        v              v                 v        |
-			|    nyx-crypto      nyx-fec           (sockets)   |
-			|  (Noise_Nyx/HKDF) (Reed–Solomon)                 |
-			+---------------------------------------------------+
-															 |
-															 v
-									 +---------------------------+
-									 |    nyx-control (DHT /    |
-									 |      settings sync)      |
-									 +---------------------------+
-
-	metrics from daemon/stream/transport  --->  +---------------------+
-																							|   nyx-telemetry     |
-																							| OTLP / Prometheus   |
-																							+---------------------+
+cargo build --release
 ```
 
-### 📁 Workspace Layout
+2) Explore binaries
 
-| Crate | Description | Purpose |
-|-------|-------------|---------|
-| `nyx-core` | Core types, config, errors | Foundation for all other crates |
-| `nyx-crypto` | Noise_Nyx handshake, crypto primitives | Cryptographic security layer |
-| `nyx-stream` | Secure stream layer (framing, flow control) | Application data transport |
-| `nyx-transport` | UDP transport + NAT traversal | Network connectivity |
-| `nyx-mix` | Mix routing (path selection, cover traffic) | Privacy and anonymity |
-| `nyx-fec` | Reed–Solomon FEC (1280B fixed packets) | Error correction |
-| `nyx-telemetry` | OpenTelemetry OTLP + Prometheus exporters | Observability and monitoring |
-| `nyx-control` | Control plane (DHT, settings sync) | Network coordination |
-| `nyx-daemon` | Long-running daemon process | Service management |
-| `nyx-cli` | Command line interface | User interaction |
-| `nyx-sdk` | Rust SDK | Application integration |
-| `nyx-sdk-wasm` | WebAssembly bindings | Web platform support |
-| `nyx-mobile-ffi` | Mobile FFI bindings | iOS/Android support |
-| `nyx-conformance` | Protocol conformance test suite | Compliance verification |
-
-### 🚀 Build and Run
-
-**Requirements:**
-- Rust (stable) and Cargo
-- Protobuf codegen is handled in-repo via a vendored helper
-- System `protoc` is optional but recommended
-
-**Quick Commands:**
-
-```powershell
-# Build all crates in release mode
-cargo build --release --workspace
-
-# Run the daemon (IPC: Unix socket or Windows named pipe)
-cargo run -p nyx-daemon --release
-
-# Run comprehensive test suite
-cargo test --workspace --all-features
-
-# Run with parallel testing
-cargo test --workspace --all-features -- --test-threads=4
-
-# Build with optimization for size
-cargo build --release --workspace --profile=min-size
-
-# Check all code with clippy
-cargo clippy --workspace --all-features
-
-# Generate documentation
-cargo doc --workspace --no-deps --open
-
-# Format all code
-cargo fmt --all
-
-# Windows: Build & verification helper
-./scripts/build-verify.ps1
+```
+./target/release/nyx-daemon --help
+./target/release/nyx-cli --help
 ```
 
-**Performance Profiling:**
+3) Configure
 
-```powershell
-# Run benchmarks
-cargo bench --workspace
+- Primary config file: `nyx.toml`
+- Minimal example:
 
-# Profile with cargo flamegraph (requires flamegraph)
-cargo install flamegraph
-cargo flamegraph --bin nyx-daemon
+```toml
+# nyx.toml (excerpt)
+log_level = "info"
+listen_port = 43300
+
+[network]
+bind_addr = "127.0.0.1:43300"
+
+# If present, applied as the default Nyx stream safety cap at daemon boot
+max_frame_len_bytes = 8_388_608
 ```
 
-### Quick Start: talk to the daemon
+The daemon logs at info level by default. Override via `RUST_LOG`.
 
-Nyx daemon exposes a simple newline-delimited JSON RPC over IPC.
+## IPC / API
 
-- Endpoint
-	- Unix: `/tmp/nyx.sock`
-	- Windows: `\\.\\pipe\\nyx-daemon`
-- Minimal request (GetInfo): `{ "id": "1", "op": "get_info" }`
+- Newline-delimited JSON request/response.
+- Endpoints: Unix `/tmp/nyx.sock`, Windows `\\.\\pipe\\nyx-daemon`.
+- Core ops: `get_info`, `reload_config` (auth), `update_config` (auth), `list_config_versions` (auth), `rollback_config` (auth), `create_config_snapshot` (auth), `subscribe_events` (auth; switches to stream mode).
+- Token discovery order: `NYX_DAEMON_TOKEN` → `NYX_DAEMON_COOKIE` (or default cookie path) → auto-generated at boot if missing. Set `NYX_DAEMON_STRICT_AUTH=1` to require a valid token for privileged ops.
 
-Example (Rust) — Windows named pipe client sending GetInfo:
+See `docs/api.md` for details.
 
-```rust
-// Cargo.toml: tokio = { version = "1", features = ["full"] }, serde_json = "1"
-#[cfg(windows)]
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-		use tokio::io::{AsyncReadExt, AsyncWriteExt};
-		use tokio::net::windows::named_pipe::ClientOptions;
-		let mut cli = ClientOptions::new().open(r"\\.\pipe\nyx-daemon")?;
-		let req = serde_json::json!({"id":"demo","op":"get_info"}).to_string() + "\n";
-		cli.write_all(req.as_bytes()).await?;
-		let mut buf = vec![0u8; 4096];
-		let n = cli.read(&mut buf).await?;
-		println!("{}", String::from_utf8_lossy(&buf[..n]));
-		Ok(())
-}
-```
+## Metrics
 
-Authorized operations require a token (see Security). Include it via `auth`:
+- Optional Prometheus exporter. Set `NYX_PROMETHEUS_ADDR` (e.g. `127.0.0.1:0`) to expose `/metrics` via an embedded HTTP server.
 
-```json
-{ "id": "u1", "auth": "<YOUR_TOKEN>", "op": "update_config", "settings": {"log_level": "debug"} }
-```
+## Kubernetes / Helm
 
-### Specifications and docs
+- Charts live in `charts/nyx`. Refer to `docs/quickstart-ubuntu-k8s.md` for a minimal walkthrough.
 
-- Protocol specifications live in `spec/` (English and Japanese). For example:
-	- `spec/Nyx_Protocol_v0.1_Spec_EN.md`
-	- `spec/Nyx_Protocol_v1.0_Spec_EN.md` (complete feature specification document)
-- The `docs/` directory is being refactored; see specifications for authoritative details.
+## Documentation
 
-### Formal verification
+- Start here: `docs/index.md`
+- Architecture: `docs/architecture.md`
+- Configuration: `docs/configuration.md`
+- IPC/API: `docs/api.md`
+ - Specifications overview: `docs/specs.md`
 
-- TLA+ models and TLC configurations in `formal/`
-- Automated pipelines and reporting in `scripts/` (e.g., verification runners and coverage report generation)
+## Specifications (brief)
 
-### 📊 Status & Test Coverage
+- Nyx Protocol v1.0 (draft; includes planned features): `spec/Nyx_Protocol_v1.0_Spec_EN.md`
+	- Multipath data plane (per-packet PathID), extended header with 12-byte CID, fixed 1280B payloads
+	- Hybrid post-quantum handshake (X25519 + Kyber) and HPKE support; anti-replay window 2^20 per direction
+	- Plugin frames 0x50–0x5F with CBOR header; capability negotiation via CBOR list (see policy below)
+	- Optional cMix mode (batch≈100, VDF≈100ms), adaptive cover traffic (target utilization 0.2–0.6)
+	- Compliance levels: Core / Plus / Full; telemetry: OTLP spans alongside Prometheus
+	- Note: Some items are roadmap-level and may not be fully implemented yet.
+- Nyx Protocol v0.1 (baseline implemented set): `spec/Nyx_Protocol_v0.1_Spec_EN.md`
+- Capability Negotiation Policy: `spec/Capability_Negotiation_Policy_EN.md`
+	- CBOR entries `{id:u32, flags:u8, data:bytes}`; flags bit 0x01 = Required
+	- Unsupported Required capability → CLOSE 0x07 with the 4-byte unsupported ID in reason
+- Design Document: `spec/Nyx_Design_Document_EN.md`
+	- Principles: security-by-design, performance without compromise, modularity, formal methods
+	- Layers: secure stream, mix routing, obfuscation+FEC, transport; async pipeline with backpressure
+	- Cryptography: AEAD/KDF/HPKE, key rotation, PQ readiness; threat model covers global passive/active
 
-| Component | Status | Test Coverage | Description |
-|-----------|--------|---------------|-------------|
-| **Core Protocol** | ✅ Stable | 95%+ | Foundation types and configuration |
-| **Cryptography** | ✅ Stable | 90%+ | Noise_Nyx handshake and primitives |
-| **Stream Layer** | ✅ Stable | 95%+ | Framing, flow control, multipath |
-| **Transport** | ✅ Stable | 90%+ | UDP, NAT traversal, path validation |
-| **Mix Routing** | ✅ Stable | 85%+ | Path selection, cover traffic, accumulator |
-| **FEC** | ✅ Stable | 95%+ | Reed-Solomon error correction |
-| **Telemetry** | ✅ Stable | 90%+ | OTLP, Prometheus, metrics |
-| **Control Plane** | 🚧 Active Dev | 80%+ | DHT, capability negotiation |
-| **Daemon** | ✅ Stable | 85%+ | IPC, service management |
-| **CLI** | 🚧 Active Dev | 75%+ | Command interface, user tools |
-| **SDK (Rust)** | ✅ Stable | 80%+ | Application integration |
-| **SDK (WASM)** | 🚧 Active Dev | 70%+ | Web platform bindings |
-| **Mobile FFI** | 🚧 Active Dev | 60%+ | iOS/Android support |
-| **Conformance** | ✅ Stable | 100% | Protocol compliance testing |
+## Contributing
 
-**Overall Project Status:** 🟢 **Production Ready**
-- Multi-crate workspace builds and tests pass across platforms
-- Comprehensive CI/CD with formal verification
-- 85%+ average test coverage across all components
+We welcome contributions! Please review `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`. Keep changes safe, focused, and well-tested.
 
-### OS Support
+## License
 
-- Linux/macOS: Unix domain socket at `/tmp/nyx.sock`
-- Windows: Named pipe at `\\.\\pipe\\nyx-daemon`
-- CI workflows cover Linux, Windows, and (where applicable) docs generation; formal verification runs in CI.
+Licensed under either of:
 
-### 🛣️ Roadmap
+- MIT (`LICENSE-MIT`)
+- Apache-2.0 (`LICENSE-APACHE`)
 
-#### **Phase 1: Core Hardening** (Q1 2024) ✅
-- [x] Core protocol stability and performance optimization
-- [x] Comprehensive test coverage (85%+ achieved)
-- [x] Cross-platform CI/CD pipeline
-- [x] Formal verification integration
+Choose the license that best fits your needs.
 
-#### **Phase 2: Extended Features** (Q2 2024) 🚧
-- [x] Enhanced telemetry dashboards and OTLP pipelines  
-- [ ] Advanced NAT traversal and connectivity strategies
-- [ ] Extended capability negotiation features
-- [ ] Performance optimization and benchmarking
-
-#### **Phase 3: SDK & Platform Expansion** (Q3 2024) 📅
-- [ ] WebAssembly SDK completion and optimization
-- [ ] Mobile FFI bindings for iOS/Android
-- [ ] Advanced CLI features and user experience
-- [ ] SDK documentation and examples
-
-#### **Phase 4: Production Readiness** (Q4 2024) 📅
-- [ ] Security audit and vulnerability assessment
-- [ ] Protocol plugins per v1.0 specification
-
-### Kubernetes: Multi-node testing quickstart
-
-- Build/push container image (or use `ghcr.io/seleniaproject/nyx-daemon:latest`).
-- Helm chart is under `charts/nyx`. Install with multiple replicas:
-
-```bash
-helm upgrade --install nyx charts/nyx \
-	--set replicaCount=3 \
-	--set stateful.enabled=false
-
-kubectl get pod -l app.kubernetes.io/name=nyx -o wide
-```
-
-Options:
-- Headless Service is included for direct pod DNS: `nyx-0.nyx-headless`, `nyx-1.nyx-headless`, ...
-- To spread pods across nodes/zones, set `topologySpreadConstraints` in `values.yaml` or via `--set-json`.
-- For stable pod IDs and stateful addressing, enable `--set stateful.enabled=true`.
- - Bench Job defaults to an `alpine:3.19` shell script for connectivity checks. Replace with `--set bench.image=ghcr.io/seleniaproject/nyx-cli:latest` and adjust `bench.command/args` when real traffic gen is ready.
-- [ ] Advanced monitoring and alerting
-- [ ] Production deployment guides
-
-#### **Future Considerations**
-- Advanced privacy features (e.g., onion routing)
-- Additional transport protocols (QUIC, TCP fallback)
-- Distributed hash table improvements
-- Machine learning-based traffic analysis resistance
-
-### Configuration
-
-- `NYX_CONFIG`: Optional path to a config file that the daemon will manage.
-- `NYX_FRAME_MAX_LEN`: Optional process-wide override (bytes) for Frame codec safety cap. Valid range 1024..=67108864. Defaults to 8 MiB when unset.
-- Configuration can be hot-reloaded and snapshotted via daemon RPC:
-	- `reload_config`, `update_config { settings }`, `create_config_snapshot`,
-		`list_config_versions`, `rollback_config { version }`.
-
-Daemon dynamic settings accepted via `update_config`:
-- `log_level`: one of `trace|debug|info|warn|error` (applies immediately)
-- `metrics_interval_secs`: 1..=3600
-- `max_frame_len_bytes`: 1024..=67108864; also sets `NYX_FRAME_MAX_LEN` env so codec limit is applied.
-
-### Telemetry
-
-- `nyx-telemetry` integrates OpenTelemetry (OTLP) and Prometheus exporters.
-- Metrics hooks are present in core components; integration points depend on the consumer crate.
-
-### Security
-
-- Default (dev): If `NYX_DAEMON_TOKEN` is unset or empty, daemon authorizes all RPCs.
-- Production: Enable auth with either an env token or a Tor-style cookie file.
-	- Env token: set `NYX_DAEMON_TOKEN` to a strong secret and pass it as `auth`.
-	- Cookie file (Tor-style): write a token to a file and point daemon/CLI to it.
-		- Daemon reads token in this order: `NYX_DAEMON_TOKEN` (non-empty) -> `NYX_DAEMON_COOKIE` -> default cookie paths.
-			- Windows default: `%APPDATA%\nyx\control.authcookie`
-			- Unix default: `$HOME/.nyx/control.authcookie` (also tries `/run/nyx/control.authcookie`)
-		- CLI auto-discovers token in this order: env (`NYX_CONTROL_TOKEN` -> `NYX_TOKEN`) -> cookie file (`NYX_DAEMON_COOKIE` or default path) -> `nyx.toml` [cli.token]. Empty/whitespace is ignored.
-	- Generate a cookie file via CLI:
-		- Windows (PowerShell)
-			```powershell
-			nyx-cli gencookie --path "$env:APPDATA/nyx/control.authcookie" --force
-			```
-		- Unix
-			```bash
-			nyx-cli gencookie --path "$HOME/.nyx/control.authcookie" --force
-			```
-- IPC endpoints are local-only (Unix socket / Windows named pipe); still treat tokens/cookies as sensitive.
-
-### Contributing
-
-See `CONTRIBUTING.md` and the code of conduct in `CODE_OF_CONDUCT.md`.
-
-### License
-
-This project is dual-licensed under either MIT or Apache-2.0. See `LICENSE-MIT` and `LICENSE-APACHE` for details.

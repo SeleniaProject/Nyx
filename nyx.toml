@@ -1,24 +1,51 @@
 # Nyx Network Configuration
+# Production-ready configuration template with security best practices
+
 # Basic network settings
 listen_port = 43300
-node_id = "auto"
+node_id = "auto"  # Auto-generate secure node ID
 
-# Logging
-log_level = "info"
+# Logging configuration
+log_level = "info"  # Options: error, warn, info, debug, trace
+log_format = "json"  # Structured logging for production
 
-# Bootstrap peers for network discovery
+# Security settings
+[security]
+# Enable security features
+max_connections = 1000
+connection_timeout = 30
+max_frame_size = 8388608  # 8MB max frame size
+rate_limit_requests = 100  # requests per second
+rate_limit_bytes = 10485760  # 10MB per second
+
+# Bootstrap peers for network discovery (production)
 bootstrap_peers = [
     "/dns4/validator1.nymtech.net/tcp/1789/p2p/12D3KooWNyxMainnet1",
     "/dns4/validator2.nymtech.net/tcp/1789/p2p/12D3KooWNyxMainnet2",
-    "/dns4/testnet-validator1.nymtech.net/tcp/1789/p2p/12D3KooWNyxTestnet1"
+    "/dns4/validator3.nymtech.net/tcp/1789/p2p/12D3KooWNyxMainnet3"
 ]
 
 # Network binding configuration
 [network]
-# Bind address - use 127.0.0.1 for security by default, change to specific IP for production
+# Bind address - use 0.0.0.0 for production, 127.0.0.1 for development
 bind_addr = "127.0.0.1:43300"
-# Development mode for localhost binding
-development = true
+# IPv6 support
+ipv6_enabled = true
+# Development mode settings
+development = false
+# Maximum peers to maintain
+max_peers = 100
+# Peer connection timeout
+peer_timeout = 30
+
+# Cryptographic settings
+[crypto]
+# Post-quantum cryptography support
+pq_enabled = true
+# Key rotation interval (seconds)
+key_rotation_interval = 3600
+# Session timeout (seconds)
+session_timeout = 7200
 
 # DHT configuration
 [dht]
@@ -30,19 +57,82 @@ port = 43301
 peer_cache_size = 1000
 # Discovery timeout in seconds
 discovery_timeout = 30
+# DHT refresh interval
+refresh_interval = 300
 
 # Service endpoints
 [endpoints]
 # gRPC control API address
 grpc_addr = "127.0.0.1:50051"
-# Prometheus metrics address  
+# Prometheus metrics address
 prometheus_addr = "127.0.0.1:9090"
+# Enable TLS for endpoints
+tls_enabled = false
+# TLS certificate path (if enabled)
+# tls_cert = "/path/to/cert.pem"
+# tls_key = "/path/to/key.pem"
 
 # CLI specific configuration
 [cli]
-# Maximum reconnect attempts for stream establishment / monitor logic
+# Maximum reconnect attempts for stream establishment
 max_reconnect_attempts = 5
+# Command timeout (seconds)
+command_timeout = 30
+# Output format (json, yaml, table)
+output_format = "table"
+# Enable colored output
+colored_output = true
+
+# Performance tuning
+[performance]
+# Worker thread count (0 = auto)
+worker_threads = 0
+# Buffer sizes
+read_buffer_size = 65536
+write_buffer_size = 65536
+# Memory limits
+max_memory_usage = 1073741824  # 1GB
+
+# Plugin system configuration
+[plugins]
+# Enable plugin system
+enabled = false
+# Plugin directory
+plugin_dir = "./plugins"
+# Plugin sandbox level (none, basic, strict)
+sandbox_level = "strict"
+# Maximum plugin memory usage
+max_plugin_memory = 104857600  # 100MB
+
+# Monitoring and telemetry
+[monitoring]
+# Enable metrics collection
+metrics_enabled = true
+# Metrics collection interval (seconds)
+metrics_interval = 60
+# Enable tracing
+tracing_enabled = false
+# Tracing endpoint
+# tracing_endpoint = "http://localhost:14268"
 
 # Static safety limits
-# Max codec frame length (bytes). Valid range: 1024..=67108864
+[limits]
+# Maximum codec frame length (bytes). Valid range: 1024..=67108864
 max_frame_len_bytes = 8388608
+# Maximum concurrent connections
+max_concurrent_connections = 1000
+# Maximum request size
+max_request_size = 16777216  # 16MB
+# Connection idle timeout
+idle_timeout = 300
+
+# Development settings (remove in production)
+[development]
+# Enable development features
+dev_mode = false
+# Enable debug endpoints
+debug_endpoints = false
+# Disable authentication (UNSAFE)
+disable_auth = false
+# Verbose logging
+verbose_logging = false

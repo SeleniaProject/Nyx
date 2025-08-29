@@ -26,20 +26,8 @@ use tracing::{debug, info, trace, warn};
 /// Maximum number of RTT samples to maintain per path for statistics
 const MAX_RTT_SAMPLES: usize = 100;
 
-/// Minimum number of samples required for reliable statistics
-#[allow(dead_code)]
-const MIN_SAMPLES_FOR_STATS: usize = 5;
-
-/// Weight adjustment factor for latency-based selection
-#[allow(dead_code)]
-const LATENCY_WEIGHT_FACTOR: f64 = 2.0;
-
 /// Loss rate penalty exponential factor
 const LOSS_PENALTY_DECAY: f64 = 0.95;
-
-/// Congestion detection threshold (packets/second)
-#[allow(dead_code)]
-const CONGESTION_THRESHOLD: f64 = 1000.0;
 
 /// Path selection algorithm types
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

@@ -112,7 +112,9 @@ impl ConfigManager {
 
         for (k, v) in update_s.into_iter() {
             match k.as_str() {
-                "___log_level" => {
+                // Accept aliases for ergonomics
+                // "log_level" (CLI/docs) -> "___log_level" (internal)
+                "___log_level" | "log_level" => {
                     if let Some(level) = v.as_str() {
                         if matches!(level, "trace" | "debug" | "info" | "warn" | "error") {
                             dyncfg.___log_level = Some(level.to_string());
@@ -127,14 +129,16 @@ impl ConfigManager {
                         error_s.push("___log_level must be string".to_string());
                     }
                 }
-                "metrics_interval_sec_s" => match v.as_u64() {
+                // "metrics_interval_secs" (friendly) -> "metrics_interval_sec_s" (internal)
+                "metrics_interval_sec_s" | "metrics_interval_secs" => match v.as_u64() {
                     Some(sec_s) if (1..=3600).contains(&sec_s) => {
                         dyncfg.metrics_interval_sec_s = Some(sec_s);
                         changed.push(k);
                     }
                     _ => error_s.push("metrics_interval_sec_s must be 1..=3600".into()),
                 },
-                "max_frame_len_byte_s" => {
+                // "max_frame_len_bytes" (docs/CLI) -> "max_frame_len_byte_s" (internal)
+                "max_frame_len_byte_s" | "max_frame_len_bytes" => {
                     match v.as_u64() {
                         Some(n) if (1024..=64 * 1024 * 1024).contains(&n) => {
                             dyncfg.max_frame_len_byte_s = Some(n);

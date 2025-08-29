@@ -12,7 +12,35 @@ tla_verification_report.json
 tla_coverage_report.json
 tla_report.html
 
+# Binary tools (should be installed via package manager)
+helm.exe
+kubectl.exe
+
+# Backups and editor artifacts
+*.backup
+*.bak
+*.old
+*.orig
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Local charts backups
+charts/**/values*.backup
+
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

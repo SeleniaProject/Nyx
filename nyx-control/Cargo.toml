@@ -51,8 +51,5 @@ default = ["dht"]
 [dependencies.build-protoc]
 path = "../build-protoc"
 
-[build-dependencies]
-protoc-bin-vendored = "3"
-
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros", "net", "time"] }

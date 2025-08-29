@@ -19,16 +19,6 @@ const MAX_LATENCY_SAMPLES: usize = 100;
 /// Latency measurement window in seconds
 const LATENCY_WINDOW_SECONDS: u64 = 60;
 
-/// Percentile thresholds for latency classification
-#[allow(dead_code)]
-const LOW_LATENCY_PERCENTILE: f64 = 0.25;
-#[allow(dead_code)]
-const HIGH_LATENCY_PERCENTILE: f64 = 0.75;
-
-/// Latency degradation threshold multiplier
-#[allow(dead_code)]
-const DEGRADATION_THRESHOLD: f64 = 1.5;
-
 /// Adaptive threshold adjustment factor
 const THRESHOLD_ADJUSTMENT_FACTOR: f64 = 0.1;
 

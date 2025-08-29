@@ -7,12 +7,12 @@ description = "Nyx Core utilities, types, configuration, and error handling."
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 toml = "0.7"
-thiserror = "1.0"
-tracing = "0.1"
-tokio = { version = "1", features = ["sync", "time", "macros", "rt", "rt-multi-thread", "net", "io-util"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "macros", "rt", "rt-multi-thread", "net", "io-util"] }
 notify = { version = "6.1" }
 fluent-bundle = { version = "0.15" }
 unic-langid = "0.9"
@@ -20,12 +20,12 @@ once_cell = "1.19"
 ciborium = "0.2"
 tokio-stream = { version = "0.1", features=["sync"] }
 async-trait = "0.1"
-anyhow = "1"
-uuid = { version = "1.0", features = ["v4"] }
-futures = "0.3"
-rand = { version = "0.8", features = ["std"] }
-chrono = { version = "0.4", features = ["serde"] }
-sha2 = "0.10"
+anyhow = { workspace = true }
+uuid = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
 serde_bytes = "0.11"
 num_cpus = "1.16"
 socket2 = "0.5"
@@ -69,8 +69,6 @@ mobile = ["nyx-crypto"]
 mobile_ffi = ["nyx-mobile-ffi"]
 # Push notification feature flags kept for API gating, but without pulling TLS deps
 push = []
-fcm = []
-apns = []
 # Optional modules (off by default to avoid build breakage)
 plugin_framework = ["cbor4ii"]
 multipath_dp = []
@@ -130,6 +128,3 @@ harness = false
 [[bench]]
 name = "push_gateway_enhanced"
 harness = false
-
-[build-dependencies]
-protoc-bin-vendored = "3"

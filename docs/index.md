@@ -1,9 +1,16 @@
-# Nyx ドキュメント（全面改稿中）
+---
+title: NyxNet Documentation
+---
 
-このドキュメントは現在リライト中です。順次、以下の章を公開予定です。
+# NyxNet Documentation
 
-- クイックスタート
-- デーモン制御（IPC）
-- 設定とイベント
-- 運用ガイド
-- 開発者向けAPI
+NyxNet is a privacy-first, modular networking stack in Rust. It comprises multiple crates providing a daemon, CLI, SDKs, WASM bindings, and mobile integration.
+
+This site covers:
+
+- Quick start (local/Helm)
+- Architecture (crates, responsibilities, IPC)
+- Configuration reference (`nyx.toml`, environment variables)
+- IPC/API (newline-delimited JSON RPC operations)
+
+Use the left navigation to dive in.

@@ -6,7 +6,7 @@ copyright: "Copyright © Nyx Project contributors"
 docs_dir: docs
 theme:
   name: material
-  language: ja
+  language: en
   features:
     - navigation.tabs
     - navigation.instant
@@ -15,8 +15,12 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/SeleniaProject/NyxNet
 nav:
-  - トップ: index.md
-  - クイックスタート（Ubuntu/k8s）: quickstart-ubuntu-k8s.md
+  - Home: index.md
+  - Quickstart (Ubuntu/k8s): quickstart-ubuntu-k8s.md
+  - Architecture: architecture.md
+  - Configuration: configuration.md
+  - API: api.md
+  - Specifications: specs.md
 markdown_extensions:
   - admonition
   - codehilite
@@ -24,8 +28,8 @@ markdown_extensions:
 plugins:
   - search
   - i18n:
-      default_language: ja
+      default_language: en
       languages:
-        ja: 日本語
         en: English
+        ja: 日本語
         zh: 中文 
