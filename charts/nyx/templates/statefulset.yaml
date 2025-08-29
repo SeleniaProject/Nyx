@@ -1,11 +1,5 @@
 {{- $st := index .Values "stateful" -}}
-          volumeMounts:
-            - name: config
-              mountPath: {{ (default (dict) .Values.config).mountPath }}
-              readOnly: true
-            - name: tmp
-              mountPath: /tmp
-              readOnly: falseif and $st (index $st "enabled") }}
+{{- if and $st (index $st "enabled") }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -36,30 +30,33 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 {{- end }}
-  containers:
+      containers:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
-{{ toYaml .Values.securityContext | indent 12 }}
+{{ toYaml (.Values.securityContext | default (dict)) | indent 12 }}
           ports:
             - containerPort: 43300
             - containerPort: {{ .Values.service.metricsPort }}
           volumeMounts:
             - name: config
-      mountPath: {{ (default (dict) .Values.config).mountPath }}
+              mountPath: {{ (default (dict) .Values.config).mountPath | default "/etc/nyx" }}
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
           env:
             - name: NYX_CONFIG
-      value: "{{ (default (dict) .Values.config).mountPath }}/{{ (default (dict) .Values.config).fileName }}"
-      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+              value: "{{ (default (dict) .Values.config).mountPath | default "/etc/nyx" }}/{{ (default (dict) .Values.config).fileName | default "nyx.toml" }}"
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 30 }}
       volumes:
         - name: config
           configMap:
             name: {{ include "nyx.fullname" . }}
             items:
-              - key: {{ (default (dict) .Values.config).fileName }}
-                path: {{ (default (dict) .Values.config).fileName }}
+              - key: {{ (default (dict) .Values.config).fileName | default "nyx.toml" }}
+                path: {{ (default (dict) .Values.config).fileName | default "nyx.toml" }}
         - name: tmp
           emptyDir: {}
 {{- end }}
