@@ -52,6 +52,9 @@ spec:
             - name: config
               mountPath: {{ $mount }}
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
           env:
             - name: NYX_CONFIG
               value: "{{ $mount }}/{{ $file }}"
@@ -112,6 +115,8 @@ spec:
             items:
               - key: {{ $file }}
                 path: {{ $file }}
+        - name: tmp
+          emptyDir: {}
 {{- with .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml . | indent 8 }}
