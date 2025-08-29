@@ -1,4 +1,5 @@
 #![cfg(feature = "classic")]
+#![allow(missing_docs)]
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use x25519_dalek::{PublicKey, StaticSecret};

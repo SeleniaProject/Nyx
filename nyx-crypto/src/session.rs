@@ -278,8 +278,8 @@ mod test_s {
         let (s1, c1) = ses_s.sealnext(aad, b"m1")?;
         assert_eq!(s1, 1);
         assert!(ses_s.sealnext(aad, b"m3").is_err());
-        assert_eq!(ses_s.open_at(s0, aad, &c0).unwrap(), b"m0");
-        assert_eq!(ses_s.open_at(s1, aad, &c1).unwrap(), b"m1");
+    assert_eq!(ses_s.open_at(s0, aad, &c0)?, b"m0");
+    assert_eq!(ses_s.open_at(s1, aad, &c1)?, b"m1");
         Ok(())
     }
 
@@ -333,8 +333,8 @@ mod test_s {
         let (_, c0) = tx.sealnext(b"aad", b"m0")?;
         let (_, c1) = tx.sealnext(b"aad", b"m1")?;
         assert!(tx.needs_rekey());
-        assert_eq!(rx_old.open_at(0, b"aad", &c0).unwrap(), b"m0");
-        assert_eq!(rx_old.open_at(1, b"aad", &c1).unwrap(), b"m1");
+    assert_eq!(rx_old.open_at(0, b"aad", &c0)?, b"m0");
+    assert_eq!(rx_old.open_at(1, b"aad", &c1)?, b"m1");
         tx.rekey();
         assert_eq!(tx.seq(), 0);
         let (s2, c2) = tx.sealnext(b"aad", b"m2")?;
@@ -356,13 +356,13 @@ mod test_s {
             .with_rekey_interval(1)
             .withdirection_id(2);
         let (s0, c0) = tx.sealnext(b"aad", b"hello")?;
-        assert_eq!(rx.open_at(s0, b"aad", &c0).unwrap(), b"hello");
+    assert_eq!(rx.open_at(s0, b"aad", &c0)?, b"hello");
         assert!(tx.needs_rekey());
         tx.rekey();
         rx.rekey();
         let (s1, c1) = tx.sealnext(b"aad", b"world")?;
         assert_eq!(s1, 0);
-        assert_eq!(rx.open_at(0, b"aad", &c1).unwrap(), b"world");
+    assert_eq!(rx.open_at(0, b"aad", &c1)?, b"world");
         Ok(())
     }
 

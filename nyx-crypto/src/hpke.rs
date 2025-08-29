@@ -70,15 +70,19 @@ mod imp {
 #[cfg(not(feature = "hpke"))]
 mod imp {
     use crate::{Error, Result};
+    /// HPKE seal stub when `hpke` feature is disabled.
     pub fn seal(_: &[u8], _: &[u8], _: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         Err(Error::Protocol("hpke feature disabled".into()))
     }
+    /// HPKE open stub when `hpke` feature is disabled.
     pub fn open(_: &[u8], _: &[u8], _: &[u8], _: &[u8]) -> Result<Vec<u8>> {
         Err(Error::Protocol("hpke feature disabled".into()))
     }
+    /// Keypair generation stub when `hpke` feature is disabled.
     pub fn gen_keypair() -> (Vec<u8>, Vec<u8>) {
         (vec![], vec![])
     }
+    /// Random AAD stub when `hpke` feature is disabled.
     pub fn random_aad(_: usize) -> Vec<u8> {
         vec![]
     }

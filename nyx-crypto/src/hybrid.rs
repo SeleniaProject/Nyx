@@ -38,6 +38,7 @@ static HYBRID_PQ_ENCAPSULATIONS: AtomicU64 = AtomicU64::new(0);
 static HYBRID_CLASSIC_DH_OPS: AtomicU64 = AtomicU64::new(0);
 
 /// Telemetry helper to record handshake events
+/// Telemetry span for hybrid handshakes (feature `telemetry`).
 #[cfg(feature = "telemetry")]
 pub struct HandshakeTelemetry {
     _start_time: Instant,
@@ -77,6 +78,7 @@ impl HandshakeTelemetry {
     }
 }
 
+/// No-op telemetry when `telemetry` is disabled.
 #[cfg(not(feature = "telemetry"))]
 pub struct HandshakeTelemetry;
 
@@ -153,12 +155,14 @@ impl HybridHandshakeMetrics {
     }
 }
 
+/// Supported KEM kinds for hybrid mode.
 #[derive(Debug, Clone, Copy)]
 pub enum HybridKemKind {
     #[cfg(feature = "kyber")]
     Kyber,
 }
 
+/// Configuration for hybrid handshake.
 #[derive(Debug, Clone)]
 pub struct HybridConfig {
     pub kem: Option<HybridKemKind>,
@@ -178,11 +182,13 @@ impl Default for HybridConfig {
 pub struct HybridHandshake;
 
 impl HybridHandshake {
+    /// Create a new handshake helper.
     pub fn new(_cfg: HybridConfig) -> Self {
         Self
     }
 
     /// Returns whether hybrid KEM is effectively enabled (feature + config).
+    /// Returns whether hybrid KEM is effectively enabled.
     pub fn is_enabled(&self) -> bool {
         #[cfg(feature = "kyber")]
         {

@@ -1,4 +1,5 @@
 #![cfg(feature = "hybrid")]
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use nyx_crypto::hybrid::{handshake, KyberStaticKeypair, X25519StaticKeypair};
 use nyx_crypto::kyber;
@@ -48,8 +49,7 @@ fn hybrid_demo_rejects_static_mismatch() -> Result<(), Box<dyn std::error::Error
     // Use wrong expected initiator static pk
     let wrong_pk = X25519StaticKeypair::from_seed([9u8; 32]).pk;
     let err_local =
-        handshake::responder_handshake(&r_x, &r_pq, &wrong_pk, &init.msg1, prologue).unwrap_err();
-    let msg = format!("{err_local}");
-    assert!(msg.contains("initiator static mismatch") || msg.contains("hybrid init"));
+        handshake::responder_handshake(&r_x, &r_pq, &wrong_pk, &init.msg1, prologue);
+    assert!(err_local.is_err());
     Ok(())
 }

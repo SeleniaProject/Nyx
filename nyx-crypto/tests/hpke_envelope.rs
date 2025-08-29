@@ -1,4 +1,5 @@
 #![cfg(feature = "hybrid")]
+#![allow(missing_docs, clippy::panic, clippy::unwrap_used, clippy::expect_used)]
 
 //! HPKE (Hybrid Public Key Encryption) Envelope Testing Suite
 //!

@@ -4,6 +4,7 @@
 //! Kyber-768 and X25519 according to Nyx Protocol v1.0 specification.
 
 #[cfg(feature = "hybrid-handshake")]
+#[allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod hybrid_handshake_tests {
     use nyx_crypto::hybrid_handshake::*;
     use nyx_crypto::Result;
@@ -270,7 +271,10 @@ mod hybrid_handshake_tests {
         // Collect all results
         let mut all_secrets = HashSet::new();
         for handle in handles {
-            let thread_secrets = handle.join().unwrap()?;
+            let thread_secrets = match handle.join() {
+                Ok(v) => v?,
+                Err(_) => panic!("thread panicked"),
+            };
             for secret in thread_secrets {
                 assert!(
                     all_secrets.insert(secret),

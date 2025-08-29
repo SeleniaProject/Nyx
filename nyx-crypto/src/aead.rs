@@ -29,6 +29,7 @@ pub struct AeadNonce(pub [u8; 12]);
 
 /// Ultra-high performance AEAD cipher with zero-copy optimizations,
 /// pre-computed ciphers, and buffer reuse for maximum throughput.
+/// High-level AEAD cipher facade.
 pub struct AeadCipher {
     suite: AeadSuite,
     key: AeadKey,
@@ -37,6 +38,7 @@ pub struct AeadCipher {
 }
 
 /// Zero-copy AEAD operations with buffer reuse
+/// Stateful processor for repeated AEAD operations.
 pub struct AeadProcessor {
     cipher: ChaCha20Poly1305,
     // Pre-allocated buffers to avoid repeated allocations
@@ -189,6 +191,7 @@ impl AeadCipher {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod test_s {
     use super::*;
     use proptest::prelude::*;
@@ -232,6 +235,7 @@ mod test_s {
     }
 
     #[cfg(test)]
+    #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     mod performance_tests {
         use super::*;
         use std::time::Instant;
@@ -244,10 +248,12 @@ mod test_s {
             let message = b"Hello, this is a test message for benchmarking AEAD performance";
             let nonce = AeadNonce([1u8; 12]);
 
-            // ウォームアップ
+            // ウォームアップ（失敗時はテスト失敗）
             for _ in 0..100 {
-                let ct = cipher.seal(nonce, aad, message).unwrap();
-                let _pt = cipher.open(nonce, aad, &ct).unwrap();
+                let ct = cipher.seal(nonce, aad, message).expect("seal failed in warmup");
+                let _pt = cipher
+                    .open(nonce, aad, &ct)
+                    .expect("open failed in warmup");
             }
 
             // ベンチマーク実行
@@ -257,8 +263,12 @@ mod test_s {
                 let mut current_nonce = nonce;
                 current_nonce.0[0] = (i % 256) as u8;
 
-                let ct = cipher.seal(current_nonce, aad, message).unwrap();
-                let pt = cipher.open(current_nonce, aad, &ct).unwrap();
+                let ct = cipher
+                    .seal(current_nonce, aad, message)
+                    .expect("seal failed in bench");
+                let pt = cipher
+                    .open(current_nonce, aad, &ct)
+                    .expect("open failed in bench");
                 assert_eq!(pt, message);
             }
 

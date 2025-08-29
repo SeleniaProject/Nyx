@@ -160,6 +160,7 @@ pub mod ik_demo {
     }
 
     #[derive(Clone)]
+    /// X25519 static keypair used in the demo handshake.
     pub struct StaticKeypair {
         pub sk: [u8; 32],
         pub pk: [u8; 32],
@@ -182,6 +183,7 @@ pub mod ik_demo {
 
     // 旧スタブ�EHKDF関数は対称状態に置き換ぁE
 
+    /// Output of the initiator side of the demo handshake.
     pub struct InitiatorResult {
         pub msg1: Vec<u8>,
         pub __tx: AeadSession,
@@ -192,6 +194,7 @@ pub mod ik_demo {
         handshake_hash: [u8; 32],
     }
     #[derive(Debug)]
+    /// Output of the responder side of the demo handshake.
     pub struct ResponderResult {
         pub __tx: AeadSession,
         pub __rx: AeadSession,
@@ -488,24 +491,23 @@ pub mod ik_demo {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic, clippy::uninlined_format_args, clippy::unwrap_used, clippy::expect_used)]
 mod test_s {
     use super::*;
     #[test]
     fn test_hybrid_message_too_short() {
-        let err = validate_hybrid_message_len(&[1, 2, 3, 4, 5, 6, 7]).unwrap_err();
-        match err {
-            Error::Protocol(s) => assert!(s.contains("below minimum")),
-            _ => panic!("Expected Protocol error"),
+        match validate_hybrid_message_len(&[1, 2, 3, 4, 5, 6, 7]) {
+            Err(Error::Protocol(s)) => assert!(s.contains("below minimum")),
+            other => panic!("Expected Protocol error, got: {:?}", other),
         }
     }
 
     #[test]
     fn test_hybrid_message_too_long() {
         let v = vec![0u8; super::MAX_NOISE_MSG_LEN + 1];
-        let err = validate_hybrid_message_len(&v).unwrap_err();
-        match err {
-            Error::Protocol(s) => assert!(s.contains("exceeds maximum")),
-            _ => panic!("Expected Protocol error"),
+        match validate_hybrid_message_len(&v) {
+            Err(Error::Protocol(s)) => assert!(s.contains("exceeds maximum")),
+            other => panic!("Expected Protocol error, got: {:?}", other),
         }
     }
 
@@ -576,8 +578,8 @@ mod test_s {
         let hdr = if &msg1_bad[0..2] == b"NX" { 4 } else { 0 };
         let idx = hdr + 32 + ik_demo::MSG1_LEN_CIPHERTEXT + 2; // early CT position
         msg1_bad[idx] ^= 1;
-        let err = responder_handshake(&r, &i.pk, &msg1_bad, prologue).unwrap_err();
-        assert!(matches!(err, Error::Protocol(_)));
+    let err = responder_handshake(&r, &i.pk, &msg1_bad, prologue);
+    assert!(matches!(err, Err(Error::Protocol(_))));
         Ok(())
     }
 
@@ -593,8 +595,8 @@ mod test_s {
         // Strip header to simulate legacy msg1 carrying early data
         assert!(init.msg1.len() > 4 && &init.msg1[0..2] == b"NX");
         let legacy = init.msg1[4..].to_vec();
-        let err = ik_demo::responder_handshake(&r, &i.pk, &legacy, prologue).unwrap_err();
-        assert!(matches!(err, Error::Protocol(s) if s.contains("legacy early")));
+    let err = ik_demo::responder_handshake(&r, &i.pk, &legacy, prologue);
+    assert!(matches!(err, Err(Error::Protocol(s)) if s.contains("legacy early")));
         Ok(())
     }
 
@@ -643,7 +645,7 @@ mod test_s {
         let res = responder_handshake(&r, &other.pk, &init.msg1, prologue);
         match res {
             Err(Error::Protocol(s)) => assert!(s.contains("mismatch")),
-            _ => panic!("expected mismatch"),
+            _ => panic!("expected mismatch, got: {:?}", res),
         }
         Ok(())
     }
@@ -658,8 +660,8 @@ mod test_s {
         let resp = responder_handshake(&r, &i.pk, &init.msg1, prologue)?;
         let mut bad = resp.msg2.clone();
         bad[0] ^= 0x01; // flip a bit
-        let err = ik_demo::initiator_verify_msg2(&mut init, &bad).unwrap_err();
-        assert!(matches!(err, Error::Protocol(_)));
+    let err = ik_demo::initiator_verify_msg2(&mut init, &bad);
+    assert!(matches!(err, Err(Error::Protocol(_))));
         Ok(())
     }
 

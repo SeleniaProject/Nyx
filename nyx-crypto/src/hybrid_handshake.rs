@@ -308,11 +308,13 @@ impl HybridKeyPair {
     /// Get the public key component
     pub fn public_key(&self) -> HybridPublicKey {
         let kyber_public = KyberPublicKey::from_bytes(
-            self.kyber_encaps_key
-                .as_bytes()
-                .as_slice()
-                .try_into()
-                .expect("Invalid encaps key size"),
+            {
+                // as_slice() should be exactly KYBER_PUBLIC_KEY_SIZE; copy defensively
+                let s = self.kyber_encaps_key.as_bytes();
+                let mut arr = [0u8; KYBER_PUBLIC_KEY_SIZE];
+                arr.copy_from_slice(s.as_slice());
+                arr
+            },
         );
         HybridPublicKey::new(kyber_public, self.x25519_public)
     }
