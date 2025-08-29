@@ -74,11 +74,20 @@ sudo usermod -aG docker $USER
 
 ### クラスタリセット
 ```bash
-# kindクラスタ削除
-kind delete cluster --name nyx
+# 完全クリーンアップ
+./scripts/nyx-cleanup.sh
 
-# 再実行
+# 再デプロイ
 ./scripts/nyx-deploy.sh
+```
+
+**Windows:**
+```powershell
+# 完全クリーンアップ
+.\scripts\nyx-cleanup.bat
+
+# 再デプロイ
+.\scripts\nyx-deploy.bat
 ```
 
 ## ✅ U22プログラミングコンテスト対応

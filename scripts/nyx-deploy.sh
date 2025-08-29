@@ -52,14 +52,35 @@ kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -
 echo "Installing Prometheus Operator..."
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
-helm install prometheus-operator prometheus-community/kube-prometheus-stack \
-  --namespace monitoring --create-namespace \
-  --set grafana.enabled=false --set alertmanager.enabled=false \
-  --set prometheus.enabled=false --set kubeStateMetrics.enabled=false \
-  --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+
+# Check if already installed and upgrade if needed
+if helm list -n monitoring | grep -q prometheus-operator; then
+    echo "Prometheus Operator already installed, upgrading..."
+    helm upgrade prometheus-operator prometheus-community/kube-prometheus-stack \
+      --namespace monitoring \
+      --set grafana.enabled=false --set alertmanager.enabled=false \
+      --set prometheus.enabled=false --set kubeStateMetrics.enabled=false \
+      --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+else
+    echo "Installing new Prometheus Operator..."
+    helm install prometheus-operator prometheus-community/kube-prometheus-stack \
+      --namespace monitoring --create-namespace \
+      --set grafana.enabled=false --set alertmanager.enabled=false \
+      --set prometheus.enabled=false --set kubeStateMetrics.enabled=false \
+      --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+fi
 
 # Deploy Nyx with multi-node configuration
 echo "Deploying Nyx with multi-node performance testing..."
+
+# Clean up any existing deployment first
+if kubectl get deployment nyx -n nyx >/dev/null 2>&1; then
+    echo "Cleaning up existing Nyx deployment..."
+    kubectl delete job nyx-bench -n nyx --ignore-not-found=true
+    helm uninstall nyx -n nyx || true
+    sleep 5
+fi
+
 helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \

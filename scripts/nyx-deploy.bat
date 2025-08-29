@@ -56,10 +56,29 @@ REM Add Prometheus Operator for ServiceMonitor support
 echo Installing Prometheus Operator...
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
-helm install prometheus-operator prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --set grafana.enabled=false --set alertmanager.enabled=false --set prometheus.enabled=false --set kubeStateMetrics.enabled=false --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+
+REM Check if already installed and upgrade if needed
+helm list -n monitoring | findstr "prometheus-operator" >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Prometheus Operator already installed, upgrading...
+    helm upgrade prometheus-operator prometheus-community/kube-prometheus-stack --namespace monitoring --set grafana.enabled=false --set alertmanager.enabled=false --set prometheus.enabled=false --set kubeStateMetrics.enabled=false --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+) else (
+    echo Installing new Prometheus Operator...
+    helm install prometheus-operator prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --set grafana.enabled=false --set alertmanager.enabled=false --set prometheus.enabled=false --set kubeStateMetrics.enabled=false --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+)
 
 REM Deploy Nyx with multi-node configuration
 echo Deploying Nyx with multi-node performance testing...
+
+REM Clean up any existing deployment first
+kubectl get deployment nyx -n nyx >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Cleaning up existing Nyx deployment...
+    kubectl delete job nyx-bench -n nyx --ignore-not-found=true
+    helm uninstall nyx -n nyx 2>nul || echo Previous deployment cleaned
+    timeout /t 5 >nul
+)
+
 helm upgrade --install nyx ./charts/nyx -n nyx --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
 
 REM Wait for deployment
