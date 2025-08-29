@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use nyx_core::sandbox::{apply_policy, SandboxPolicy, SandboxStatus};
 use std::{fs, process, time::Instant};
 use tempfile::tempdir;

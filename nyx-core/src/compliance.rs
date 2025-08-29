@@ -7,6 +7,7 @@
 //!
 //! - **Core**: Minimum compatibility (v0.1 feature set)
 //! - **Plu_s**: Multipath, Hybrid Post-Quantum (recommended)
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! - **Full**: cMix, Plugin Framework, Low Power Mode (all Features)
 
 use crate::config::CoreConfig;

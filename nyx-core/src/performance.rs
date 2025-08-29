@@ -574,6 +574,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn ewma_precision_with_large_numbers() {
         let mut ewma = Ewma::new(0.1);
 
@@ -581,7 +582,7 @@ mod tests {
         ewma.update(1_000_000.0);
         ewma.update(2_000_000.0);
 
-        let result = ewma.get().unwrap();
+    let result = ewma.get().unwrap();
         assert!(result > 1_000_000.0 && result < 2_000_000.0);
 
         // Should be close to 1,100,000 (0.1 * 2M + 0.9 * 1M)

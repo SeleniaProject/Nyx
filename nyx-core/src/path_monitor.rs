@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 /// Simple path latency monitor using a fixed-size window.
 #[derive(Debug, Clone)]
 pub struct LatencyWindow {

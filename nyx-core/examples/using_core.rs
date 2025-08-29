@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used)]
+
 use nyx_core::{config::CoreConfig, types::StreamId};
 use std::num::NonZeroU32;
 

@@ -1,3 +1,15 @@
+#![allow(
+    missing_docs,
+    dead_code,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect,
+    clippy::explicit_into_iter_loop,
+    clippy::uninlined_format_args,
+    clippy::unreachable
+)]
+
 // High-performance production benchmark for NyxNet
 // Simulates real anonymous network usage patterns
 

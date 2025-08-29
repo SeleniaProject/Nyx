@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 use serde::{Deserialize, Serialize};
 use std::{
     convert::TryFrom,

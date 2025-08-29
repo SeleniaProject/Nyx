@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 #![forbid(unsafe_code)]
 
 /// Platform-specific sandbox test_s for Unix-like system_s (Linux/macOS)
