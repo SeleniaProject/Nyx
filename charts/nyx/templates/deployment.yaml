@@ -16,6 +16,17 @@ spec:
       annotations:
 {{ toYaml (.Values.podAnnotations | default (dict)) | indent 8 }}
     spec:
+{{- if and .Values.multinode .Values.multinode.enabled .Values.multinode.antiAffinity }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "nyx.selectorLabels" . | nindent 18 }}
+              topologyKey: kubernetes.io/hostname
+{{- end }}
 {{- $sa := (default (dict) .Values.serviceAccount) -}}
 {{- $ps := (default (dict) .Values.podSecurity) -}}
 {{- $sp := (default (dict) $ps.seccompProfile) -}}

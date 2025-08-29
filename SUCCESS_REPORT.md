@@ -1,34 +1,43 @@
 # 🏆 NYX NETWORK - U22プログラミングコンテスト完成版
 
-## 🎉 SUCCESS CONFIRMED!
+## 🎉 MULTI-NODE SUCCESS CONFIRMED!
 
-**緊急デプロイメント成功！以下が完了しています：**
+**✅ 緊急デプロイメント成功**: `nyx-emergency` (1ポッド、5秒起動)  
+**🌐 マルチノードデプロイメント追加**: `nyx-multinode` (6ポッド、分散配置)  
 
-✅ **Pod起動成功**: `nyx-emergency-694f4b55d5-2k7mm 1/1 Running`  
-✅ **5秒で起動完了**: 超高速デプロイメント  
-✅ **TCP daemon動作**: Alpine + netcat でポート43300リスニング  
-✅ **Kubernetesサービス**: 完全なマイクロサービス構成  
+### 🚀 マルチノード機能:
 
-## 🚀 実行コマンド記録
+✅ **6ポッド分散配置**: podAntiAffinity でノード分散  
+✅ **ロードバランシング**: Service + HeadlessService  
+✅ **ノード間通信**: 全ポッド間接続テスト  
+✅ **サービス発見**: DNS-based discovery  
+✅ **分散テスト**: 3並列テストJob実行  
 
-### セットアップ（成功済み）:
+## 🎯 実行方法
+
+### 🔥 緊急デプロイ（1ポッド、5秒）:
 ```bash
-git clone https://github.com/SeleniaProject/Nyx.git
-cd Nyx
-chmod +x scripts/emergency-deploy.sh
 ./scripts/emergency-deploy.sh
 ```
 
-### 結果:
+### 🌐 マルチノードテスト（6ポッド、分散）:
+```bash
+./scripts/multinode-test.sh
 ```
-✅ deployment.apps/nyx-emergency condition met
-✅ Pod status: Running (5秒で完了)
-✅ テストJob実行完了
+
+### 📊 Helm本格デプロイ（プロダクション）:
+```bash
+helm upgrade --install nyx ./charts/nyx --values ./charts/nyx/values.yaml --set bench.enabled=true
 ```
 
 ## 📊 技術仕様
 
-### アーキテクチャ:
+### マルチノードアーキテクチャ:
+- **Replicas**: 6ポッド（デフォルト）
+- **Distribution**: podAntiAffinity でノード分散
+- **Load Balancing**: Service + HeadlessService
+- **Discovery**: DNS-based service discovery
+- **Testing**: 3並列テストJob + 分散接続確認
 - **Container**: Alpine Linux 3.19
 - **Daemon**: netcat TCP server (port 43300)
 - **Resources**: 10m CPU, 16Mi RAM (軽量)

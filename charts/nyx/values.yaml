@@ -1,5 +1,11 @@
 # Default values for nyx.
-replicaCount: 2
+replicaCount: 6
+
+# Multi-node settings
+multinode:
+  enabled: true
+  antiAffinity: true
+  distributePods: true
 
 image:
   repository: alpine
