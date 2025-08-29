@@ -41,11 +41,11 @@ spec:
         - name: nyxd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if .Values.command }}
-          command: {{ .Values.command | toJson }}
+          {{- if .Values.daemon.command }}
+          command: {{ .Values.daemon.command | toJson }}
           {{- end }}
-          {{- if .Values.args }}
-          args: {{ .Values.args | toJson }}
+          {{- if .Values.daemon.args }}
+          args: {{ .Values.daemon.args | toJson }}
           {{- end }}
           securityContext:
 {{ toYaml (.Values.securityContext | default (dict)) | indent 12 }}

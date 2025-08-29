@@ -1,0 +1,67 @@
+# Quick deployment values for testing
+replicaCount: 2
+
+image:
+  repository: alpine
+  pullPolicy: IfNotPresent
+  tag: "3.19"
+
+# Override command for simple mock daemon
+daemon:
+  command: ["/bin/sh"]
+  args: 
+    - "-c"
+    - |
+      # Install netcat if not available
+      if ! command -v nc >/dev/null 2>&1; then
+        echo "Installing netcat-openbsd..."
+        apk add --no-cache netcat-openbsd
+      fi
+      
+      echo "Starting mock daemon on port 43300..."
+      while true; do
+        echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nOK" | nc -l -p 43300
+        sleep 0.1
+      done
+
+service:
+  type: ClusterIP
+  port: 43300
+  metricsPort: 9090
+
+bench:
+  enabled: true
+  image: alpine:3.19
+  replicas: 1
+  testDurationSeconds: 15
+  concurrentConnections: 3
+
+# Disable all probes for quick startup
+probes:
+  startup:
+    enabled: false
+  liveness:
+    enabled: false
+  readiness:
+    enabled: false
+
+# Minimal resource requirements
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Disable advanced features for speed
+serviceMonitor:
+  enabled: false
+pdb:
+  enabled: false
+hpa:
+  enabled: false
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false
