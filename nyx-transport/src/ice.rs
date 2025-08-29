@@ -9,11 +9,10 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
-// use tokio::time::{interval, timeout};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::net::UdpSocket;
+use tokio::sync::RwLock;
 
 /// ICE-specific errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]

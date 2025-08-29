@@ -32,8 +32,10 @@ pub mod plugin_ipc; // IPC helper trait_s (stub_s for now)
 pub mod plugin_manifest; // Manifest loader (TOML)
 pub mod plugin_registry; // In-memory registry and permission_s
 pub mod plugin_sandbox; // Cooperative sandbox (policy + guard_s)
+pub mod plugin_sandbox_platform; // Platform-specific sandbox implementations
 pub mod plugin_settings;
-pub mod telemetry_schema; // OTLP Telemetry Schema for Nyx Protocol v1.0 // Runtime setting_s for plugin_s // Rekey trigger helpers (test_s/integration use) // Integrated frame processing with reordering and flow control
+pub mod telemetry_schema;
+pub mod test_helpers; // Test helper utilities for integration tests // OTLP Telemetry Schema for Nyx Protocol v1.0 // Runtime setting_s for plugin_s // Rekey trigger helpers (test_s/integration use) // Integrated frame processing with reordering and flow control
 
 pub use advanced_path_selection::{
     AdvancedPathSelectionConfig, AdvancedPathSelector, BandwidthStatistics, CongestionMetrics,
