@@ -12,6 +12,18 @@
 //! while providing the networking primitives needed for anonymity networks.
 
 #![forbid(unsafe_code)]
+#![allow(missing_docs)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::uninlined_format_args
+)]
+#![warn(
+    clippy::todo,
+    clippy::unimplemented
+)]
 
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -62,7 +74,9 @@ pub struct TransportConfig {
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "0.0.0.0:0".parse().unwrap(),
+            bind_addr: "0.0.0.0:0"
+                .parse()
+                .expect("Default bind address should be valid"),
             buffer_size: 65536,
             timeout: Duration::from_secs(5),
         }

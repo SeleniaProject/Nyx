@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::net::UdpSocket;
 use std::time::Duration;
 

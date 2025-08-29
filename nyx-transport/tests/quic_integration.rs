@@ -1,4 +1,5 @@
 #![allow(unexpected_cfgs)]
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(all(feature = "quic", test, run_quic_tests))]
 //! Comprehensive QUIC Transport Integration Tests
 //!

@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
 use tokio::net::UdpSocket;

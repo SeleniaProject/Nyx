@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use nyx_transport::UdpEndpoint;
     let mut a = UdpEndpoint::bind_loopback()?;

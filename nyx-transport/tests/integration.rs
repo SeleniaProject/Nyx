@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 #[test]
 fn udp_example_runs() -> Result<(), Box<dyn std::error::Error>> {
     // Ensures example code pattern works without panics

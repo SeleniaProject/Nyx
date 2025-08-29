@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 // On Unix, run a simple UDP send benchmark using criterion.
 // On non-Unix (e.g., windows), provide a dummy main so the bench compile_s.
 

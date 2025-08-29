@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 #[test]
 fn udp_is_available() {
     assert!(nyx_transport::available(nyx_transport::TransportKind::Udp));

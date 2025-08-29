@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::net::UdpSocket;
 use std::time::Duration;
 
