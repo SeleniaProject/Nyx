@@ -4,7 +4,9 @@ use std::{io, path::PathBuf, sync::Arc, time::Instant};
 
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, warn};
+#[cfg(windows)]
+use tracing::error;
+use tracing::{info, warn};
 mod json_util;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
