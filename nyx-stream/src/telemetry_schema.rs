@@ -327,6 +327,7 @@ pub mod attribute_names {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
     #[tokio::test]

@@ -367,7 +367,12 @@ impl PluginManager {
 
         // Check if plugin already exists
         {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self
+                .plugins
+                .read()
+                .map_err(|_| PluginError::RegistrationFailed {
+                    reason: "Plugin registry lock poisoned".to_string(),
+                })?;
             if plugins.contains_key(&plugin_id) {
                 return Err(PluginError::RegistrationFailed {
                     reason: format!("Plugin {plugin_id} already registered"),
@@ -377,7 +382,12 @@ impl PluginManager {
 
         // Check plugin limits
         {
-            let plugins = self.plugins.read().unwrap();
+            let plugins = self
+                .plugins
+                .read()
+                .map_err(|_| PluginError::RegistrationFailed {
+                    reason: "Plugin registry lock poisoned".to_string(),
+                })?;
             if plugins.len() >= self.config.max_plugins {
                 return Err(PluginError::RegistrationFailed {
                     reason: "Maximum plugin limit reached".to_string(),
@@ -397,7 +407,12 @@ impl PluginManager {
 
         // Register capabilities
         {
-            let mut capabilities = self.capabilities.write().unwrap();
+            let mut capabilities =
+                self.capabilities
+                    .write()
+                    .map_err(|_| PluginError::RegistrationFailed {
+                        reason: "Capabilities registry lock poisoned".to_string(),
+                    })?;
             for cap in &metadata.capabilities {
                 capabilities.insert(cap.name.clone(), cap.clone());
             }
@@ -405,8 +420,18 @@ impl PluginManager {
 
         // Insert plugin with proper ordering
         {
-            let mut plugins = self.plugins.write().unwrap();
-            let mut load_order = self.load_order.write().unwrap();
+            let mut plugins =
+                self.plugins
+                    .write()
+                    .map_err(|_| PluginError::RegistrationFailed {
+                        reason: "Plugin registry lock poisoned".to_string(),
+                    })?;
+            let mut load_order =
+                self.load_order
+                    .write()
+                    .map_err(|_| PluginError::RegistrationFailed {
+                        reason: "Load order lock poisoned".to_string(),
+                    })?;
 
             plugins.insert(plugin_id, instance);
 
@@ -781,6 +806,7 @@ impl Plugin for CompressionPlugin {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
     use tokio::test;
 

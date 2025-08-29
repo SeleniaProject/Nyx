@@ -224,6 +224,7 @@ pub fn validate_capability(cap: &Capability) -> Result<(), CapabilityError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
     #[test]

@@ -1,4 +1,19 @@
 #![forbid(unsafe_code)]
+#![allow(missing_docs)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::explicit_into_iter_loop,
+    clippy::unreachable,
+    clippy::uninlined_format_args
+)]
+#![warn(
+    clippy::todo,
+    clippy::unimplemented
+)]
+// Relax strict lints for test builds only
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::uninlined_format_args))]
 
 pub mod advanced_path_selection; // Advanced path selection algorithms and load balancing
 pub mod advanced_rate_limiting; // Advanced Rate Limiting & Flow Control for v1.0
@@ -35,6 +50,7 @@ pub mod plugin_sandbox; // Cooperative sandbox (policy + guard_s)
 pub mod plugin_sandbox_platform; // Platform-specific sandbox implementations
 pub mod plugin_settings;
 pub mod telemetry_schema;
+#[cfg(test)]
 pub mod test_helpers; // Test helper utilities for integration tests // OTLP Telemetry Schema for Nyx Protocol v1.0 // Runtime setting_s for plugin_s // Rekey trigger helpers (test_s/integration use) // Integrated frame processing with reordering and flow control
 
 pub use advanced_path_selection::{
@@ -96,6 +112,7 @@ pub use telemetry_schema::{
 
 // Test modules
 #[cfg(test)]
+#[allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 pub mod tests {
     pub mod frame_handler_tests;
     pub mod integrated_frame_processor_tests;

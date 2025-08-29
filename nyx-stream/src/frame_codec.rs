@@ -151,6 +151,7 @@ impl Decoder for FrameCodec {
 
 #[cfg(test)]
 mod test_s {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
     #[test]
