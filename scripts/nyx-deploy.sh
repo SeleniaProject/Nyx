@@ -96,6 +96,11 @@ kubectl rollout status -n nyx deploy/nyx --timeout=300s
 echo "Waiting for all daemon pods to be ready..."
 kubectl wait -n nyx --for=condition=ready pod -l app.kubernetes.io/name=nyx --timeout=300s
 
+# Debug: Check actual daemon processes and ports
+echo "Debugging daemon pods..."
+kubectl exec -n nyx deployment/nyx -- ps aux || echo "Process check failed"
+kubectl exec -n nyx deployment/nyx -- netstat -tulpn || echo "Port check failed"
+
 # Check pod status before benchmark
 echo "Checking pod status before benchmark..."
 kubectl get pods -n nyx -o wide

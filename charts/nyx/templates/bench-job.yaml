@@ -22,10 +22,8 @@ spec:
       - name: bench
         image: "{{ .Values.bench.image | default "alpine:3.19" }}"
         imagePullPolicy: {{ .Values.bench.imagePullPolicy | default "IfNotPresent" }}
-        command: {{ .Values.bench.command | default (list "/bin/sh") | toJson }}
-        {{- if .Values.bench.args }}
-        args: {{ .Values.bench.args | toJson }}
-        {{- end }}
+        command: ["/bin/sh"]
+        args: ["/scripts/perfect-bench.sh"]
         env:
         - name: TARGET_SERVICE
           value: {{ include "nyx.fullname" . }}
