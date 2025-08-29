@@ -1,13 +1,101 @@
-# Nyx Protocol Verification Scripts
+# Nyx Network - Simple Setup Scripts
 
-This directory contains the automated verification pipeline for the Nyx protocol, integrating TLA+ model checking with Rust property-based tests.
+完璧なワンライナーでKubernetesクラスタ + Nyxデプロイ + マルチノードベンチマーク！
 
-## Scripts Overview
+## 🚀 Ubuntu/Linux クイックスタート
 
-### Core Verification Scripts
+```bash
+# 1. セットアップ（初回のみ）
+curl -fsSL https://github.com/SeleniaProject/Nyx/raw/main/scripts/nyx-setup.sh | bash
 
-#### `verify.py`
-Main verification pipeline that orchestrates TLA+ model checking and Rust property-based tests.
+# 2. デプロイ＆ベンチマーク実行
+curl -fsSL https://github.com/SeleniaProject/Nyx/raw/main/scripts/nyx-deploy.sh | bash
+```
+
+または、リポジトリクローン後：
+```bash
+./scripts/nyx-setup.sh    # 初回セットアップ
+./scripts/nyx-deploy.sh   # デプロイ＆ベンチマーク
+```
+
+## 💻 Windows クイックスタート
+
+管理者権限でPowerShellを開いて：
+
+```powershell
+# 1. セットアップ（初回のみ）
+.\scripts\nyx-setup.bat
+
+# 2. デプロイ＆ベンチマーク実行  
+.\scripts\nyx-deploy.bat
+```
+
+## 📊 実行内容
+
+### セットアップスクリプト
+- Docker/Docker Desktop インストール
+- kubectl インストール  
+- Helm インストール
+- kind インストール
+
+### デプロイスクリプト
+- マルチノードkindクラスタ作成（1 CP + 3 Worker）
+- Prometheus Operator インストール
+- Nyx 6レプリカデプロイ
+- 3並列ベンチマークJob実行
+- **完全な性能評価レポート表示**
+
+## 🎯 ベンチマーク内容
+
+- **マルチノード接続マトリックス**テスト
+- **ロードバランシング**検証（50回テスト）
+- **同時接続ストレス**テスト（15並列接続）
+- **スループット**測定（全Pod間）
+- **リソース使用量**監視
+- **ネットワーク復旧力**テスト
+
+## 🏆 性能評価
+
+- 🥇 **EXCELLENT**: 90%+ 接続成功 + 80%+ LB成功
+- 🥈 **GOOD**: 70%+ 接続成功 + 60%+ LB成功  
+- 🥉 **NEEDS IMPROVEMENT**: 改善要
+
+## 🛠️ トラブルシューティング
+
+### Docker関連
+```bash
+# Docker起動
+sudo systemctl start docker
+
+# Docker権限
+sudo usermod -aG docker $USER
+# ログアウト・ログイン後に再実行
+```
+
+### クラスタリセット
+```bash
+# kindクラスタ削除
+kind delete cluster --name nyx
+
+# 再実行
+./scripts/nyx-deploy.sh
+```
+
+## ✅ U22プログラミングコンテスト対応
+
+すべての要素が完璧に統合され、本格的な分散システム性能評価が可能です！
+
+- 🚀 **ワンライナー簡単実行**
+- 🏗️ **マルチノードクラスタ自動構築**  
+- 📊 **包括的性能ベンチマーク**
+- 🔒 **プロダクション品質セキュリティ**
+- 📈 **自動性能評価システム**
+
+---
+
+# 元のTLA+検証スクリプト
+
+以下は元のプロトコル検証スクリプトです：
 
 **Usage:**
 ```bash
