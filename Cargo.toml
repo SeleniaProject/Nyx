@@ -18,6 +18,26 @@ members = [
 ]
 resolver = "2"
 
+[workspace.lints.rust]
+# Basic security and reliability lints
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Code quality lints
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+todo = "warn"
+unimplemented = "warn"
+# Performance lints
+needless_collect = "warn"
+map_flatten = "warn"
+# Style lints
+explicit_deref_methods = "warn"
+explicit_into_iter_loop = "warn"
+
 [workspace.dependencies]
 # Core async runtime - unified version across workspace
 tokio = { version = "1.37", features = ["rt"] }
@@ -63,8 +83,8 @@ strip = true   # Strip debug symbols for smaller binaries
 overflow-checks = false  # Disable overflow checks for maximum performance
 debug = 0  # Disable debug info for smaller binaries
 
-# Enable incremental compilation for faster rebuilds
-incremental = true
+# Incremental compilation disabled for release builds for better optimization
+incremental = false
 
 # Additional performance optimizations
 [profile.release.package."*"]
