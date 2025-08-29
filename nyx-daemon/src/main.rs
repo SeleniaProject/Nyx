@@ -193,14 +193,39 @@ async fn main() -> io::Result<()> {
 
     info!("starting nyx-daemon (plain IPC) at {}", DEFAULT_ENDPOINT);
 
-    // Optionally start Prometheus exporter if environment is set
-    if std::env::var("NYX_PROMETHEUS_ADDR").is_ok() {
-        let _collector = Arc::new(MetricsCollector::new());
-        // match maybe_start_prometheus(collector).await {
-        // 	Some((srv, addr, coll)) => info!("Prometheus exporter listening at http://{}/metrics", addr),
-        // 	None => warn!("failed to start Prometheus exporter from env"),
-        // }
-        warn!("Prometheus exporter not implemented yet");
+    // --- Telemetry setup ----------------------------------------------------
+    // Prometheus metrics HTTP endpoint (served by nyx-telemetry) when NYX_PROMETHEUS_ADDR is set.
+    // Example: NYX_PROMETHEUS_ADDR=0.0.0.0:9100
+    let mut _metrics_guard: Option<nyx_telemetry::metrics::MetricsHttpServerGuard> = None;
+    if let Ok(addr) = std::env::var("NYX_PROMETHEUS_ADDR") {
+        match addr.parse() {
+            Ok(sock) => {
+                let cfg = telemetry::Config { exporter: telemetry::Exporter::Prometheus, servicename: None };
+                if let Err(e) = telemetry::init(&cfg) {
+                    warn!("failed to init prometheus telemetry: {e:?}");
+                } else {
+                    match telemetry::start_metrics_http_server(sock).await {
+                        Ok(g) => {
+                            info!("Prometheus /metrics at http://{}/metrics", g.addr());
+                            _metrics_guard = Some(g);
+                        }
+                        Err(e) => warn!("failed to start metrics server: {e:?}"),
+                    }
+                }
+            }
+            Err(e) => warn!("invalid NYX_PROMETHEUS_ADDR: {e}"),
+        }
+    }
+
+    // OpenTelemetry OTLP tracing to Tempo when NYX_OTLP=1 (feature="otlp")
+    if std::env::var("NYX_OTLP").as_deref() == Ok("1") {
+        let svc = std::env::var("NYX_SERVICE_NAME").ok();
+        let cfg = telemetry::Config { exporter: telemetry::Exporter::Otlp, servicename: svc };
+        if let Err(e) = telemetry::init(&cfg) {
+            warn!("failed to init OTLP tracing: {e:?}");
+        } else {
+            info!("OTLP tracing enabled (set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if needed)");
+        }
     }
 
     #[cfg(unix)]
