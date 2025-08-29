@@ -6,14 +6,12 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 mod json_util;
-#[cfg(feature = "telemetry")]
-use nyx_telemetry as telemetry;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use nyx_daemon::event_system::{Event, EventSystem};
 #[cfg(feature = "low_power")]
 use nyx_daemon::low_power::LowPowerBridge;
-use nyx_daemon::metrics::MetricsCollector;
+// use nyx_daemon::metrics::MetricsCollector; // no longer used
 use nyx_daemon::nyx_daemon_config::{ConfigManager, ConfigResponse, NyxConfig, VersionSummary};
 // use nyx_daemon::prometheus_exporter::maybe_start_prometheus;
 use nyx_core::sandbox::{apply_policy as apply_os_sandbox, SandboxPolicy, SandboxStatus};
@@ -200,11 +198,11 @@ async fn main() -> io::Result<()> {
     if let Ok(addr) = std::env::var("NYX_PROMETHEUS_ADDR") {
         match addr.parse() {
             Ok(sock) => {
-                let cfg = telemetry::Config { exporter: telemetry::Exporter::Prometheus, servicename: None };
-                if let Err(e) = telemetry::init(&cfg) {
+                let cfg = nyx_telemetry::Config { exporter: nyx_telemetry::Exporter::Prometheus, servicename: None };
+                if let Err(e) = nyx_telemetry::init(&cfg) {
                     warn!("failed to init prometheus telemetry: {e:?}");
                 } else {
-                    match telemetry::start_metrics_http_server(sock).await {
+                    match nyx_telemetry::start_metrics_http_server(sock).await {
                         Ok(g) => {
                             info!("Prometheus /metrics at http://{}/metrics", g.addr());
                             _metrics_guard = Some(g);
@@ -220,8 +218,8 @@ async fn main() -> io::Result<()> {
     // OpenTelemetry OTLP tracing to Tempo when NYX_OTLP=1 (feature="otlp")
     if std::env::var("NYX_OTLP").as_deref() == Ok("1") {
         let svc = std::env::var("NYX_SERVICE_NAME").ok();
-        let cfg = telemetry::Config { exporter: telemetry::Exporter::Otlp, servicename: svc };
-        if let Err(e) = telemetry::init(&cfg) {
+        let cfg = nyx_telemetry::Config { exporter: nyx_telemetry::Exporter::Otlp, servicename: svc };
+        if let Err(e) = nyx_telemetry::init(&cfg) {
             warn!("failed to init OTLP tracing: {e:?}");
         } else {
             info!("OTLP tracing enabled (set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if needed)");
@@ -386,7 +384,7 @@ async fn handle_unix_client(
     let resp_id = resp.id.clone();
     let json = json_util::encode_to_vec(&resp).unwrap_or_else(|e| {
         #[cfg(feature = "telemetry")]
-        telemetry::record_counter("nyx_daemon_serde_error", 1);
+        nyx_telemetry::record_counter("nyx_daemon_serde_error", 1);
         // Fixed: Use unwrap_or_default instead of ? in closure
         serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(resp_id, 500, e))
             .unwrap_or_default()
@@ -439,7 +437,7 @@ async fn handle_pipe_client(
     let resp_id = resp.id.clone();
     let json = json_util::encode_to_vec(&resp).unwrap_or_else(|e| {
         #[cfg(feature = "telemetry")]
-        telemetry::record_counter("nyx_daemon_serde_error", 1);
+        nyx_telemetry::record_counter("nyx_daemon_serde_error", 1);
         serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(
             resp_id,
             500,
@@ -558,7 +556,7 @@ async fn process_request(
                 });
             #[cfg(feature = "telemetry")]
             if !res.__succes_s {
-                telemetry::record_counter("nyx_daemon_reload_fail", 1);
+                nyx_telemetry::record_counter("nyx_daemon_reload_fail", 1);
             }
             if res.__succes_s {
                 let _ = state.events.sender().send(Event {
@@ -590,7 +588,7 @@ async fn process_request(
                 });
             #[cfg(feature = "telemetry")]
             if !res.__succes_s {
-                telemetry::record_counter("nyx_daemon_update_fail", 1);
+                nyx_telemetry::record_counter("nyx_daemon_update_fail", 1);
             }
             if res.__succes_s {
                 let _ = state.events.sender().send(Event {
@@ -651,7 +649,7 @@ async fn process_request(
                 });
             #[cfg(feature = "telemetry")]
             if !res.__succes_s {
-                telemetry::record_counter("nyx_daemon_rollback_fail", 1);
+                nyx_telemetry::record_counter("nyx_daemon_rollback_fail", 1);
             }
             if res.__succes_s {
                 let _ = state.events.sender().send(Event {
@@ -684,7 +682,7 @@ async fn process_request(
                 ),
                 Err(e) => {
                     #[cfg(feature = "telemetry")]
-                    telemetry::record_counter("nyx_daemon_snapshot_fail", 1);
+                    nyx_telemetry::record_counter("nyx_daemon_snapshot_fail", 1);
                     (Response::err_with_id(id, 500, e.to_string()), None, None)
                 }
             }
@@ -746,7 +744,7 @@ async fn process_request(
         }
         Err(e) => {
             #[cfg(feature = "telemetry")]
-            telemetry::record_counter("nyx_daemon_bad_request", 1);
+            nyx_telemetry::record_counter("nyx_daemon_bad_request", 1);
             (
                 Response::err_with_id(None, 400, format!("invalid request: {e}")),
                 None,
