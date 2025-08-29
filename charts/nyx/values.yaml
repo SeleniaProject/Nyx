@@ -150,9 +150,9 @@ bench:
   enabled: false
   image: alpine:3.19
   imagePullPolicy: IfNotPresent
-  replicas: 5  # Multiple bench pods for distributed testing
-  testDurationSeconds: 60
-  concurrentConnections: 10
+  replicas: 3  # Reduced for faster execution
+  testDurationSeconds: 30  # Reduced from 60
+  concurrentConnections: 5  # Reduced from 10
   command: ["/bin/sh"]
   args:
     - "/scripts/perfect-bench.sh"

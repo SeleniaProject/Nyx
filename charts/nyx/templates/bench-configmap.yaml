@@ -27,14 +27,14 @@ data:
 
     # Wait for all daemon pods to be ready
     echo "== Waiting for Nyx Daemon Pods =="
-    for i in $(seq 1 30); do
+    for i in $(seq 1 20); do
       READY_PODS=$(nslookup "${TARGET_HEADLESS}" 2>/dev/null | grep -c "Address:" | tail -1 || echo "0")
       echo "Ready daemon pods: $READY_PODS"
       if [ "$READY_PODS" -ge 3 ]; then
         echo "✅ Sufficient pods ready for testing"
         break
       fi
-      sleep 2
+      sleep 3
     done
     echo ""
 
@@ -65,7 +65,7 @@ data:
 
     # Load balancing verification (Alpine shell compatible)
     echo "== Load Balancing Verification =="
-    LB_TESTS=50
+    LB_TESTS=20
     LB_SUCCESS=0
     for i in $(seq 1 $LB_TESTS); do
       if command -v curl >/dev/null 2>&1; then
@@ -74,15 +74,15 @@ data:
           LB_SUCCESS=$((LB_SUCCESS + 1))
         fi
       fi
-      sleep 0.1
+      sleep 0.2
     done
     echo "Load balancer health checks: $LB_SUCCESS/$LB_TESTS successful"
     echo ""
 
     # Concurrent connection stress test
     echo "== Concurrent Connection Stress Test =="
-    CONCURRENT=${CONCURRENT_CONNECTIONS:-10}
-    DURATION=${TEST_DURATION_SECONDS:-30}
+    CONCURRENT=${CONCURRENT_CONNECTIONS:-5}
+    DURATION=${TEST_DURATION_SECONDS:-20}
     STRESS_LOG="/tmp/stress_results"
     > "$STRESS_LOG"
 

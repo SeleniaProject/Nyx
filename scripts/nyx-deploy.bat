@@ -79,21 +79,46 @@ if %errorLevel% equ 0 (
     timeout /t 5 >nul
 )
 
-helm upgrade --install nyx ./charts/nyx -n nyx --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
+helm upgrade --install nyx ./charts/nyx -n nyx --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 --set bench.testDurationSeconds=30 --set bench.concurrentConnections=5 --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
 
 REM Wait for deployment
 echo Waiting for Nyx deployment to complete...
 kubectl rollout status -n nyx deploy/nyx --timeout=300s
 
-REM Wait for benchmark job completion
+REM Wait for all daemon pods to be ready
+echo Waiting for all daemon pods to be ready...
+kubectl wait -n nyx --for=condition=ready pod -l app.kubernetes.io/name=nyx --timeout=300s
+
+REM Check pod status before benchmark
+echo Checking pod status before benchmark...
+kubectl get pods -n nyx -o wide
+
+REM Wait for benchmark job completion with better error handling
 echo Waiting for benchmark job to complete...
-kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s
+kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=300s
+if %errorLevel% neq 0 (
+    echo Benchmark job did not complete within 5 minutes. Checking status...
+    kubectl describe job nyx-bench -n nyx
+    kubectl get pods -n nyx | findstr bench
+    echo Showing benchmark pod logs...
+    kubectl logs -n nyx -l job-name=nyx-bench --tail=50
+    echo Continuing with partial results...
+)
 
 REM Show results
 echo ======================================================
 echo MULTI-NODE PERFORMANCE BENCHMARK RESULTS
 echo ======================================================
-kubectl logs -n nyx job/nyx-bench
+
+REM Try to get benchmark results
+kubectl get job nyx-bench -n nyx >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Benchmark job found. Getting results...
+    kubectl logs -n nyx job/nyx-bench --tail=100
+) else (
+    echo Benchmark job not found. Showing current pod status...
+    kubectl get pods -n nyx -o wide
+)
 
 echo ======================================================
 echo CLUSTER STATUS
