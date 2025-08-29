@@ -32,11 +32,18 @@ fi; \
 if ! docker info >/dev/null 2>&1; then echo "[!] Docker daemon が起動していません。'sudo systemctl start docker' などで起動してください。"; exit 1; fi; \
 (kind get clusters | grep -q '^nyx$' || kind create cluster --name nyx); \
 kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -; \
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts; \
+helm repo update; \
+helm install prometheus-operator prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --set grafana.enabled=false --set alertmanager.enabled=false \
+  --set prometheus.enabled=false --set kubeStateMetrics.enabled=false \
+  --set nodeExporter.enabled=false --set prometheusOperator.enabled=true; \
 helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false; \
 kubectl rollout status -n nyx deploy/nyx --timeout=300s; \
 kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s; \
@@ -109,11 +116,18 @@ EOF
 docker build -f Dockerfile.legacy -t nyx-daemon:local . && \
 kind load docker-image nyx-daemon:local --name nyx && \
 kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f - && \
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts && \
+helm repo update && \
+helm install prometheus-operator prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --set grafana.enabled=false --set alertmanager.enabled=false \
+  --set prometheus.enabled=false --set kubeStateMetrics.enabled=false \
+  --set nodeExporter.enabled=false --set prometheusOperator.enabled=true && \
 helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false && \
 kubectl rollout status -n nyx deploy/nyx --timeout=300s && \
 kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s && \
@@ -176,11 +190,20 @@ docker build -f Dockerfile.legacy -t nyx-daemon:local .
 kind load docker-image nyx-daemon:local --name nyx
 kubectl create namespace nyx --dry-run=client -o yaml | kubectl apply -f -
 
+# Install Prometheus Operator for ServiceMonitor support
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install prometheus-operator prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --set grafana.enabled=false --set alertmanager.enabled=false \
+  --set prometheus.enabled=false --set kubeStateMetrics.enabled=false \
+  --set nodeExporter.enabled=false --set prometheusOperator.enabled=true
+
 helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
 
 kubectl rollout status -n nyx deploy/nyx --timeout=300s
