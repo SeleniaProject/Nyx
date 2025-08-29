@@ -120,6 +120,17 @@ data:
     LB_SUCCESS=0
     for i in $(seq 1 $LB_TESTS); do
       if command -v curl >/dev/null 2>&1; then
+        # Try to get response that might include pod identity
+        RESPONSE=$(curl -m 2 -s "http://${TARGET_SERVICE}:${METRICS_PORT}/metrics" 2>/dev/null | head -c 100 || echo "timeout")
+        if [ "$RESPONSE" != "timeout" ]; then
+          LB_SUCCESS=$((LB_SUCCESS + 1))
+        fi
+      fi
+      sleep 0.1
+    done
+    echo "Load balancer health checks: $LB_SUCCESS/$LB_TESTS successful"
+    for i in $(seq 1 $LB_TESTS); do
+      if command -v curl >/dev/null 2>&1; then
         RESPONSE=$(curl -m 2 -s "http://${TARGET_SERVICE}:${METRICS_PORT}/health" 2>/dev/null | head -c 100 || echo "timeout")
         if [ "$RESPONSE" != "timeout" ] && [ -n "$RESPONSE" ]; then
           LB_SUCCESS=$((LB_SUCCESS + 1))
