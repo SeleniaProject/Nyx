@@ -153,31 +153,9 @@ bench:
   replicas: 5  # Multiple bench pods for distributed testing
   testDurationSeconds: 60
   concurrentConnections: 10
-  command: ["/bin/sh","-lc"]
+  command: ["/bin/sh"]
   args:
-    - |
-      set -euo pipefail
-      echo "======================================================="
-      echo "NYX NETWORK DAEMON - MULTI-NODE PERFORMANCE BENCHMARK"
-      echo "======================================================="
-      echo "Bench Pod: $(hostname)"
-      echo "Target service: ${TARGET_SERVICE}:${TARGET_PORT}"
-      echo "Headless service: ${TARGET_HEADLESS}"
-      echo "Metrics port: ${METRICS_PORT}"
-      echo "Test duration: ${TEST_DURATION_SECONDS:-60} seconds"
-      echo "Concurrent connections: ${CONCURRENT_CONNECTIONS:-10}"
-      echo ""
-      
-      # Install required tools
-      if command -v apk >/dev/null 2>&1; then
-        echo "Installing performance testing tools..."
-        apk add --no-cache curl wget netcat-openbsd iperf3 2>/dev/null || true
-      fi
-      
-      # Wait for all daemon pods to be ready
-      echo "== Waiting for Nyx Daemon Pods =="
-      for i in {1..30}; do
-        READY_PODS=$(getent hosts "${TARGET_HEADLESS}" 2>/dev/null | wc -l || echo "0")
+    - "/scripts/perfect-bench.sh"
         echo "Ready daemon pods: $READY_PODS"
         if [ "$READY_PODS" -ge 3 ]; then
           echo "✅ Sufficient pods ready for testing"
