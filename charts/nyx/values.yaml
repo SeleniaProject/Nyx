@@ -1,0 +1,33 @@
+# Default values for nyx.
+replicaCount: 1
+
+image:
+  repository: nyx-daemon
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 43300
+  metricsPort: 9090
+
+bench:
+  enabled: false
+  image: alpine:3.19
+  replicas: 3
+  testDurationSeconds: 30
+  concurrentConnections: 5
+
+serviceMonitor:
+  enabled: false
+
+pdb:
+  enabled: false
+
+probes:
+  startup:
+    enabled: false
+  liveness:
+    enabled: false  
+  readiness:
+    enabled: false
