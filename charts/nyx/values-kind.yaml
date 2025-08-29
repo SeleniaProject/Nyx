@@ -33,7 +33,7 @@ pdb:
   minAvailable: 3  # Higher availability for multi-node
 
 serviceMonitor:
-  enabled: true
+  enabled: false
 
 # Optimized resources for multi-node kind testing
 resources:

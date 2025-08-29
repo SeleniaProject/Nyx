@@ -36,7 +36,7 @@ helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false; \
 kubectl rollout status -n nyx deploy/nyx --timeout=300s; \
 kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s; \
@@ -113,7 +113,7 @@ helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false && \
 kubectl rollout status -n nyx deploy/nyx --timeout=300s && \
 kubectl wait -n nyx --for=condition=complete job/nyx-bench --timeout=600s && \
@@ -180,7 +180,7 @@ helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=nyx-daemon --set image.tag=local --set image.pullPolicy=IfNotPresent \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=45 --set bench.concurrentConnections=15 \
-  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=true \
+  --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
   --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
 
 kubectl rollout status -n nyx deploy/nyx --timeout=300s
