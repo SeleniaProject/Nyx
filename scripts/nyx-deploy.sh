@@ -81,64 +81,18 @@ if kubectl get deployment nyx -n nyx >/dev/null 2>&1; then
     sleep 5
 fi
 
+# Deploy Nyx with mock daemon for testing
+echo "Deploying Nyx with mock daemon for testing..."
+
 helm upgrade --install nyx ./charts/nyx -n nyx \
   --set image.repository=alpine --set image.tag=3.18 --set image.pullPolicy=IfNotPresent \
-  --set 'command[0]=/bin/sh' \
-  --set 'args[0]=-c' \
-  --set 'args[1]=echo "Installing Python3..." && apk add --no-cache python3 2>/dev/null || true && echo "Starting Nyx Mock TCP Daemon..." && python3 -c "
-import socket
-import threading
-import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class MetricsHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header(\"Content-type\", \"text/plain\")
-        self.end_headers()
-        metrics = \"\"\"# HELP nyx_connections_total Total connections
-nyx_connections_total 42
-# HELP nyx_bandwidth_bytes_total Total bandwidth
-nyx_bandwidth_bytes_total 1048576
-\"\"\"
-        self.wfile.write(metrics.encode())
-    def log_message(self, format, *args): pass
-
-def tcp_server():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind((\"0.0.0.0\", 43300))
-    s.listen(5)
-    print(\"Mock TCP daemon listening on port 43300...\")
-    while True:
-        try:
-            client, addr = s.accept()
-            print(f\"TCP connection from {addr}\")
-            client.send(b\"HTTP/1.1 200 OK\\r\\nContent-Length: 25\\r\\n\\r\\n{\\\"status\\\":\\\"ok\\\",\\\"ready\\\":true}\")
-            client.close()
-        except: pass
-
-def http_server():
-    httpd = HTTPServer((\"0.0.0.0\", 9090), MetricsHandler)
-    print(\"Mock HTTP metrics server listening on port 9090...\")
-    httpd.serve_forever()
-
-# Start both servers
-tcp_thread = threading.Thread(target=tcp_server, daemon=True)
-http_thread = threading.Thread(target=http_server, daemon=True)
-tcp_thread.start()
-http_thread.start()
-
-# Keep running
-try:
-    while True: time.sleep(1)
-except KeyboardInterrupt:
-    print(\"Shutting down mock daemon...\")
-"' \
   --set replicaCount=6 --set bench.enabled=true --set bench.replicas=3 \
   --set bench.testDurationSeconds=30 --set bench.concurrentConnections=5 \
   --set pdb.enabled=true --set pdb.minAvailable=3 --set serviceMonitor.enabled=false \
-  --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false
+  --set probes.startup.enabled=false --set probes.liveness.enabled=false --set probes.readiness.enabled=false \
+  --set 'command[0]=/bin/sh' \
+  --set 'args[0]=-c' \
+  --set 'args[1]=apk add --no-cache netcat-openbsd && while true; do echo "HTTP/1.1 200 OK\r\n\r\n{\"status\":\"ok\"}" | nc -l -p 43300; done'
 
 # Wait for deployment
 echo "Waiting for Nyx deployment to complete..."
