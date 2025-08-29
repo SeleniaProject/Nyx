@@ -208,6 +208,16 @@ async fn main() -> io::Result<()> {
                         Ok(g) => {
                             info!("Prometheus /metrics at http://{}/metrics", g.addr());
                             _metrics_guard = Some(g);
+                            // Ensure metrics endpoint is not empty: publish a startup marker
+                            nyx_telemetry::record_counter("nyx_daemon_up", 1);
+                            // Background heartbeat counter for liveness
+                            tokio::spawn(async {
+                                use tokio::time::{sleep, Duration};
+                                loop {
+                                    nyx_telemetry::record_counter("nyx_daemon_heartbeat_total", 1);
+                                    sleep(Duration::from_secs(10)).await;
+                                }
+                            });
                         }
                         Err(e) => warn!("failed to start metrics server: {e:?}"),
                     }
