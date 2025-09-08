@@ -552,9 +552,9 @@ dependencies = [
 
 [[package]]
 name = "cbor4ii"
-version = "0.3.3"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "472931dd4dfcc785075b09be910147f9c6258883fc4591d0dac6116392b2daa6"
+checksum = "db05e2e8488783316fbab37891db4ab5b31124dab16bb2161da145c03dd0de70"
 dependencies = [
  "serde",
 ]
