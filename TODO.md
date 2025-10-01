@@ -200,8 +200,12 @@
 ### 2.5 Extended Packet Format の End-to-End 実装
 **参照**: `spec/Nyx_Protocol_v1.0_Spec_EN.md` §7
 
-- [ ] 送信パス
-  - [ ] トランスポート層送信前に `ExtendedPacketHeader::encode` 呼び出し
+- [x] `nyx-daemon/src/packet_processor.rs` 実装 (495行, 8 tests passed)
+  - [x] PacketProcessor 実装
+    - [x] コネクション単位のパケット状態管理
+    - [x] CID, PathID, パケット統計追跡
+  - [x] 送信パス (encode_packet)
+    - [x] ExtendedPacketHeader構築
   - [ ] CID、PathID、Type+Flags、Length の正確な設定
   - [ ] ペイロード 1280 バイト境界パディング
 - [ ] 受信パス
