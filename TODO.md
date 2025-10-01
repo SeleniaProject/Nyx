@@ -206,15 +206,15 @@
     - [x] CID, PathID, パケット統計追跡
   - [x] 送信パス (encode_packet)
     - [x] ExtendedPacketHeader構築
-  - [ ] CID、PathID、Type+Flags、Length の正確な設定
-  - [ ] ペイロード 1280 バイト境界パディング
-- [ ] 受信パス
-  - [ ] 受信パケットの `ExtendedPacketHeader::decode` 検証
-  - [ ] 不正パケット（長さ超過、不正フラグ）の破棄
-  - [ ] デコード後の上位層への引き渡し
-- [ ] テスト
-  - [ ] パケット境界条件テスト（最大長、最小長）
-  - [ ] 破損パケットの拒否テスト
+    - [x] CID、PathID、Type+Flags、Length の正確な設定
+    - [x] ペイロード 1280 バイト境界パディング (PKCS#7)
+  - [x] 受信パス (decode_packet)
+    - [x] 受信パケットの `ExtendedPacketHeader::decode` 検証
+    - [x] 不正パケット（長さ超過、不正フラグ）の破棄
+    - [x] デコード後の上位層への引き渡し (DecodedPacket)
+  - [x] テスト (8 tests passed)
+    - [x] パケット境界条件テスト（最大長、最小長）
+    - [x] 破損パケットの拒否テスト (packet_too_large)
 
 ---
 
