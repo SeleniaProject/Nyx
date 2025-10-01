@@ -12,6 +12,10 @@ pub mod path_builder; // Path builder implementation
 pub mod path_performance_test; // Performance testing for paths
 pub mod path_recovery; // Path recovery and diagnostics
 pub mod prometheus_exporter;
+pub mod session_manager; // Session and handshake orchestration
+pub mod session_api; // REST API for session management
+pub mod connection_manager; // Connection-level state (congestion control, RTT, rate limiting)
+pub mod connection_api; // REST API for connection management
 
 // Re-export with shorter prefixe_s used in main.r_s
 pub use config_manager as nyx_daemon_config;
