@@ -17,6 +17,7 @@ pub mod session_api; // REST API for session management
 pub mod connection_manager; // Connection-level state (congestion control, RTT, rate limiting)
 pub mod connection_api; // REST API for connection management
 pub mod stream_manager; // Stream multiplexing and management
+pub mod multipath_integration; // Multipath scheduling integration
 
 // Re-export with shorter prefixe_s used in main.r_s
 pub use config_manager as nyx_daemon_config;

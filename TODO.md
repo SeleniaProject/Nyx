@@ -180,18 +180,22 @@
 ### 2.4 Multipath スケジューリング統合
 **参照**: `spec/Nyx_Protocol_v1.0_Spec_EN.md` §2
 
-- [ ] スケジューラのランタイム統合
-  - [ ] `nyx-stream/src/multipath_dataplane.rs::PathScheduler` を session に組み込み
-  - [ ] パス選択ロジックの呼び出し（送信前）
-  - [ ] パス別送信キュー管理
-- [ ] パスヘルスメトリクス
-  - [ ] RTT、ジッター、パケットロス測定
-  - [ ] `PathMetrics` の定期更新
-  - [ ] 劣化パスの自動無効化
-- [ ] リオーダリングバッファ
-  - [ ] `ReorderingBuffer` の初期化
-  - [ ] シーケンス番号ベースの順序回復
-  - [ ] タイムアウト処理
+- [x] `nyx-daemon/src/multipath_integration.rs` 実装 (445行, 6 tests passed)
+  - [x] MultipathManager 実装
+    - [x] コネクション単位のマルチパス状態管理
+    - [x] PathSchedulerとReorderingBufferラップ
+  - [x] パス管理機能
+    - [x] add_path/remove_path/select_path 実装
+    - [x] パス選択ロジック (WRR: weight = 1.0/RTT)
+    - [x] update_metrics による定期更新
+  - [x] 自動パス監視
+    - [x] probe_paths で健全性チェック
+    - [x] タイムアウト検出 (failover_timeout_ms)
+    - [x] 品質低下パスの自動無効化 (min_path_quality)
+  - [x] リオーダリングバッファ統合
+    - [x] シーケンス番号ベースの順序回復
+    - [x] タイムアウト処理 (reorder_timeout_ms)
+    - [x] バッファ状態監視 (get_reorder_status)
 
 ### 2.5 Extended Packet Format の End-to-End 実装
 **参照**: `spec/Nyx_Protocol_v1.0_Spec_EN.md` §7
