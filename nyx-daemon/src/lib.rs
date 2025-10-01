@@ -21,6 +21,8 @@ pub mod multipath_integration; // Multipath scheduling integration
 pub mod packet_processor; // Extended packet format processing
 pub mod cmix_integration; // cMix batch processing integration
 pub mod larmix_feedback; // LARMix++ feedback loop for dynamic hop adjustment
+pub mod proof_distributor; // RSA accumulator proof distribution system
+pub mod proof_api; // REST API for proof distribution
 
 // Re-export with shorter prefixe_s used in main.r_s
 pub use config_manager as nyx_daemon_config;
