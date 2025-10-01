@@ -160,16 +160,22 @@
 ### 2.3 Stream Manager 実装
 **参照**: `spec/Nyx_Protocol_v1.0_Spec_EN.md` §4.1
 
-- [ ] `nyx-daemon/src/stream_manager.rs` 実装
-  - [ ] ストリーム ID 割り当て（奇数/偶数分離）
-  - [ ] 双方向/単方向ストリーム管理
-  - [ ] ストリーム状態追跡（Open, HalfClosed, Closed）
-- [ ] 多重化処理
-  - [ ] フレーム振り分けロジック（stream ID ベース）
-  - [ ] バックプレッシャー処理（受信バッファ満杯時）
-- [ ] CLOSE フレーム処理
-  - [ ] ストリーム終了通知
-  - [ ] リソース解放
+- [x] `nyx-daemon/src/stream_manager.rs` 実装 (651行, 7 tests passed)
+  - [x] ストリーム ID 割り当て（奇数/偶数分離）
+    - [x] Client-initiated: 奇数 (1, 3, 5, ...)
+    - [x] Server-initiated: 偶数 (2, 4, 6, ...)
+  - [x] 双方向/単方向ストリーム管理
+    - [x] StreamType::Bidirectional / Unidirectional
+    - [x] 最大ストリーム数制限 (max_bidi_streams, max_uni_streams)
+  - [x] ストリーム状態追跡（Open, HalfClosed, Closed）
+    - [x] 状態遷移: Open → HalfClosed{Send/Recv} → Closed
+    - [x] FINフレームでのhalf-close処理
+- [x] 多重化処理
+  - [x] フレーム振り分けロジック（stream ID ベース on_frame_received）
+  - [x] バックプレッシャー処理（flow control window, recv buffer limit）
+- [x] CLOSE フレーム処理
+  - [x] ストリーム終了通知 (close_send/close_recv)
+  - [x] リソース解放 (自動カウント減算)
 
 ### 2.4 Multipath スケジューリング統合
 **参照**: `spec/Nyx_Protocol_v1.0_Spec_EN.md` §2
