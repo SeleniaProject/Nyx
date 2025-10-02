@@ -170,6 +170,8 @@ redb = { version = "2.1", features = ["logging"] }
 # trust-dns-resolver = "0.23" # REMOVED: replaced with hickory-resolver for security
 hmac = "0.12"
 sha2 = "0.10"
+sha1 = "0.10"
+getrandom = "0.2"
 base64 = "0.22"
 ciborium = "0.2"
 
