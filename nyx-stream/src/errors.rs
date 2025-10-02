@@ -1,9 +1,10 @@
-use thiserror::Error;
-
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
+    /// Cryptographic error from nyx-crypto
+    #[error("Cryptographic error: {0}")]
+    Crypto(#[from] nyx_crypto::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("serde: {0}")]
