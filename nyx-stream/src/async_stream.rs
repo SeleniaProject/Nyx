@@ -472,6 +472,12 @@ async fn endpoint_task(
                                 // Handle close frame - set closed_remote flag
                                 closed_remote = true;
                             }
+                            FrameType::Crypto => {
+                                // Handle CRYPTO frame - should be processed by handshake layer
+                                // In async_stream, we just forward it to upper layer
+                                tracing::debug!("Received CRYPTO frame for stream {}", frame.header.stream_id);
+                                // TODO: Forward to handshake manager
+                            }
                             FrameType::Custom(_) => {
                                 // Handle custom/plugin frames
                                 // For now, just log them - could be forwarded to plugin manager
