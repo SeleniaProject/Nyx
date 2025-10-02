@@ -394,4 +394,51 @@ service NyxControl {
   // Network topology
   rpc GetTopology (Empty) returns (NetworkTopology);
   rpc GetPeers (Empty) returns (stream PeerInfo);
+}
+
+// Session management messages
+message SessionStatusRequest {
+  uint32 session_id = 1;
+}
+
+message SessionStatusResponse {
+  uint32 session_id = 1;
+  string role = 2;  // "client" or "server"
+  string state = 3;  // "idle", "client_handshaking", "server_handshaking", "established", "closing", "closed", "failed"
+  uint64 age_ms = 4;
+  uint64 idle_time_ms = 5;
+  bool has_traffic_keys = 6;
+  SessionMetrics metrics = 7;
+}
+
+message SessionMetrics {
+  uint64 bytes_tx = 1;
+  uint64 bytes_rx = 2;
+  uint64 frames_tx = 3;
+  uint64 frames_rx = 4;
+  optional uint64 handshake_duration_ms = 5;
+  optional uint64 established_at_ms = 6;
+}
+
+message ListSessionsRequest {
+  // Optional filters
+  optional string state_filter = 1;  // Filter by state
+  optional string role_filter = 2;   // Filter by role
+}
+
+message ListSessionsResponse {
+  repeated SessionStatusResponse sessions = 1;
+  uint32 total_count = 2;
+}
+
+// Session management service
+service SessionService {
+  // Get status of a specific session
+  rpc GetSessionStatus (SessionStatusRequest) returns (SessionStatusResponse);
+  
+  // List all active sessions
+  rpc ListSessions (ListSessionsRequest) returns (ListSessionsResponse);
+  
+  // Close a specific session
+  rpc CloseSession (SessionStatusRequest) returns (Empty);
 } 
