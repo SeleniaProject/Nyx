@@ -502,54 +502,103 @@ impl IceAgent {
     }
 
     async fn gather_server_reflexive_candidates(&self) -> IceResult<()> {
-        for stun_config in &self.config.stun_servers {
-            // Placeholder for STUN binding request implementation
-            // In a real implementation, this would send STUN binding requests
-            // to discover the external IP address and port
+        use crate::stun::StunClient;
 
-            let mut candidates = self.local_candidates.write().await;
-            candidates.push(Candidate {
-                foundation: format!("srflx-{}", stun_config.address),
-                component_id: 1,
-                transport: Transport::Udp,
-                priority: self.calculate_priority(
-                    CandidateType::ServerReflexive,
-                    "127.0.0.1".parse().expect("Failed to parse IP address"),
-                ),
-                address: "127.0.0.1:0"
-                    .parse()
-                    .expect("Failed to parse socket address"),
-                candidate_type: CandidateType::ServerReflexive,
-                related_address: Some(
-                    "127.0.0.1:0"
-                        .parse()
-                        .expect("Failed to parse related address"),
-                ),
-                extensions: HashMap::new(),
-            });
+        // Get socket for STUN requests
+        let socket = self.socket.as_ref().ok_or(IceError::NetworkError(
+            "No socket available for STUN requests".to_string(),
+        ))?;
+        
+        let local_addr = socket.local_addr().map_err(|e| IceError::NetworkError(e.to_string()))?;
+
+        for stun_config in &self.config.stun_servers {
+            // Create STUN client and perform binding request
+            match StunClient::new(local_addr).await {
+                Ok(client) => {
+                    match client.binding_request(stun_config.address).await {
+                        Ok(mapped_addr) => {
+                            let mut candidates = self.local_candidates.write().await;
+                            candidates.push(Candidate {
+                                foundation: format!("srflx-{}", stun_config.address),
+                                component_id: 1,
+                                transport: Transport::Udp,
+                                priority: self.calculate_priority(
+                                    CandidateType::ServerReflexive,
+                                    mapped_addr.ip(),
+                                ),
+                                address: mapped_addr,
+                                candidate_type: CandidateType::ServerReflexive,
+                                related_address: Some(local_addr),
+                                extensions: HashMap::new(),
+                            });
+                            
+                            let mut stats = self.statistics.write().await;
+                            stats.local_candidates_gathered += 1;
+                        }
+                        Err(e) => {
+                            tracing::warn!("STUN binding request failed to {}: {}", stun_config.address, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to create STUN client: {}", e);
+                }
+            }
         }
 
         Ok(())
     }
 
     async fn gather_relay_candidates(&self) -> IceResult<()> {
-        for turn_config in &self.config.turn_servers {
-            // Placeholder for TURN allocation implementation
-            // In a real implementation, this would allocate relay addresses
-            // on TURN servers for traversing symmetric NATs
+        use crate::stun::TurnClient;
 
-            let mut candidates = self.local_candidates.write().await;
-            candidates.push(Candidate {
-                foundation: format!("relay-{}", turn_config.address),
-                component_id: 1,
-                transport: Transport::Udp,
-                priority: self
-                    .calculate_priority(CandidateType::Relay, "127.0.0.1".parse().unwrap()),
-                address: "127.0.0.1:0".parse().unwrap(),
-                candidate_type: CandidateType::Relay,
-                related_address: Some("127.0.0.1:0".parse().unwrap()),
-                extensions: HashMap::new(),
-            });
+        let socket = self.socket.as_ref().ok_or(IceError::NetworkError(
+            "No socket available for TURN requests".to_string(),
+        ))?;
+        
+        let local_addr = socket.local_addr().map_err(|e| IceError::NetworkError(e.to_string()))?;
+
+        for turn_config in &self.config.turn_servers {
+            // Create TURN client and allocate relay address
+            match TurnClient::new(
+                local_addr,
+                turn_config.address,
+                turn_config.username.clone(),
+                turn_config.password.clone(),
+            )
+            .await
+            {
+                Ok(mut client) => {
+                    let lifetime_secs = turn_config.lifetime.as_secs() as u32;
+                    match client.allocate(lifetime_secs).await {
+                        Ok(relay_addr) => {
+                            let mut candidates = self.local_candidates.write().await;
+                            candidates.push(Candidate {
+                                foundation: format!("relay-{}", turn_config.address),
+                                component_id: 1,
+                                transport: Transport::Udp,
+                                priority: self.calculate_priority(
+                                    CandidateType::Relay,
+                                    relay_addr.ip(),
+                                ),
+                                address: relay_addr,
+                                candidate_type: CandidateType::Relay,
+                                related_address: Some(local_addr),
+                                extensions: HashMap::new(),
+                            });
+                            
+                            let mut stats = self.statistics.write().await;
+                            stats.local_candidates_gathered += 1;
+                        }
+                        Err(e) => {
+                            tracing::warn!("TURN allocation failed to {}: {}", turn_config.address, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to create TURN client: {}", e);
+                }
+            }
         }
 
         Ok(())
@@ -597,19 +646,51 @@ impl IceAgent {
     }
 
     async fn perform_connectivity_check(&self, mut pair: CandidatePair) -> IceResult<()> {
+        use crate::stun::StunClient;
+
         // Update pair state to in progress
         pair.state = CandidatePairState::InProgress;
-        pair.last_check = Some(Instant::now());
+        let check_start = Instant::now();
+        pair.last_check = Some(check_start);
 
-        // Placeholder for actual STUN connectivity check
-        // In a real implementation, this would send STUN binding requests
-        // to verify connectivity between candidate pairs
+        // Get socket for connectivity check
+        let socket = self.socket.as_ref().ok_or(IceError::NetworkError(
+            "No socket available for connectivity check".to_string(),
+        ))?;
+        
+        let local_addr = socket.local_addr().map_err(|e| IceError::NetworkError(e.to_string()))?;
 
-        let check_result = true; // Simulate successful check
+        // Perform STUN binding request to verify connectivity
+        let check_result = match StunClient::new(local_addr).await {
+            Ok(client) => {
+                match tokio::time::timeout(
+                    Duration::from_secs(5),
+                    client.binding_request(pair.remote.address)
+                ).await {
+                    Ok(Ok(_mapped_addr)) => {
+                        // Connectivity check succeeded
+                        let rtt = check_start.elapsed();
+                        pair.rtt = Some(rtt);
+                        true
+                    }
+                    Ok(Err(e)) => {
+                        tracing::debug!("Connectivity check failed for {:?}: {}", pair, e);
+                        false
+                    }
+                    Err(_) => {
+                        tracing::debug!("Connectivity check timed out for {:?}", pair);
+                        false
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create STUN client for connectivity check: {}", e);
+                false
+            }
+        };
 
         if check_result {
             pair.state = CandidatePairState::Succeeded;
-            pair.rtt = Some(Duration::from_millis(50)); // Simulated RTT
 
             // Update selected pair if this is the first successful pair
             // or has higher priority than current selected pair
@@ -626,6 +707,9 @@ impl IceAgent {
 
             let mut stats = self.statistics.write().await;
             stats.successful_checks += 1;
+            if let Some(rtt) = pair.rtt {
+                stats.current_rtt = Some(rtt);
+            }
             stats.selected_pair = Some(pair);
         } else {
             pair.state = CandidatePairState::Failed;
