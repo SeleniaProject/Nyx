@@ -146,6 +146,7 @@ pub struct TransportCapabilities {
 // Public modules for comprehensive transport functionality
 pub mod ice;
 pub mod path_validation;
+pub mod stun;
 pub mod stun_server;
 pub mod tcp_fallback;
 pub mod teredo;
