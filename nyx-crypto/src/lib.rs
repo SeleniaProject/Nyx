@@ -77,6 +77,10 @@ pub type Result<T> = core::result::Result<T, Error>;
 #[cfg(feature = "kyber")]
 pub mod kyber;
 
+// BIKE KEM placeholder module (feature-gated, not yet implemented)
+#[cfg(feature = "bike")]
+pub mod bike;
+
 // Hybrid post-quantum handshake (Kyber-768 + X25519)
 #[cfg(feature = "hybrid-handshake")]
 pub use hybrid_handshake::{
