@@ -11,6 +11,7 @@ comprehensive_verification_report.json
 tla_verification_report.json
 tla_coverage_report.json
 tla_report.html
+u22-submission/
 
 # Binary tools (should be installed via package manager)
 helm.exe
