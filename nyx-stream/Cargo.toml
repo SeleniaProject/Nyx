@@ -40,11 +40,13 @@ ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
 base64 = "0.21"
 anyhow = "1.0"
 sha2 = "0.10"
+hkdf = "0.12"
 getrandom = "0.2"
 rand = "0.8"
 serde_cbor = "0.11"
 async-trait = "0.1"
 num-bigint = "0.4"
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.27", optional = true, default-features = false, features = ["sched", "hostname", "fs"] }
