@@ -23,6 +23,11 @@ pub mod cmix_integration; // cMix batch processing integration
 pub mod larmix_feedback; // LARMix++ feedback loop for dynamic hop adjustment
 pub mod proof_distributor; // RSA accumulator proof distribution system
 pub mod proof_api; // REST API for proof distribution
+pub mod pure_rust_dht; // Pure Rust DHT for peer discovery and data storage
+pub mod pure_rust_p2p;
+pub mod push; // Push notification relay implementation
+pub mod proto;
+pub mod screen_off_detection;
 
 // Re-export with shorter prefixe_s used in main.r_s
 pub use config_manager as nyx_daemon_config;
