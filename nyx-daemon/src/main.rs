@@ -134,6 +134,55 @@ impl<T: Serialize> Response<T> {
 
 #[tokio::main(worker_threads = 4)]
 async fn main() -> io::Result<()> {
+    // Parse command-line arguments
+    // Supports: --bind <addr:port> --config <path> --help
+    let args: Vec<String> = std::env::args().collect();
+    let mut bind_addr: Option<String> = None;
+    let mut config_path_arg: Option<PathBuf> = None;
+    
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--bind" => {
+                if i + 1 < args.len() {
+                    bind_addr = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --bind requires an argument");
+                    std::process::exit(1);
+                }
+            }
+            "--config" => {
+                if i + 1 < args.len() {
+                    config_path_arg = Some(PathBuf::from(&args[i + 1]));
+                    i += 2;
+                } else {
+                    eprintln!("Error: --config requires an argument");
+                    std::process::exit(1);
+                }
+            }
+            "--help" | "-h" => {
+                println!("nyx-daemon - Nyx Protocol Daemon");
+                println!("\nUsage: nyx-daemon [OPTIONS]");
+                println!("\nOptions:");
+                println!("  --bind <addr:port>   TCP bind address (e.g., 127.0.0.1:9000)");
+                println!("  --config <path>      Configuration file path");
+                println!("  --help, -h           Show this help message");
+                println!("\nEnvironment:");
+                println!("  NYX_CONFIG                Configuration file path (overridden by --config)");
+                println!("  NYX_PROMETHEUS_ADDR       Prometheus metrics endpoint (e.g., 0.0.0.0:9100)");
+                println!("  NYX_OTLP=1                Enable OTLP tracing");
+                println!("  RUST_LOG                  Log level (default: info)");
+                std::process::exit(0);
+            }
+            _ => {
+                eprintln!("Error: Unknown argument '{}'", args[i]);
+                eprintln!("Use --help for usage information");
+                std::process::exit(1);
+            }
+        }
+    }
+    
     // tracing init (env controlled)
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
@@ -142,7 +191,9 @@ async fn main() -> io::Result<()> {
 
     let mut node_id = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut node_id);
-    let config_path = std::env::var("NYX_CONFIG").ok().map(PathBuf::from);
+    
+    // Config path: --config arg takes precedence over NYX_CONFIG env
+    let config_path = config_path_arg.or_else(|| std::env::var("NYX_CONFIG").ok().map(PathBuf::from));
     let cfg_mgr = ConfigManager::new(NyxConfig::default(), config_path);
     // If a config file is configured, attempt an initial reload to apply static settings (e.g., max_frame_len_bytes)
     if cfg_mgr.getconfig().await != NyxConfig::default() {
@@ -191,7 +242,13 @@ async fn main() -> io::Result<()> {
         }
     };
 
-    info!("starting nyx-daemon (plain IPC) at {}", DEFAULT_ENDPOINT);
+    // Determine listener type based on --bind argument
+    let use_tcp = bind_addr.is_some();
+    if use_tcp {
+        info!("starting nyx-daemon (TCP) at {}", bind_addr.as_ref().unwrap());
+    } else {
+        info!("starting nyx-daemon (plain IPC) at {}", DEFAULT_ENDPOINT);
+    }
 
     // --- Telemetry setup ----------------------------------------------------
     // Prometheus metrics HTTP endpoint (served by nyx-telemetry) when NYX_PROMETHEUS_ADDR is set.
@@ -238,28 +295,113 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    #[cfg(unix)]
+    // --- Compliance Level Detection -----------------------------------------
+    // Detect and report protocol compliance level at daemon startup
+    // Reference: spec/Nyx_Protocol_v1.0_Spec_EN.md §10
     {
-        let _ = std::fs::remove_file(DEFAULT_ENDPOINT);
-        let listener = UnixListener::bind(DEFAULT_ENDPOINT)?;
-        loop {
-            match listener.accept().await {
-                Ok((stream, _addr)) => {
-                    let st = state.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_unix_client(stream, st).await {
-                            warn!("client error: {}", e);
-                        }
-                    });
+        use nyx_core::compliance::{determine_compliance_level, validate_compliance_level, FeatureDetector};
+        
+        let detector = FeatureDetector::new();
+        let detected_level = determine_compliance_level(&detector);
+        
+        // Log the detected compliance level
+        info!(
+            level = %detected_level,
+            features = detector.available_features().len(),
+            "Nyx Protocol compliance level detected"
+        );
+        
+        // Perform validation and log detailed report if debugging enabled
+        match validate_compliance_level(detected_level, &detector) {
+            Ok(report) => {
+                info!("{}", report.summary());
+                
+                // Log detailed report at debug level
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    for feature in detector.available_features() {
+                        tracing::debug!("Available feature: {}", feature);
+                    }
                 }
-                Err(e) => warn!("accept error: {}", e),
+                
+                // Record compliance level in telemetry
+                #[cfg(feature = "telemetry")]
+                {
+                    nyx_telemetry::record_counter("nyx_daemon_compliance_level", 1);
+                    // Record level as attribute (if metrics system supports it)
+                    match detected_level {
+                        nyx_core::compliance::ComplianceLevel::Core => {
+                            nyx_telemetry::record_counter("nyx_daemon_compliance_core", 1);
+                        }
+                        nyx_core::compliance::ComplianceLevel::Plus => {
+                            nyx_telemetry::record_counter("nyx_daemon_compliance_plus", 1);
+                        }
+                        nyx_core::compliance::ComplianceLevel::Full => {
+                            nyx_telemetry::record_counter("nyx_daemon_compliance_full", 1);
+                        }
+                    }
+                }
+                
+                // Emit compliance event
+                let _ = state.events.sender().send(Event {
+                    _ty: "system".into(),
+                    _detail: format!("compliance_level:{}", detected_level),
+                });
+            }
+            Err(e) => {
+                warn!("Failed to validate compliance level: {}", e);
             }
         }
     }
 
-    #[cfg(windows)]
-    {
+    // --- Listener Setup: TCP or IPC -----------------------------------------
+    if use_tcp {
+        // TCP listener for integration tests and remote access
+        let bind_addr_str = bind_addr.clone().unwrap();
+        let addr: std::net::SocketAddr = bind_addr_str.parse().map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid bind address: {}", e))
+        })?;
+        
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        info!("TCP listener bound to {}", listener.local_addr()?);
+        
         loop {
+            match listener.accept().await {
+                Ok((stream, peer_addr)) => {
+                    info!("Accepted TCP connection from {}", peer_addr);
+                    let st = state.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_tcp_client(stream, st).await {
+                            warn!("TCP client error: {}", e);
+                        }
+                    });
+                }
+                Err(e) => warn!("TCP accept error: {}", e),
+            }
+        }
+    } else {
+        // IPC listener (Unix socket or Windows named pipe)
+        #[cfg(unix)]
+        {
+            let _ = std::fs::remove_file(DEFAULT_ENDPOINT);
+            let listener = UnixListener::bind(DEFAULT_ENDPOINT)?;
+            loop {
+                match listener.accept().await {
+                    Ok((stream, _addr)) => {
+                        let st = state.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = handle_unix_client(stream, st).await {
+                                warn!("client error: {}", e);
+                            }
+                        });
+                    }
+                    Err(e) => warn!("accept error: {}", e),
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            loop {
             // 1 outstanding instance waiting for ConnectNamedPipe at any time.
             let server = match ServerOptions::new().create(DEFAULT_ENDPOINT) {
                 Ok(s) => s,
@@ -287,6 +429,7 @@ async fn main() -> io::Result<()> {
                     // brief backoff to avoid tight error loop
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 }
+            }
             }
         }
     }
@@ -377,6 +520,58 @@ fn default_cookie_path() -> std::path::PathBuf {
         }
         std::path::PathBuf::from("control.authcookie")
     }
+}
+
+/// Handle TCP client connection (for integration tests and remote access)
+/// Same protocol as Unix socket/named pipe, but over TCP
+async fn handle_tcp_client(
+    mut stream: tokio::net::TcpStream,
+    state: Arc<DaemonState>,
+) -> io::Result<()> {
+    let mut buf = Vec::with_capacity(1024);
+    match read_one_line_with_timeout(&mut stream, &mut buf, INITIAL_READ_TIMEOUT_MS).await {
+        Ok(_) => {}
+        Err(_) => {
+            return Ok(());
+        } // drop slow/idle client silently
+    }
+    let req = std::str::from_utf8(&buf).unwrap_or("");
+    let (resp, stream_back, filter) = process_request(req, &state).await;
+    let resp_id = resp.id.clone();
+    let json = json_util::encode_to_vec(&resp).unwrap_or_else(|e| {
+        #[cfg(feature = "telemetry")]
+        nyx_telemetry::record_counter("nyx_daemon_serde_error", 1);
+        serde_json::to_vec(&Response::<serde_json::Value>::err_with_id(resp_id, 500, e))
+            .unwrap_or_default()
+    });
+    stream.write_all(&json).await?;
+    stream.write_all(b"\n").await?;
+    stream.flush().await?;
+    // If client requested subscription, stream events until client disconnects
+    if let Some(mut rx) = stream_back {
+        while let Ok(ev) = rx.recv().await {
+            if !state.events.matches(&ev, &filter).await {
+                continue;
+            }
+            let line = match json_util::encode_to_vec(&ev) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("failed to serialize event: {}", e);
+                    continue;
+                }
+            };
+            if stream.write_all(&line).await.is_err() {
+                break;
+            }
+            if stream.write_all(&b"\n"[..]).await.is_err() {
+                break;
+            }
+            if stream.flush().await.is_err() {
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
