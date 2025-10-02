@@ -32,6 +32,7 @@ anyhow = "1.0"
 rand = "0.8"
 thiserror = "1.0"
 uuid = { version = "1", features = ["v4"], optional = true }
+reqwest = { version = "0.11", features = ["json"] }
 
 [features]
 # Default build excludes OTLP to avoid heavy deps; Prometheus path only
