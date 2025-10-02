@@ -30,7 +30,9 @@ pub mod extended_packet; // Extended packet format for v1.0
 pub mod flow_controller;
 pub mod frame;
 pub mod frame_codec;
+pub mod handshake; // Hybrid post-quantum handshake state machine
 pub mod hpke_rekey;
+pub mod rekey_scheduler; // HPKE rekey scheduler (1GB/10min triggers)
 pub mod integrated_frame_processor;
 pub mod management; // Management frame_s and error code_s
 pub mod multipath;
@@ -47,6 +49,7 @@ pub mod plugin_ipc; // IPC helper trait_s (stub_s for now)
 pub mod plugin_manifest; // Manifest loader (TOML)
 pub mod plugin_registry; // In-memory registry and permission_s
 pub mod plugin_sandbox; // Cooperative sandbox (policy + guard_s)
+pub mod replay_protection; // Anti-replay protection with sliding window for v1.0
 pub mod plugin_sandbox_platform; // Platform-specific sandbox implementations
 pub mod plugin_settings;
 pub mod telemetry_schema;
