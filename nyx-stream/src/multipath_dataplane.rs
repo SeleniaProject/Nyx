@@ -12,6 +12,9 @@
 
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameHeader, FrameType};
+use crate::telemetry_schema::{
+    ConnectionId as TelemetryConnectionId, NyxTelemetryInstrumentation, SpanStatus,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
@@ -154,6 +157,8 @@ pub struct PathScheduler {
     last_weight_update: Instant,
     /// Configuration
     config: MultipathConfig,
+    /// Telemetry instrumentation (Section 6.2 - Multipath decision tracking)
+    telemetry: Option<Arc<NyxTelemetryInstrumentation>>,
 }
 
 impl PathScheduler {
@@ -165,7 +170,14 @@ impl PathScheduler {
             total_weight: 0.0,
             last_weight_update: Instant::now(),
             config,
+            telemetry: None,
         }
+    }
+
+    /// Enable telemetry instrumentation for path selection tracking (Section 6.2)
+    pub fn with_telemetry(mut self, telemetry: Arc<NyxTelemetryInstrumentation>) -> Self {
+        self.telemetry = Some(telemetry);
+        self
     }
 
     /// Add a new path to scheduler
@@ -234,6 +246,85 @@ impl PathScheduler {
                 } else if let Some(path) = self.paths.get(id) {
                     *weight += path.weight;
                 }
+            }
+        }
+
+        selected_path
+    }
+
+    /// Select next path with telemetry instrumentation (Section 6.2 - Multipath decision tracking)
+    ///
+    /// Async version of `select_path()` that creates telemetry spans for path selection observability.
+    pub async fn select_path_with_telemetry(&mut self, connection_id: TelemetryConnectionId) -> Option<PathId> {
+        // Telemetry: Create span for multipath path selection (Section 6.2)
+        let span_id = if let Some(ref telemetry) = self.telemetry {
+            telemetry
+                .get_context()
+                .create_span("multipath_path_selection", None)
+                .await
+        } else {
+            None
+        };
+
+        if let Some(sid) = span_id {
+            if let Some(ref telemetry) = self.telemetry {
+                telemetry
+                    .get_context()
+                    .add_span_attribute(sid, "paths.total", &self.paths.len().to_string())
+                    .await;
+                telemetry
+                    .get_context()
+                    .associate_connection(connection_id, sid)
+                    .await;
+
+                // Add active paths count
+                let active_count = self
+                    .paths
+                    .values()
+                    .filter(|p| matches!(p.state, PathState::Active))
+                    .count();
+                telemetry
+                    .get_context()
+                    .add_span_attribute(sid, "paths.active", &active_count.to_string())
+                    .await;
+            }
+        }
+
+        // Perform path selection using existing synchronous logic
+        let selected_path = self.select_path();
+
+        // Telemetry: Record selected path and end span (Section 6.2)
+        if let Some(sid) = span_id {
+            if let Some(ref telemetry) = self.telemetry {
+                if let Some(path_id) = selected_path {
+                    telemetry
+                        .get_context()
+                        .add_span_attribute(sid, "selected.path_id", &path_id.to_string())
+                        .await;
+
+                    // Add path metrics to span
+                    if let Some(path_info) = self.paths.get(&path_id) {
+                        telemetry
+                            .get_context()
+                            .add_span_attribute(sid, "selected.rtt_ms", &path_info.metrics.rtt_ms.to_string())
+                            .await;
+                        telemetry
+                            .get_context()
+                            .add_span_attribute(sid, "selected.quality", &path_info.metrics.quality.to_string())
+                            .await;
+                        telemetry
+                            .get_context()
+                            .add_span_attribute(sid, "selected.hop_count", &path_info.metrics.hop_count.to_string())
+                            .await;
+                    }
+                }
+
+                let status = if selected_path.is_some() {
+                    SpanStatus::Ok
+                } else {
+                    SpanStatus::Error
+                };
+                telemetry.get_context().end_span(sid, status).await;
             }
         }
 
