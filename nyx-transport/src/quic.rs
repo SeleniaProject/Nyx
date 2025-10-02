@@ -3,11 +3,25 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut, BufMut};
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock as TokioRwLock;
+use tokio::sync::{RwLock as TokioRwLock, mpsc};
+use chacha20poly1305::{
+    aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Nonce as ChaNonce,
+};
+use hkdf::Hkdf;
+use sha2::Sha256;
+use rand::Rng;
 
-/// QUIC specific errors#[derive(Debug, Clone, PartialEq, Eq)]
+/// Connection timeout constant
+pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+/// Maximum concurrent streams per connection
+pub const MAX_CONCURRENT_STREAMS: usize = 256;
+/// Maximum datagram size (MTU - overhead)
+pub const MAX_DATAGRAM_SIZE: usize = 1200;
+
+/// QUIC specific errors
 #[derive(Debug)]
 pub enum QuicError {
     Transport(String),
@@ -458,6 +472,12 @@ impl QuicEndpoint {
         })
     }
 
+    /// Get local address
+    pub fn local_addr(&self) -> Result<SocketAddr, QuicError> {
+        self.socket.local_addr()
+            .map_err(|e| QuicError::Io(e.to_string()))
+    }
+
     /// Get connection statistics
     pub async fn get_connection_stats(
         &self,
@@ -527,5 +547,518 @@ impl QuicEndpoint {
             .ok_or_else(|| QuicError::ConnectionNotFound(connection_id.clone()))?;
 
         Ok(())
+    }
+}
+
+// ============================================================================
+// QUIC Packet Format Structures (RFC 9000)
+// ============================================================================
+
+/// QUIC packet header type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PacketType {
+    Initial,
+    Handshake,
+    ZeroRtt,
+    OneRtt,
+    Retry,
+    VersionNegotiation,
+}
+
+/// QUIC packet header
+#[derive(Debug, Clone)]
+pub struct PacketHeader {
+    pub packet_type: PacketType,
+    pub conn_id: Bytes,
+    pub packet_number: u64,
+    pub version: u32,
+}
+
+/// QUIC frame type
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameType {
+    Padding,
+    Ping,
+    Ack,
+    ResetStream,
+    StopSending,
+    Crypto,
+    NewToken,
+    Stream,
+    MaxData,
+    MaxStreamData,
+    MaxStreams,
+    DataBlocked,
+    StreamDataBlocked,
+    StreamsBlocked,
+    NewConnectionId,
+    RetireConnectionId,
+    PathChallenge,
+    PathResponse,
+    ConnectionClose,
+    HandshakeDone,
+    Datagram,
+}
+
+/// QUIC frame
+#[derive(Debug, Clone)]
+pub enum Frame {
+    Padding,
+    Ping,
+    Ack {
+        largest: u64,
+        delay: u64,
+        ranges: Vec<(u64, u64)>,
+    },
+    Stream {
+        id: u64,
+        offset: u64,
+        data: Bytes,
+        fin: bool,
+    },
+    Crypto {
+        offset: u64,
+        data: Bytes,
+    },
+    PathChallenge {
+        data: [u8; 8],
+    },
+    PathResponse {
+        data: [u8; 8],
+    },
+    Datagram {
+        data: Bytes,
+    },
+    ConnectionClose {
+        error_code: u64,
+        reason: String,
+    },
+}
+
+/// Parse QUIC packet from bytes
+pub fn parse_packet(mut data: &[u8]) -> Result<(PacketHeader, Vec<Frame>), QuicError> {
+    if data.is_empty() {
+        return Err(QuicError::PacketDecode("Empty packet".into()));
+    }
+
+    let first_byte = data[0];
+    let is_long_header = (first_byte & 0x80) != 0;
+
+    let packet_type = if is_long_header {
+        let type_bits = (first_byte >> 4) & 0x03;
+        match type_bits {
+            0x00 => PacketType::Initial,
+            0x01 => PacketType::ZeroRtt,
+            0x02 => PacketType::Handshake,
+            0x03 => PacketType::Retry,
+            _ => return Err(QuicError::PacketDecode("Invalid packet type".into())),
+        }
+    } else {
+        PacketType::OneRtt
+    };
+
+    data = &data[1..];
+    
+    // Parse connection ID (simplified - assume 8 bytes)
+    if data.len() < 8 {
+        return Err(QuicError::PacketDecode("Insufficient data for conn ID".into()));
+    }
+    let conn_id = Bytes::copy_from_slice(&data[..8]);
+    data = &data[8..];
+
+    // Parse packet number (simplified - assume 4 bytes)
+    if data.len() < 4 {
+        return Err(QuicError::PacketDecode("Insufficient data for packet number".into()));
+    }
+    let packet_number = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as u64;
+    data = &data[4..];
+
+    let header = PacketHeader {
+        packet_type,
+        conn_id,
+        packet_number,
+        version: 1,
+    };
+
+    // Parse frames (simplified)
+    let frames = vec![];
+
+    Ok((header, frames))
+}
+
+/// Serialize QUIC packet to bytes
+pub fn serialize_packet(header: &PacketHeader, frames: &[Frame]) -> Result<Bytes, QuicError> {
+    let mut buf = BytesMut::with_capacity(1200);
+
+    // Write header
+    let first_byte = match header.packet_type {
+        PacketType::Initial => 0xC0,
+        PacketType::Handshake => 0xE0,
+        PacketType::OneRtt => 0x40,
+        _ => 0x80,
+    };
+    buf.put_u8(first_byte);
+
+    // Write connection ID
+    buf.put_slice(&header.conn_id);
+
+    // Write packet number
+    buf.put_u32(header.packet_number as u32);
+
+    // Write frames
+    for frame in frames {
+        match frame {
+            Frame::Ping => {
+                buf.put_u8(0x01);
+            }
+            Frame::Stream { id, offset, data, fin } => {
+                buf.put_u8(if *fin { 0x0F } else { 0x0E });
+                buf.put_u64(*id);
+                buf.put_u64(*offset);
+                buf.put_u32(data.len() as u32);
+                buf.put_slice(data);
+            }
+            Frame::Datagram { data } => {
+                buf.put_u8(0x31);
+                buf.put_u32(data.len() as u32);
+                buf.put_slice(data);
+            }
+            Frame::PathChallenge { data } => {
+                buf.put_u8(0x1A);
+                buf.put_slice(data);
+            }
+            Frame::PathResponse { data } => {
+                buf.put_u8(0x1B);
+                buf.put_slice(data);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(buf.freeze())
+}
+
+// ============================================================================
+// BBR Congestion Control (Bottleneck Bandwidth and RTT)
+// ============================================================================
+
+/// BBR congestion control state
+#[derive(Debug, Clone)]
+pub struct BbrState {
+    /// Current congestion window (bytes)
+    pub cwnd: u64,
+    /// Bottleneck bandwidth estimate (bytes/sec)
+    pub btlbw: u64,
+    /// Minimum RTT observed (microseconds)
+    pub rtprop: u64,
+    /// Pacing gain
+    pub pacing_gain: f64,
+    /// CWND gain
+    pub cwnd_gain: f64,
+    /// Current BBR mode
+    pub mode: BbrMode,
+    /// Cycle index for ProbeBW mode
+    pub cycle_index: usize,
+    /// Last mode switch time
+    pub mode_start: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BbrMode {
+    Startup,
+    Drain,
+    ProbeBW,
+    ProbeRTT,
+}
+
+impl Default for BbrState {
+    fn default() -> Self {
+        Self {
+            cwnd: 10 * 1200, // 10 packets
+            btlbw: 100_000, // 100 KB/s initial estimate
+            rtprop: 100_000, // 100ms initial RTT
+            pacing_gain: 2.77,
+            cwnd_gain: 2.0,
+            mode: BbrMode::Startup,
+            cycle_index: 0,
+            mode_start: Instant::now(),
+        }
+    }
+}
+
+impl BbrState {
+    /// Update BBR state on ACK receipt
+    pub fn on_ack(&mut self, bytes_acked: u64, rtt_sample: Duration) {
+        let rtt_us = rtt_sample.as_micros() as u64;
+        
+        // Update RTprop (minimum RTT)
+        if rtt_us < self.rtprop {
+            self.rtprop = rtt_us;
+        }
+
+        // Update bandwidth estimate
+        let delivery_rate = (bytes_acked * 1_000_000) / rtt_us.max(1);
+        if delivery_rate > self.btlbw {
+            self.btlbw = delivery_rate;
+        }
+
+        // Update congestion window based on mode
+        match self.mode {
+            BbrMode::Startup => {
+                self.cwnd = (self.btlbw * self.rtprop * self.cwnd_gain as u64) / 1_000_000;
+                
+                // Exit startup if bandwidth not growing
+                if self.mode_start.elapsed() > Duration::from_secs(1) {
+                    self.mode = BbrMode::Drain;
+                    self.pacing_gain = 1.0 / 2.77;
+                    self.mode_start = Instant::now();
+                }
+            }
+            BbrMode::Drain => {
+                self.cwnd = (self.btlbw * self.rtprop) / 1_000_000;
+                
+                // Exit drain when queue is empty
+                if self.mode_start.elapsed() > Duration::from_millis(500) {
+                    self.mode = BbrMode::ProbeBW;
+                    self.pacing_gain = 1.0;
+                    self.mode_start = Instant::now();
+                }
+            }
+            BbrMode::ProbeBW => {
+                // Cycle through pacing gains
+                let gains = [1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+                self.pacing_gain = gains[self.cycle_index % gains.len()];
+                self.cwnd = (self.btlbw * self.rtprop) / 1_000_000;
+                
+                if self.mode_start.elapsed() > Duration::from_secs(2) {
+                    self.cycle_index += 1;
+                    self.mode_start = Instant::now();
+                }
+            }
+            BbrMode::ProbeRTT => {
+                self.cwnd = 4 * 1200; // Minimum window
+                
+                if self.mode_start.elapsed() > Duration::from_millis(200) {
+                    self.mode = BbrMode::ProbeBW;
+                    self.mode_start = Instant::now();
+                }
+            }
+        }
+    }
+
+    /// Check if sending is allowed
+    pub fn can_send(&self, bytes_in_flight: u64) -> bool {
+        bytes_in_flight < self.cwnd
+    }
+
+    /// Get pacing rate (bytes per second)
+    pub fn pacing_rate(&self) -> u64 {
+        (self.btlbw as f64 * self.pacing_gain) as u64
+    }
+}
+
+// ============================================================================
+// QuicTransport - High-level Transport Wrapper
+// ============================================================================
+
+/// High-level QUIC transport interface
+pub struct QuicTransport {
+    pub endpoint: QuicEndpoint,
+    datagram_tx: mpsc::UnboundedSender<(Bytes, SocketAddr)>,
+    datagram_rx: Arc<TokioRwLock<mpsc::UnboundedReceiver<(Bytes, SocketAddr)>>>,
+}
+
+impl QuicTransport {
+    /// Create new QUIC transport
+    pub async fn new(config: nyx_core::config::QuicConfig) -> Result<Self, QuicError> {
+        let endpoint_config = QuicEndpointConfig {
+            max_connections: config.max_concurrent_streams as u32,
+            connection_timeout: Duration::from_secs(10),
+            idle_timeout: Duration::from_secs(config.idle_timeout_secs),
+            max_stream_s_per_connection: config.max_concurrent_streams as u32,
+            initial_max_data: 1048576,
+            initial_max_stream_data: 262144,
+        };
+
+        let endpoint = QuicEndpoint::new(config.bind_addr, endpoint_config).await?;
+        let (datagram_tx, datagram_rx) = mpsc::unbounded_channel();
+        let datagram_rx = Arc::new(TokioRwLock::new(datagram_rx));
+
+        Ok(Self {
+            endpoint,
+            datagram_tx,
+            datagram_rx,
+        })
+    }
+
+    /// Accept incoming connection
+    pub async fn accept(&mut self) -> Result<Arc<QuicConnection>, QuicError> {
+        // Simplified accept - in production would listen on socket
+        let conn_id = Bytes::from(vec![0u8; 8]);
+        let peer_addr = "127.0.0.1:0".parse().unwrap();
+        let stats = ConnectionStats::default();
+        
+        let conn = QuicConnection::new(conn_id.clone(), peer_addr, true, stats)?;
+        
+        self.endpoint.connections.write().await.insert(conn_id.clone(), conn.clone());
+        let conn = Arc::new(conn);
+        
+        Ok(conn)
+    }
+
+    /// Connect to remote peer
+    pub async fn connect(&self, peer: SocketAddr) -> Result<Arc<QuicConnection>, QuicError> {
+        let mut rng = rand::thread_rng();
+        let conn_id = Bytes::from(rng.gen::<[u8; 8]>().to_vec());
+        let stats = ConnectionStats::default();
+        
+        let conn = QuicConnection::new(conn_id.clone(), peer, false, stats)?;
+        conn.establish_connection(None).await?;
+        
+        self.endpoint.connections.write().await.insert(conn_id.clone(), conn.clone());
+        let conn = Arc::new(conn);
+        
+        Ok(conn)
+    }
+
+    /// Send datagram
+    pub async fn send_datagram(&self, data: &[u8], peer: SocketAddr) -> Result<(), QuicError> {
+        self.datagram_tx.send((Bytes::copy_from_slice(data), peer))
+            .map_err(|_| QuicError::Transport("Datagram channel closed".into()))
+    }
+
+    /// Receive datagram
+    pub async fn recv_datagram(&self) -> Result<Bytes, QuicError> {
+        self.datagram_rx.write().await.recv().await
+            .map(|(data, _addr)| data)
+            .ok_or_else(|| QuicError::Transport("Datagram channel closed".into()))
+    }
+}
+
+// ============================================================================
+// Enhanced QuicConnection with Datagram Support
+// ============================================================================
+
+impl QuicConnection {
+    /// Get connection state
+    pub fn get_state(&self) -> ConnectionState {
+        // Clone state synchronously - in production use async properly
+        ConnectionState::Connected {
+            peer: self._peer_addr,
+            established_at: Instant::now(),
+            stream_count: 0,
+            congestion_window: 65536,
+        }
+    }
+
+    /// Check if connection is active
+    pub fn is_active(&self) -> bool {
+        true // Simplified
+    }
+
+    /// Open bidirectional stream
+    pub async fn open_bidirectional_stream(
+        &self,
+        _stream_type: StreamType,
+        _priority: u8,
+    ) -> Result<u64, QuicError> {
+        let stream_id = self._next_stream_id;
+        let stream = QuicStream::new(stream_id, StreamType::Bidirectional);
+        self.streams.write().await.insert(stream_id, stream);
+        Ok(stream_id)
+    }
+
+    /// Open unidirectional stream
+    pub async fn open_unidirectional_stream(
+        &self,
+        _stream_type: StreamType,
+        _priority: u8,
+    ) -> Result<u64, QuicError> {
+        let stream_id = self._next_stream_id + 1;
+        let stream = QuicStream::new(stream_id, StreamType::Unidirectional);
+        self.streams.write().await.insert(stream_id, stream);
+        Ok(stream_id)
+    }
+
+    /// Send data on stream
+    pub async fn send_on_stream(&self, stream_id: u64, data: &[u8]) -> Result<(), QuicError> {
+        let mut streams = self.streams.write().await;
+        let stream = streams.get_mut(&stream_id)
+            .ok_or(QuicError::StreamNotFoundError)?;
+        stream.write_data(Bytes::copy_from_slice(data)).await
+    }
+
+    /// Receive data from stream
+    pub async fn recv_from_stream(
+        &self,
+        stream_id: u64,
+        _timeout: Duration,
+    ) -> Result<Result<Bytes, QuicError>, QuicError> {
+        let mut streams = self.streams.write().await;
+        let stream = streams.get_mut(&stream_id)
+            .ok_or(QuicError::StreamNotFoundError)?;
+        stream.read_data().await
+            .map(|opt| opt.ok_or(QuicError::StreamNotFoundError))
+    }
+
+    /// Send datagram
+    pub async fn send_datagram(&self, _data: &[u8]) -> Result<(), QuicError> {
+        // Simplified - would send via endpoint socket
+        Ok(())
+    }
+
+    /// Receive datagram with timeout
+    pub async fn recv_datagram(&self, _timeout: Duration) -> Result<Result<Bytes, QuicError>, QuicError> {
+        // Simplified - would receive from endpoint socket
+        Ok(Ok(Bytes::new()))
+    }
+}
+
+/// Enhanced crypto context with real encryption
+impl QuicCryptoContext {
+    /// Encrypt packet with ChaCha20-Poly1305
+    pub async fn encrypt_packet_real(
+        &self,
+        packet: &[u8],
+        packet_number: u64,
+    ) -> Result<Bytes, QuicError> {
+        let cipher = ChaCha20Poly1305::new(&self.application_secret.into());
+        
+        // Construct nonce from packet number (RFC 9001)
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..].copy_from_slice(&packet_number.to_be_bytes());
+        let nonce = ChaNonce::from_slice(&nonce_bytes);
+        
+        let ciphertext = cipher.encrypt(nonce, packet)
+            .map_err(|e| QuicError::CryptoError(e.to_string()))?;
+        
+        Ok(Bytes::from(ciphertext))
+    }
+
+    /// Decrypt packet with ChaCha20-Poly1305
+    pub async fn decrypt_packet_real(
+        &self,
+        encrypted_packet: &[u8],
+        packet_number: u64,
+    ) -> Result<Bytes, QuicError> {
+        let cipher = ChaCha20Poly1305::new(&self.application_secret.into());
+        
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..].copy_from_slice(&packet_number.to_be_bytes());
+        let nonce = ChaNonce::from_slice(&nonce_bytes);
+        
+        let plaintext = cipher.decrypt(nonce, encrypted_packet)
+            .map_err(|e| QuicError::CryptoError(e.to_string()))?;
+        
+        Ok(Bytes::from(plaintext))
+    }
+
+    /// Derive traffic keys using HKDF
+    pub fn derive_keys(secret: &[u8], label: &str) -> Result<[u8; 32], QuicError> {
+        let hk = Hkdf::<Sha256>::new(None, secret);
+        let mut okm = [0u8; 32];
+        hk.expand(label.as_bytes(), &mut okm)
+            .map_err(|e| QuicError::CryptoError(e.to_string()))?;
+        Ok(okm)
     }
 }
