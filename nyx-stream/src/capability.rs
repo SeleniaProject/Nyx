@@ -14,6 +14,7 @@
 //! Unsupported required capabilities trigger session termination with
 //! `ERR_UNSUPPORTED_CAP = 0x07` and the unsupported capability id in CLOSE reason.
 
+use crate::telemetry_schema::{NyxTelemetryInstrumentation, SpanStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -144,6 +145,68 @@ pub fn get_local_capabilities() -> Vec<Capability> {
         Capability::required(CAP_CORE, vec![]), // Core protocol is always required
         Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]), // Plugin framework is optional
     ]
+}
+
+/// Negotiate capabilities with telemetry instrumentation (Section 6.2 - Handshake stage instrumentation)
+///
+/// Async version of `negotiate()` that creates telemetry spans for observability.
+/// Returns Ok(()) if negotiation succeeds, or Err with unsupported required capability id.
+pub async fn negotiate_with_telemetry(
+    local_supported: &[u32],
+    peer_caps: &[Capability],
+    telemetry: &NyxTelemetryInstrumentation,
+) -> Result<(), CapabilityError> {
+    // Telemetry: Create span for capability negotiation handshake (Section 6.2)
+    let span_id = telemetry
+        .get_context()
+        .create_span("capability_negotiation", None)
+        .await;
+
+    if let Some(sid) = span_id {
+        telemetry
+            .get_context()
+            .add_span_attribute(sid, "local.capabilities", &local_supported.len().to_string())
+            .await;
+        telemetry
+            .get_context()
+            .add_span_attribute(sid, "peer.capabilities", &peer_caps.len().to_string())
+            .await;
+
+        // Count required vs optional capabilities
+        let required_count = peer_caps.iter().filter(|c| c.is_required()).count();
+        let optional_count = peer_caps.len() - required_count;
+        telemetry
+            .get_context()
+            .add_span_attribute(sid, "peer.required", &required_count.to_string())
+            .await;
+        telemetry
+            .get_context()
+            .add_span_attribute(sid, "peer.optional", &optional_count.to_string())
+            .await;
+    }
+
+    // Perform negotiation logic
+    let result = negotiate(local_supported, peer_caps);
+
+    // Telemetry: End span with result status (Section 6.2)
+    if let Some(sid) = span_id {
+        let status = if result.is_ok() {
+            SpanStatus::Ok
+        } else {
+            SpanStatus::Error
+        };
+
+        if let Err(CapabilityError::UnsupportedRequired(cap_id)) = &result {
+            telemetry
+                .get_context()
+                .add_span_attribute(sid, "error.unsupported_cap_id", &format!("0x{:08x}", cap_id))
+                .await;
+        }
+
+        telemetry.get_context().end_span(sid, status).await;
+    }
+
+    result
 }
 
 /// Validate capability structure and data bounds with comprehensive security checks
@@ -318,5 +381,114 @@ mod tests {
 
         let invalid_core = Capability::required(CAP_CORE, b"unexpected".to_vec());
         assert!(validate_capability(&invalid_core).is_err());
+    }
+
+    /// Test: Required capability mismatch triggers disconnection with CLOSE 0x07
+    /// This integration test verifies the complete flow:
+    /// 1. Capability negotiation fails due to missing required capability
+    /// 2. Error is propagated with the unsupported capability ID
+    /// 3. CLOSE frame with error code 0x07 is generated
+    #[test]
+    fn test_required_capability_disconnect() {
+        use crate::management::build_close_unsupported_cap;
+
+        // Scenario: Client requires CAP_PLUGIN_FRAMEWORK, but server only supports CAP_CORE
+        let local = &[CAP_CORE]; // Server capabilities
+        let peer = vec![
+            Capability::required(CAP_CORE, vec![]),
+            Capability::required(CAP_PLUGIN_FRAMEWORK, vec![]), // Client requires this
+        ];
+
+        // Perform negotiation - should fail
+        let result = negotiate(local, &peer);
+
+        // Verify error contains the unsupported capability ID
+        match result {
+            Err(CapabilityError::UnsupportedRequired(id)) => {
+                assert_eq!(id, CAP_PLUGIN_FRAMEWORK, "Expected CAP_PLUGIN_FRAMEWORK to be unsupported");
+
+                // Build CLOSE frame as would be done by daemon
+                let close_frame = build_close_unsupported_cap(id);
+
+                // Verify CLOSE frame format: [error_code:u16][capability_id:u32]
+                assert_eq!(close_frame.len(), 6, "CLOSE frame should be 6 bytes");
+
+                // Verify error code is 0x07
+                let error_code = u16::from_be_bytes([close_frame[0], close_frame[1]]);
+                assert_eq!(error_code, ERR_UNSUPPORTED_CAP, "Error code should be 0x07");
+
+                // Verify capability ID matches
+                let cap_id = u32::from_be_bytes([close_frame[2], close_frame[3], close_frame[4], close_frame[5]]);
+                assert_eq!(cap_id, CAP_PLUGIN_FRAMEWORK, "Capability ID in CLOSE frame should match");
+            }
+            Ok(_) => {
+                panic!("Expected negotiation to fail with UnsupportedRequired error");
+            }
+            Err(other) => {
+                panic!("Expected UnsupportedRequired error, got: {:?}", other);
+            }
+        }
+    }
+
+    /// Test: Optional capabilities are silently ignored when not supported
+    /// This verifies RFC-compliant behavior where:
+    /// 1. Peer advertises optional capabilities
+    /// 2. Local does not support them
+    /// 3. Negotiation succeeds (capabilities are ignored, not rejected)
+    /// 4. No CLOSE frame is generated
+    #[test]
+    fn test_optional_capability_ignored() {
+        // Scenario: Client advertises optional CAP_PLUGIN_FRAMEWORK, server doesn't support it
+        let local = &[CAP_CORE]; // Server only supports core
+        let peer = vec![
+            Capability::required(CAP_CORE, vec![]),
+            Capability::optional(CAP_PLUGIN_FRAMEWORK, b"v1.0".to_vec()), // Optional
+            Capability::optional(0x9999, b"experimental".to_vec()), // Unknown optional
+        ];
+
+        // Perform negotiation - should succeed
+        let result = negotiate(local, &peer);
+
+        // Verify negotiation succeeds despite missing optional capabilities
+        assert!(
+            result.is_ok(),
+            "Negotiation should succeed when only optional capabilities are missing"
+        );
+
+        // Verify no error is returned (no CLOSE frame would be generated)
+        match result {
+            Ok(()) => {
+                // Expected: negotiation succeeds silently
+                // Optional capabilities are ignored, connection proceeds
+            }
+            Err(e) => {
+                panic!(
+                    "Expected negotiation to succeed with optional capabilities, got error: {:?}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Test: Mixed required and optional capabilities
+    /// Verifies correct handling when:
+    /// 1. Some required capabilities match
+    /// 2. Some optional capabilities don't match (should be ignored)
+    /// 3. Negotiation succeeds if all required capabilities are satisfied
+    #[test]
+    fn test_mixed_required_optional() {
+        let local = &[CAP_CORE, CAP_PLUGIN_FRAMEWORK];
+        let peer = vec![
+            Capability::required(CAP_CORE, vec![]),                 // Required & supported
+            Capability::optional(CAP_PLUGIN_FRAMEWORK, vec![]),     // Optional & supported
+            Capability::optional(0xFFFF, b"unknown".to_vec()),      // Optional & unsupported
+        ];
+
+        // Should succeed: all required caps match, optional are ignored
+        let result = negotiate(local, &peer);
+        assert!(
+            result.is_ok(),
+            "Negotiation should succeed with all required capabilities satisfied"
+        );
     }
 }
