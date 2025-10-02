@@ -620,6 +620,7 @@ impl FramePaddingProcessor {
             FrameType::Data => 0x00,
             FrameType::Ack => 0x01,
             FrameType::Close => 0x3F,
+            FrameType::Crypto => 0x02, // CRYPTO frame type
             FrameType::Custom(byte) => byte,
         };
         bytes.push(frame_type_byte);
