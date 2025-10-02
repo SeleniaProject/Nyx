@@ -13,9 +13,18 @@ honggfuzz = "0.5"
 num-bigint = "0.4"
 
 # Added Nyx crates and Tokio runtime for additional fuzz targets
-nyx-core = { path = ".." }
+nyx-core = { path = "../nyx-core" }
 nyx-mix = { path = "../nyx-mix" }
 nyx-crypto = { path = "../nyx-crypto" }
+nyx-transport = { path = "../nyx-transport" }
+nyx-stream = { path = "../nyx-stream" }
+
+# Serialization libraries for fuzz targets
+serde_json = "1.0"
+ciborium = "0.2"
+
+# Utilities for fuzz targets
+bytes = "1.0"
 
 # Tokio needed to spin a runtime inside fuzz target
 tokio = { version = "1", features = ["rt", "macros"] }
@@ -37,6 +46,20 @@ bench = false
 [[bin]]
 name = "cmix_batch"
 path = "fuzz_targets/cmix_batch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ice_candidate"
+path = "fuzz_targets/ice_candidate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "quic_packet"
+path = "fuzz_targets/quic_packet.rs"
 test = false
 doc = false
 bench = false
