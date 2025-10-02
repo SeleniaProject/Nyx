@@ -208,6 +208,7 @@ impl StreamTelemetryContext {
 }
 
 /// Main telemetry instrumentation interface
+#[derive(Debug)]
 pub struct NyxTelemetryInstrumentation {
     context: StreamTelemetryContext,
 }
