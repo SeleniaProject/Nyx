@@ -15,6 +15,10 @@ members = [
     "nyx-conformance",
     "nyx-mobile-ffi", # Mobile platform FFI bindings
     "build-protoc",
+    "tests", # Integration test suite
+]
+exclude = [
+    "fuzz", # cargo-fuzz targets are excluded from workspace
 ]
 resolver = "2"
 
