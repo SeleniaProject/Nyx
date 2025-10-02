@@ -1,0 +1,204 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Prevent excessive log output in CI
+  RUST_LOG: warn
+
+jobs:
+  integration-tests:
+    name: Integration Tests (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+    
+    - name: Cache cargo registry and build artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: integration-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          integration-${{ runner.os }}-cargo-
+          integration-${{ runner.os }}-
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcap-dev pkg-config protobuf-compiler
+    
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest
+    
+    - name: Build nyx-daemon (release mode)
+      run: |
+        cargo build -p nyx-daemon --release --verbose
+        # Verify the binary was built
+        ls -lh target/release/nyx-daemon
+    
+    - name: Build integration test suite
+      run: |
+        cd tests
+        cargo build --lib --verbose
+    
+    - name: Run integration tests (non-daemon-dependent)
+      run: |
+        cd tests
+        # Use nextest with CI profile for parallel execution
+        cargo nextest run --lib --profile ci --verbose
+      continue-on-error: false
+    
+    - name: Start nyx-daemon in background
+      run: |
+        # Start daemon with test configuration
+        target/release/nyx-daemon --config nyx.toml &
+        DAEMON_PID=$!
+        echo "DAEMON_PID=$DAEMON_PID" >> $GITHUB_ENV
+        # Wait for daemon to be ready (simple approach: fixed delay)
+        sleep 5
+        # Verify daemon is running
+        ps -p $DAEMON_PID || (echo "Daemon failed to start" && exit 1)
+    
+    - name: Run integration tests (daemon-dependent)
+      run: |
+        cd tests
+        # Run all tests including those marked with #[ignore] using nextest
+        cargo nextest run --lib --profile ci --run-ignored ignored-only --verbose
+      continue-on-error: true
+      id: daemon_tests
+    
+    - name: Stop nyx-daemon
+      if: always()
+      run: |
+        if [ -n "$DAEMON_PID" ]; then
+          kill $DAEMON_PID || true
+          # Give daemon time to shutdown gracefully
+          sleep 2
+          # Force kill if still running
+          kill -9 $DAEMON_PID 2>/dev/null || true
+        fi
+    
+    - name: Collect test logs
+      if: always()
+      run: |
+        mkdir -p test-artifacts
+        # Collect any generated logs
+        find target -name "*.log" -exec cp {} test-artifacts/ \; || true
+        # Capture test output summary
+        echo "Test execution completed at $(date)" > test-artifacts/summary.txt
+        echo "Daemon tests result: ${{ steps.daemon_tests.outcome }}" >> test-artifacts/summary.txt
+    
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-artifacts
+        path: |
+          test-artifacts/
+          target/release/nyx-daemon
+        retention-days: 7
+    
+    - name: Upload nextest test results (JUnit XML)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nextest-junit-results
+        path: |
+          tests/target/nextest/ci/junit.xml
+        retention-days: 30
+        if-no-files-found: warn
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: |
+          target/debug/deps/*.log
+          tests/target/debug/deps/*.log
+        retention-days: 7
+        if-no-files-found: ignore
+    
+    - name: Check test results
+      if: steps.daemon_tests.outcome == 'failure'
+      run: |
+        echo "::error::Integration tests with daemon failed"
+        exit 1
+
+  # Optional: Run integration tests on additional platforms
+  integration-tests-matrix:
+    name: Integration Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest
+    
+    - name: Cache cargo registry and build artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: integration-${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          integration-${{ matrix.os }}-cargo-
+          integration-${{ matrix.os }}-
+    
+    - name: Build nyx-daemon (release mode)
+      run: cargo build -p nyx-daemon --release --verbose
+    
+    - name: Build integration test suite
+      run: |
+        cd tests
+        cargo build --lib --verbose
+    
+    - name: Run integration tests (non-daemon-dependent only)
+      run: |
+        cd tests
+        # Only run non-daemon tests on Windows/macOS using nextest
+        cargo nextest run --lib --profile ci --verbose
+      continue-on-error: false
+    
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-artifacts-${{ matrix.os }}
+        path: |
+          target/release/nyx-daemon*
+        retention-days: 7
