@@ -136,3 +136,46 @@ debug_endpoints = false
 disable_auth = false
 # Verbose logging
 verbose_logging = false
+
+# Multipath configuration
+[multipath]
+# Maximum number of concurrent paths
+max_paths = 4
+# Minimum path quality threshold (0.0-1.0)
+min_path_quality = 0.5
+# Path failover timeout (milliseconds)
+failover_timeout_ms = 1000
+# Enable path quality monitoring
+quality_monitoring_enabled = true
+# Path probe interval (seconds)
+probe_interval = 30
+
+# Mix network configuration
+[mix]
+# Enable cMix integration
+cmix_enabled = false
+# Batch size for mix processing
+batch_size = 128
+# VDF delay (milliseconds)
+vdf_delay_ms = 100
+# Number of mix layers
+mix_layers = 3
+# Enable cover traffic
+cover_traffic_enabled = true
+# Cover traffic ratio (0.0-1.0)
+cover_traffic_ratio = 0.3
+
+# Telemetry and observability
+[telemetry]
+# OpenTelemetry Protocol (OTLP) endpoint
+# otlp_endpoint = "http://localhost:4317"
+# OTLP sampling rate (0.0-1.0)
+otlp_sampling_rate = 1.0
+# Enable Prometheus metrics export
+prometheus_enabled = false
+# Prometheus bind address
+# prometheus_addr = "127.0.0.1:9100"
+# Service name for tracing
+service_name = "nyx-daemon"
+# Enable span export
+span_export_enabled = false
