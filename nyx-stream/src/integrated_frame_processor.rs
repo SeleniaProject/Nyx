@@ -5,6 +5,9 @@
 use crate::errors::{Error, Result};
 use crate::frame::{Frame, FrameType};
 use crate::frame_codec::FrameCodec;
+use crate::telemetry_schema::{
+    ConnectionId, NyxTelemetryInstrumentation, SpanStatus, TelemetryConfig,
+};
 use bytes::{Bytes, BytesMut};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
@@ -165,11 +168,18 @@ pub struct IntegratedFrameProcessor {
     buffer_pool: Arc<Mutex<BufferPool>>,
     reordering_buffers: Arc<RwLock<std::collections::HashMap<u32, ReorderingBuffer>>>, // stream_id -> buffer
     processing_times: Arc<Mutex<VecDeque<Duration>>>,
+    /// Telemetry instrumentation for observability (Section 6.2)
+    telemetry: Arc<NyxTelemetryInstrumentation>,
+    /// Connection ID for telemetry span association
+    connection_id: ConnectionId,
 }
 
 impl IntegratedFrameProcessor {
     pub fn new(config: ProcessorConfig) -> Self {
         let buffer_pool = BufferPool::new(config.buffer_pool_size, config.max_frame_size * 2);
+        let telemetry_config = TelemetryConfig::default();
+        let telemetry = Arc::new(NyxTelemetryInstrumentation::new(telemetry_config));
+        let connection_id = ConnectionId::new(0); // Default CID, should be set via with_connection_id
 
         Self {
             config,
@@ -177,11 +187,37 @@ impl IntegratedFrameProcessor {
             buffer_pool: Arc::new(Mutex::new(buffer_pool)),
             reordering_buffers: Arc::new(RwLock::new(std::collections::HashMap::new())),
             processing_times: Arc::new(Mutex::new(VecDeque::new())),
+            telemetry,
+            connection_id,
         }
+    }
+
+    /// Set connection ID for telemetry span association
+    pub fn with_connection_id(mut self, connection_id: u64) -> Self {
+        self.connection_id = ConnectionId::new(connection_id);
+        self
     }
 
     /// Process a raw byte buffer into frames with reordering
     pub async fn process_buffer(&self, data: Bytes) -> Result<Vec<Frame>> {
+        // Telemetry: Create span for buffer processing (Section 6.2 - Frame receive instrumentation)
+        let span_id = self
+            .telemetry
+            .get_context()
+            .create_span("frame_buffer_processing", None)
+            .await;
+
+        if let Some(sid) = span_id {
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "buffer.size", &data.len().to_string())
+                .await;
+            self.telemetry
+                .get_context()
+                .associate_connection(self.connection_id, sid)
+                .await;
+        }
+
         let start_time = Instant::now();
         let mut processed_frames = Vec::new();
 
@@ -217,6 +253,22 @@ impl IntegratedFrameProcessor {
         self.update_processing_metrics(processing_time, result.is_ok())
             .await;
 
+        // Telemetry: End span with status (Section 6.2)
+        if let Some(sid) = span_id {
+            let status = if result.is_ok() {
+                SpanStatus::Ok
+            } else {
+                SpanStatus::Error
+            };
+            self.telemetry.get_context().end_span(sid, status).await;
+            if let Ok(Ok(ref frames)) = result {
+                self.telemetry
+                    .get_context()
+                    .add_span_attribute(sid, "frames.processed", &frames.len().to_string())
+                    .await;
+            }
+        }
+
         match result {
             Ok(Ok(frames)) => Ok(frames),
             Ok(Err(e)) => Err(e),
@@ -232,11 +284,43 @@ impl IntegratedFrameProcessor {
 
     /// Process a single frame with validation and optimization
     pub async fn process_frame(&self, frame: Frame) -> Result<Vec<Frame>> {
+        // Telemetry: Create span for single frame processing (Section 6.2)
+        let span_id = self
+            .telemetry
+            .get_context()
+            .create_span("frame_processing", None)
+            .await;
+
+        if let Some(sid) = span_id {
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "frame.type", &format!("{:?}", frame.header.ty))
+                .await;
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "frame.stream_id", &frame.header.stream_id.to_string())
+                .await;
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "frame.seq", &frame.header.seq.to_string())
+                .await;
+            self.telemetry
+                .get_context()
+                .associate_connection(self.connection_id, sid)
+                .await;
+        }
+
         let start_time = Instant::now();
 
         // Validate frame; count errors in metrics if invalid
         if let Err(e) = self.validate_frame(&frame) {
             self.increment_error_counter().await;
+            if let Some(sid) = span_id {
+                self.telemetry
+                    .get_context()
+                    .end_span(sid, SpanStatus::Error)
+                    .await;
+            }
             return Err(e);
         }
 
@@ -246,11 +330,38 @@ impl IntegratedFrameProcessor {
         let processing_time = start_time.elapsed();
         self.update_processing_metrics(processing_time, true).await;
 
+        // Telemetry: End span with success status (Section 6.2)
+        if let Some(sid) = span_id {
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "frames.reordered", &reordered_frames.len().to_string())
+                .await;
+            self.telemetry.get_context().end_span(sid, SpanStatus::Ok).await;
+        }
+
         Ok(reordered_frames)
     }
 
     /// Encode frames to bytes with zero-copy optimization
     pub async fn encode_frames(&self, frames: &[Frame]) -> Result<Bytes> {
+        // Telemetry: Create span for frame encoding/sending (Section 6.2 - Frame send instrumentation)
+        let span_id = self
+            .telemetry
+            .get_context()
+            .create_span("frame_encoding", None)
+            .await;
+
+        if let Some(sid) = span_id {
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "frames.count", &frames.len().to_string())
+                .await;
+            self.telemetry
+                .get_context()
+                .associate_connection(self.connection_id, sid)
+                .await;
+        }
+
         let mut buffer_pool = self.buffer_pool.lock().await;
         let mut buffer = buffer_pool.get_buffer();
 
@@ -260,6 +371,15 @@ impl IntegratedFrameProcessor {
 
         let result = buffer.freeze();
         buffer_pool.return_buffer(BytesMut::new()); // Return empty buffer to pool
+
+        // Telemetry: End span with encoded size (Section 6.2)
+        if let Some(sid) = span_id {
+            self.telemetry
+                .get_context()
+                .add_span_attribute(sid, "encoded.bytes", &result.len().to_string())
+                .await;
+            self.telemetry.get_context().end_span(sid, SpanStatus::Ok).await;
+        }
 
         Ok(result)
     }
@@ -325,6 +445,10 @@ impl IntegratedFrameProcessor {
             }
             FrameType::Data => {
                 // Data frames can have any payload size within limits
+            }
+            FrameType::Crypto => {
+                // CRYPTO frames contain handshake payloads (ClientHello, ServerHello, ClientFinished)
+                // Payload validation handled by handshake layer
             }
             FrameType::Custom(_) => {
                 // Custom frames handled by plugin framework
