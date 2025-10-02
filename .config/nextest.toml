@@ -1,0 +1,61 @@
+[profile.default]
+# Number of parallel test threads
+# Integration tests are I/O bound, so limit parallelism to avoid resource contention
+test-threads = 4
+
+# Retry flaky tests automatically
+# Useful for daemon-dependent tests that may have timing issues
+retries = 0
+
+# Default timeout for tests (in seconds)
+# Most integration tests should complete within 60 seconds
+slow-timeout = { period = "60s", terminate-after = 2 }
+
+# Tests that exceed this timeout will be marked as slow
+# This helps identify tests that need optimization
+[profile.default.junit]
+# Store test results in JUnit XML format for CI integration
+# path = "target/nextest/default/junit.xml"
+
+# Override settings for CI environment
+[profile.ci]
+# In CI, allow longer timeouts for stability
+slow-timeout = { period = "120s", terminate-after = 3 }
+
+# Retry flaky tests up to 2 times in CI
+retries = 2
+
+# Fail fast in CI to save resources
+fail-fast = false
+
+# Test threads optimized for GitHub Actions runners (2 cores)
+test-threads = 2
+
+[profile.ci.junit]
+path = "target/nextest/ci/junit.xml"
+store-success-output = true
+store-failure-output = true
+
+# Override for specific test patterns
+[[profile.default.overrides]]
+# Long-running stability tests need extended timeout
+filter = 'test(long_running)'
+slow-timeout = { period = "120s", terminate-after = 3 }
+
+[[profile.default.overrides]]
+# Stress tests may need more time and retries
+filter = 'test(stress)'
+slow-timeout = { period = "180s", terminate-after = 3 }
+retries = 1
+
+[[profile.default.overrides]]
+# Network simulation tests are generally fast
+filter = 'test(network_simulation)'
+slow-timeout = { period = "30s" }
+
+# Override for daemon-dependent tests (marked with #[ignore])
+# These are run separately with --ignored flag
+[[profile.default.overrides]]
+filter = 'test(multipath_transfer) | test(cover_traffic)'
+slow-timeout = { period = "90s", terminate-after = 3 }
+retries = 1
