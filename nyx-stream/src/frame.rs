@@ -7,6 +7,8 @@ pub enum FrameType {
     Data,
     Ack,
     Close,
+    /// CRYPTO frame for handshake (public key, ciphertext)
+    Crypto,
     /// Custom frame types for extensions (plugin framework, etc.)
     Custom(u8),
 }
@@ -25,6 +27,25 @@ pub struct Frame {
     pub header: FrameHeader,
     #[serde(with = "serde_bytes")]
     pub payload: Vec<u8>, // Keep Vec for serde compatibility, but optimize usage
+}
+
+/// CRYPTO frame payload types for handshake
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CryptoPayload {
+    /// Client sends hybrid public key (ML-KEM-768 + X25519)
+    ClientHello {
+        #[serde(with = "serde_bytes")]
+        public_key: Vec<u8>,
+        /// Optional capability list for negotiation
+        capabilities: Option<Vec<u32>>,
+    },
+    /// Server sends hybrid ciphertext (encapsulated secrets)
+    ServerHello {
+        #[serde(with = "serde_bytes")]
+        ciphertext: Vec<u8>,
+    },
+    /// Final confirmation from client
+    ClientFinished,
 }
 
 /// Zero-copy frame builder for maximum performance
@@ -104,6 +125,98 @@ impl Frame {
                 payload_bytes.to_vec()
             },
         }
+    }
+
+    /// Create a CRYPTO frame with ClientHello (hybrid public key)
+    ///
+    /// # Arguments
+    ///
+    /// * `stream_id` - Stream identifier (typically 0 for handshake)
+    /// * `seq` - Sequence number
+    /// * `public_key` - Hybrid public key bytes (ML-KEM-768 + X25519)
+    /// * `capabilities` - Optional capability list for negotiation
+    pub fn crypto_client_hello(
+        stream_id: u32,
+        seq: u64,
+        public_key: Vec<u8>,
+        capabilities: Option<Vec<u32>>,
+    ) -> Result<Self> {
+        let crypto_payload = CryptoPayload::ClientHello {
+            public_key,
+            capabilities,
+        };
+
+        let mut payload = Vec::new();
+        ciborium::ser::into_writer(&crypto_payload, &mut payload).map_err(Error::CborSer)?;
+
+        Ok(Self {
+            header: FrameHeader {
+                stream_id,
+                seq,
+                ty: FrameType::Crypto,
+            },
+            payload,
+        })
+    }
+
+    /// Create a CRYPTO frame with ServerHello (hybrid ciphertext)
+    ///
+    /// # Arguments
+    ///
+    /// * `stream_id` - Stream identifier (typically 0 for handshake)
+    /// * `seq` - Sequence number
+    /// * `ciphertext` - Hybrid ciphertext bytes (encapsulated secrets)
+    pub fn crypto_server_hello(stream_id: u32, seq: u64, ciphertext: Vec<u8>) -> Result<Self> {
+        let crypto_payload = CryptoPayload::ServerHello { ciphertext };
+
+        let mut payload = Vec::new();
+        ciborium::ser::into_writer(&crypto_payload, &mut payload).map_err(Error::CborSer)?;
+
+        Ok(Self {
+            header: FrameHeader {
+                stream_id,
+                seq,
+                ty: FrameType::Crypto,
+            },
+            payload,
+        })
+    }
+
+    /// Create a CRYPTO frame with ClientFinished (confirmation)
+    ///
+    /// # Arguments
+    ///
+    /// * `stream_id` - Stream identifier (typically 0 for handshake)
+    /// * `seq` - Sequence number
+    pub fn crypto_client_finished(stream_id: u32, seq: u64) -> Result<Self> {
+        let crypto_payload = CryptoPayload::ClientFinished;
+
+        let mut payload = Vec::new();
+        ciborium::ser::into_writer(&crypto_payload, &mut payload).map_err(Error::CborSer)?;
+
+        Ok(Self {
+            header: FrameHeader {
+                stream_id,
+                seq,
+                ty: FrameType::Crypto,
+            },
+            payload,
+        })
+    }
+
+    /// Parse CRYPTO frame payload
+    ///
+    /// Returns the decoded CryptoPayload if this is a CRYPTO frame
+    pub fn parse_crypto_payload(&self) -> Result<CryptoPayload> {
+        if self.header.ty != FrameType::Crypto {
+            return Err(Error::Protocol(format!(
+                "Not a CRYPTO frame, got {:?}",
+                self.header.ty
+            )));
+        }
+
+        let reader = std::io::Cursor::new(&self.payload);
+        ciborium::de::from_reader(reader).map_err(Error::Cbor)
     }
 
     /// High-performance CBOR encoding with pre-sized allocation
@@ -198,5 +311,99 @@ mod test_s {
                 panic!("Expected CBOR decoding error, got: {e:?}");
             }
         }
+    }
+
+    #[test]
+    fn crypto_client_hello_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let public_key = vec![1u8; 1216]; // ML-KEM-768 + X25519 size
+        let capabilities = Some(vec![1, 2, 3]);
+
+        let frame = Frame::crypto_client_hello(0, 0, public_key.clone(), capabilities.clone())?;
+
+        assert_eq!(frame.header.ty, FrameType::Crypto);
+        assert_eq!(frame.header.stream_id, 0);
+        assert_eq!(frame.header.seq, 0);
+
+        let parsed = frame.parse_crypto_payload()?;
+        match parsed {
+            CryptoPayload::ClientHello {
+                public_key: pk,
+                capabilities: caps,
+            } => {
+                assert_eq!(pk, public_key);
+                assert_eq!(caps, capabilities);
+            }
+            _ => panic!("Expected ClientHello"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn crypto_server_hello_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let ciphertext = vec![2u8; 1120]; // ML-KEM-768 ciphertext + X25519 public key size
+
+        let frame = Frame::crypto_server_hello(0, 1, ciphertext.clone())?;
+
+        assert_eq!(frame.header.ty, FrameType::Crypto);
+        assert_eq!(frame.header.stream_id, 0);
+        assert_eq!(frame.header.seq, 1);
+
+        let parsed = frame.parse_crypto_payload()?;
+        match parsed {
+            CryptoPayload::ServerHello { ciphertext: ct } => {
+                assert_eq!(ct, ciphertext);
+            }
+            _ => panic!("Expected ServerHello"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn crypto_client_finished_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let frame = Frame::crypto_client_finished(0, 2)?;
+
+        assert_eq!(frame.header.ty, FrameType::Crypto);
+        assert_eq!(frame.header.stream_id, 0);
+        assert_eq!(frame.header.seq, 2);
+
+        let parsed = frame.parse_crypto_payload()?;
+        match parsed {
+            CryptoPayload::ClientFinished => {
+                // Success
+            }
+            _ => panic!("Expected ClientFinished"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_crypto_on_non_crypto_frame_fails() {
+        let frame = Frame::data(1, 1, b"not crypto".to_vec());
+        let result = frame.parse_crypto_payload();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn crypto_frame_cbor_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let frame = Frame::crypto_client_hello(0, 0, vec![42u8; 100], None)?;
+
+        let encoded = frame.to_cbor()?;
+        let decoded = Frame::from_cbor(&encoded)?;
+
+        assert_eq!(decoded.header.ty, FrameType::Crypto);
+
+        let parsed = decoded.parse_crypto_payload()?;
+        match parsed {
+            CryptoPayload::ClientHello { public_key, .. } => {
+                assert_eq!(public_key.len(), 100);
+                assert_eq!(public_key[0], 42);
+            }
+            _ => panic!("Expected ClientHello"),
+        }
+
+        Ok(())
     }
 }
