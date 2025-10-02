@@ -37,6 +37,7 @@ impl Default for Config {
 // --- Module_s ------------------------------------------------------------------
 
 pub mod metrics;
+pub mod otlp;
 #[cfg(feature = "otlp")]
 mod opentelemetry_integration;
 #[cfg(not(feature = "otlp"))]
