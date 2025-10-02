@@ -1,0 +1,24 @@
+[package]
+name = "nyx-integration-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Core workspace dependencies
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+rand = { workspace = true }
+
+# Workspace crates for testing
+nyx-daemon = { path = "../nyx-daemon" }
+nyx-sdk = { path = "../nyx-sdk" }
+nyx-stream = { path = "../nyx-stream" }
+nyx-core = { path = "../nyx-core" }
+
+[[test]]
+name = "e2e_handshake"
+path = "tests/e2e_handshake.rs"
+harness = true
