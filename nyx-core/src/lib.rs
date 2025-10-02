@@ -24,6 +24,7 @@ pub mod performance;
 pub mod push;
 pub mod push_gateway;
 pub mod sandbox;
+pub mod security; // Post-Compromise Recovery (PCR) detection and triggering
 pub mod types;
 
 // Optional subsystem_s
